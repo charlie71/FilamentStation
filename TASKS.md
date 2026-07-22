@@ -18,30 +18,30 @@
 
 ## 0.1 PlatformIO-Projekt
 
-* [ ] PlatformIO-Projekt für ESP32-S3 anlegen
-* [ ] Arduino Framework konfigurieren
-* [ ] C++17 aktivieren
-* [ ] seriellen Monitor mit 115200 Baud konfigurieren
-* [ ] Flashgröße und PSRAM vorbereiten
-* [ ] `.gitignore` anlegen
-* [ ] Build-Anleitung in `README.md` erstellen
+* [x] PlatformIO-Projekt für ESP32-S3 anlegen
+* [x] Arduino Framework konfigurieren
+* [x] C++17 aktivieren
+* [x] seriellen Monitor mit 115200 Baud konfigurieren
+* [x] Flashgröße und PSRAM vorbereiten
+* [x] `.gitignore` anlegen
+* [x] Build-Anleitung in `README.md` erstellen
 
 ## 0.2 Grundstruktur
 
-* [ ] Verzeichnisstruktur aus `AGENTS.md` anlegen
-* [ ] `BoardConfig.h` anlegen
-* [ ] `AppConfig.h` anlegen
-* [ ] `TaskConfig.h` anlegen
-* [ ] `Secrets.example.h` anlegen
-* [ ] minimale Modelle und Message-Typen erzeugen
-* [ ] noch keine Hardwarebibliotheken einbinden
+* [x] Verzeichnisstruktur aus `AGENTS.md` anlegen
+* [x] `BoardConfig.h` anlegen
+* [x] `AppConfig.h` anlegen
+* [x] `TaskConfig.h` anlegen
+* [x] `Secrets.example.h` anlegen
+* [x] minimale Modelle und Message-Typen erzeugen
+* [x] noch keine Hardwarebibliotheken einbinden
 
 ## 0.3 Minimaler Build
 
-* [ ] Startmeldung über Serial ausgeben
-* [ ] Chipmodell ausgeben
-* [ ] Heap und PSRAM ausgeben
-* [ ] `pio run` erfolgreich ausführen
+* [x] Startmeldung über Serial ausgeben
+* [x] Chipmodell ausgeben
+* [x] Heap und PSRAM ausgeben
+* [x] `pio run` erfolgreich ausführen
 
 ### Abnahmekriterien
 
@@ -56,53 +56,53 @@
 
 ## 1.1 RTOS-Kontext
 
-* [ ] `RtosContext` implementieren
-* [ ] zentrale Handles für Queues anlegen
-* [ ] zentrale Handles für Tasks anlegen
-* [ ] System Event Group anlegen
-* [ ] benötigte Mutexes anlegen
-* [ ] Fehler bei der Erzeugung aller RTOS-Objekte behandeln
+* [x] `RtosContext` implementieren
+* [x] zentrale Handles für Queues anlegen
+* [x] zentrale Handles für Tasks anlegen
+* [x] System Event Group anlegen
+* [x] benötigte Mutexes anlegen
+* [x] Fehler bei der Erzeugung aller RTOS-Objekte behandeln
 
 ## 1.2 Nachrichtentypen
 
-* [ ] `AppEvent` definieren
-* [ ] `UiCommand` definieren
-* [ ] `ScaleCommand` definieren
-* [ ] `NfcCommand` definieren
-* [ ] `StorageCommand` definieren
-* [ ] `NetworkCommand` definieren
-* [ ] `SpoolmanCommand` definieren
-* [ ] `BambuCommand` vorbereiten
-* [ ] `requestId` für asynchrone Antworten vorsehen
+* [x] `AppEvent` definieren
+* [x] `UiCommand` definieren
+* [x] `ScaleCommand` definieren
+* [x] `NfcCommand` definieren
+* [x] `StorageCommand` definieren
+* [x] `NetworkCommand` definieren
+* [x] `SpoolmanCommand` definieren
+* [x] `BambuCommand` vorbereiten
+* [x] `requestId` für asynchrone Antworten vorsehen
 
 ## 1.3 Task-Gerüste
 
-* [ ] UiTask-Gerüst
-* [ ] AppTask-Gerüst
-* [ ] ScaleTask-Gerüst
-* [ ] NfcTask-Gerüst
-* [ ] StorageTask-Gerüst
-* [ ] NetworkTask-Gerüst
-* [ ] SpoolmanTask-Gerüst
-* [ ] BambuTask nur als deaktivierter Platzhalter
+* [x] UiTask-Gerüst
+* [x] AppTask-Gerüst
+* [x] ScaleTask-Gerüst
+* [x] NfcTask-Gerüst
+* [x] StorageTask-Gerüst
+* [x] NetworkTask-Gerüst
+* [x] SpoolmanTask-Gerüst
+* [x] BambuTask nur als deaktivierter Platzhalter
 
 Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 
 ## 1.4 Task-Konfiguration
 
-* [ ] Namen zentral definieren
-* [ ] Stackgrößen zentral definieren
-* [ ] Prioritäten zentral definieren
-* [ ] Core-Affinitäten zentral definieren
-* [ ] keine unkommentierten Taskparameter in `main.cpp`
+* [x] Namen zentral definieren
+* [x] Stackgrößen zentral definieren
+* [x] Prioritäten zentral definieren
+* [x] Core-Affinitäten zentral definieren
+* [x] keine unkommentierten Taskparameter in `main.cpp`
 
 ## 1.5 Kommunikationstest
 
-* [ ] Testereignis vom UiTask an AppTask senden
-* [ ] AppTask sendet Antwort an UiTask
-* [ ] Queue-Timeout behandeln
-* [ ] Queue-Überlauf erkennen
-* [ ] Kommunikationsablauf protokollieren
+* [x] Testereignis vom UiTask an AppTask senden
+* [x] AppTask sendet Antwort an UiTask
+* [x] Queue-Timeout behandeln
+* [x] Queue-Überlauf erkennen
+* [x] Kommunikationsablauf protokollieren
 
 ### Abnahmekriterien
 

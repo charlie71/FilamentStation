@@ -1,0 +1,3 @@
+# Architektur
+
+Wird phasenweise dokumentiert.
