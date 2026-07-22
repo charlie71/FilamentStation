@@ -12,7 +12,6 @@ Voraussetzung ist eine aktuelle PlatformIO-Installation. Im Projektverzeichnis:
 pio run
 ```
 
-Das konfigurierte Ziel ist `esp32-s3-devkitc-1`. Flash- und PSRAM-Nutzung sind
-fuer ein ESP32-S3-Modul mit OPI-PSRAM vorbereitet. Die konkrete WT32-SC01-Plus-
-Revision sowie alle GPIOs muessen vor der Hardwareintegration verifiziert werden.
-
+Das konfigurierte Environment ist `wt32-s3-wrover-n16r2`. Es verwendet das
+generische ESP32-S3-DevKitC als Toolchain-Grundlage und ist fuer das verbaute
+WT32-S3-WROVER-N16R2 mit 16 MB QIO-Flash und 2 MB QSPI-PSRAM konfiguriert.
