@@ -21,10 +21,9 @@ void haltStartup(const char* reason) {
 void setup() {
   using namespace filament_station;
   Serial.begin(config::kSerialBaudRate);
-  // COM4 wird nach Reset als native USB-CDC-Schnittstelle neu angemeldet.
-  // Die auf der Zielhardware verifizierte Wartezeit verhindert, dass die
-  // Startdiagnose vor Abschluss der Windows-Enumeration verloren geht.
+  Serial.setTxTimeoutMs(config::kUsbCdcTransmitTimeoutMs);
   vTaskDelay(pdMS_TO_TICKS(config::kUsbCdcStartupDelayMs));
+
   esp_chip_info_t chipInfo{};
   esp_chip_info(&chipInfo);
   Serial.printf("%s %s starting\n", config::kApplicationName, config::kApplicationVersion);

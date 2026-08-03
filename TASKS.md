@@ -127,12 +127,12 @@ Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 
 ## 2.2 Dateisystemstruktur
 
-* [ ] `/config` anlegen
-* [ ] `/cache` anlegen
-* [ ] `/queue` anlegen
-* [ ] `/mappings` anlegen
-* [ ] `/diagnostics` anlegen
-* [ ] `/logs` anlegen
+* [x] `/config` anlegen
+* [x] `/cache` anlegen
+* [x] `/queue` anlegen
+* [x] `/mappings` anlegen
+* [x] `/diagnostics` anlegen
+* [x] `/logs` anlegen
 
 ## 2.3 JsonStorage
 
