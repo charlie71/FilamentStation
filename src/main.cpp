@@ -21,8 +21,10 @@ void haltStartup(const char* reason) {
 void setup() {
   using namespace filament_station;
   Serial.begin(config::kSerialBaudRate);
-  delay(100);
-
+  // COM4 wird nach Reset als native USB-CDC-Schnittstelle neu angemeldet.
+  // Die auf der Zielhardware verifizierte Wartezeit verhindert, dass die
+  // Startdiagnose vor Abschluss der Windows-Enumeration verloren geht.
+  vTaskDelay(pdMS_TO_TICKS(config::kUsbCdcStartupDelayMs));
   esp_chip_info_t chipInfo{};
   esp_chip_info(&chipInfo);
   Serial.printf("%s %s starting\n", config::kApplicationName, config::kApplicationVersion);
@@ -30,7 +32,7 @@ void setup() {
                 chipInfo.revision, chipInfo.cores);
   Serial.printf("Heap: %u bytes free\n", ESP.getFreeHeap());
   Serial.printf("PSRAM: %u bytes total, %u bytes free\n", ESP.getPsramSize(), ESP.getFreePsram());
-
+  Serial.flush();
   auto& ctx = rtos::context();
   if (!ctx.createObjects()) { haltStartup("RTOS object creation failed"); }
   if (!ctx.createTasks()) { haltStartup("task creation failed"); }

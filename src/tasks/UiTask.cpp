@@ -30,4 +30,3 @@ void uiTask(void* parameter) {
   }
 }
 }  // namespace filament_station::tasks
-

@@ -15,3 +15,10 @@ pio run
 Das konfigurierte Environment ist `wt32-s3-wrover-n16r2`. Es verwendet das
 generische ESP32-S3-DevKitC als Toolchain-Grundlage und ist fuer das verbaute
 WT32-S3-WROVER-N16R2 mit 16 MB QIO-Flash und 2 MB QSPI-PSRAM konfiguriert.
+
+Die Diagnoseausgabe verwendet die im ESP32-S3 integrierte Hardware-USB-CDC-
+Schnittstelle mit 115200 Baud. Upload und Monitor sind fuer das erkannte
+Entwicklungsboard auf COM4 konfiguriert. Der Monitor kann nach dem Upload mit
+`pio device monitor` gestartet werden. Falls er erst nach dem Programmstart
+geoeffnet wurde, muss einmal Reset gedrueckt werden, damit die Startmeldungen
+erneut ausgegeben werden.

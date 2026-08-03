@@ -118,12 +118,12 @@ Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 
 ## 2.1 SD-Hardware
 
-* [ ] verwendete SD-Schnittstelle feststellen
-* [ ] Pinbelegung dokumentieren
-* [ ] SD-Karte ausschließlich im StorageTask initialisieren
-* [ ] Card-Detect-Pin prüfen
-* [ ] Card-Detect-Interrupt verwenden, wenn vorhanden
-* [ ] Entfernen und erneutes Einsetzen erkennen
+* [x] verwendete SD-Schnittstelle feststellen
+* [x] Pinbelegung dokumentieren
+* [x] SD-Karte ausschließlich im StorageTask initialisieren
+* [x] Card-Detect-Pin prüfen
+* [x] Card-Detect-Interrupt verwenden, wenn vorhanden
+* [x] Entfernen und erneutes Einsetzen erkennen
 
 ## 2.2 Dateisystemstruktur
 

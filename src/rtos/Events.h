@@ -16,6 +16,8 @@ enum class AppEventType : std::uint8_t {
   NfcTagWritten,
   NfcError,
   SdMounted,
+  SdRemoved,
+  SdReinserted,
   SdError,
   WifiConnected,
   WifiDisconnected,
@@ -38,4 +40,3 @@ constexpr EventBits_t EVENT_BAMBU_READY = BIT6;
 constexpr EventBits_t EVENT_FATAL_ERROR = BIT7;
 
 }  // namespace filament_station::rtos
-
