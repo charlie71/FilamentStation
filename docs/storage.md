@@ -31,16 +31,28 @@ wurden.
 
 ## JSON-Grundfunktionen
 
-`JsonStorage` kann JSON aus einem bereits vom StorageTask geoeffneten `File`
-laden, die Groessengrenze vor dem Parsen pruefen, Standardmetadaten einsetzen,
-Schema-Version und UTC-Zeitstempel validieren sowie ein validiertes Dokument in
-ein `Print`-Ziel serialisieren. Strukturierte Fehlercodes unterscheiden unter
-anderem fehlende Dateien, leere oder zu grosse Dokumente, Lesefehler,
-Parserfehler, ungueltige Metadaten und Serialisierungsfehler.
+`JsonStorage` kann JSON laden, die Groessengrenze vor dem Parsen pruefen,
+Standardmetadaten einsetzen, Schema-Version und UTC-Zeitstempel validieren sowie
+ein validiertes Dokument serialisieren. Strukturierte Fehlercodes unterscheiden
+unter anderem fehlende Dateien, Groessenverletzungen, Lesefehler, JSON-
+Parserfehler, ungueltige Metadaten und Fehler der atomaren Transaktion.
 
-Der Dienst oeffnet selbst keine SD-Pfade. Damit bleibt der direkte SD-Zugriff
-beim StorageTask. Atomisches Schreiben und Backups gehoeren zu Phase 2.4 und
-sind noch nicht implementiert.
+Atomisches Speichern verwendet fuer ein Ziel wie `/config/scale.json` die
+Dateien `/config/scale.tmp.json` und `/config/scale.bak.json`. Das neue Dokument
+wird zuerst in die temporaere Datei geschrieben, geflusht, geschlossen und nach
+erneutem Oeffnen validiert. Eine vorhandene Zieldatei wird danach als Backup
+umbenannt. Erst dann wird die temporaere Datei zum Ziel. Nach erfolgreicher
+Validierung des Ziels wird das Backup entfernt.
+
+`recoverAtomicSave()` behandelt unterbrochene Transaktionen deterministisch:
+Ein gueltiges Ziel gewinnt und veraltete Hilfsdateien werden entfernt. Fehlt ein
+gueltiges Ziel, wird zuerst eine gueltige temporaere Datei uebernommen, andernfalls
+ein gueltiges Backup wiederhergestellt. Sind vorhandene Kandidaten alle
+ungueltig, wird ein strukturierter Wiederherstellungsfehler geliefert.
+
+Die Dateisystemmethoden von `JsonStorage` duerfen ausschliesslich aus dem
+`StorageTask` aufgerufen werden. Damit bleibt dieser Task alleiniger Besitzer der
+SD-Karte; die Einbindung in die Storage-Queue erfolgt erst in Phase 2.5.
 
 Die Unit-Tests fuer Standardwerte, Objektwurzel, Schema-Version, Zeitstempel und
 Serialisierung lassen sich fuer das ESP32-S3-Ziel kompilieren. Der Lauf vom

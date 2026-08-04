@@ -146,12 +146,12 @@ Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 
 ## 2.4 Atomisches Speichern
 
-* [ ] temporäre `.tmp.json`-Datei schreiben
-* [ ] Datei flushen und schließen
-* [ ] temporäre Datei erneut validieren
-* [ ] bestehende Datei als `.bak.json` sichern
-* [ ] temporäre Datei umbenennen
-* [ ] Backup nach Erfolg entfernen
+* [x] temporäre `.tmp.json`-Datei schreiben
+* [x] Datei flushen und schließen
+* [x] temporäre Datei erneut validieren
+* [x] bestehende Datei als `.bak.json` sichern
+* [x] temporäre Datei umbenennen
+* [x] Backup nach Erfolg entfernen
 * [ ] Wiederherstellung nach Stromausfall testen
 
 ## 2.5 Storage-Queue

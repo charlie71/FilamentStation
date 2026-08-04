@@ -16,6 +16,7 @@ constexpr char kDefaultUpdatedAt[] = "1970-01-01T00:00:00Z";
 enum class JsonStorageError : std::uint8_t {
   Ok,
   InvalidArgument,
+  InvalidPath,
   FileUnavailable,
   EmptyDocument,
   FileTooLarge,
@@ -26,7 +27,12 @@ enum class JsonStorageError : std::uint8_t {
   UnsupportedSchemaVersion,
   InvalidUpdatedAt,
   OutputTooLarge,
-  SerializeFailed
+  SerializeFailed,
+  TemporaryFileFailed,
+  TemporaryValidationFailed,
+  BackupFailed,
+  CommitFailed,
+  RecoveryFailed
 };
 
 struct JsonStorageResult {
@@ -47,6 +53,12 @@ class JsonStorage {
   static JsonStorageResult serialize(
       const JsonDocument& document,
       rtos::StorageDocumentType documentType, Print& output);
+  static JsonStorageResult atomicSave(
+      fs::FS& filesystem, const char* targetPath,
+      rtos::StorageDocumentType documentType, const JsonDocument& document);
+  static JsonStorageResult recoverAtomicSave(
+      fs::FS& filesystem, const char* targetPath,
+      rtos::StorageDocumentType documentType);
   static const char* errorName(JsonStorageError error);
 };
 

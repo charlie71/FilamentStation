@@ -10,6 +10,66 @@ constexpr std::size_t kSmallConfigMaxSize = 4U * 1024U;
 constexpr std::size_t kConfigMaxSize = 8U * 1024U;
 constexpr std::size_t kLargeConfigMaxSize = 16U * 1024U;
 constexpr std::size_t kDiagnosticsMaxSize = 32U * 1024U;
+constexpr std::size_t kAtomicPathCapacity = 112U;
+
+struct AtomicPaths {
+  char temporary[kAtomicPathCapacity]{};
+  char backup[kAtomicPathCapacity]{};
+};
+
+bool makeAtomicPaths(const char* targetPath, AtomicPaths& paths) {
+  if (targetPath == nullptr || targetPath[0] != '/') {
+    return false;
+  }
+
+  constexpr char kJsonSuffix[] = ".json";
+  constexpr char kTemporarySuffix[] = ".tmp.json";
+  constexpr char kBackupSuffix[] = ".bak.json";
+  const std::size_t targetLength = std::strlen(targetPath);
+  const std::size_t jsonSuffixLength = sizeof(kJsonSuffix) - 1U;
+  if (targetLength <= jsonSuffixLength ||
+      std::strcmp(targetPath + targetLength - jsonSuffixLength,
+                  kJsonSuffix) != 0) {
+    return false;
+  }
+
+  const std::size_t stemLength = targetLength - jsonSuffixLength;
+  if (stemLength + sizeof(kTemporarySuffix) > sizeof(paths.temporary) ||
+      stemLength + sizeof(kBackupSuffix) > sizeof(paths.backup)) {
+    return false;
+  }
+
+  std::memcpy(paths.temporary, targetPath, stemLength);
+  std::memcpy(paths.temporary + stemLength, kTemporarySuffix,
+              sizeof(kTemporarySuffix));
+  std::memcpy(paths.backup, targetPath, stemLength);
+  std::memcpy(paths.backup + stemLength, kBackupSuffix,
+              sizeof(kBackupSuffix));
+  return true;
+}
+
+bool removeIfPresent(fs::FS& filesystem, const char* path) {
+  return !filesystem.exists(path) || filesystem.remove(path);
+}
+
+bool isValidDocumentFile(fs::FS& filesystem, const char* path,
+                         rtos::StorageDocumentType documentType) {
+  File file = filesystem.open(path, FILE_READ);
+  if (!file) {
+    return false;
+  }
+  JsonDocument document;
+  const JsonStorageResult result =
+      JsonStorage::load(file, documentType, document);
+  file.close();
+  return result.ok();
+}
+
+bool replaceWith(fs::FS& filesystem, const char* source,
+                 const char* destination) {
+  return removeIfPresent(filesystem, destination) &&
+         filesystem.rename(source, destination);
+}
 
 bool isDigit(char value) {
   return std::isdigit(static_cast<unsigned char>(value)) != 0;
@@ -154,12 +214,139 @@ JsonStorageResult JsonStorage::serialize(
   return {JsonStorageError::Ok, written};
 }
 
+JsonStorageResult JsonStorage::recoverAtomicSave(
+    fs::FS& filesystem, const char* targetPath,
+    rtos::StorageDocumentType documentType) {
+  AtomicPaths paths{};
+  if (!makeAtomicPaths(targetPath, paths)) {
+    return {JsonStorageError::InvalidPath, 0};
+  }
+
+  const bool targetExists = filesystem.exists(targetPath);
+  const bool temporaryExists = filesystem.exists(paths.temporary);
+  const bool backupExists = filesystem.exists(paths.backup);
+  const bool targetValid =
+      targetExists && isValidDocumentFile(filesystem, targetPath, documentType);
+
+  if (targetValid) {
+    if (!removeIfPresent(filesystem, paths.temporary) ||
+        !removeIfPresent(filesystem, paths.backup)) {
+      return {JsonStorageError::RecoveryFailed, 0};
+    }
+    return {JsonStorageError::Ok, 0};
+  }
+
+  const bool temporaryValid = temporaryExists &&
+                              isValidDocumentFile(filesystem, paths.temporary,
+                                                  documentType);
+  const bool backupValid = backupExists &&
+                           isValidDocumentFile(filesystem, paths.backup,
+                                               documentType);
+
+  if (temporaryValid) {
+    if (!removeIfPresent(filesystem, targetPath) ||
+        !filesystem.rename(paths.temporary, targetPath) ||
+        !isValidDocumentFile(filesystem, targetPath, documentType) ||
+        !removeIfPresent(filesystem, paths.backup)) {
+      return {JsonStorageError::RecoveryFailed, 0};
+    }
+    return {JsonStorageError::Ok, 0};
+  }
+
+  if (backupValid) {
+    if (!removeIfPresent(filesystem, targetPath) ||
+        !filesystem.rename(paths.backup, targetPath) ||
+        !isValidDocumentFile(filesystem, targetPath, documentType) ||
+        !removeIfPresent(filesystem, paths.temporary)) {
+      return {JsonStorageError::RecoveryFailed, 0};
+    }
+    return {JsonStorageError::Ok, 0};
+  }
+
+  if (!targetExists && !temporaryExists && !backupExists) {
+    return {JsonStorageError::Ok, 0};
+  }
+  return {JsonStorageError::RecoveryFailed, 0};
+}
+
+JsonStorageResult JsonStorage::atomicSave(
+    fs::FS& filesystem, const char* targetPath,
+    rtos::StorageDocumentType documentType, const JsonDocument& document) {
+  AtomicPaths paths{};
+  if (!makeAtomicPaths(targetPath, paths)) {
+    return {JsonStorageError::InvalidPath, 0};
+  }
+
+  const JsonStorageError validationError = validate(document);
+  if (validationError != JsonStorageError::Ok) {
+    return {validationError, 0};
+  }
+  if (filesystem.exists(paths.temporary) || filesystem.exists(paths.backup)) {
+    const JsonStorageResult recoveryResult =
+        recoverAtomicSave(filesystem, targetPath, documentType);
+    if (!recoveryResult.ok()) {
+      return recoveryResult;
+    }
+  }
+  if (!removeIfPresent(filesystem, paths.temporary)) {
+    return {JsonStorageError::TemporaryFileFailed, 0};
+  }
+
+  File temporaryFile = filesystem.open(paths.temporary, FILE_WRITE);
+  if (!temporaryFile) {
+    return {JsonStorageError::TemporaryFileFailed, 0};
+  }
+  JsonStorageResult writeResult =
+      serialize(document, documentType, temporaryFile);
+  temporaryFile.flush();
+  const bool writeFailed = temporaryFile.getWriteError() != 0;
+  temporaryFile.close();
+  if (!writeResult.ok() || writeFailed) {
+    removeIfPresent(filesystem, paths.temporary);
+    return {writeResult.ok() ? JsonStorageError::TemporaryFileFailed
+                             : writeResult.error,
+            writeResult.bytesProcessed};
+  }
+
+  if (!isValidDocumentFile(filesystem, paths.temporary, documentType)) {
+    removeIfPresent(filesystem, paths.temporary);
+    return {JsonStorageError::TemporaryValidationFailed,
+            writeResult.bytesProcessed};
+  }
+  if (!removeIfPresent(filesystem, paths.backup)) {
+    return {JsonStorageError::BackupFailed, writeResult.bytesProcessed};
+  }
+
+  const bool hadTarget = filesystem.exists(targetPath);
+  if (hadTarget && !filesystem.rename(targetPath, paths.backup)) {
+    return {JsonStorageError::BackupFailed, writeResult.bytesProcessed};
+  }
+  if (!filesystem.rename(paths.temporary, targetPath)) {
+    if (hadTarget) {
+      replaceWith(filesystem, paths.backup, targetPath);
+    }
+    return {JsonStorageError::CommitFailed, writeResult.bytesProcessed};
+  }
+  if (!isValidDocumentFile(filesystem, targetPath, documentType)) {
+    if (hadTarget) {
+      replaceWith(filesystem, paths.backup, targetPath);
+    }
+    return {JsonStorageError::CommitFailed, writeResult.bytesProcessed};
+  }
+  if (!removeIfPresent(filesystem, paths.backup)) {
+    return {JsonStorageError::BackupFailed, writeResult.bytesProcessed};
+  }
+  return writeResult;
+}
+
 const char* JsonStorage::errorName(JsonStorageError error) {
   switch (error) {
     case JsonStorageError::Ok:
       return "ok";
     case JsonStorageError::InvalidArgument:
       return "invalid_argument";
+    case JsonStorageError::InvalidPath:
+      return "invalid_path";
     case JsonStorageError::FileUnavailable:
       return "file_unavailable";
     case JsonStorageError::EmptyDocument:
@@ -182,6 +369,16 @@ const char* JsonStorage::errorName(JsonStorageError error) {
       return "output_too_large";
     case JsonStorageError::SerializeFailed:
       return "serialize_failed";
+    case JsonStorageError::TemporaryFileFailed:
+      return "temporary_file_failed";
+    case JsonStorageError::TemporaryValidationFailed:
+      return "temporary_validation_failed";
+    case JsonStorageError::BackupFailed:
+      return "backup_failed";
+    case JsonStorageError::CommitFailed:
+      return "commit_failed";
+    case JsonStorageError::RecoveryFailed:
+      return "recovery_failed";
   }
   return "unknown";
 }
