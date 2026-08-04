@@ -1,0 +1,108 @@
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include <unity.h>
+
+#include "config/AppConfig.h"
+#include "config/BoardConfig.h"
+#include "services/JsonStorage.h"
+
+namespace {
+
+using filament_station::rtos::StorageDocumentType;
+using filament_station::services::JsonStorage;
+using filament_station::services::JsonStorageError;
+
+class BufferPrint final : public Print {
+ public:
+  std::size_t write(std::uint8_t value) override {
+    if (length_ >= sizeof(buffer_) - 1U) {
+      return 0;
+    }
+    buffer_[length_++] = static_cast<char>(value);
+    buffer_[length_] = '\0';
+    return 1;
+  }
+
+  const char* data() const { return buffer_; }
+
+ private:
+  char buffer_[256]{};
+  std::size_t length_ = 0;
+};
+
+void test_defaults_create_valid_envelope() {
+  JsonDocument document;
+  document.to<JsonObject>();
+
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::Ok),
+      static_cast<int>(JsonStorage::applyDefaults(document)));
+  TEST_ASSERT_EQUAL_UINT32(1, document["schemaVersion"].as<std::uint32_t>());
+  TEST_ASSERT_EQUAL_STRING("1970-01-01T00:00:00Z",
+                           document["updatedAt"].as<const char*>());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(JsonStorageError::Ok),
+                        static_cast<int>(JsonStorage::validate(document)));
+}
+
+void test_non_object_root_is_rejected() {
+  JsonDocument document;
+  document.to<JsonArray>();
+
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::RootNotObject),
+      static_cast<int>(JsonStorage::applyDefaults(document)));
+}
+
+void test_unsupported_schema_is_rejected() {
+  JsonDocument document;
+  document["schemaVersion"] = 2;
+  document["updatedAt"] = "2026-08-03T12:00:00Z";
+
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::UnsupportedSchemaVersion),
+      static_cast<int>(JsonStorage::validate(document)));
+}
+
+void test_invalid_timestamp_is_rejected() {
+  JsonDocument document;
+  document["schemaVersion"] = 1;
+  document["updatedAt"] = "2026-08-03 12:00:00";
+
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidUpdatedAt),
+      static_cast<int>(JsonStorage::validate(document)));
+}
+
+void test_valid_document_serializes() {
+  JsonDocument document;
+  document["schemaVersion"] = 1;
+  document["updatedAt"] = "2026-08-03T12:00:00Z";
+  document["value"] = 42;
+  BufferPrint output;
+
+  const auto result =
+      JsonStorage::serialize(document, StorageDocumentType::Device, output);
+  TEST_ASSERT_TRUE(result.ok());
+  TEST_ASSERT_GREATER_THAN_UINT32(0, result.bytesProcessed);
+  TEST_ASSERT_NOT_NULL(strstr(output.data(), "\"schemaVersion\":1"));
+}
+
+}  // namespace
+
+void setup() {
+  Serial.begin(filament_station::config::kSerialBaudRate);
+  Serial.setTxTimeoutMs(
+      filament_station::config::kUsbCdcTransmitTimeoutMs);
+  vTaskDelay(pdMS_TO_TICKS(
+      filament_station::config::kUsbCdcStartupDelayMs));
+
+  UNITY_BEGIN();
+  RUN_TEST(test_defaults_create_valid_envelope);
+  RUN_TEST(test_non_object_root_is_rejected);
+  RUN_TEST(test_unsupported_schema_is_rejected);
+  RUN_TEST(test_invalid_timestamp_is_rejected);
+  RUN_TEST(test_valid_document_serializes);
+  UNITY_END();
+}
+
+void loop() { vTaskDelay(portMAX_DELAY); }

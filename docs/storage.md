@@ -28,3 +28,22 @@ Dateisystems. Die Werte werden in Bytes und abgerundeten MiB ausgegeben.
 Der Hardwaretest vom 2026-08-03 bestaetigte, dass alle sechs Verzeichnisse auf
 der eingesetzten SD-Karte erzeugt beziehungsweise als Verzeichnisse validiert
 wurden.
+
+## JSON-Grundfunktionen
+
+`JsonStorage` kann JSON aus einem bereits vom StorageTask geoeffneten `File`
+laden, die Groessengrenze vor dem Parsen pruefen, Standardmetadaten einsetzen,
+Schema-Version und UTC-Zeitstempel validieren sowie ein validiertes Dokument in
+ein `Print`-Ziel serialisieren. Strukturierte Fehlercodes unterscheiden unter
+anderem fehlende Dateien, leere oder zu grosse Dokumente, Lesefehler,
+Parserfehler, ungueltige Metadaten und Serialisierungsfehler.
+
+Der Dienst oeffnet selbst keine SD-Pfade. Damit bleibt der direkte SD-Zugriff
+beim StorageTask. Atomisches Schreiben und Backups gehoeren zu Phase 2.4 und
+sind noch nicht implementiert.
+
+Die Unit-Tests fuer Standardwerte, Objektwurzel, Schema-Version, Zeitstempel und
+Serialisierung lassen sich fuer das ESP32-S3-Ziel kompilieren. Der Lauf vom
+2026-08-03 wurde wegen eines durch einen anderen Prozess belegten COM4-Ports
+nicht auf der Hardware ausgefuehrt; PlatformIO meldete deshalb null ausgefuehrte
+Testfaelle.

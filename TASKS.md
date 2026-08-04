@@ -136,13 +136,13 @@ Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 
 ## 2.3 JsonStorage
 
-* [ ] JSON-Datei aus `File` laden
-* [ ] JSON-Datei validieren
-* [ ] JSON-Datei serialisieren
-* [ ] maximale Dateigröße prüfen
-* [ ] verständliche Fehlercodes definieren
-* [ ] `schemaVersion` verarbeiten
-* [ ] Standardwerte einsetzen
+* [x] JSON-Datei aus `File` laden
+* [x] JSON-Datei validieren
+* [x] JSON-Datei serialisieren
+* [x] maximale Dateigröße prüfen
+* [x] verständliche Fehlercodes definieren
+* [x] `schemaVersion` verarbeiten
+* [x] Standardwerte einsetzen
 
 ## 2.4 Atomisches Speichern
 

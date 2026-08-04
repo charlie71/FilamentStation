@@ -7,6 +7,7 @@
 #include "rtos/Events.h"
 #include "rtos/RtosContext.h"
 
+#ifndef PIO_UNIT_TESTING
 namespace {
 void haltStartup(const char* reason) {
   Serial.printf("FATAL: %s\n", reason);
@@ -40,3 +41,4 @@ void setup() {
 }
 
 void loop() { vTaskDelay(portMAX_DELAY); }
+#endif
