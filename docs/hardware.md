@@ -89,3 +89,29 @@ Das Datenblatt bestaetigt GPIO45 als aktiv-hohen PWM-Eingang. Bei maximaler
 Helligkeit nennt es fuer das Gesamtgeraet typisch 175 mA bei 5 V. Ein visueller
 PWM-/Helligkeitstest auf der konkreten Hardware steht noch aus und wird nicht
 als bestanden gewertet.
+
+## LovyanGFX-Grundtreiber
+
+LovyanGFX ist in Version 1.2.25 festgelegt. `DisplayDriver` konfiguriert den
+ST7796UI mit 20 MHz Schreibfrequenz als MCU8080-8-Bit-Panel. Die physische
+Panelgeometrie ist 320 x 480; Rotation 3 erzeugt die um 180 Grad gedrehte
+logische Anwendungsgeometrie 480 x 320. Das Backlight verwendet GPIO45 mit einem
+44,1-kHz-PWM-Signal und startet bei 192 von 255.
+
+Der FT6336U wird ueber LovyanGFXs `Touch_FT5x06` an I2C-Port 1, Adresse `0x38`,
+GPIO6/GPIO5 und 400 kHz eingerichtet. LovyanGFX schaltet GPIO4 nur ueber den
+Panel-Reset, da derselbe physische Reset zugleich zum Touchcontroller fuehrt.
+
+Nur der UiTask greift auf die LovyanGFX-Instanz zu. Bis LVGL integriert ist,
+blockiert er jeweils bis zu 50 ms auf der `uiCommandQueue` und prueft danach den
+Touchzustand. Beruehrungen werden als gelbe Punkte gezeichnet und nur bei
+Beruehrungsbeginn oder einer Koordinatenaenderung von mindestens acht Pixeln
+protokolliert.
+
+Der Hardwaretest vom 2026-08-04 bestaetigte die Farbreihenfolge Rot, Gruen,
+Blau, Weiss und Schwarz, die um 180 Grad gedrehte Landschaftsausrichtung sowie
+passend rotierte Touchkoordinaten. Beruehrungen wurden an der erwarteten Stelle
+als gelbe Punkte dargestellt. Die geometrisch exakten Eckwerte `x=0, y=0` und
+`x=479, y=319` waren wegen der nicht bis zum aeussersten Panelrand erreichbaren
+kapazitiven Randzone nicht antippbar; Achsen, Richtung und nutzbare Flaeche
+waren korrekt.

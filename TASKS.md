@@ -193,11 +193,11 @@ Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 
 ## 3.2 LovyanGFX
 
-* [ ] Display initialisieren
-* [ ] Rotation konfigurieren
-* [ ] Farbtest durchführen
-* [ ] Touchkoordinaten lesen
-* [ ] Touchrotation prüfen
+* [x] Display initialisieren
+* [x] Rotation konfigurieren
+* [x] Farbtest durchführen
+* [x] Touchkoordinaten lesen
+* [x] Touchrotation prüfen
 
 ## 3.3 LVGL
 

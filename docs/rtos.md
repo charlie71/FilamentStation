@@ -26,3 +26,8 @@ Der StorageTask verwendet mangels Card-Detect einen dokumentierten
 Zwei-Sekunden-Timeout beim Warten auf seiner Queue. Nur nach diesem Timeout
 erfolgt eine kurze SD-Erreichbarkeitsprobe. Das ist der langsamste praktikable
 Fallback zur Erkennung einer Kartenentfernung ohne schnelle Polling-Schleife.
+
+Der UiTask verwendet fuer LovyanGFX und die Display-/Touch-Treiber 8192 Byte
+Stack. Displayzugriffe erfolgen ausschliesslich in diesem Task. Der derzeitige
+50-ms-Queue-Timeout dient nur dem Phase-3.2-Touchtest und wird in Phase 3.4 mit
+dem LVGL-Ausfuehrungszeitpunkt beziehungsweise optionalem Touch-IRQ abgestimmt.

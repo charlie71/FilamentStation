@@ -7,6 +7,13 @@ namespace filament_station::config {
 constexpr std::uint32_t kSerialBaudRate = 115200;
 constexpr std::uint16_t kDisplayWidth = 480;
 constexpr std::uint16_t kDisplayHeight = 320;
+constexpr std::uint16_t kDisplayNativeWidth = 320;
+constexpr std::uint16_t kDisplayNativeHeight = 480;
+constexpr std::uint8_t kDisplayRotation = 3;
+constexpr std::uint32_t kDisplayWriteFrequencyHz = 20000000;
+constexpr std::uint32_t kDisplayBacklightPwmFrequencyHz = 44100;
+constexpr std::uint8_t kDisplayBacklightPwmChannel = 7;
+constexpr std::uint8_t kDisplayDefaultBrightness = 192;
 
 // WT32-SC01-Plus LCD: ST7796UI, 8-bit MCU8080 parallel interface.
 constexpr std::int8_t kDisplayBacklightPin = 45;
@@ -22,6 +29,9 @@ constexpr std::int8_t kTouchInterruptPin = 7;
 constexpr std::int8_t kTouchSdaPin = 6;
 constexpr std::int8_t kTouchSclPin = 5;
 constexpr std::int8_t kTouchResetPin = kDisplayResetPin;
+constexpr std::uint8_t kTouchI2cAddress = 0x38;
+constexpr std::uint32_t kTouchI2cFrequencyHz = 400000;
+constexpr std::uint32_t kTouchSampleIntervalMs = 50;
 
 // Bestaetigte SPI-SD-Pinbelegung des WT32-SC01-Plus.
 constexpr std::int8_t kSdChipSelectPin = 41;
