@@ -31,7 +31,6 @@ constexpr std::int8_t kTouchSclPin = 5;
 constexpr std::int8_t kTouchResetPin = kDisplayResetPin;
 constexpr std::uint8_t kTouchI2cAddress = 0x38;
 constexpr std::uint32_t kTouchI2cFrequencyHz = 400000;
-constexpr std::uint32_t kTouchSampleIntervalMs = 50;
 
 // Bestaetigte SPI-SD-Pinbelegung des WT32-SC01-Plus.
 constexpr std::int8_t kSdChipSelectPin = 41;

@@ -27,7 +27,10 @@ Zwei-Sekunden-Timeout beim Warten auf seiner Queue. Nur nach diesem Timeout
 erfolgt eine kurze SD-Erreichbarkeitsprobe. Das ist der langsamste praktikable
 Fallback zur Erkennung einer Kartenentfernung ohne schnelle Polling-Schleife.
 
-Der UiTask verwendet fuer LovyanGFX und die Display-/Touch-Treiber 8192 Byte
-Stack. Displayzugriffe erfolgen ausschliesslich in diesem Task. Der derzeitige
-50-ms-Queue-Timeout dient nur dem Phase-3.2-Touchtest und wird in Phase 3.4 mit
-dem LVGL-Ausfuehrungszeitpunkt beziehungsweise optionalem Touch-IRQ abgestimmt.
+Der UiTask verwendet fuer LovyanGFX, LVGL und die Display-/Touch-Treiber 8192
+Byte Stack. Display- und LVGL-Zugriffe erfolgen ausschliesslich in diesem Task.
+In Phase 3.3 blockiert der UiTask zwischen den notwendigen
+`lv_timer_handler()`-Aufrufen bis zu 10 ms auf der `uiCommandQueue`. Die Nutzung
+des von LVGL gemeldeten naechsten Ausfuehrungszeitpunkts und ein moeglicher
+Touch-IRQ werden in Phase 3.4
+bewertet.

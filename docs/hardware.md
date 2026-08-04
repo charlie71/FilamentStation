@@ -115,3 +115,31 @@ als gelbe Punkte dargestellt. Die geometrisch exakten Eckwerte `x=0, y=0` und
 `x=479, y=319` waren wegen der nicht bis zum aeussersten Panelrand erreichbaren
 kapazitiven Randzone nicht antippbar; Achsen, Richtung und nutzbare Flaeche
 waren korrekt.
+
+## LVGL-Hardwareanbindung
+
+LVGL 9.5.0 rendert in RGB565 mit zwei partiellen 40-Zeilen-Puffern im PSRAM.
+Der Hardwarestart vom 2026-08-04 bestaetigte die erfolgreiche direkte
+PSRAM-Zeigerpruefung, fortgesetzte UiTask-Ausfuehrung und fehlerfreie
+Queue-Kommunikation nach der LVGL-Initialisierung. Der Testscreen enthaelt eine
+Titelzeile, einen mittigen `Touch test`-Button und eine Statuszeile. Die
+abschliessende visuelle Beurteilung von Farben und Button-Reaktion erfolgt am
+Panel; Initialisierung und Callback-Pipeline erzeugten keinen Fatal-Error oder
+Neustart.
+Eine versuchsweise Reduktion des 8-Bit-Displaybusses von 20 auf 10 MHz brachte
+keine sichtbare Verbesserung der kleinen LVGL-Testschrift und wurde deshalb
+zurueckgenommen. Nach Korrektur der Byte-Reihenfolge verwendet der Testscreen
+Montserrat mit 24 Pixeln fuer den Titel, 20 Pixeln fuer den Button und 18
+Pixeln fuer Status und Farbfeldbeschriftungen.
+
+Schwarze beziehungsweise weisse Konturen an entgegengesetzt gefaerbter Schrift
+zeigten anschliessend, dass insbesondere die gemischten RGB565-Farbwerte der
+Kantenglaettung betroffen waren. Der LVGL-Puffer wird deshalb im
+LovyanGFX-Flush-Callback als natives `rgb565_t` statt als `swap565_t`
+interpretiert. Schwarze und weisse Vollpixel allein konnten diesen
+Byte-Reihenfolgefehler nicht sichtbar machen.
+
+Zur visuellen Kontrolle zeigt der LVGL-Testscreen sechs RGB-Testfelder fuer
+Rot, Gruen, Blau, Cyan, Weiss und Schwarz. Kontrastierende Buchstaben in den
+Feldern machen zugleich fehlerhafte Mischfarben an geglaetteten Schriftkanten
+sichtbar.

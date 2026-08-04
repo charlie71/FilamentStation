@@ -201,12 +201,12 @@ Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 
 ## 3.3 LVGL
 
-* [ ] LVGL 9.x integrieren
-* [ ] Renderpuffer einrichten
-* [ ] PSRAM-Nutzung prüfen
-* [ ] Flush-Callback implementieren
-* [ ] Touch-Callback implementieren
-* [ ] LVGL ausschließlich im UiTask betreiben
+* [x] LVGL 9.x integrieren
+* [x] Renderpuffer einrichten
+* [x] PSRAM-Nutzung prüfen
+* [x] Flush-Callback implementieren
+* [x] Touch-Callback implementieren
+* [x] LVGL ausschließlich im UiTask betreiben
 
 ## 3.4 Ereignisgesteuerter UiTask
 

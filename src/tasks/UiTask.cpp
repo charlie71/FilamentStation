@@ -1,13 +1,13 @@
 #include "tasks/Tasks.h"
 
+#include <Arduino.h>
 #include <cstdio>
-#include <cstdlib>
 #include "config/AppConfig.h"
 #include "config/BoardConfig.h"
 #include "drivers/DisplayDriver.h"
-#include "drivers/TouchDriver.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
+#include "ui/UiBridge.h"
 
 namespace filament_station::tasks {
 void uiTask(void* parameter) {
@@ -17,8 +17,30 @@ void uiTask(void* parameter) {
     rtos::logLine("UiTask: LovyanGFX display initialization failed");
     vTaskSuspend(nullptr);
   }
-  drivers::drawDisplayColorTest();
   rtos::logLine("UiTask: LovyanGFX display ready (480x320, rotation 3)");
+
+  const std::uint32_t psramBefore = ESP.getFreePsram();
+  ui::UiRuntimeInfo runtimeInfo{};
+  if (!ui::initializeLvgl(runtimeInfo)) {
+    xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_FATAL_ERROR);
+    rtos::logLine("UiTask: LVGL initialization or PSRAM allocation failed");
+    vTaskSuspend(nullptr);
+  }
+  const std::uint32_t psramAfter = ESP.getFreePsram();
+  const std::uint32_t psramConsumed =
+      psramBefore >= psramAfter ? psramBefore - psramAfter : 0;
+  char lvglLine[128];
+  std::snprintf(lvglLine, sizeof(lvglLine),
+                "UiTask: LVGL ready; buffers=%u x 2; PSRAM used=%lu free=%lu",
+                static_cast<unsigned int>(runtimeInfo.bytesPerDrawBuffer),
+                static_cast<unsigned long>(psramConsumed),
+                static_cast<unsigned long>(psramAfter));
+  rtos::logLine(lvglLine);
+  if (!runtimeInfo.drawBuffersInPsram) {
+    xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_FATAL_ERROR);
+    rtos::logLine("UiTask: LVGL draw buffers are not fully backed by PSRAM");
+    vTaskSuspend(nullptr);
+  }
 
   xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_UI_READY);
 
@@ -32,35 +54,14 @@ void uiTask(void* parameter) {
   }
 
   rtos::UiCommand command{};
-  bool touching = false;
-  std::int32_t lastX = -1;
-  std::int32_t lastY = -1;
   for (;;) {
+    ui::runLvglTimers();
     if (xQueueReceive(ctx.uiCommandQueue, &command,
-                      pdMS_TO_TICKS(config::kTouchSampleIntervalMs)) == pdTRUE) {
+                      pdMS_TO_TICKS(config::kLvglHandlerPeriodMs)) == pdTRUE) {
       char line[128];
       std::snprintf(line, sizeof(line), "UiTask: response received (requestId=%lu): %s",
                     static_cast<unsigned long>(command.requestId), command.text);
       rtos::logLine(line);
-    }
-
-    std::int32_t x = 0;
-    std::int32_t y = 0;
-    if (drivers::readTouchCoordinates(x, y)) {
-      drivers::displayDevice().fillCircle(x, y, 3, TFT_YELLOW);
-      if (!touching || std::abs(x - lastX) >= 8 || std::abs(y - lastY) >= 8) {
-        char line[96];
-        std::snprintf(line, sizeof(line),
-                      "UiTask: touch landscape x=%ld y=%ld",
-                      static_cast<long>(x), static_cast<long>(y));
-        rtos::logLine(line);
-        lastX = x;
-        lastY = y;
-      }
-      touching = true;
-    } else if (touching) {
-      touching = false;
-      rtos::logLine("UiTask: touch released");
     }
   }
 }

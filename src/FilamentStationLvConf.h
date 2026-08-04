@@ -1,0 +1,12 @@
+#ifndef LV_CONF_H
+#define LV_CONF_H
+
+#define LV_COLOR_DEPTH 16
+#define LV_USE_OS LV_OS_NONE
+#define LV_DEF_REFR_PERIOD 33
+#define LV_DPI_DEF 130
+#define LV_FONT_MONTSERRAT_18 1
+#define LV_FONT_MONTSERRAT_20 1
+#define LV_FONT_MONTSERRAT_24 1
+
+#endif  // LV_CONF_H
