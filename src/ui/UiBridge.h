@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "rtos/Messages.h"
+
 namespace filament_station::ui {
 
 struct UiRuntimeInfo {
@@ -12,6 +14,7 @@ struct UiRuntimeInfo {
 };
 
 bool initializeLvgl(UiRuntimeInfo& runtimeInfo);
-void runLvglTimers();
+std::uint32_t runLvglTimers();
+void processUiCommand(const rtos::UiCommand& command);
 
 }  // namespace filament_station::ui

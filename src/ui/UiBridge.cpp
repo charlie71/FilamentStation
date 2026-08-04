@@ -18,6 +18,7 @@ void* drawBuffer1 = nullptr;
 void* drawBuffer2 = nullptr;
 lv_display_t* lvglDisplay = nullptr;
 lv_indev_t* touchInput = nullptr;
+lv_obj_t* statusLabel = nullptr;
 
 std::uint32_t tickMilliseconds() { return millis(); }
 
@@ -90,11 +91,11 @@ void createIntegrationTestScreen() {
   lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
   lv_obj_center(label);
 
-  lv_obj_t* status = lv_label_create(screen);
-  lv_label_set_text(status, "RGB565 | PSRAM | 480 x 320");
-  lv_obj_set_style_text_color(status, lv_color_hex(0x80CBC4), 0);
-  lv_obj_set_style_text_font(status, &lv_font_montserrat_18, 0);
-  lv_obj_align(status, LV_ALIGN_BOTTOM_MID, 0, -16);
+  statusLabel = lv_label_create(screen);
+  lv_label_set_text(statusLabel, "RGB565 | PSRAM | 480 x 320");
+  lv_obj_set_style_text_color(statusLabel, lv_color_hex(0x80CBC4), 0);
+  lv_obj_set_style_text_font(statusLabel, &lv_font_montserrat_18, 0);
+  lv_obj_align(statusLabel, LV_ALIGN_BOTTOM_MID, 0, -16);
 }
 
 void releaseDrawBuffers() {
@@ -157,6 +158,13 @@ bool initializeLvgl(UiRuntimeInfo& runtimeInfo) {
   return true;
 }
 
-void runLvglTimers() { lv_timer_handler(); }
+std::uint32_t runLvglTimers() { return lv_timer_handler(); }
+
+void processUiCommand(const rtos::UiCommand& command) {
+  if (command.type == rtos::UiCommandType::ShowStatus &&
+      statusLabel != nullptr) {
+    lv_label_set_text(statusLabel, command.text);
+  }
+}
 
 }  // namespace filament_station::ui

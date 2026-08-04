@@ -29,8 +29,18 @@ Fallback zur Erkennung einer Kartenentfernung ohne schnelle Polling-Schleife.
 
 Der UiTask verwendet fuer LovyanGFX, LVGL und die Display-/Touch-Treiber 8192
 Byte Stack. Display- und LVGL-Zugriffe erfolgen ausschliesslich in diesem Task.
-In Phase 3.3 blockiert der UiTask zwischen den notwendigen
-`lv_timer_handler()`-Aufrufen bis zu 10 ms auf der `uiCommandQueue`. Die Nutzung
-des von LVGL gemeldeten naechsten Ausfuehrungszeitpunkts und ein moeglicher
-Touch-IRQ werden in Phase 3.4
-bewertet.
+Seit Phase 3.4 verwendet der UiTask den von `lv_timer_handler()` gemeldeten
+naechsten Ausfuehrungszeitpunkt direkt als Timeout der `uiCommandQueue`. Nur
+ein von LVGL angeforderter Nullabstand wird auf eine Millisekunde angehoben,
+damit auch bei unmittelbar erneut faelligen Timern kein Busy Waiting entsteht.
+Nach dem ersten empfangenen UI-Kommando wird die bereits gefuellte Queue ohne
+weitere Wartezeit geleert. LVGL und alle UI-Aenderungen bleiben dabei im
+UiTask; andere Tasks transportieren ausschliesslich `UiCommand`-Werte.
+
+Der vorhandene FT6336U-Interrupt liegt auf GPIO7 und ist im LovyanGFX-Treiber
+konfiguriert. Eine eigene ISR wurde in Phase 3.4 bewusst nicht registriert:
+Der UiTask muss gleichzeitig auf der `uiCommandQueue` und auf LVGL-Timer warten,
+waehrend eine Task Notification nicht gemeinsam mit einer Queue blockierend
+abgewartet werden kann. Zudem muss LVGL den Touchzustand bis zum Loslassen
+weiter lesen. Eine Queue-Set- oder IRQ-Loesung wird erst sinnvoll, wenn das
+exakte elektrische Interruptverhalten auf der Zielhardware vermessen ist.

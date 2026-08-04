@@ -10,6 +10,6 @@ constexpr std::uint32_t kCommunicationTestRequestId = 1;
 constexpr std::uint32_t kUsbCdcStartupDelayMs = 5000;
 constexpr std::uint32_t kUsbCdcTransmitTimeoutMs = 200;
 constexpr std::uint16_t kLvglDrawBufferLines = 40;
-constexpr std::uint32_t kLvglHandlerPeriodMs = 10;
+constexpr std::uint32_t kLvglMinimumSleepMs = 1;
 
 }  // namespace filament_station::config

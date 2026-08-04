@@ -210,11 +210,11 @@ Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 
 ## 3.4 Ereignisgesteuerter UiTask
 
-* [ ] `uiCommandQueue` verarbeiten
-* [ ] nächsten LVGL-Ausführungszeitpunkt verwenden
-* [ ] unnötig kurze feste Schleifen vermeiden
-* [ ] optional Touch-IRQ untersuchen
-* [ ] keine UI-Änderung aus anderen Tasks erlauben
+* [x] `uiCommandQueue` verarbeiten
+* [x] nächsten LVGL-Ausführungszeitpunkt verwenden
+* [x] unnötig kurze feste Schleifen vermeiden
+* [x] optional Touch-IRQ untersuchen
+* [x] keine UI-Änderung aus anderen Tasks erlauben
 
 ## 3.5 EEZ Studio
 

@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <cstdio>
+#include <limits>
 #include "config/AppConfig.h"
 #include "config/BoardConfig.h"
 #include "drivers/DisplayDriver.h"
@@ -55,13 +56,26 @@ void uiTask(void* parameter) {
 
   rtos::UiCommand command{};
   for (;;) {
-    ui::runLvglTimers();
+    const std::uint32_t requestedSleepMs = ui::runLvglTimers();
+    const std::uint32_t sleepMs =
+        requestedSleepMs < config::kLvglMinimumSleepMs
+            ? config::kLvglMinimumSleepMs
+            : requestedSleepMs;
+    const TickType_t waitTicks =
+        sleepMs == std::numeric_limits<std::uint32_t>::max()
+            ? portMAX_DELAY
+            : pdMS_TO_TICKS(sleepMs);
     if (xQueueReceive(ctx.uiCommandQueue, &command,
-                      pdMS_TO_TICKS(config::kLvglHandlerPeriodMs)) == pdTRUE) {
-      char line[128];
-      std::snprintf(line, sizeof(line), "UiTask: response received (requestId=%lu): %s",
-                    static_cast<unsigned long>(command.requestId), command.text);
-      rtos::logLine(line);
+                      waitTicks) == pdTRUE) {
+      do {
+        ui::processUiCommand(command);
+        char line[128];
+        std::snprintf(
+            line, sizeof(line),
+            "UiTask: response received (requestId=%lu): %s",
+            static_cast<unsigned long>(command.requestId), command.text);
+        rtos::logLine(line);
+      } while (xQueueReceive(ctx.uiCommandQueue, &command, 0) == pdTRUE);
     }
   }
 }

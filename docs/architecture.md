@@ -14,6 +14,11 @@ partielle RGB565-Flaechen synchron an LovyanGFX und bestaetigt danach mit
 `lv_display_flush_ready()`. Der Pointer-Callback liest den bereits durch
 LovyanGFX auf 480 x 320 rotierten FT6336U-Zustand.
 
+Der UiTask wartet mit dem von LVGL berechneten naechsten Timerzeitpunkt auf der
+`uiCommandQueue`. Eingehende Kommandos werden ausschliesslich durch
+`UiBridge::processUiCommand()` in LVGL-Aenderungen uebersetzt. Dadurch erhalten
+andere Tasks weder LVGL-Zeiger noch eine direkte UI-Schnittstelle.
+
 ## Renderpuffer
 
 LVGL verwendet zwei partielle Puffer mit jeweils 480 x 40 RGB565-Pixeln. Das
