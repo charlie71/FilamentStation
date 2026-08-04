@@ -156,11 +156,11 @@ Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 
 ## 2.5 Storage-Queue
 
-* [ ] Leseanfragen über `storageCommandQueue`
-* [ ] Schreibanfragen über `storageCommandQueue`
-* [ ] Antworten über `appEventQueue`
-* [ ] mehrere Anfragen geordnet abarbeiten
-* [ ] keine SD-Zugriffe aus anderen Tasks zulassen
+* [x] Leseanfragen über `storageCommandQueue`
+* [x] Schreibanfragen über `storageCommandQueue`
+* [x] Antworten über `appEventQueue`
+* [x] mehrere Anfragen geordnet abarbeiten
+* [x] keine SD-Zugriffe aus anderen Tasks zulassen
 
 ## 2.6 Erste Dateien
 

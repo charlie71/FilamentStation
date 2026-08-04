@@ -3,10 +3,12 @@
 #include <SD.h>
 #include <SPI.h>
 #include <cstdio>
+#include <cstring>
 
 #include "config/BoardConfig.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
+#include "services/JsonStorage.h"
 
 namespace filament_station::tasks {
 namespace {
@@ -15,12 +17,126 @@ constexpr const char* kRequiredDirectories[] = {
     "/config", "/cache", "/queue", "/mappings", "/diagnostics", "/logs"};
 
 void sendStorageEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
-                      const char* text) {
+                      const char* text, std::uint32_t requestId = 0,
+                      std::int32_t value = 0) {
   rtos::AppEvent event{};
   event.type = type;
+  event.requestId = requestId;
+  event.value = value;
   std::snprintf(event.text, sizeof(event.text), "%s", text);
   if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS) {
     rtos::logLine("StorageTask: appEventQueue timeout/overflow");
+  }
+}
+
+bool isAllowedJsonPath(const char* path) {
+  if (path == nullptr || path[0] != '/' || std::strstr(path, "..") != nullptr) {
+    return false;
+  }
+  const std::size_t length = std::strlen(path);
+  constexpr char kSuffix[] = ".json";
+  if (length <= sizeof(kSuffix) - 1U ||
+      std::strcmp(path + length - (sizeof(kSuffix) - 1U), kSuffix) != 0) {
+    return false;
+  }
+  for (const char* directory : kRequiredDirectories) {
+    const std::size_t directoryLength = std::strlen(directory);
+    if (std::strncmp(path, directory, directoryLength) == 0 &&
+        path[directoryLength] == '/' && path[directoryLength + 1U] != '\0') {
+      return true;
+    }
+  }
+  return false;
+}
+
+void sendStorageResult(rtos::RtosContext& ctx,
+                       const rtos::StorageCommand& command,
+                       rtos::AppEventType successType,
+                       const services::JsonStorageResult& result,
+                       const char* successText) {
+  if (result.ok()) {
+    sendStorageEvent(ctx, successType, successText, command.requestId,
+                     static_cast<std::int32_t>(result.bytesProcessed));
+    return;
+  }
+  char text[64];
+  std::snprintf(text, sizeof(text), "Storage request failed: %s",
+                services::JsonStorage::errorName(result.error));
+  sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError, text,
+                   command.requestId, static_cast<std::int32_t>(result.error));
+}
+
+void processLoadCommand(rtos::RtosContext& ctx,
+                        const rtos::StorageCommand& command) {
+  File file = SD.open(command.path, FILE_READ);
+  if (!file) {
+    sendStorageResult(ctx, command, rtos::AppEventType::StorageReadCompleted,
+                      {services::JsonStorageError::FileUnavailable, 0},
+                      "JSON loaded and validated");
+    return;
+  }
+  JsonDocument document;
+  const services::JsonStorageResult result =
+      services::JsonStorage::load(file, command.documentType, document);
+  file.close();
+  sendStorageResult(ctx, command, rtos::AppEventType::StorageReadCompleted,
+                    result, "JSON loaded and validated");
+}
+
+void processSaveCommand(rtos::RtosContext& ctx,
+                        const rtos::StorageCommand& command) {
+  const std::size_t maximumSize =
+      services::JsonStorage::maxSizeFor(command.documentType);
+  if (command.jsonLength == 0 ||
+      command.jsonLength > rtos::kStorageJsonPayloadCapacity ||
+      command.jsonLength > maximumSize) {
+    sendStorageResult(ctx, command, rtos::AppEventType::StorageWriteCompleted,
+                      {services::JsonStorageError::InvalidArgument, 0},
+                      "JSON saved atomically");
+    return;
+  }
+
+  JsonDocument document;
+  const DeserializationError parseError =
+      deserializeJson(document, command.json, command.jsonLength);
+  services::JsonStorageError error =
+      parseError ? services::JsonStorageError::ParseFailed
+                 : services::JsonStorage::applyDefaults(document);
+  if (error == services::JsonStorageError::Ok) {
+    error = services::JsonStorage::validate(document);
+  }
+  if (error != services::JsonStorageError::Ok) {
+    sendStorageResult(ctx, command, rtos::AppEventType::StorageWriteCompleted,
+                      {error, command.jsonLength}, "JSON saved atomically");
+    return;
+  }
+
+  const services::JsonStorageResult result = services::JsonStorage::atomicSave(
+      SD, command.path, command.documentType, document);
+  sendStorageResult(ctx, command, rtos::AppEventType::StorageWriteCompleted,
+                    result, "JSON saved atomically");
+}
+
+void processStorageCommand(rtos::RtosContext& ctx,
+                           const rtos::StorageCommand& command) {
+  if (std::memchr(command.path, '\0', sizeof(command.path)) == nullptr ||
+      !isAllowedJsonPath(command.path)) {
+    sendStorageResult(ctx, command, rtos::AppEventType::StorageRequestError,
+                      {services::JsonStorageError::InvalidPath, 0}, "");
+    return;
+  }
+  switch (command.type) {
+    case rtos::StorageCommandType::LoadJson:
+      processLoadCommand(ctx, command);
+      return;
+    case rtos::StorageCommandType::SaveJson:
+      processSaveCommand(ctx, command);
+      return;
+    case rtos::StorageCommandType::DeleteJson:
+    case rtos::StorageCommandType::CreateBackup:
+      sendStorageResult(ctx, command, rtos::AppEventType::StorageRequestError,
+                        {services::JsonStorageError::InvalidArgument, 0}, "");
+      return;
   }
 }
 
@@ -154,14 +270,20 @@ void storageTask(void* parameter) {
   rtos::StorageCommand command{};
   for (;;) {
     // Kein Card-Detect vorhanden: Die Queue blockiert zwischen den bewusst
-    // langsamen Zugriffsproben. Storage-Kommandos folgen erst in Phase 2.5.
+    // langsamen Zugriffsproben.
     const BaseType_t received = xQueueReceive(
         ctx.storageCommandQueue, &command,
         pdMS_TO_TICKS(config::kSdHealthCheckIntervalMs));
     if (received == pdTRUE) {
-      rtos::logLine(removalLatched
-                        ? "StorageTask: command rejected; restart required"
-                        : "StorageTask: command deferred until phase 2.5");
+      if (removalLatched) {
+        sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                         "SD unavailable; restart required", command.requestId,
+                         static_cast<std::int32_t>(
+                             services::JsonStorageError::FileUnavailable));
+        rtos::logLine("StorageTask: command rejected; restart required");
+      } else {
+        processStorageCommand(ctx, command);
+      }
     }
 
     const bool accessible = cardIsAccessible();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 #include "rtos/Commands.h"
@@ -26,11 +27,14 @@ struct ScaleCommand { ScaleCommandType type; std::uint32_t requestId; float refe
 struct NfcCommand { NfcCommandType type; std::uint32_t requestId; std::uint32_t spoolId; };
 
 enum class StorageDocumentType : std::uint8_t { Device, Network, Spoolman, Bambu, Ui, Scale, Nfc, Diagnostics };
+constexpr std::size_t kStorageJsonPayloadCapacity = 768;
 struct StorageCommand {
   StorageCommandType type;
   std::uint32_t requestId;
   char path[96];
   StorageDocumentType documentType;
+  std::uint16_t jsonLength;
+  char json[kStorageJsonPayloadCapacity];
 };
 
 struct NetworkCommand { NetworkCommandType type; std::uint32_t requestId; };
@@ -39,5 +43,6 @@ struct BambuCommand { BambuCommandType type; std::uint32_t requestId; std::uint8
 
 static_assert(std::is_trivially_copyable_v<AppEvent>);
 static_assert(std::is_trivially_copyable_v<UiCommand>);
+static_assert(std::is_trivially_copyable_v<StorageCommand>);
 
 }  // namespace filament_station::rtos

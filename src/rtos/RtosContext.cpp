@@ -32,7 +32,8 @@ bool RtosContext::createObjects() {
   uiCommandQueue = xQueueCreate(config::kUiCommandQueueLength, sizeof(UiCommand));
   scaleCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(ScaleCommand));
   nfcCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(NfcCommand));
-  storageCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(StorageCommand));
+  storageCommandQueue =
+      xQueueCreate(config::kStorageCommandQueueLength, sizeof(StorageCommand));
   networkCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(NetworkCommand));
   spoolmanCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(SpoolmanCommand));
   bambuCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(BambuCommand));
@@ -56,4 +57,3 @@ bool RtosContext::createTasks() {
 }
 
 }  // namespace filament_station::rtos
-

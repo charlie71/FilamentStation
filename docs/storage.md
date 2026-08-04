@@ -52,7 +52,26 @@ ungueltig, wird ein strukturierter Wiederherstellungsfehler geliefert.
 
 Die Dateisystemmethoden von `JsonStorage` duerfen ausschliesslich aus dem
 `StorageTask` aufgerufen werden. Damit bleibt dieser Task alleiniger Besitzer der
-SD-Karte; die Einbindung in die Storage-Queue erfolgt erst in Phase 2.5.
+SD-Karte.
+
+## Storage-Queue
+
+Lese- und Schreibanfragen werden als `StorageCommand` an die
+`storageCommandQueue` gesendet. Der StorageTask prueft, dass der Pfad absolut,
+frei von `..`, eine JSON-Datei und einem der verwalteten Verzeichnisse
+zugeordnet ist. `LoadJson` oeffnet und validiert die Datei. `SaveJson` parst den
+begrenzten Nachrichtenpuffer und verwendet danach den atomaren Schreibablauf.
+
+Erfolg und Fehler werden mit unveraenderter `requestId` an die
+`appEventQueue` gemeldet. Eine erfolgreiche Leseantwort enthaelt in `value` die
+validierte Dateigroesse; eine erfolgreiche Schreibantwort die geschriebenen
+Bytes. Ein Fehlerereignis enthaelt den strukturierten `JsonStorageError`-Wert.
+Das vollstaendige geladene Dokument bleibt in dieser Phase im StorageTask, weil
+die fachlichen, typisierten Datenmodelle noch nicht definiert sind.
+
+Die Queue ist FIFO und der StorageTask beendet jede Operation, bevor er die
+naechste Anfrage annimmt. Bei einer entfernten oder beim Start fehlenden Karte
+werden Anfragen explizit abgelehnt und niemals als erfolgreich gemeldet.
 
 Die Unit-Tests fuer Standardwerte, Objektwurzel, Schema-Version, Zeitstempel und
 Serialisierung lassen sich fuer das ESP32-S3-Ziel kompilieren. Der Lauf vom

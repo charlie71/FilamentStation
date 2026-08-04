@@ -27,7 +27,10 @@ void appTask(void* parameter) {
     } else if (event.type == rtos::AppEventType::SdMounted ||
                event.type == rtos::AppEventType::SdRemoved ||
                event.type == rtos::AppEventType::SdReinserted ||
-               event.type == rtos::AppEventType::SdError) {
+               event.type == rtos::AppEventType::SdError ||
+               event.type == rtos::AppEventType::StorageReadCompleted ||
+               event.type == rtos::AppEventType::StorageWriteCompleted ||
+               event.type == rtos::AppEventType::StorageRequestError) {
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
       status.requestId = event.requestId;

@@ -27,5 +27,6 @@ constexpr TaskSettings kSpoolmanTask{"SpoolmanTask", 4096, 1, kNoCoreAffinity};
 constexpr UBaseType_t kAppEventQueueLength = 16;
 constexpr UBaseType_t kUiCommandQueueLength = 8;
 constexpr UBaseType_t kServiceCommandQueueLength = 8;
+constexpr UBaseType_t kStorageCommandQueueLength = 8;
 
 }  // namespace filament_station::config
