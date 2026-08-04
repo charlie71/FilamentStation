@@ -185,10 +185,10 @@ Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 
 ## 3.1 Hardwareprüfung
 
-* [ ] Displaycontroller verifizieren
-* [ ] Touchcontroller verifizieren
-* [ ] Pinbelegung dokumentieren
-* [ ] externe GPIO-Konflikte prüfen
+* [x] Displaycontroller verifizieren
+* [x] Touchcontroller verifizieren
+* [x] Pinbelegung dokumentieren
+* [x] externe GPIO-Konflikte prüfen
 * [ ] Displayhelligkeit prüfen
 
 ## 3.2 LovyanGFX
