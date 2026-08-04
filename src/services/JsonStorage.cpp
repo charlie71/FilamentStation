@@ -92,6 +92,10 @@ bool isUtcTimestamp(const char* value) {
          value[13] == ':' && value[16] == ':' && value[19] == 'Z';
 }
 
+bool isNonEmptyString(const JsonVariantConst value) {
+  return value.is<const char*>() && value.as<const char*>()[0] != '\0';
+}
+
 }  // namespace
 
 std::size_t JsonStorage::maxSizeFor(
@@ -145,7 +149,7 @@ JsonStorageResult JsonStorage::load(
 
   JsonStorageError error = applyDefaults(document);
   if (error == JsonStorageError::Ok) {
-    error = validate(document);
+    error = validate(document, documentType);
   }
   if (error != JsonStorageError::Ok) {
     document.clear();
@@ -186,10 +190,126 @@ JsonStorageError JsonStorage::validate(const JsonDocument& document) {
   return JsonStorageError::Ok;
 }
 
+const char* JsonStorage::documentTypeName(
+    rtos::StorageDocumentType documentType) {
+  switch (documentType) {
+    case rtos::StorageDocumentType::Device:
+      return "device";
+    case rtos::StorageDocumentType::Network:
+      return "network";
+    case rtos::StorageDocumentType::Spoolman:
+      return "spoolman";
+    case rtos::StorageDocumentType::Bambu:
+      return "bambu";
+    case rtos::StorageDocumentType::Ui:
+      return "ui";
+    case rtos::StorageDocumentType::Scale:
+      return "scale";
+    case rtos::StorageDocumentType::Nfc:
+      return "nfc";
+    case rtos::StorageDocumentType::Diagnostics:
+      return "diagnostics";
+  }
+  return nullptr;
+}
+
+JsonStorageError JsonStorage::createDefault(
+    rtos::StorageDocumentType documentType, JsonDocument& document) {
+  const char* typeName = documentTypeName(documentType);
+  if (typeName == nullptr) {
+    return JsonStorageError::InvalidArgument;
+  }
+  document.clear();
+  document.to<JsonObject>();
+  document["schemaVersion"] = kCurrentJsonSchemaVersion;
+  document["updatedAt"] = kDefaultUpdatedAt;
+  document["documentType"] = typeName;
+
+  switch (documentType) {
+    case rtos::StorageDocumentType::Device:
+      document["deviceName"] = "FilamentStation";
+      break;
+    case rtos::StorageDocumentType::Network:
+      document["hostname"] = "filamentstation";
+      document["dhcp"] = true;
+      break;
+    case rtos::StorageDocumentType::Spoolman:
+      document["enabled"] = false;
+      document["serverUrl"] = "";
+      break;
+    case rtos::StorageDocumentType::Ui:
+      document["language"] = "de";
+      document["weightUnit"] = "g";
+      break;
+    case rtos::StorageDocumentType::Scale:
+      document["calibrated"] = false;
+      break;
+    case rtos::StorageDocumentType::Nfc:
+      document["tagSchemaVersion"] = 1;
+      break;
+    case rtos::StorageDocumentType::Bambu:
+    case rtos::StorageDocumentType::Diagnostics:
+      break;
+  }
+  return validate(document, documentType);
+}
+
+JsonStorageError JsonStorage::validate(
+    const JsonDocument& document,
+    rtos::StorageDocumentType documentType) {
+  JsonStorageError error = validate(document);
+  if (error != JsonStorageError::Ok) {
+    return error;
+  }
+  const char* expectedType = documentTypeName(documentType);
+  if (expectedType == nullptr || !document["documentType"].is<const char*>() ||
+      std::strcmp(document["documentType"].as<const char*>(), expectedType) !=
+          0) {
+    return JsonStorageError::InvalidDocumentType;
+  }
+
+  switch (documentType) {
+    case rtos::StorageDocumentType::Device:
+      return isNonEmptyString(document["deviceName"])
+                 ? JsonStorageError::Ok
+                 : JsonStorageError::InvalidDocumentField;
+    case rtos::StorageDocumentType::Network:
+      return isNonEmptyString(document["hostname"]) &&
+                     document["dhcp"].is<bool>()
+                 ? JsonStorageError::Ok
+                 : JsonStorageError::InvalidDocumentField;
+    case rtos::StorageDocumentType::Spoolman:
+      return document["enabled"].is<bool>() &&
+                     document["serverUrl"].is<const char*>() &&
+                     (!document["enabled"].as<bool>() ||
+                      isNonEmptyString(document["serverUrl"]))
+                 ? JsonStorageError::Ok
+                 : JsonStorageError::InvalidDocumentField;
+    case rtos::StorageDocumentType::Ui:
+      return isNonEmptyString(document["language"]) &&
+                     isNonEmptyString(document["weightUnit"])
+                 ? JsonStorageError::Ok
+                 : JsonStorageError::InvalidDocumentField;
+    case rtos::StorageDocumentType::Scale:
+      return document["calibrated"].is<bool>()
+                 ? JsonStorageError::Ok
+                 : JsonStorageError::InvalidDocumentField;
+    case rtos::StorageDocumentType::Nfc:
+      return document["tagSchemaVersion"].is<std::uint32_t>() &&
+                     document["tagSchemaVersion"].as<std::uint32_t>() == 1U
+                 ? JsonStorageError::Ok
+                 : JsonStorageError::InvalidDocumentField;
+    case rtos::StorageDocumentType::Bambu:
+    case rtos::StorageDocumentType::Diagnostics:
+      return JsonStorageError::Ok;
+  }
+  return JsonStorageError::InvalidArgument;
+}
+
 JsonStorageResult JsonStorage::serialize(
     const JsonDocument& document, rtos::StorageDocumentType documentType,
     Print& output) {
-  const JsonStorageError validationError = validate(document);
+  const JsonStorageError validationError = validate(document, documentType);
   if (validationError != JsonStorageError::Ok) {
     return {validationError, 0};
   }
@@ -277,7 +397,7 @@ JsonStorageResult JsonStorage::atomicSave(
     return {JsonStorageError::InvalidPath, 0};
   }
 
-  const JsonStorageError validationError = validate(document);
+  const JsonStorageError validationError = validate(document, documentType);
   if (validationError != JsonStorageError::Ok) {
     return {validationError, 0};
   }
@@ -365,6 +485,10 @@ const char* JsonStorage::errorName(JsonStorageError error) {
       return "unsupported_schema_version";
     case JsonStorageError::InvalidUpdatedAt:
       return "invalid_updated_at";
+    case JsonStorageError::InvalidDocumentType:
+      return "invalid_document_type";
+    case JsonStorageError::InvalidDocumentField:
+      return "invalid_document_field";
     case JsonStorageError::OutputTooLarge:
       return "output_too_large";
     case JsonStorageError::SerializeFailed:

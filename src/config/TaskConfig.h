@@ -14,7 +14,7 @@ struct TaskSettings {
 
 constexpr BaseType_t kNoCoreAffinity = tskNO_AFFINITY;
 
-constexpr TaskSettings kStorageTask{"StorageTask", 4096, 2, kNoCoreAffinity};
+constexpr TaskSettings kStorageTask{"StorageTask", 8192, 2, kNoCoreAffinity};
 constexpr TaskSettings kAppTask{"AppTask", 4096, 3, kNoCoreAffinity};
 constexpr TaskSettings kUiTask{"UiTask", 4096, 2, kNoCoreAffinity};
 constexpr TaskSettings kScaleTask{"ScaleTask", 3072, 2, kNoCoreAffinity};

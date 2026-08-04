@@ -75,8 +75,10 @@ void test_invalid_timestamp_is_rejected() {
 
 void test_valid_document_serializes() {
   JsonDocument document;
-  document["schemaVersion"] = 1;
-  document["updatedAt"] = "2026-08-03T12:00:00Z";
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::Ok),
+      static_cast<int>(JsonStorage::createDefault(
+          StorageDocumentType::Device, document)));
   document["value"] = 42;
   BufferPrint output;
 
@@ -85,6 +87,31 @@ void test_valid_document_serializes() {
   TEST_ASSERT_TRUE(result.ok());
   TEST_ASSERT_GREATER_THAN_UINT32(0, result.bytesProcessed);
   TEST_ASSERT_NOT_NULL(strstr(output.data(), "\"schemaVersion\":1"));
+}
+
+void test_initial_document_defaults_validate() {
+  constexpr StorageDocumentType types[] = {
+      StorageDocumentType::Device, StorageDocumentType::Network,
+      StorageDocumentType::Spoolman, StorageDocumentType::Ui,
+      StorageDocumentType::Scale, StorageDocumentType::Nfc};
+  for (const StorageDocumentType type : types) {
+    JsonDocument document;
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(JsonStorageError::Ok),
+        static_cast<int>(JsonStorage::createDefault(type, document)));
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(JsonStorageError::Ok),
+        static_cast<int>(JsonStorage::validate(document, type)));
+  }
+}
+
+void test_document_type_mismatch_is_rejected() {
+  JsonDocument document;
+  JsonStorage::createDefault(StorageDocumentType::Device, document);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentType),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Network)));
 }
 
 }  // namespace
@@ -102,6 +129,8 @@ void setup() {
   RUN_TEST(test_unsupported_schema_is_rejected);
   RUN_TEST(test_invalid_timestamp_is_rejected);
   RUN_TEST(test_valid_document_serializes);
+  RUN_TEST(test_initial_document_defaults_validate);
+  RUN_TEST(test_document_type_mismatch_is_rejected);
   UNITY_END();
 }
 

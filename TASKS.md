@@ -164,12 +164,12 @@ Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 
 ## 2.6 Erste Dateien
 
-* [ ] `/config/device.json`
-* [ ] `/config/network.json`
-* [ ] `/config/spoolman.json`
-* [ ] `/config/ui.json`
-* [ ] `/config/scale.json`
-* [ ] `/config/nfc.json`
+* [x] `/config/device.json`
+* [x] `/config/network.json`
+* [x] `/config/spoolman.json`
+* [x] `/config/ui.json`
+* [x] `/config/scale.json`
+* [x] `/config/nfc.json`
 
 ### Abnahmekriterien
 

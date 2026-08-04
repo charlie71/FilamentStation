@@ -26,6 +26,8 @@ enum class JsonStorageError : std::uint8_t {
   InvalidSchemaVersion,
   UnsupportedSchemaVersion,
   InvalidUpdatedAt,
+  InvalidDocumentType,
+  InvalidDocumentField,
   OutputTooLarge,
   SerializeFailed,
   TemporaryFileFailed,
@@ -50,6 +52,13 @@ class JsonStorage {
                                 JsonDocument& document);
   static JsonStorageError applyDefaults(JsonDocument& document);
   static JsonStorageError validate(const JsonDocument& document);
+  static JsonStorageError createDefault(
+      rtos::StorageDocumentType documentType, JsonDocument& document);
+  static JsonStorageError validate(
+      const JsonDocument& document,
+      rtos::StorageDocumentType documentType);
+  static const char* documentTypeName(
+      rtos::StorageDocumentType documentType);
   static JsonStorageResult serialize(
       const JsonDocument& document,
       rtos::StorageDocumentType documentType, Print& output);

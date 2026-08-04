@@ -73,6 +73,20 @@ Die Queue ist FIFO und der StorageTask beendet jede Operation, bevor er die
 naechste Anfrage annimmt. Bei einer entfernten oder beim Start fehlenden Karte
 werden Anfragen explizit abgelehnt und niemals als erfolgreich gemeldet.
 
+## Erste Konfigurationsdateien
+
+Nach Mount und Verzeichnispruefung stellt der StorageTask die sechs Dateien
+`device.json`, `network.json`, `spoolman.json`, `ui.json`, `scale.json` und
+`nfc.json` unter `/config` bereit. Fehlt eine Datei, wird ihr dokumentierter
+Standardinhalt atomar geschrieben und erneut validiert. Eine vorhandene gueltige
+Datei bleibt unveraendert. Vorhandene Temp- oder Backup-Dateien durchlaufen die
+Wiederherstellungslogik aus Phase 2.4.
+
+Ist eine vorhandene Datei beschaedigt und nicht wiederherstellbar, wird sie
+nicht ueberschrieben. Der StorageTask meldet den Fehler, laesst
+`EVENT_SD_READY` geloescht und verlangt entsprechend der SD-Fehlerstrategie
+einen Neustart.
+
 Die Unit-Tests fuer Standardwerte, Objektwurzel, Schema-Version, Zeitstempel und
 Serialisierung lassen sich fuer das ESP32-S3-Ziel kompilieren. Der Lauf vom
 2026-08-03 wurde wegen eines durch einen anderen Prozess belegten COM4-Ports

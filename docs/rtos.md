@@ -16,6 +16,12 @@ Der `StorageTask` nimmt immer genau den aeltesten Queue-Eintrag entgegen und
 bearbeitet ihn vollstaendig, bevor er den naechsten empfaengt. Antworten tragen
 dieselbe `requestId` und laufen ausschliesslich ueber die `appEventQueue`.
 
+Der StorageTask verwendet 8192 Byte Stack. Der Hardware-Backtrace vom
+2026-08-04 zeigte mit 4096 Byte einen Stack-Canary-Fehler in der tiefen
+FATFS-/SPI-Aufrufkette waehrend der Verzeichnispruefung. Der etwa 0,9 KiB grosse
+Queue-Empfangspuffer liegt deshalb statisch im task-exklusiven Speicher und
+nicht zusaetzlich auf dem Taskstack.
+
 Der StorageTask verwendet mangels Card-Detect einen dokumentierten
 Zwei-Sekunden-Timeout beim Warten auf seiner Queue. Nur nach diesem Timeout
 erfolgt eine kurze SD-Erreichbarkeitsprobe. Das ist der langsamste praktikable

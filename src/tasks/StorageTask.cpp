@@ -16,6 +16,20 @@ namespace {
 constexpr const char* kRequiredDirectories[] = {
     "/config", "/cache", "/queue", "/mappings", "/diagnostics", "/logs"};
 
+struct InitialDocument {
+  const char* path;
+  rtos::StorageDocumentType type;
+};
+
+constexpr InitialDocument kInitialDocuments[] = {
+    {"/config/device.json", rtos::StorageDocumentType::Device},
+    {"/config/network.json", rtos::StorageDocumentType::Network},
+    {"/config/spoolman.json", rtos::StorageDocumentType::Spoolman},
+    {"/config/ui.json", rtos::StorageDocumentType::Ui},
+    {"/config/scale.json", rtos::StorageDocumentType::Scale},
+    {"/config/nfc.json", rtos::StorageDocumentType::Nfc},
+};
+
 void sendStorageEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
                       const char* text, std::uint32_t requestId = 0,
                       std::int32_t value = 0) {
@@ -103,7 +117,7 @@ void processSaveCommand(rtos::RtosContext& ctx,
       parseError ? services::JsonStorageError::ParseFailed
                  : services::JsonStorage::applyDefaults(document);
   if (error == services::JsonStorageError::Ok) {
-    error = services::JsonStorage::validate(document);
+    error = services::JsonStorage::validate(document, command.documentType);
   }
   if (error != services::JsonStorageError::Ok) {
     sendStorageResult(ctx, command, rtos::AppEventType::StorageWriteCompleted,
@@ -187,6 +201,69 @@ bool ensureDirectoryStructure() {
   return true;
 }
 
+bool ensureInitialDocument(const InitialDocument& definition) {
+  const services::JsonStorageResult recovery =
+      services::JsonStorage::recoverAtomicSave(SD, definition.path,
+                                               definition.type);
+  if (!recovery.ok()) {
+    char line[128];
+    std::snprintf(line, sizeof(line),
+                  "StorageTask: recovery failed for %s: %s", definition.path,
+                  services::JsonStorage::errorName(recovery.error));
+    rtos::logLine(line);
+    return false;
+  }
+
+  if (SD.exists(definition.path)) {
+    File file = SD.open(definition.path, FILE_READ);
+    JsonDocument document;
+    const services::JsonStorageResult loaded =
+        services::JsonStorage::load(file, definition.type, document);
+    file.close();
+    if (!loaded.ok()) {
+      char line[128];
+      std::snprintf(line, sizeof(line),
+                    "StorageTask: invalid initial file %s: %s",
+                    definition.path,
+                    services::JsonStorage::errorName(loaded.error));
+      rtos::logLine(line);
+      return false;
+    }
+    return true;
+  }
+
+  JsonDocument document;
+  const services::JsonStorageError defaultError =
+      services::JsonStorage::createDefault(definition.type, document);
+  if (defaultError != services::JsonStorageError::Ok) {
+    return false;
+  }
+  const services::JsonStorageResult saved = services::JsonStorage::atomicSave(
+      SD, definition.path, definition.type, document);
+  if (!saved.ok()) {
+    char line[128];
+    std::snprintf(line, sizeof(line),
+                  "StorageTask: initial file creation failed %s: %s",
+                  definition.path,
+                  services::JsonStorage::errorName(saved.error));
+    rtos::logLine(line);
+    return false;
+  }
+  char line[112];
+  std::snprintf(line, sizeof(line), "StorageTask: created %s", definition.path);
+  rtos::logLine(line);
+  return true;
+}
+
+bool ensureInitialDocuments() {
+  for (const InitialDocument& definition : kInitialDocuments) {
+    if (!ensureInitialDocument(definition)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 const char* cardTypeName(std::uint8_t cardType) {
   switch (cardType) {
     case CARD_MMC:
@@ -247,27 +324,42 @@ void storageTask(void* parameter) {
   const bool mounted =
       SD.begin(config::kSdChipSelectPin, sdSpi) && cardIsAccessible();
   const bool structureReady = mounted && ensureDirectoryStructure();
+  const bool initialDocumentsReady = structureReady && ensureInitialDocuments();
 
-  if (!structureReady) {
+  if (!initialDocumentsReady) {
     xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SD_READY);
     sendStorageEvent(ctx, rtos::AppEventType::SdError,
-                     mounted
-                         ? "SD directory structure invalid; restart required"
-                         : "SD card unavailable; restart required");
-    rtos::logLine(mounted ? "StorageTask: SD directory setup failed"
-                          : "StorageTask: SD initialization failed");
+                     !mounted
+                         ? "SD card unavailable; restart required"
+                         : structureReady
+                               ? "SD configuration invalid; restart required"
+                               : "SD directory structure invalid; restart required");
+    rtos::logLine(!mounted
+                      ? "StorageTask: SD initialization failed"
+                      : structureReady
+                            ? "StorageTask: initial JSON setup failed"
+                            : "StorageTask: SD directory setup failed");
   } else {
     xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_SD_READY);
     logSdCardInfo();
     sendStorageEvent(ctx, rtos::AppEventType::SdMounted,
-                     "SD card and directory structure ready");
-    rtos::logLine("StorageTask: SD directory structure ready");
+                     "SD card, directories and configuration ready");
+    rtos::logLine("StorageTask: initial JSON files ready");
+    char stackLine[96];
+    std::snprintf(stackLine, sizeof(stackLine),
+                  "StorageTask: minimum remaining stack: %u bytes",
+                  static_cast<unsigned int>(
+                      uxTaskGetStackHighWaterMark(nullptr)));
+    rtos::logLine(stackLine);
   }
 
   bool removalLatched =
       (xEventGroupGetBits(ctx.systemEventGroup) & rtos::EVENT_SD_READY) == 0;
   bool reinsertionReported = false;
-  rtos::StorageCommand command{};
+  // Der feste JSON-Puffer macht StorageCommand fuer eine Stackvariable zu
+  // gross. Der Puffer bleibt statisch und gehoert weiterhin exklusiv diesem
+  // einzelnen Task.
+  static rtos::StorageCommand command{};
   for (;;) {
     // Kein Card-Detect vorhanden: Die Queue blockiert zwischen den bewusst
     // langsamen Zugriffsproben.
