@@ -471,6 +471,10 @@ void bindGeneratedWidgets() {
             static_cast<std::uintptr_t>(rtos::UiActionType::OpenDeviceSettings));
   bindClick(objects.settings_diagnostics, settingsCategoryClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::OpenDiagnostics));
+  lv_obj_add_flag(objects.settings_firmware, LV_OBJ_FLAG_CLICKABLE);
+  bindClick(objects.settings_firmware, settingsCategoryClicked,
+            static_cast<std::uintptr_t>(
+                rtos::UiActionType::OpenFirmwareSettings));
 
   const std::array<lv_obj_t*, 12> stagingButtons{{
       objects.staging_details_header,
@@ -1125,6 +1129,7 @@ void processUiCommand(const rtos::UiCommand& command) {
     case rtos::UiCommandType::ShowStatus:
     case rtos::UiCommandType::ShowToast:
       lv_label_set_text(objects.home_bottom_status, command.text);
+      lv_label_set_text(objects.settings_bottom_status, command.text);
       break;
     default:
       break;

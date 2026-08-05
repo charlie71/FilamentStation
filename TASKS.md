@@ -383,17 +383,17 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 3.13 Settings-Grundstruktur
 
-* [ ] `SCR_SETTINGS_HOME`
-* [ ] WLAN
-* [ ] Spoolman
-* [ ] Waage
-* [ ] Bambu-Drucker
-* [ ] Gerät
-* [ ] Diagnose
-* [ ] Firmware
-* [ ] keine Security-Key-Kategorie
-* [ ] Navigation
-* [ ] Zurücknavigation
+* [x] `SCR_SETTINGS_HOME`
+* [x] WLAN
+* [x] Spoolman
+* [x] Waage
+* [x] Bambu-Drucker
+* [x] Gerät
+* [x] Diagnose
+* [x] Firmware
+* [x] keine Security-Key-Kategorie
+* [x] Navigation
+* [x] Zurücknavigation
 
 ## 3.14 Spoolman-Settings
 

@@ -52,6 +52,9 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       return;
 
     case rtos::UiActionType::OpenSettings:
+      if (currentScreen == rtos::UiScreenId::SettingsHome) {
+        return;
+      }
       previousScreen = currentScreen;
       currentScreen = rtos::UiScreenId::SettingsHome;
       command.type = rtos::UiCommandType::ShowScreen;
@@ -90,13 +93,46 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       sendUiCommand(ctx, command, "AppTask: back command queue overflow");
       return;
 
+    case rtos::UiActionType::OpenWifiSettings:
+    case rtos::UiActionType::OpenSpoolmanSettings:
+    case rtos::UiActionType::OpenScaleSettings:
     case rtos::UiActionType::OpenPrinterSettings:
+    case rtos::UiActionType::OpenDeviceSettings:
+    case rtos::UiActionType::OpenDiagnostics:
+    case rtos::UiActionType::OpenFirmwareSettings: {
+      const char* section = "Einstellungen";
+      switch (action.type) {
+        case rtos::UiActionType::OpenWifiSettings:
+          section = "WLAN";
+          break;
+        case rtos::UiActionType::OpenSpoolmanSettings:
+          section = "Spoolman";
+          break;
+        case rtos::UiActionType::OpenScaleSettings:
+          section = "Waage";
+          break;
+        case rtos::UiActionType::OpenPrinterSettings:
+          section = "Bambu-Drucker";
+          break;
+        case rtos::UiActionType::OpenDeviceSettings:
+          section = "Geraet";
+          break;
+        case rtos::UiActionType::OpenDiagnostics:
+          section = "Diagnose";
+          break;
+        case rtos::UiActionType::OpenFirmwareSettings:
+          section = "Firmware";
+          break;
+        default:
+          break;
+      }
       command.type = rtos::UiCommandType::ShowToast;
-      std::snprintf(command.text, sizeof(command.text),
-                    "Druckerverwaltung folgt in Phase 3.15");
+      std::snprintf(command.text, sizeof(command.text), "%s ausgewaehlt",
+                    section);
       sendUiCommand(ctx, command,
-                    "AppTask: printer-management queue overflow");
+                    "AppTask: settings navigation queue overflow");
       return;
+    }
 
     case rtos::UiActionType::SelectAms:
       command.type = rtos::UiCommandType::UpdateAmsOverview;

@@ -2950,6 +2950,43 @@
               "groupIndex": 0
             },
             {
+              "objID": "67000000-0001-4600-8600-100000000000",
+              "type": "LVGLButtonWidget",
+              "left": 12,
+              "top": 204,
+              "width": 142,
+              "height": 48,
+              "identifier": "settings_firmware",
+              "children": [
+                {
+                  "objID": "67000000-0002-4600-8600-100000000000",
+                  "type": "LVGLLabelWidget",
+                  "left": 0,
+                  "top": 0,
+                  "width": 68,
+                  "height": 16,
+                  "children": [],
+                  "localStyles": {
+                    "objID": "67000000-0003-4600-8600-100000000000",
+                    "definition": {
+                      "MAIN": {
+                        "DEFAULT": {
+                          "align": "CENTER"
+                        }
+                      }
+                    }
+                  },
+                  "text": "Firmware",
+                  "textType": "literal",
+                  "longMode": "WRAP",
+                  "useStaticText": true
+                }
+              ],
+              "localStyles": {
+                "objID": "67000000-0004-4600-8600-100000000000"
+              }
+            },
+            {
               "objID": "10000000-0218-4000-8000-000000000000",
               "type": "LVGLButtonWidget",
               "left": 4,

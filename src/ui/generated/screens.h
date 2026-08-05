@@ -69,6 +69,7 @@ typedef struct _objects_t {
     lv_obj_t *settings_printers;
     lv_obj_t *settings_device;
     lv_obj_t *settings_diagnostics;
+    lv_obj_t *settings_firmware;
     lv_obj_t *settings_back;
     lv_obj_t *settings_bottom_status;
     lv_obj_t *staging_details_header;
