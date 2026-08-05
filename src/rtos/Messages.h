@@ -13,11 +13,16 @@ struct AppEvent {
   std::uint32_t requestId;
   std::int32_t value;
   char text[64];
+  UiAction uiAction;
 };
 
 struct UiCommand {
   UiCommandType type;
   std::uint32_t requestId;
+  UiScreenId screenId;
+  PrinterId printerId;
+  std::uint8_t amsId;
+  std::uint8_t trayId;
   float weightGrams;
   char title[48];
   char text[96];
@@ -39,10 +44,18 @@ struct StorageCommand {
 
 struct NetworkCommand { NetworkCommandType type; std::uint32_t requestId; };
 struct SpoolmanCommand { SpoolmanCommandType type; std::uint32_t requestId; std::uint32_t spoolId; float weightGrams; };
-struct BambuCommand { BambuCommandType type; std::uint32_t requestId; std::uint8_t trayId; std::uint32_t spoolId; };
+struct BambuCommand {
+  BambuCommandType type;
+  std::uint32_t requestId;
+  PrinterId printerId;
+  std::uint8_t amsId;
+  std::uint8_t trayId;
+  SpoolId spoolId;
+};
 
 static_assert(std::is_trivially_copyable_v<AppEvent>);
 static_assert(std::is_trivially_copyable_v<UiCommand>);
+static_assert(std::is_trivially_copyable_v<UiAction>);
 static_assert(std::is_trivially_copyable_v<StorageCommand>);
 
 }  // namespace filament_station::rtos

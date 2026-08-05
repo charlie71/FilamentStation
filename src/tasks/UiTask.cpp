@@ -22,7 +22,7 @@ void uiTask(void* parameter) {
 
   const std::uint32_t psramBefore = ESP.getFreePsram();
   ui::UiRuntimeInfo runtimeInfo{};
-  if (!ui::initializeLvgl(runtimeInfo)) {
+  if (!ui::initializeLvgl(runtimeInfo, ctx)) {
     xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_FATAL_ERROR);
     rtos::logLine("UiTask: LVGL initialization or PSRAM allocation failed");
     vTaskSuspend(nullptr);
@@ -47,7 +47,7 @@ void uiTask(void* parameter) {
 
   const rtos::AppEvent event{rtos::AppEventType::UiCommunicationTest,
                              config::kCommunicationTestRequestId, 0,
-                             "UiTask communication test"};
+                             "UiTask communication test", {}};
   if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS) {
     rtos::logLine("UiTask: appEventQueue timeout/overflow");
   } else {

@@ -2,15 +2,18 @@
 
 ## Allgemeine Regeln
 
-* Jede Phase wird einzeln umgesetzt.
-* Tasks müssen auf Ereignisse blockieren.
-* Busy Waiting ist nicht zulässig.
+* Phasen in der angegebenen Reihenfolge bearbeiten.
+* Pro Codex-Auftrag nur einen klar abgegrenzten Abschnitt umsetzen.
+* Keine schnelle Polling-Schleife verwenden.
+* Busy Waiting ist verboten.
 * Interrupts führen keine Hardwarekommunikation aus.
-* Nur der StorageTask greift auf die SD-Karte zu.
-* Nur der UiTask greift auf LVGL zu.
-* AppTask koordiniert alle fachlichen Abläufe.
-* Alle persistenten Anwendungsdateien sind gültige JSON-Dateien.
-* Codex hakt nur tatsächlich umgesetzte und geprüfte Aufgaben ab.
+* Nur StorageTask greift auf SD zu.
+* Nur UiTask greift auf LVGL zu.
+* AppTask koordiniert die fachlichen Abläufe.
+* Alle persistenten Anwendungsdateien liegen als JSON auf SD.
+* WLAN-Zugangsdaten sind die systembedingte WiFiManager-Ausnahme.
+* Druckerbezogene Befehle enthalten immer `printerId`.
+* Codex hakt nur tatsächlich implementierte und geprüfte Aufgaben ab.
 
 ---
 
@@ -22,7 +25,8 @@
 * [x] Arduino Framework konfigurieren
 * [x] C++17 aktivieren
 * [x] seriellen Monitor mit 115200 Baud konfigurieren
-* [x] Flashgröße und PSRAM vorbereiten
+* [x] Flashgröße vorbereiten
+* [x] PSRAM vorbereiten
 * [x] `.gitignore` anlegen
 * [x] Build-Anleitung in `README.md` erstellen
 
@@ -33,60 +37,65 @@
 * [x] `AppConfig.h` anlegen
 * [x] `TaskConfig.h` anlegen
 * [x] `Secrets.example.h` anlegen
-* [x] minimale Modelle und Message-Typen erzeugen
-* [x] noch keine Hardwarebibliotheken einbinden
+* [x] minimale Modelle erzeugen
+* [x] Message-Typen vorbereiten
+* [x] noch keine unnötigen Hardwarebibliotheken einbinden
 
 ## 0.3 Minimaler Build
 
-* [x] Startmeldung über Serial ausgeben
+* [x] Startmeldung über Serial
 * [x] Chipmodell ausgeben
-* [x] Heap und PSRAM ausgeben
+* [x] Heap ausgeben
+* [x] PSRAM ausgeben
 * [x] `pio run` erfolgreich ausführen
 
-### Abnahmekriterien
+### Abnahmekriterien Phase 0
 
-* Projekt kompiliert ohne neue Warnungen.
-* Keine Zugangsdaten sind enthalten.
-* Noch keine GPIOs wurden erfunden.
-* Die Grundstruktur entspricht `AGENTS.md`.
+* Projekt kompiliert.
+* Keine neuen Warnungen.
+* Keine Zugangsdaten enthalten.
+* Keine GPIOs erfunden.
+* Projektstruktur entspricht `AGENTS.md`.
 
 ---
 
 # Phase 1 – FreeRTOS-Infrastruktur
 
-## 1.1 RTOS-Kontext
+## 1.1 RtosContext
 
 * [x] `RtosContext` implementieren
-* [x] zentrale Handles für Queues anlegen
-* [x] zentrale Handles für Tasks anlegen
-* [x] System Event Group anlegen
-* [x] benötigte Mutexes anlegen
-* [x] Fehler bei der Erzeugung aller RTOS-Objekte behandeln
+* [x] Task-Handles zentral verwalten
+* [x] Queue-Handles zentral verwalten
+* [x] Event Group anlegen
+* [x] notwendige Mutexes anlegen
+* [x] Erzeugungsfehler behandeln
 
 ## 1.2 Nachrichtentypen
 
 * [x] `AppEvent` definieren
 * [x] `UiCommand` definieren
+* [x] `UiAction` definieren
 * [x] `ScaleCommand` definieren
 * [x] `NfcCommand` definieren
 * [x] `StorageCommand` definieren
 * [x] `NetworkCommand` definieren
 * [x] `SpoolmanCommand` definieren
-* [x] `BambuCommand` vorbereiten
-* [x] `requestId` für asynchrone Antworten vorsehen
+* [x] `BambuCommand` definieren
+* [x] `requestId` vorsehen
+* [x] `printerId` vorsehen
 
 ## 1.3 Task-Gerüste
 
-* [x] UiTask-Gerüst
-* [x] AppTask-Gerüst
-* [x] ScaleTask-Gerüst
-* [x] NfcTask-Gerüst
-* [x] StorageTask-Gerüst
-* [x] NetworkTask-Gerüst
-* [x] SpoolmanTask-Gerüst
-* [x] BambuTask nur als deaktivierter Platzhalter
+* [x] UiTask
+* [x] AppTask
+* [x] ScaleTask
+* [x] NfcTask
+* [x] StorageTask
+* [x] NetworkTask
+* [x] SpoolmanTask
+* [x] BambuTask
 
-Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
+Jeder Task muss auf Queue, Event Group oder Task Notification blockieren.
 
 ## 1.4 Task-Konfiguration
 
@@ -94,23 +103,25 @@ Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 * [x] Stackgrößen zentral definieren
 * [x] Prioritäten zentral definieren
 * [x] Core-Affinitäten zentral definieren
-* [x] keine unkommentierten Taskparameter in `main.cpp`
+* [x] Taskparameter dokumentieren
 
 ## 1.5 Kommunikationstest
 
-* [x] Testereignis vom UiTask an AppTask senden
-* [x] AppTask sendet Antwort an UiTask
+* [x] UiTask sendet Testaktion
+* [x] AppTask empfängt Testaktion
+* [x] AppTask sendet UiCommand
+* [x] UiTask empfängt UiCommand
 * [x] Queue-Timeout behandeln
 * [x] Queue-Überlauf erkennen
-* [x] Kommunikationsablauf protokollieren
+* [x] Kommunikation protokollieren
 
-### Abnahmekriterien
+### Abnahmekriterien Phase 1
 
-* Alle Tasks werden erfolgreich erzeugt.
-* Keine Task verwendet eine schnelle Polling-Schleife.
-* Testnachricht läuft über die vorgesehenen Queues.
-* Arduino-`loop()` enthält keine Anwendungslogik.
-* Stack- und Prioritätswerte sind dokumentiert.
+* Alle Tasks werden erzeugt.
+* Keine schnelle Polling-Schleife.
+* Kommunikation funktioniert.
+* `loop()` enthält keine Anwendungslogik.
+* Stackgrößen und Prioritäten dokumentiert.
 
 ---
 
@@ -118,164 +129,435 @@ Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 
 ## 2.1 SD-Hardware
 
-* [x] verwendete SD-Schnittstelle feststellen
+* [x] SD-Schnittstelle verifizieren
 * [x] Pinbelegung dokumentieren
-* [x] SD-Karte ausschließlich im StorageTask initialisieren
-* [x] Card-Detect-Pin prüfen
-* [x] Card-Detect-Interrupt verwenden, wenn vorhanden
-* [x] Entfernen und erneutes Einsetzen erkennen
+* [x] SD nur im StorageTask initialisieren
+* [x] Card-Detect prüfen
+* [x] Card-Detect-Interrupt verwenden, falls vorhanden
+* [x] Entfernen und Einsetzen erkennen
 
-## 2.2 Dateisystemstruktur
+## 2.2 Verzeichnisstruktur
 
-* [x] `/config` anlegen
-* [x] `/cache` anlegen
-* [x] `/queue` anlegen
-* [x] `/mappings` anlegen
-* [x] `/diagnostics` anlegen
-* [x] `/logs` anlegen
+* [x] `/config`
+* [x] `/cache`
+* [x] `/queue`
+* [x] `/mappings`
+* [x] `/diagnostics`
+* [x] `/logs`
 
 ## 2.3 JsonStorage
 
-* [x] JSON-Datei aus `File` laden
-* [x] JSON-Datei validieren
-* [x] JSON-Datei serialisieren
+* [x] JSON laden
+* [x] JSON validieren
+* [x] JSON speichern
 * [x] maximale Dateigröße prüfen
-* [x] verständliche Fehlercodes definieren
+* [x] Fehlercodes definieren
 * [x] `schemaVersion` verarbeiten
 * [x] Standardwerte einsetzen
+* [x] Schema-Migration vorbereiten
 
 ## 2.4 Atomisches Speichern
 
-* [x] temporäre `.tmp.json`-Datei schreiben
-* [x] Datei flushen und schließen
-* [x] temporäre Datei erneut validieren
-* [x] bestehende Datei als `.bak.json` sichern
+* [x] `.tmp.json` schreiben
+* [x] flushen
+* [x] schließen
+* [x] erneut validieren
+* [x] bestehende Datei als `.bak.json`
 * [x] temporäre Datei umbenennen
-* [x] Backup nach Erfolg entfernen
-* [ ] Wiederherstellung nach Stromausfall testen
+* [x] Backup entfernen
+* [ ] Wiederherstellung testen
 
 ## 2.5 Storage-Queue
 
-* [x] Leseanfragen über `storageCommandQueue`
-* [x] Schreibanfragen über `storageCommandQueue`
-* [x] Antworten über `appEventQueue`
-* [x] mehrere Anfragen geordnet abarbeiten
-* [x] keine SD-Zugriffe aus anderen Tasks zulassen
+* [x] Leseanfragen über Queue
+* [x] Schreibanfragen über Queue
+* [x] Antworten über App-Queue
+* [x] mehrere Anfragen geordnet verarbeiten
+* [x] direkte SD-Zugriffe anderer Tasks verhindern
 
-## 2.6 Erste Dateien
+## 2.6 Konfigurationsdateien
 
 * [x] `/config/device.json`
 * [x] `/config/network.json`
 * [x] `/config/spoolman.json`
+* [x] `/config/bambu.json`
 * [x] `/config/ui.json`
 * [x] `/config/scale.json`
 * [x] `/config/nfc.json`
 
-### Abnahmekriterien
+### Abnahmekriterien Phase 2
 
-* JSON-Dateien können gespeichert und erneut geladen werden.
-* Beschädigte JSON-Dateien werden erkannt.
-* Backup-Dateien können wiederhergestellt werden.
-* Kein anderer Task greift direkt auf die SD-Karte zu.
-* Bei fehlender SD-Karte wird kein Speichern vorgetäuscht.
+* JSON-Dateien speichern und laden.
+* Beschädigte Dateien erkennen.
+* Backups wiederherstellen.
+* Nur StorageTask greift auf SD zu.
+* Fehlende SD-Karte wird korrekt gemeldet.
 
 ---
 
-# Phase 3 – Display, Touch, LVGL und UiTask
+# Phase 3 – Display, Touch, LVGL und GUI
 
 ## 3.1 Hardwareprüfung
 
 * [x] Displaycontroller verifizieren
 * [x] Touchcontroller verifizieren
 * [x] Pinbelegung dokumentieren
-* [x] externe GPIO-Konflikte prüfen
-* [ ] Displayhelligkeit prüfen
+* [x] GPIO-Konflikte prüfen
+* [x] Hintergrundbeleuchtung prüfen
 
 ## 3.2 LovyanGFX
 
 * [x] Display initialisieren
 * [x] Rotation konfigurieren
-* [x] Farbtest durchführen
-* [x] Touchkoordinaten lesen
-* [x] Touchrotation prüfen
+* [x] Farbtest
+* [x] Touchkoordinaten
+* [x] Touchrotation
+* [x] Touchtest
 
 ## 3.3 LVGL
 
-* [x] LVGL 9.x integrieren
-* [x] Renderpuffer einrichten
-* [x] PSRAM-Nutzung prüfen
-* [x] Flush-Callback implementieren
-* [x] Touch-Callback implementieren
-* [x] LVGL ausschließlich im UiTask betreiben
+* [x] LVGL 9 integrieren
+* [x] `lv_conf.h`
+* [x] Renderpuffer
+* [x] PSRAM-Nutzung
+* [x] Flush-Callback
+* [x] Touch-Callback
+* [x] LVGL nur im UiTask
 
-## 3.4 Ereignisgesteuerter UiTask
+## 3.4 UiTask
 
 * [x] `uiCommandQueue` verarbeiten
-* [x] nächsten LVGL-Ausführungszeitpunkt verwenden
-* [x] unnötig kurze feste Schleifen vermeiden
-* [x] optional Touch-IRQ untersuchen
-* [x] keine UI-Änderung aus anderen Tasks erlauben
+* [x] LVGL-Timing verwenden
+* [x] unnötig kurze Schleifen vermeiden
+* [x] optional Touch-IRQ prüfen
+* [x] keine UI-Aufrufe aus anderen Tasks
 
-## 3.5 EEZ Studio
+## 3.5 Bestehende EEZ-GUI migrieren
 
-* [ ] Projektauflösung 480 × 320
-* [ ] LVGL 9 als Ziel
-* [ ] EEZ Flow deaktiviert
-* [ ] Export nach `src/ui/generated`
-* [ ] Bootscreen
-* [ ] Hauptmenü
-* [ ] Spule-wiegen-Screen
-* [ ] Einstellungen
+Die bereits vorhandene Implementierung aus Aufgabe 3.5 ist Ausgangspunkt und muss angepasst werden.
+
+* [x] bestehendes EEZ-Projekt sichern
+* [x] vorhandene Screens analysieren
+* [x] vorhandene Navigation analysieren
+* [x] unpassende Placeholder-Screens entfernen
+* [x] vorhandene Widgets weiterverwenden, wenn sinnvoll
+* [x] kein zweites EEZ-Projekt erzeugen
+* [x] Screen-Namen aus `AGENTS.md` verwenden
+* [x] permanente Drucker-Kopfzeile ergänzen
+* [x] aktuellen Drucker immer anzeigen
+* [x] Drucker-Kopfzeile antippbar machen
+* [x] Settings-Schaltfläche ergänzen
+* [x] globale untere Aktionsleiste erstellen
+* [x] Home auf AMS-, External- und Staging-Struktur umbauen
+* [x] Security-Key-Elemente entfernen
+* [x] generierten Code nur nach `src/ui/generated/`
+* [x] `pio run`
+
+### Abnahmekriterien 3.5
+
+* Vorhandenes Projekt wurde migriert.
+* Kein paralleles UI-Projekt.
+* Drucker permanent sichtbar.
+* Kopfzeile öffnet Druckerauswahl.
+* Keine Security-Key-Elemente.
+* Build erfolgreich.
+
+## 3.6 Designsystem und Komponenten
+
+* [ ] globale Farben
+* [ ] globale Schriftgrößen
+* [ ] globale Abstände
+* [ ] Mindesthöhe der Touchflächen
+* [ ] `CMP_TOP_PRINTER_BAR`
+* [ ] `CMP_BOTTOM_ACTION_BAR`
+* [ ] `CMP_STATUS_BADGE`
+* [ ] `CMP_CONNECTION_INDICATOR`
+* [ ] `CMP_AMS_SELECTOR`
+* [ ] `CMP_TRAY_CARD`
+* [ ] `CMP_STAGING_CARD`
+* [ ] `CMP_SPOOL_SUMMARY`
+* [ ] `CMP_WEIGHT_DISPLAY`
+* [ ] `CMP_PROGRESS_OVERLAY`
+* [ ] `CMP_CONFIRM_DIALOG`
+* [ ] `CMP_RESULT_DIALOG`
+* [ ] `CMP_ERROR_DIALOG`
+* [ ] `CMP_NUMERIC_INPUT`
+* [ ] `CMP_TEXT_INPUT`
+* [ ] `CMP_SETTINGS_BUTTON`
+
+## 3.7 UI-Datenmodelle
+
+* [ ] `UiPrinterSummary`
+* [ ] `UiAmsSummary`
+* [ ] `UiTraySummary`
+* [ ] `UiStagingSummary`
+* [ ] `UiSpoolSummary`
+* [ ] `UiWeightState`
+* [ ] `UiConnectionState`
+* [ ] `UiSettingsState`
+* [ ] mehrere Drucker berücksichtigen
+* [ ] `printerId` in Aktionen
+* [ ] `amsId` in Aktionen
+* [ ] `trayId` in Aktionen
+* [ ] `spoolId` in Aktionen
+* [ ] Mock-Datenprovider
+
+## 3.8 Home-Screen
+
+* [ ] `SCR_HOME`
+* [ ] Drucker-Kopfzeile
+* [ ] Druckerstatus
+* [ ] aktives AMS
+* [ ] mehrere AMS-Einheiten
+* [ ] vier Slots
+* [ ] External Slot
+* [ ] Staging
+* [ ] Gewicht
+* [ ] Stabilitätsstatus
+* [ ] NFC-Status
+* [ ] Spoolman-Status
+* [ ] WLAN-Status
+* [ ] Slot-Aktionen senden
+* [ ] Staging-Aktion senden
+* [ ] Druckerauswahl senden
+* [ ] Settings öffnen
+
+## 3.9 Druckerauswahl
+
+* [ ] `SCR_PRINTER_SELECT`
+* [ ] Druckerliste
+* [ ] aktueller Drucker markiert
+* [ ] Standarddrucker markiert
+* [ ] Online-/Offline-Status
+* [ ] AMS-Anzahl
+* [ ] Druckerwechsel als UiAction
+* [ ] Rückkehr zur vorherigen Ansicht
+* [ ] Drucker verwalten
+
+## 3.10 Staging-Screens
+
+* [ ] `SCR_STAGING_DETAILS`
+* [ ] Spoolman-ID
+* [ ] Hersteller
+* [ ] Material
+* [ ] Farbe
+* [ ] Leergewicht
+* [ ] Bruttogewicht
+* [ ] Restgewicht
+* [ ] NFC-Status
+* [ ] Quick Weight
+* [ ] Mehr
+* [ ] Schließen
+* [ ] `SCR_STAGING_ACTIONS`
+* [ ] Slot konfigurieren
+* [ ] Advanced Weight
+* [ ] Staging leeren
+* [ ] Tag schreiben
+* [ ] Tag verknüpfen
+* [ ] Tag trennen
+* [ ] Tag löschen
+* [ ] Spule suchen
+* [ ] Spulendetails
+
+## 3.11 Slot-Screens
+
+* [ ] `SCR_TRAY_DETAILS`
+* [ ] Tab Slotinformationen
+* [ ] Tab Spuleninformationen
+* [ ] `SCR_TRAY_ACTIONS`
+* [ ] aus Staging konfigurieren
+* [ ] manuell konfigurieren
+* [ ] Zuordnung entfernen
+* [ ] Slot zurücksetzen
+* [ ] Zuordnung erneut anwenden
+* [ ] Slot aktualisieren
+* [ ] `SCR_TRAY_SELECT`
+* [ ] Druckerwechsel im Auswahlmodus
+* [ ] AMS-Wechsel im Auswahlmodus
+* [ ] Slot hervorheben
+* [ ] Zusammenfassung nach Auswahl
+
+## 3.12 Spulen-Screens
+
+* [ ] `SCR_SPOOL_SEARCH`
+* [ ] ID-Filter
+* [ ] Freitextfilter
+* [ ] Herstellerfilter
+* [ ] Materialfilter
+* [ ] Farbfilter
+* [ ] Archivfilter
+* [ ] Ergebnisliste
+* [ ] `SCR_SPOOL_DETAILS`
+* [ ] Hersteller
+* [ ] Filament
+* [ ] Material
+* [ ] Farbe
+* [ ] Kommentar
+* [ ] Standort
+* [ ] Gewichte
+* [ ] letzter Einsatz
+* [ ] NFC-Zuordnung
+* [ ] Slotzuordnung
+
+## 3.13 Settings-Grundstruktur
+
+* [ ] `SCR_SETTINGS_HOME`
+* [ ] WLAN
+* [ ] Spoolman
+* [ ] Waage
+* [ ] Bambu-Drucker
+* [ ] Gerät
+* [ ] Diagnose
+* [ ] Firmware
+* [ ] keine Security-Key-Kategorie
+* [ ] Navigation
+* [ ] Zurücknavigation
+
+## 3.14 Spoolman-Settings
+
+* [ ] `SCR_SETTINGS_SPOOLMAN`
+* [ ] Verbindungsname
+* [ ] HTTP/HTTPS
+* [ ] Host/IP
+* [ ] Port
+* [ ] API-Basispfad
+* [ ] Timeout
+* [ ] Verbindung testen
+* [ ] Status
+* [ ] Serverversion
+* [ ] Speichern
+* [ ] Abbrechen
+* [ ] Eingabevalidierung
+* [ ] kein Security-Key-Feld
+
+## 3.15 Druckerverwaltung
+
+* [ ] `SCR_SETTINGS_PRINTERS`
+* [ ] Druckerliste
+* [ ] hinzufügen
+* [ ] bearbeiten
+* [ ] löschen
+* [ ] aktivieren/deaktivieren
+* [ ] Standarddrucker
+* [ ] aktiver Drucker
+* [ ] `SCR_SETTINGS_PRINTER_EDIT`
+* [ ] Anzeigename
+* [ ] Host/IP
+* [ ] Seriennummer
+* [ ] LAN-Zugangscode
+* [ ] Zugangscode maskieren
+* [ ] Verbindung testen
+* [ ] Speichern
+* [ ] Abbrechen
+* [ ] kein Security Key
+
+## 3.16 Weitere Settings-Screens
+
+* [ ] `SCR_SETTINGS_WIFI`
+* [ ] `SCR_SETTINGS_SCALE`
+* [ ] `SCR_SETTINGS_DEVICE`
+* [ ] `SCR_SETTINGS_DIAGNOSTICS`
+* [ ] `SCR_SETTINGS_FIRMWARE`
+
+## 3.17 Dialoge und Overlays
+
+* [ ] Boot-Fortschritt
+* [ ] Verbindungsfortschritt
+* [ ] NFC-Leseoverlay
+* [ ] NFC-Schreiboverlay
+* [ ] Gewichtsstabilisierung
+* [ ] Spoolman-Anfrage
+* [ ] Bambu-Verbindung
+* [ ] Bestätigungsdialog
 * [ ] Fehlerdialog
+* [ ] Erfolgsdialog
+* [ ] Neustartbestätigung
+* [ ] WLAN-Resetbestätigung
 
-### Abnahmekriterien
+### Abnahmekriterien Phase 3
 
-* Display und Touch funktionieren.
-* LVGL läuft ausschließlich im UiTask.
-* Andere Tasks aktualisieren die UI nur über Queues.
-* Generierter Code wird nicht manuell verändert.
-* Oberfläche bleibt während anderer Taskaktivitäten bedienbar.
+* Alle Screenskelett vorhanden.
+* Navigation mit Mock-Daten möglich.
+* Mehrdruckerunterstützung sichtbar.
+* Spoolman eigener Settings-Screen.
+* Keine Security-Key-Funktion.
+* Build erfolgreich.
 
 ---
 
-# Phase 4 – Waage und ScaleTask
+# Phase 4 – Waage und Gewicht
 
 ## 4.1 HX711-Hardware
 
 * [ ] HX711-Pins verifizieren
 * [ ] DOUT-Interruptfähigkeit prüfen
-* [ ] DOUT-Interrupt registrieren
+* [ ] Interrupt registrieren
 * [ ] ISR mit `IRAM_ATTR`
-* [ ] ISR weckt ScaleTask über Task Notification
-* [ ] keine HX711-Kommunikation in der ISR
+* [ ] ISR weckt ScaleTask
+* [ ] keine HX711-Kommunikation in ISR
 
 ## 4.2 ScaleTask
 
-* [ ] auf Task Notification blockieren
-* [ ] Messwert nach Benachrichtigung lesen
-* [ ] Verbindungsfehler erkennen
-* [ ] Messwert an Filter übergeben
-* [ ] Ereignis an AppTask senden
+* [ ] auf Notification blockieren
+* [ ] Messwert lesen
+* [ ] Verbindungsfehler
+* [ ] Filter aufrufen
+* [ ] Event an AppTask
 
-## 4.3 Filterung
+## 4.3 Filter
 
-* [ ] gleitenden Mittelwert implementieren
-* [ ] Tiefpassfilter implementieren
-* [ ] Ausreißer erkennen
-* [ ] negative Kleinwerte behandeln
-* [ ] stabile Messung erkennen
-* [ ] Stabilitätszeit konfigurieren
+* [ ] gleitender Mittelwert
+* [ ] Tiefpassfilter
+* [ ] Ausreißer
+* [ ] negative Kleinwerte
+* [ ] Stabilität
+* [ ] Stabilitätszeit
+* [ ] Konfiguration zentral
 
 ## 4.4 Tarierung und Kalibrierung
 
-* [ ] Kommandos über ScaleCommandQueue
+* [ ] Commands über Queue
 * [ ] Tarieren
-* [ ] Kalibrierung mit Referenzgewicht
-* [ ] Kalibrierwert über StorageTask speichern
-* [ ] `/config/scale.json` verwenden
-* [ ] Kalibrierwert beim Start laden
+* [ ] Kalibrierung
+* [ ] Kalibrierfaktor
+* [ ] Speicherung über StorageTask
+* [ ] `/config/scale.json`
+* [ ] Laden beim Start
+* [ ] Zurücksetzen
 
-## 4.5 Tests
+## 4.5 GUI-Anbindung
+
+* [ ] WeightDisplay mit ScaleTask
+* [ ] stabil anzeigen
+* [ ] instabil anzeigen
+* [ ] Fehler anzeigen
+* [ ] Quick Weight freischalten
+* [ ] Advanced Weight mit realen Daten
+* [ ] Scale-Settings mit realen Daten
+* [ ] Tarierworkflow
+* [ ] Kalibrierworkflow
+
+## 4.6 Quick Weight
+
+* [ ] aktuelle Spule
+* [ ] aktuelles Gewicht
+* [ ] Stabilität
+* [ ] berechnetes Restgewicht
+* [ ] letzte Messung
+* [ ] Bestätigung
+* [ ] AppTask-Aktion
+
+## 4.7 Advanced Weight
+
+* [ ] gebrauchte Spule
+* [ ] volle/neue Spule
+* [ ] Leergewicht korrigieren
+* [ ] Ausgangsgewicht korrigieren
+* [ ] Zusammenfassung
+* [ ] Bestätigung
+* [ ] Ergebnisdialog
+
+## 4.8 Tests
 
 * [ ] Filtertest
 * [ ] Stabilitätstest
@@ -283,261 +565,403 @@ Jeder Task muss zunächst auf seiner Queue oder Event Group blockieren.
 * [ ] Kalibrierberechnung
 * [ ] simulierte Interruptfolge
 
-### Abnahmekriterien
+### Abnahmekriterien Phase 4
 
-* ScaleTask blockiert bis ein Messwert verfügbar ist.
-* Kein Busy Waiting auf HX711-DOUT.
-* Kalibrierung wird als JSON auf SD gespeichert.
-* Ruhendes Gewicht wird zuverlässig als stabil erkannt.
-* UI bleibt während Messung und Kalibrierung aktiv.
+* ScaleTask blockiert ereignisgesteuert.
+* Kein Busy Waiting.
+* Kalibrierung bleibt erhalten.
+* Ruhendes Gewicht stabil.
+* GUI bleibt reaktionsfähig.
 
 ---
 
-# Phase 5 – NFC und NfcTask
+# Phase 5 – NFC und Tag-Workflows
 
 ## 5.1 PN532-Hardware
 
 * [ ] Schnittstelle festlegen
-* [ ] PN532-IRQ-Pin prüfen
-* [ ] IRQ-Interrupt einrichten
+* [ ] IRQ prüfen
+* [ ] Interrupt einrichten
 * [ ] ISR weckt NfcTask
-* [ ] keine I²C-Kommunikation in der ISR
+* [ ] keine Buskommunikation in ISR
 
-## 5.2 Gemeinsamer I²C-Bus
+## 5.2 Gemeinsamer Bus
 
-* [ ] prüfen, ob Touch und PN532 denselben Bus verwenden
-* [ ] bei gemeinsamem Bus I²C-Mutex anlegen
-* [ ] Mutex nur aus Tasks verwenden
-* [ ] maximale Haltezeit dokumentieren
+* [ ] Touch-/PN532-Bus prüfen
+* [ ] I²C-Mutex falls nötig
+* [ ] maximale Haltezeit
 * [ ] Deadlocks vermeiden
 
-## 5.3 NFC lesen
+## 5.3 NFC lesen und schreiben
 
-* [ ] NfcTask blockiert auf Notification oder Command
 * [ ] UID lesen
 * [ ] NDEF lesen
-* [ ] Payload `spoolman:<id>` parsen
-* [ ] ungültige Payload melden
-* [ ] wiederholtes Tag-Ereignis entprellen
+* [ ] `spoolman:<id>` parsen
+* [ ] Bambu-Tag erkennen
+* [ ] Legacy-Tag erkennen
+* [ ] Tag schreiben
+* [ ] Tag löschen
+* [ ] Tag verifizieren
+* [ ] Entprellung
 
-## 5.4 NFC schreiben
+## 5.4 Neuer einfacher Tag
 
-* [ ] Schreibkommando über Queue
-* [ ] Spoolman-ID validieren
-* [ ] Payload schreiben
-* [ ] Payload erneut lesen
-* [ ] Ergebnis verifizieren
-* [ ] Fehler an AppTask senden
+* [ ] `SCR_TAG_ACTION_SELECT`
+* [ ] vorhandene Spule verbinden
+* [ ] letzte Spule verbinden
+* [ ] Spule suchen
+* [ ] Daten prüfen
+* [ ] optional wiegen
+* [ ] schreiben
+* [ ] verifizieren
+* [ ] Ergebnis
 
-## 5.5 Zuordnungen
+## 5.5 Bambu-Definition-Tag
 
-* [ ] NFC-Zuordnungen über StorageTask speichern
+* [ ] UID lesen
+* [ ] Definition anzeigen
+* [ ] lokale Zuordnung prüfen
+* [ ] Import anbieten
+* [ ] bestehende Spule verbinden
+* [ ] `SCR_BAMBU_SPOOL_TYPE`
+* [ ] Low Temperature
+* [ ] High Temperature
+* [ ] Other
+* [ ] Leergewicht prüfen
+* [ ] Spoolman-Match suchen
+* [ ] Importvorschau
+* [ ] UID-Zuordnung speichern
+* [ ] optional wiegen
+* [ ] Ergebnis
+
+## 5.6 Legacy-Tag
+
+* [ ] altes Format erkennen
+* [ ] Daten anzeigen
+* [ ] importieren
+* [ ] verbinden
+* [ ] umschreiben
+* [ ] löschen
+* [ ] abbrechen
+
+## 5.7 Tagoperationen aus Staging
+
+* [ ] Tag schreiben
+* [ ] Tag verknüpfen
+* [ ] Tag trennen
+* [ ] Tag löschen
+* [ ] Fortschritt
+* [ ] Verifikation
+* [ ] Bestätigung destruktiver Aktionen
+
+## 5.8 Mappings
+
 * [ ] `/mappings/nfc-spools.json`
-* [ ] Bambu-UID-Zuordnung vorbereiten
-* [ ] keine geschützten Bambu-Tag-Bereiche verändern
+* [ ] `/mappings/bambu-tags.json`
+* [ ] Laden über StorageTask
+* [ ] Speichern über StorageTask
+* [ ] Konflikte erkennen
 
-### Abnahmekriterien
+### Abnahmekriterien Phase 5
 
 * NfcTask arbeitet ereignisgesteuert.
-* Tag-Erkennung verwendet IRQ, sofern Hardware dies unterstützt.
-* I²C wird durch einen Mutex geschützt, falls erforderlich.
-* Tags können gelesen und verifiziert geschrieben werden.
-* Zuordnungen liegen als JSON auf SD.
+* Tags können gelesen, geschrieben und verifiziert werden.
+* Bambu- und Legacy-Workflows funktionieren.
+* Keine Security-Key- oder Verschlüsselungslogik.
 
 ---
 
-# Phase 6 – WiFiManager und NetworkTask
+# Phase 6 – WiFiManager
 
 ## 6.1 WiFiManager
 
-* [ ] WiFiManager mit fester Version integrieren
-* [ ] NetworkTask besitzt WiFiManager-Instanz
-* [ ] Erstkonfiguration über Captive Portal
-* [ ] Access Point mit Passwort schützen
-* [ ] Portal-Timeout definieren
-* [ ] Verbindungs-Timeout definieren
+* [ ] feste Bibliotheksversion
+* [ ] Instanz im NetworkTask
+* [ ] Captive Portal
+* [ ] AP-Passwort
+* [ ] Portal-Timeout
+* [ ] Verbindungs-Timeout
 
-## 6.2 Blockierender Portalbetrieb
+## 6.2 Portalbetrieb
 
-* [ ] Portal nur im NetworkTask starten
-* [ ] UI bleibt während Portalbetrieb aktiv
-* [ ] AppTask erhält Portalstatus
-* [ ] Abbruch und Timeout behandeln
-* [ ] kein `WiFiManager::process()` in Arduino-`loop()`
+* [ ] nur im NetworkTask
+* [ ] UI bleibt aktiv
+* [ ] AppTask erhält Status
+* [ ] Abbruch
+* [ ] Timeout
+* [ ] kein `process()` in `loop()`
 
-## 6.3 WiFi-Ereignisse
+## 6.3 WiFi-Events
 
-* [ ] `WiFi.onEvent()` registrieren
-* [ ] Connected-Ereignis behandeln
-* [ ] Got-IP-Ereignis behandeln
-* [ ] Disconnect-Ereignis behandeln
-* [ ] Lost-IP-Ereignis behandeln
-* [ ] Callback sendet nur kurze Queue-Nachricht
+* [ ] `WiFi.onEvent()`
+* [ ] Connected
+* [ ] Got IP
+* [ ] Disconnect
+* [ ] Lost IP
+* [ ] kurze Callback-Nachrichten
 * [ ] Event Group aktualisieren
 
-## 6.4 Netzwerkkonfiguration
+## 6.4 Netzwerkparameter
 
-* [ ] zusätzliche Parameter aus `/config/network.json` laden
+* [ ] `/config/network.json`
 * [ ] Hostname
-* [ ] DHCP oder statische IP
+* [ ] DHCP/statisch
 * [ ] DNS
 * [ ] Portalname
 * [ ] Timeouts
-* [ ] Parameter über WiFiManager-Formular änderbar machen
-* [ ] Änderungen über StorageTask speichern
+* [ ] Speichern über StorageTask
 
-## 6.5 UI
+## 6.5 GUI
 
-* [ ] WLAN-Status anzeigen
-* [ ] IP-Adresse anzeigen
-* [ ] „WLAN neu konfigurieren“
-* [ ] „Captive Portal starten“
-* [ ] „WLAN-Einstellungen löschen“
+* [ ] WLAN-Status
+* [ ] SSID
+* [ ] IP
+* [ ] RSSI
+* [ ] Captive Portal starten
+* [ ] WLAN neu konfigurieren
+* [ ] WLAN-Daten löschen
+* [ ] Portal-Anleitung
+* [ ] kein Security Key
 
-### Abnahmekriterien
+### Abnahmekriterien Phase 6
 
-* WLAN kann ohne Neukompilierung eingerichtet werden.
-* Captive Portal blockiert nicht die übrigen Tasks.
-* WiFi-Callbacks verändern keinen gemeinsam genutzten Zustand direkt.
-* Zusätzliche Netzwerkparameter liegen als JSON auf SD.
-* WLAN-Passwort wird nicht unverschlüsselt auf SD dupliziert.
+* WLAN ohne Neukompilierung.
+* Portal blockiert andere Tasks nicht.
+* WiFi-Callbacks bleiben kurz.
+* Zusatzparameter als JSON.
+* Passwort nicht auf SD dupliziert.
 
 ---
 
-# Phase 7 – SpoolmanTask
+# Phase 7 – Spoolman
 
 ## 7.1 Konfiguration
 
-* [ ] `/config/spoolman.json` definieren
-* [ ] Serveradresse laden
-* [ ] Port laden
-* [ ] API-Pfad normalisieren
-* [ ] Timeout laden
+* [ ] `/config/spoolman.json`
+* [ ] GUI-Werte laden
+* [ ] GUI-Werte speichern
+* [ ] URL normalisieren
+* [ ] Timeout
+* [ ] Verbindung testen
+* [ ] Status
+* [ ] Version
 
-## 7.2 Kommunikation
+## 7.2 Spulen
 
-* [ ] SpoolmanTask blockiert auf CommandQueue
-* [ ] Health-Check
-* [ ] Spule anhand ID laden
+* [ ] Spule nach ID
 * [ ] Spulen suchen
-* [ ] Messung übertragen
-* [ ] HTTP-Statuscodes auswerten
-* [ ] JSON sicher parsen
+* [ ] Materialfilter
+* [ ] Herstellerfilter
+* [ ] Farbfilter
+* [ ] Suchergebnisse an UI
+* [ ] Details an UI
 
-## 7.3 Cache
+## 7.3 Hersteller und Filamente
 
-* [ ] Spoolman-Antworten über StorageTask cachen
+* [ ] Hersteller suchen
+* [ ] Hersteller anlegen
+* [ ] Filament suchen
+* [ ] Filament anlegen
+* [ ] Dubletten vermeiden
+* [ ] Eingaben validieren
+
+## 7.4 Spulenimport
+
+* [ ] Tagdaten abbilden
+* [ ] Hersteller finden
+* [ ] Filament finden
+* [ ] passende Datensätze auswählen
+* [ ] fehlende Datensätze anlegen
+* [ ] Spule anlegen
+* [ ] Spulen-ID zurückmelden
+
+## 7.5 Gewicht
+
+* [ ] Quick Weight übertragen
+* [ ] Advanced Weight übertragen
+* [ ] aktualisierte Spule neu laden
+* [ ] Staging aktualisieren
+* [ ] Fehlerdialog
+* [ ] Pending Measurements
+
+## 7.6 Cache
+
 * [ ] `/cache/spools.json`
-* [ ] Cache-Alter speichern
-* [ ] veralteten Cache markieren
-* [ ] Cache nicht als führende Datenbank verwenden
+* [ ] `/cache/filaments.json`
+* [ ] `/cache/vendors.json`
+* [ ] Cache-Alter
+* [ ] veraltete Daten markieren
+* [ ] Cache nicht als führende Datenbank
 
-## 7.4 Ausstehende Messungen
+### Abnahmekriterien Phase 7
 
-* [ ] Netzwerkfehler erkennen
-* [ ] Benutzer über fehlgeschlagene Übertragung informieren
-* [ ] optional Messung in `/queue/pending-measurements.json` speichern
-* [ ] spätere Übertragung nur nach klarer Regel
-* [ ] doppelte Übertragung verhindern
-
-### Abnahmekriterien
-
-* AppTask kann Spoolman-Aufträge asynchron auslösen.
-* UI und AppTask blockieren nicht während HTTP-Anfragen.
-* Spulendaten werden korrekt dargestellt.
-* Messwerte können übertragen werden.
-* Cache und Warteschlange liegen als JSON auf SD.
+* Asynchrone Spoolman-Aufträge.
+* UI blockiert nicht.
+* Suche funktioniert.
+* Import funktioniert.
+* Gewicht aktualisiert.
+* Cache als JSON.
 
 ---
 
-# Phase 8 – Vollständiger Anwendungsablauf
+# Phase 8 – Bambu und mehrere Drucker
 
-## 8.1 Zustandsautomat
+## 8.1 Datenmodell
 
-* [ ] zentrale Zustände definieren
-* [ ] zulässige Übergänge definieren
-* [ ] Übergänge protokollieren
-* [ ] verspätete Antworten behandeln
-* [ ] `requestId` prüfen
-* [ ] Abbruch ermöglichen
+* [ ] mehrere Drucker
+* [ ] stabile PrinterId
+* [ ] aktiver Drucker
+* [ ] Standarddrucker
+* [ ] aktives AMS je Drucker
+* [ ] Cache je Drucker
+* [ ] Slotzuordnung je Drucker
 
-## 8.2 NFC-Wiegeablauf
-
-* [ ] Tag erkennen
-* [ ] Spoolman-ID laden
-* [ ] Spulendaten anfordern
-* [ ] stabile Messung abwarten
-* [ ] Daten anzeigen
-* [ ] Bestätigung abwarten
-* [ ] Gewicht übertragen
-* [ ] Erfolg anzeigen
-
-## 8.3 Manueller Ablauf
-
-* [ ] Spulen-ID eingeben
-* [ ] Spule suchen
-* [ ] Gewicht erfassen
-* [ ] Messung speichern
-* [ ] optional NFC-Tag schreiben
-
-## 8.4 Fehlerfälle
-
-* [ ] SD-Karte fehlt
-* [ ] WLAN fehlt
-* [ ] Spoolman fehlt
-* [ ] Waage instabil
-* [ ] NFC-Tag ungültig
-* [ ] Tag wird entfernt
-* [ ] Queue ist voll
-* [ ] Antwort kommt zu spät
-* [ ] Benutzer bricht ab
-
-### Abnahmekriterien
-
-* Vollständiger Workflow funktioniert ohne serielle Bedienung.
-* Kein Teil des Ablaufs verwendet Busy Waiting.
-* Services kommunizieren ausschließlich über die definierten RTOS-Mechanismen.
-* Doppelte Messungen werden vermieden.
-* Fehler führen zu einem definierten Zustand.
-
----
-
-# Phase 9 – BambuTask und AMS
-
-Erst beginnen, wenn Phase 8 zuverlässig funktioniert.
-
-## 9.1 Bambu-Konfiguration
+## 8.2 Bambu-Konfiguration
 
 * [ ] `/config/bambu.json`
-* [ ] Druckeradresse
+* [ ] Name
+* [ ] Host/IP
 * [ ] Seriennummer
 * [ ] LAN-Zugangscode
-* [ ] sichere Behandlung vertraulicher Daten
-* [ ] keine Zugangsdaten protokollieren
+* [ ] aktiviert
+* [ ] Standard
+* [ ] ausgewählt
+* [ ] kein Security Key
 
-## 9.2 BambuTask
+## 8.3 BambuTask
 
-* [ ] MQTT-Verbindung
-* [ ] Statusmeldungen
+* [ ] Commands mit printerId
+* [ ] Events mit printerId
+* [ ] Drucker aktivieren
+* [ ] Drucker wechseln
+* [ ] verbinden
+* [ ] trennen
+* [ ] Verbindung testen
+* [ ] Status
+* [ ] AMS-Liste
+* [ ] Slots
+* [ ] External Slot
+* [ ] Slotdaten schreiben
+* [ ] Slotdaten zurücksetzen
 * [ ] Wiederverbindung
-* [ ] AMS-Daten
-* [ ] Fehlerereignisse an AppTask
-* [ ] keine direkte UI-Kommunikation
 
-## 9.3 AMS-Zuordnung
+## 8.4 Druckerwechsel
 
-* [ ] Spule per NFC erkennen
-* [ ] Spoolman-Daten laden
-* [ ] AMS-Slot auswählen
-* [ ] Daten übertragen
-* [ ] Druckerantwort prüfen
+* [ ] alten Zustand sichern
+* [ ] aktiven Drucker ändern
+* [ ] Kopfzeile aktualisieren
+* [ ] AMS-Daten laden
+* [ ] Staging erhalten
+* [ ] veraltete Antworten ignorieren
+* [ ] printerId prüfen
+
+## 8.5 AMS-Zuordnung
+
+* [ ] Spule aus Staging
+* [ ] Drucker
+* [ ] AMS
+* [ ] Slot
+* [ ] Daten vorbereiten
+* [ ] BambuCommand
+* [ ] Antwort
+* [ ] Slots neu laden
+* [ ] Ergebnis
+
+## 8.6 Druckerverwaltungs-GUI
+
+* [ ] hinzufügen
+* [ ] bearbeiten
+* [ ] löschen
+* [ ] Standard setzen
+* [ ] aktiv setzen
+* [ ] Verbindung testen
+* [ ] Zugangscode maskieren
+* [ ] Löschbestätigung
+
+### Abnahmekriterien Phase 8
+
+* Mindestens zwei Drucker unterstützt.
+* Aktiver Drucker permanent sichtbar.
+* Daten werden nicht vermischt.
+* Kein Neustart beim Wechsel.
+* Kein Security-Key-Workflow.
+
+---
+
+# Phase 9 – Integrierte Workflows
+
+## 9.1 Hauptworkflow
+
+* [ ] Drucker auswählen
+* [ ] AMS auswählen
+* [ ] NFC-Spule erkennen
+* [ ] Staging anzeigen
+* [ ] Gewicht erfassen
+* [ ] Spoolman aktualisieren
+* [ ] Slot auswählen
+* [ ] Bambu konfigurieren
 * [ ] Ergebnis anzeigen
 
-### Abnahmekriterien
+## 9.2 Staging-Workflow
 
-* BambuTask ist vollständig von Waage und Spoolman entkoppelt.
-* Ausfall des Druckers beeinträchtigt die Grundfunktionen nicht.
-* AMS-Slots können angezeigt und aktualisiert werden.
+* [ ] Quick Weight
+* [ ] Advanced Weight
+* [ ] Configure Slot
+* [ ] Clear Staging
+* [ ] Write Tag
+* [ ] Link Tag
+* [ ] Unlink Tag
+* [ ] Erase Tag
+
+## 9.3 Slot-Workflow
+
+* [ ] Slotdetails
+* [ ] Spulendetails
+* [ ] Configure from Staging
+* [ ] Configure Manually
+* [ ] Untag Slot
+* [ ] Reset Slot
+* [ ] Reapply Assignment
+* [ ] Refresh Slot
+
+## 9.4 Definition-Tag-Workflow
+
+* [ ] Tag erkennen
+* [ ] Definition anzeigen
+* [ ] Spulentyp auswählen
+* [ ] Spoolman-Match
+* [ ] Daten prüfen
+* [ ] importieren
+* [ ] wiegen
+* [ ] zuweisen
+* [ ] Ergebnis
+
+## 9.5 Legacy-Workflow
+
+* [ ] Legacy erkennen
+* [ ] Daten anzeigen
+* [ ] importieren
+* [ ] verbinden
+* [ ] umschreiben
+* [ ] löschen
+
+## 9.6 Zustandsautomat
+
+* [ ] alle Screens durch AppTask
+* [ ] erlaubte Übergänge
+* [ ] Zurücknavigation
+* [ ] Abbruch
+* [ ] Request-ID
+* [ ] Printer-ID
+* [ ] verspätete Antworten
+* [ ] doppelte Aktionen
+
+### Abnahmekriterien Phase 9
+
+* Workflows ohne serielle Bedienung.
+* Kein Busy Waiting.
+* Kommunikation nur über RTOS-Mechanismen.
+* Fehler führen zu definiertem Zustand.
 
 ---
 
@@ -551,73 +975,147 @@ Erst beginnen, wenn Phase 8 zuverlässig funktioniert.
 * [ ] Event Bits
 * [ ] Heap
 * [ ] PSRAM
-* [ ] Diagnose in `/diagnostics/task-stats.json`
+* [ ] `/diagnostics/task-stats.json`
 
-## 10.2 Fehler- und Belastungstests
+## 10.2 Hardware- und Speicherfehler
 
-* [ ] SD-Karte während Schreiben entfernen
-* [ ] Stromausfall während Schreiben simulieren
-* [ ] WLAN während HTTP-Anfrage trennen
-* [ ] Spoolman neu starten
+* [ ] SD während Schreiben entfernen
+* [ ] Stromausfall simulieren
 * [ ] HX711 trennen
 * [ ] PN532 trennen
-* [ ] Queue-Überlauf simulieren
-* [ ] Interruptflut simulieren
-* [ ] langsame SD-Karte testen
+* [ ] langsame SD
+* [ ] beschädigte JSON
+* [ ] Backup-Wiederherstellung
 
-## 10.3 Langzeittest
+## 10.3 Netzwerkfehler
 
-* [ ] mehrstündiger Betrieb
-* [ ] Speicherverbrauch beobachten
-* [ ] Taskstacks beobachten
-* [ ] Reconnect beobachten
-* [ ] UI-Reaktionszeit beobachten
-* [ ] Dateiintegrität prüfen
+* [ ] WLAN während HTTP trennen
+* [ ] Spoolman neu starten
+* [ ] langsame Antwort
+* [ ] ungültige Antwort
+* [ ] WiFi-Reconnect
+* [ ] MQTT-Reconnect
 
-## 10.4 Watchdog
+## 10.4 Mehrdruckerfehler
+
+* [ ] Druckerwechsel während MQTT
+* [ ] Druckerwechsel während Slotupdate
+* [ ] Drucker offline
+* [ ] mehrere Drucker offline
+* [ ] aktiven Drucker löschen
+* [ ] Standarddrucker löschen
+* [ ] Antwort eines alten Druckers
+* [ ] AMS wird getrennt
+* [ ] Slotdaten verschiedener Drucker nicht vermischen
+
+## 10.5 Workflowfehler
+
+* [ ] Spoolman während Tagimport aus
+* [ ] NFC-Tag während Wizard entfernt
+* [ ] Waage instabil
+* [ ] Queue voll
+* [ ] Antwort zu spät
+* [ ] Benutzer bricht ab
+* [ ] doppelte Messung verhindern
+
+## 10.6 Watchdog und Langzeittest
 
 * [ ] alle Tasks blockieren oder geben CPU frei
-* [ ] keine endlosen kritischen Abschnitte
+* [ ] keine langen kritischen Abschnitte
 * [ ] keine langen Mutexhaltezeiten
+* [ ] mehrstündiger Betrieb
+* [ ] Speicherverbrauch
+* [ ] UI-Reaktionszeit
+* [ ] Dateiintegrität
 * [ ] kontrollierter Neustart nur durch AppTask
-* [ ] Neustartgrund als JSON speichern
 
-### Abnahmekriterien
+### Abnahmekriterien Phase 10
 
 * Keine offensichtlichen Speicherlecks.
-* Keine Task läuft unnötig permanent.
-* Beschädigte Dateien können wiederhergestellt werden.
-* Hardware- und Netzwerkfehler führen nicht zu Deadlocks.
-* Diagnoseinformationen sind als JSON verfügbar.
+* Keine unnötig laufenden Tasks.
+* Keine Deadlocks.
+* Dateiwiederherstellung funktioniert.
+* Mehrdruckerdaten bleiben getrennt.
 
 ---
 
 # Phase 11 – Dokumentation und Release
 
+## 11.1 Technische Dokumentation
+
 * [ ] Architekturdiagramm
 * [ ] Taskdiagramm
-* [ ] Queue- und Eventübersicht
+* [ ] Queueübersicht
+* [ ] Event-Group-Übersicht
 * [ ] Interruptübersicht
 * [ ] Taskprioritäten
 * [ ] Stackgrößen
 * [ ] GPIO-Tabelle
 * [ ] Verdrahtungsplan
+* [ ] Stückliste
+
+## 11.2 Speicher und Daten
+
 * [ ] JSON-Schemas
 * [ ] SD-Verzeichnisstruktur
-* [ ] WiFiManager-Anleitung
-* [ ] Spoolman-Anleitung
-* [ ] Kalibrierungsanleitung
-* [ ] NFC-Format
-* [ ] Bambu-Anleitung
-* [ ] Build-Anleitung
-* [ ] Testanleitung
-* [ ] Lizenzprüfung
+* [ ] Backup-Strategie
+* [ ] Cache-Strategie
+* [ ] Pending-Measurement-Strategie
+
+## 11.3 Workflows
+
+* [ ] Screenübersicht
+* [ ] Navigationsdiagramm
+* [ ] Hauptworkflow
+* [ ] Staging-Workflow
+* [ ] Slot-Workflow
+* [ ] Tag-Workflow
+* [ ] Bambu-Importworkflow
+* [ ] Legacy-Workflow
+* [ ] Mehrdruckerworkflow
+
+## 11.4 Bedienungsanleitungen
+
+* [ ] Installation
+* [ ] WLAN
+* [ ] WiFiManager
+* [ ] Spoolman
+* [ ] Waagenkalibrierung
+* [ ] NFC
+* [ ] Drucker hinzufügen
+* [ ] Drucker wechseln
+* [ ] AMS-Zuweisung
+* [ ] Firmwareupdate
+
+## 11.5 Entwicklerdokumentation
+
+* [ ] Build
+* [ ] Upload
+* [ ] Tests
+* [ ] EEZ-Studio-Export
+* [ ] neuen Screen ergänzen
+* [ ] neue Action ergänzen
+* [ ] neuen Task ergänzen
+* [ ] neues JSON-Schema ergänzen
+
+## 11.6 Lizenz und Release
+
+* [ ] Bibliothekslizenzen
+* [ ] keine unzulässig kopierten SpoolEase-Dateien
+* [ ] Quellenhinweise
+* [ ] eigene Lizenz
+* [ ] Drittanbieterhinweise
+* [ ] Versionsnummer
 * [ ] Changelog
-* [ ] reproduzierbarer Release-Build
+* [ ] Release-Build
+* [ ] reproduzierbarer Build
+* [ ] bekannte Einschränkungen
+* [ ] bestätigen, dass kein Security-Key-Workflow existiert
 
-### Abnahmekriterien
+### Abnahmekriterien Phase 11
 
-* Ein neuer Entwickler kann das Projekt kompilieren.
-* Task- und Kommunikationsarchitektur sind nachvollziehbar.
-* Alle JSON-Dateien und ihre Schemas sind dokumentiert.
-* Hardware kann anhand der Dokumentation aufgebaut werden.
+* Neuer Entwickler kann bauen.
+* Hardware kann aufgebaut werden.
+* Workflows sind dokumentiert.
+* Screens sind dokumentiert.
+* Release ist reproduzierbar.

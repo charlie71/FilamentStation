@@ -25,6 +25,7 @@ constexpr InitialDocument kInitialDocuments[] = {
     {"/config/device.json", rtos::StorageDocumentType::Device},
     {"/config/network.json", rtos::StorageDocumentType::Network},
     {"/config/spoolman.json", rtos::StorageDocumentType::Spoolman},
+    {"/config/bambu.json", rtos::StorageDocumentType::Bambu},
     {"/config/ui.json", rtos::StorageDocumentType::Ui},
     {"/config/scale.json", rtos::StorageDocumentType::Scale},
     {"/config/nfc.json", rtos::StorageDocumentType::Nfc},

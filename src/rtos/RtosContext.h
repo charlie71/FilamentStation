@@ -26,6 +26,7 @@ struct RtosContext {
   TaskHandle_t storageTask = nullptr;
   TaskHandle_t networkTask = nullptr;
   TaskHandle_t spoolmanTask = nullptr;
+  TaskHandle_t bambuTask = nullptr;
 
   bool createObjects();
   bool createTasks();
@@ -35,4 +36,3 @@ RtosContext& context();
 void logLine(const char* message);
 
 }  // namespace filament_station::rtos
-

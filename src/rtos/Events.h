@@ -7,6 +7,7 @@
 namespace filament_station::rtos {
 
 enum class AppEventType : std::uint8_t {
+  UiAction,
   UiCommunicationTest,
   ScaleReady,
   ScaleStable,

@@ -2,23 +2,49 @@
 
 #include <Arduino.h>
 #include <esp_heap_caps.h>
-#include <iterator>
 #include <lvgl.h>
 #include <soc/soc_memory_types.h>
+
+#include <array>
+#include <cstdint>
+#include <cstdio>
 
 #include "config/AppConfig.h"
 #include "config/BoardConfig.h"
 #include "drivers/DisplayDriver.h"
 #include "drivers/TouchDriver.h"
+#include "ui/generated/ui.h"
 
 namespace filament_station::ui {
 namespace {
+
+enum class PrinterConnectionState : std::uint8_t {
+  Connecting,
+  Connected,
+  Offline,
+};
+
+struct MockPrinter {
+  rtos::PrinterId id;
+  const char* name;
+  PrinterConnectionState connectionState;
+  std::uint8_t activeAmsId;
+  bool isDefault;
+};
+
+constexpr std::array<MockPrinter, 3> kMockPrinters{{
+    {1, "P1S Werkstatt", PrinterConnectionState::Connected, 1, true},
+    {2, "X1C Labor", PrinterConnectionState::Connected, 2, false},
+    {3, "A1 Mini Buero", PrinterConnectionState::Offline, 0, false},
+}};
 
 void* drawBuffer1 = nullptr;
 void* drawBuffer2 = nullptr;
 lv_display_t* lvglDisplay = nullptr;
 lv_indev_t* touchInput = nullptr;
-lv_obj_t* statusLabel = nullptr;
+rtos::RtosContext* rtosContext = nullptr;
+rtos::PrinterId currentPrinterId = 1;
+std::uint32_t nextRequestId = 100;
 
 std::uint32_t tickMilliseconds() { return millis(); }
 
@@ -44,58 +70,192 @@ void readTouch(lv_indev_t*, lv_indev_data_t* data) {
   }
 }
 
-void createIntegrationTestScreen() {
-  struct ColorSample {
-    std::uint32_t color;
-    std::uint32_t textColor;
-    const char* label;
-  };
-  constexpr ColorSample kColorSamples[] = {
-      {0xFF0000, 0xFFFFFF, "R"}, {0x00FF00, 0x000000, "G"},
-      {0x0000FF, 0xFFFFFF, "B"}, {0x00FFFF, 0x000000, "C"},
-      {0xFFFFFF, 0x000000, "W"}, {0x000000, 0xFFFFFF, "K"},
-  };
-
-  lv_obj_t* screen = lv_screen_active();
-  lv_obj_set_style_bg_color(screen, lv_color_hex(0x101820), 0);
-
-  lv_obj_t* title = lv_label_create(screen);
-  lv_label_set_text(title, "FilamentStation - LVGL 9");
-  lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
-  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 18);
-
-  for (std::size_t index = 0; index < std::size(kColorSamples); ++index) {
-    lv_obj_t* sample = lv_obj_create(screen);
-    lv_obj_set_pos(sample, static_cast<lv_coord_t>(index * 80U), 64);
-    lv_obj_set_size(sample, 80, 48);
-    lv_obj_set_style_radius(sample, 0, 0);
-    lv_obj_set_style_border_width(sample, 0, 0);
-    lv_obj_set_style_bg_color(sample, lv_color_hex(kColorSamples[index].color),
-                              0);
-    lv_obj_remove_flag(sample, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t* sampleLabel = lv_label_create(sample);
-    lv_label_set_text(sampleLabel, kColorSamples[index].label);
-    lv_obj_set_style_text_color(
-        sampleLabel, lv_color_hex(kColorSamples[index].textColor), 0);
-    lv_obj_set_style_text_font(sampleLabel, &lv_font_montserrat_18, 0);
-    lv_obj_center(sampleLabel);
+const MockPrinter* findPrinter(rtos::PrinterId id) {
+  for (const auto& printer : kMockPrinters) {
+    if (printer.id == id) {
+      return &printer;
+    }
   }
+  return nullptr;
+}
 
-  lv_obj_t* button = lv_button_create(screen);
-  lv_obj_set_size(button, 200, 72);
-  lv_obj_align(button, LV_ALIGN_CENTER, 0, 36);
-  lv_obj_t* label = lv_label_create(button);
-  lv_label_set_text(label, "Touch test");
-  lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
-  lv_obj_center(label);
+const char* connectionText(PrinterConnectionState state) {
+  switch (state) {
+    case PrinterConnectionState::Connecting:
+      return "verbindet";
+    case PrinterConnectionState::Connected:
+      return "online";
+    case PrinterConnectionState::Offline:
+      return "offline";
+  }
+  return "unbekannt";
+}
 
-  statusLabel = lv_label_create(screen);
-  lv_label_set_text(statusLabel, "RGB565 | PSRAM | 480 x 320");
-  lv_obj_set_style_text_color(statusLabel, lv_color_hex(0x80CBC4), 0);
-  lv_obj_set_style_text_font(statusLabel, &lv_font_montserrat_18, 0);
-  lv_obj_align(statusLabel, LV_ALIGN_BOTTOM_MID, 0, -16);
+lv_obj_t* buttonLabel(lv_obj_t* button) {
+  return button == nullptr ? nullptr : lv_obj_get_child(button, 0);
+}
+
+void setButtonText(lv_obj_t* button, const char* text) {
+  lv_obj_t* label = buttonLabel(button);
+  if (label != nullptr) {
+    lv_label_set_text(label, text);
+  }
+}
+
+void sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
+                std::uint8_t amsId = 0, std::uint8_t trayId = 0,
+                std::int32_t value = 0) {
+  if (rtosContext == nullptr) {
+    return;
+  }
+  rtos::AppEvent event{};
+  event.type = rtos::AppEventType::UiAction;
+  event.requestId = nextRequestId++;
+  event.uiAction.type = type;
+  event.uiAction.requestId = event.requestId;
+  event.uiAction.printerId = printerId;
+  event.uiAction.amsId = amsId;
+  event.uiAction.trayId = trayId;
+  event.uiAction.value = value;
+  if (xQueueSend(rtosContext->appEventQueue, &event, 0) != pdPASS) {
+    rtos::logLine("UiTask: appEventQueue overflow while sending UiAction");
+  }
+}
+
+void headerClicked(lv_event_t*) {
+  sendAction(rtos::UiActionType::SelectPrinter, currentPrinterId, 0, 0, 1);
+}
+
+void settingsClicked(lv_event_t*) {
+  sendAction(rtos::UiActionType::OpenSettings, currentPrinterId);
+}
+
+void backClicked(lv_event_t*) {
+  sendAction(rtos::UiActionType::Back, currentPrinterId);
+}
+
+void stagingClicked(lv_event_t*) {
+  sendAction(rtos::UiActionType::SelectStaging, currentPrinterId);
+}
+
+void amsClicked(lv_event_t* event) {
+  const auto amsId = static_cast<std::uint8_t>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  sendAction(rtos::UiActionType::SelectAms, currentPrinterId, amsId);
+}
+
+void trayClicked(lv_event_t* event) {
+  const auto trayId = static_cast<std::uint8_t>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  const MockPrinter* printer = findPrinter(currentPrinterId);
+  const std::uint8_t amsId =
+      trayId == 0xFF
+          ? 0xFF
+          : (printer == nullptr ? 0 : printer->activeAmsId);
+  sendAction(rtos::UiActionType::SelectTray, currentPrinterId, amsId,
+             trayId);
+}
+
+void printerClicked(lv_event_t* event) {
+  const auto printerId = static_cast<rtos::PrinterId>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  sendAction(rtos::UiActionType::SelectPrinter, printerId);
+}
+
+void settingsCategoryClicked(lv_event_t* event) {
+  const auto type = static_cast<rtos::UiActionType>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  sendAction(type, currentPrinterId);
+}
+
+void bindClick(lv_obj_t* object, lv_event_cb_t callback,
+               std::uintptr_t userData = 0) {
+  lv_obj_add_event_cb(object, callback, LV_EVENT_CLICKED,
+                      reinterpret_cast<void*>(userData));
+}
+
+void bindGeneratedWidgets() {
+  bindClick(objects.home_header, headerClicked);
+  bindClick(objects.home_bottom_printers, headerClicked);
+  bindClick(objects.select_header, headerClicked);
+  bindClick(objects.settings_header, headerClicked);
+
+  bindClick(objects.home_settings, settingsClicked);
+  bindClick(objects.select_settings, settingsClicked);
+  bindClick(objects.settings_settings, settingsClicked);
+  bindClick(objects.select_back, backClicked);
+  bindClick(objects.settings_back, backClicked);
+
+  bindClick(objects.home_ams_1, amsClicked, 1);
+  bindClick(objects.home_ams_2, amsClicked, 2);
+  bindClick(objects.home_tray_1, trayClicked, 0);
+  bindClick(objects.home_tray_2, trayClicked, 1);
+  bindClick(objects.home_tray_3, trayClicked, 2);
+  bindClick(objects.home_tray_4, trayClicked, 3);
+  bindClick(objects.home_external, trayClicked, 0xFF);
+  bindClick(objects.home_staging, stagingClicked);
+
+  bindClick(objects.select_printer_1, printerClicked, 1);
+  bindClick(objects.select_printer_2, printerClicked, 2);
+  bindClick(objects.select_printer_3, printerClicked, 3);
+
+  bindClick(objects.settings_wifi, settingsCategoryClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::OpenWifiSettings));
+  bindClick(
+      objects.settings_spoolman, settingsCategoryClicked,
+      static_cast<std::uintptr_t>(rtos::UiActionType::OpenSpoolmanSettings));
+  bindClick(objects.settings_scale, settingsCategoryClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::OpenScaleSettings));
+  bindClick(
+      objects.settings_printers, settingsCategoryClicked,
+      static_cast<std::uintptr_t>(rtos::UiActionType::OpenPrinterSettings));
+  bindClick(objects.settings_device, settingsCategoryClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::OpenDeviceSettings));
+  bindClick(objects.settings_diagnostics, settingsCategoryClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::OpenDiagnostics));
+}
+
+void updateHeaders(rtos::PrinterId printerId) {
+  const MockPrinter* printer = findPrinter(printerId);
+  if (printer == nullptr) {
+    return;
+  }
+  currentPrinterId = printerId;
+
+  char header[64];
+  char ams[24];
+  if (printer->activeAmsId == 0) {
+    std::snprintf(ams, sizeof(ams), "kein AMS");
+  } else {
+    std::snprintf(ams, sizeof(ams), "AMS %u", printer->activeAmsId);
+  }
+  std::snprintf(header, sizeof(header), "%s | %s | %s",
+                connectionText(printer->connectionState), printer->name, ams);
+
+  setButtonText(objects.home_header, header);
+  setButtonText(objects.select_header, header);
+  setButtonText(objects.settings_header, header);
+
+  char activeAms[32];
+  std::snprintf(activeAms, sizeof(activeAms), "Aktiv: %s", ams);
+  lv_label_set_text(objects.home_active_ams, activeAms);
+}
+
+void showScreen(rtos::UiScreenId screenId) {
+  switch (screenId) {
+    case rtos::UiScreenId::Boot:
+      loadScreen(SCREEN_ID_SCR_BOOT);
+      break;
+    case rtos::UiScreenId::Home:
+      loadScreen(SCREEN_ID_SCR_HOME);
+      break;
+    case rtos::UiScreenId::PrinterSelect:
+      loadScreen(SCREEN_ID_SCR_PRINTER_SELECT);
+      break;
+    case rtos::UiScreenId::SettingsHome:
+      loadScreen(SCREEN_ID_SCR_SETTINGS_HOME);
+      break;
+  }
 }
 
 void releaseDrawBuffers() {
@@ -111,7 +271,8 @@ void releaseDrawBuffers() {
 
 }  // namespace
 
-bool initializeLvgl(UiRuntimeInfo& runtimeInfo) {
+bool initializeLvgl(UiRuntimeInfo& runtimeInfo, rtos::RtosContext& context) {
+  rtosContext = &context;
   lv_init();
   lv_tick_set_cb(tickMilliseconds);
 
@@ -150,7 +311,11 @@ bool initializeLvgl(UiRuntimeInfo& runtimeInfo) {
   lv_indev_set_display(touchInput, lvglDisplay);
   lv_indev_set_read_cb(touchInput, readTouch);
 
-  createIntegrationTestScreen();
+  ui_init();
+  bindGeneratedWidgets();
+  updateHeaders(currentPrinterId);
+  loadScreen(SCREEN_ID_SCR_HOME);
+
   runtimeInfo.bytesPerDrawBuffer = bufferBytes;
   runtimeInfo.totalDrawBufferBytes = bufferBytes * 2U;
   runtimeInfo.drawBuffersInPsram = esp_ptr_external_ram(drawBuffer1) &&
@@ -158,12 +323,25 @@ bool initializeLvgl(UiRuntimeInfo& runtimeInfo) {
   return true;
 }
 
-std::uint32_t runLvglTimers() { return lv_timer_handler(); }
+std::uint32_t runLvglTimers() {
+  ui_tick();
+  return lv_timer_handler();
+}
 
 void processUiCommand(const rtos::UiCommand& command) {
-  if (command.type == rtos::UiCommandType::ShowStatus &&
-      statusLabel != nullptr) {
-    lv_label_set_text(statusLabel, command.text);
+  switch (command.type) {
+    case rtos::UiCommandType::ShowScreen:
+      showScreen(command.screenId);
+      break;
+    case rtos::UiCommandType::UpdateHeader:
+      updateHeaders(command.printerId);
+      break;
+    case rtos::UiCommandType::ShowStatus:
+    case rtos::UiCommandType::ShowToast:
+      lv_label_set_text(objects.home_bottom_status, command.text);
+      break;
+    default:
+      break;
   }
 }
 

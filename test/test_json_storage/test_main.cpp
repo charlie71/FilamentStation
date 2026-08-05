@@ -92,7 +92,8 @@ void test_valid_document_serializes() {
 void test_initial_document_defaults_validate() {
   constexpr StorageDocumentType types[] = {
       StorageDocumentType::Device, StorageDocumentType::Network,
-      StorageDocumentType::Spoolman, StorageDocumentType::Ui,
+      StorageDocumentType::Spoolman, StorageDocumentType::Bambu,
+      StorageDocumentType::Ui,
       StorageDocumentType::Scale, StorageDocumentType::Nfc};
   for (const StorageDocumentType type : types) {
     JsonDocument document;
@@ -103,6 +104,20 @@ void test_initial_document_defaults_validate() {
         static_cast<int>(JsonStorageError::Ok),
         static_cast<int>(JsonStorage::validate(document, type)));
   }
+}
+
+void test_bambu_defaults_support_multiple_printers() {
+  JsonDocument document;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::Ok),
+      static_cast<int>(JsonStorage::createDefault(
+          StorageDocumentType::Bambu, document)));
+  TEST_ASSERT_EQUAL_UINT16(0,
+                           document["selectedPrinterId"].as<std::uint16_t>());
+  TEST_ASSERT_EQUAL_UINT16(0,
+                           document["defaultPrinterId"].as<std::uint16_t>());
+  TEST_ASSERT_TRUE(document["printers"].is<JsonArrayConst>());
+  TEST_ASSERT_EQUAL_UINT32(0, document["printers"].size());
 }
 
 void test_document_type_mismatch_is_rejected() {
@@ -130,6 +145,7 @@ void setup() {
   RUN_TEST(test_invalid_timestamp_is_rejected);
   RUN_TEST(test_valid_document_serializes);
   RUN_TEST(test_initial_document_defaults_validate);
+  RUN_TEST(test_bambu_defaults_support_multiple_printers);
   RUN_TEST(test_document_type_mismatch_is_rejected);
   UNITY_END();
 }

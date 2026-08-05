@@ -53,7 +53,8 @@ bool RtosContext::createTasks() {
          createTask(tasks::scaleTask, config::kScaleTask, this, &scaleTask) &&
          createTask(tasks::nfcTask, config::kNfcTask, this, &nfcTask) &&
          createTask(tasks::networkTask, config::kNetworkTask, this, &networkTask) &&
-         createTask(tasks::spoolmanTask, config::kSpoolmanTask, this, &spoolmanTask);
+         createTask(tasks::spoolmanTask, config::kSpoolmanTask, this, &spoolmanTask) &&
+         createTask(tasks::bambuTask, config::kBambuTask, this, &bambuTask);
 }
 
 }  // namespace filament_station::rtos

@@ -237,6 +237,11 @@ JsonStorageError JsonStorage::createDefault(
       document["enabled"] = false;
       document["serverUrl"] = "";
       break;
+    case rtos::StorageDocumentType::Bambu:
+      document["selectedPrinterId"] = 0;
+      document["defaultPrinterId"] = 0;
+      document["printers"].to<JsonArray>();
+      break;
     case rtos::StorageDocumentType::Ui:
       document["language"] = "de";
       document["weightUnit"] = "g";
@@ -247,7 +252,6 @@ JsonStorageError JsonStorage::createDefault(
     case rtos::StorageDocumentType::Nfc:
       document["tagSchemaVersion"] = 1;
       break;
-    case rtos::StorageDocumentType::Bambu:
     case rtos::StorageDocumentType::Diagnostics:
       break;
   }
@@ -300,6 +304,11 @@ JsonStorageError JsonStorage::validate(
                  ? JsonStorageError::Ok
                  : JsonStorageError::InvalidDocumentField;
     case rtos::StorageDocumentType::Bambu:
+      return document["selectedPrinterId"].is<std::uint16_t>() &&
+                     document["defaultPrinterId"].is<std::uint16_t>() &&
+                     document["printers"].is<JsonArrayConst>()
+                 ? JsonStorageError::Ok
+                 : JsonStorageError::InvalidDocumentField;
     case rtos::StorageDocumentType::Diagnostics:
       return JsonStorageError::Ok;
   }

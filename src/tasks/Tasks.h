@@ -8,5 +8,5 @@ void nfcTask(void* parameter);
 void storageTask(void* parameter);
 void networkTask(void* parameter);
 void spoolmanTask(void* parameter);
+void bambuTask(void* parameter);
 }  // namespace filament_station::tasks
-

@@ -21,6 +21,7 @@ constexpr TaskSettings kScaleTask{"ScaleTask", 3072, 2, kNoCoreAffinity};
 constexpr TaskSettings kNfcTask{"NfcTask", 3072, 2, kNoCoreAffinity};
 constexpr TaskSettings kNetworkTask{"NetworkTask", 4096, 1, kNoCoreAffinity};
 constexpr TaskSettings kSpoolmanTask{"SpoolmanTask", 4096, 1, kNoCoreAffinity};
+constexpr TaskSettings kBambuTask{"BambuTask", 4096, 1, kNoCoreAffinity};
 
 // Queue-Laengen basieren auf geringer Last der Task-Gerueste und werden nach
 // Messung der maximalen Auslastung in spaeteren Phasen angepasst.
