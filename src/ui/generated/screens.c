@@ -984,24 +984,6 @@ void create_screen_scr_staging_actions() {
             lv_label_set_text_static(obj, "Tag loeschen");
         }
         {
-            // staging_action_search_spool
-            lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.staging_action_search_spool = obj;
-            lv_obj_set_pos(obj, 164, 156);
-            lv_obj_set_size(obj, 152, 52);
-            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Spule suchen");
-        }
-        {
-            // staging_action_spool_details
-            lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.staging_action_spool_details = obj;
-            lv_obj_set_pos(obj, 324, 156);
-            lv_obj_set_size(obj, 152, 52);
-            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Spulendetails");
-        }
-        {
             // staging_actions_back
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.staging_actions_back = obj;

@@ -377,27 +377,9 @@ Die bereits vorhandene Implementierung aus Aufgabe 3.5 ist Ausgangspunkt und mus
 * [x] Slot hervorheben
 * [x] Zusammenfassung nach Auswahl
 
-## 3.12 Spulen-Screens
+## 3.12 Spulen-Screens – entfällt
 
-* [ ] `SCR_SPOOL_SEARCH`
-* [ ] ID-Filter
-* [ ] Freitextfilter
-* [ ] Herstellerfilter
-* [ ] Materialfilter
-* [ ] Farbfilter
-* [ ] Archivfilter
-* [ ] Ergebnisliste
-* [ ] `SCR_SPOOL_DETAILS`
-* [ ] Hersteller
-* [ ] Filament
-* [ ] Material
-* [ ] Farbe
-* [ ] Kommentar
-* [ ] Standort
-* [ ] Gewichte
-* [ ] letzter Einsatz
-* [ ] NFC-Zuordnung
-* [ ] Slotzuordnung
+Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 3.13 Settings-Grundstruktur
 

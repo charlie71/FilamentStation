@@ -90,8 +90,6 @@ typedef struct _objects_t {
     lv_obj_t *staging_action_link_tag;
     lv_obj_t *staging_action_unlink_tag;
     lv_obj_t *staging_action_erase_tag;
-    lv_obj_t *staging_action_search_spool;
-    lv_obj_t *staging_action_spool_details;
     lv_obj_t *staging_actions_back;
     lv_obj_t *tray_details_header;
     lv_obj_t *tray_details_settings;

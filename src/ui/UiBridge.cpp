@@ -404,10 +404,6 @@ void bindGeneratedWidgets() {
             static_cast<std::uintptr_t>(rtos::UiActionType::UnlinkTag));
   bindClick(objects.staging_action_erase_tag, stagingActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::EraseTag));
-  bindClick(objects.staging_action_search_spool, stagingActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::SearchSpool));
-  bindClick(objects.staging_action_spool_details, stagingActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::SelectSpool));
 
   bindClick(objects.tray_details_header, headerClicked);
   bindClick(objects.tray_actions_header, headerClicked);
@@ -476,7 +472,7 @@ void bindGeneratedWidgets() {
   bindClick(objects.settings_diagnostics, settingsCategoryClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::OpenDiagnostics));
 
-  const std::array<lv_obj_t*, 14> stagingButtons{{
+  const std::array<lv_obj_t*, 12> stagingButtons{{
       objects.staging_details_header,
       objects.staging_details_settings,
       objects.staging_details_quick_weight,
@@ -489,8 +485,6 @@ void bindGeneratedWidgets() {
       objects.staging_action_write_tag,
       objects.staging_action_link_tag,
       objects.staging_action_unlink_tag,
-      objects.staging_action_search_spool,
-      objects.staging_action_spool_details,
   }};
   for (lv_obj_t* button : stagingButtons) {
     styleLabelButton(button);
