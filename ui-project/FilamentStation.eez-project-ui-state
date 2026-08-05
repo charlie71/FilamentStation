@@ -1,8 +1,9 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/3",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/8",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/10",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
+    "selectedFontObject": "[FilamentStation.eez-project]:/fonts/0",
     "subnavigationSelectedItems": {
       "variables-tab/sub-navigation/selected-item": "Global"
     }
@@ -25,8 +26,8 @@
           },
           {
             "type": "border",
-            "selected": 3,
-            "size": 78.53390884399414,
+            "selected": 1,
+            "size": 150.53390884399414,
             "location": "right",
             "children": [
               {
@@ -74,7 +75,7 @@
           {
             "type": "border",
             "selected": 0,
-            "size": 274.97140884399414,
+            "size": 0,
             "location": "bottom",
             "children": [
               {
@@ -126,7 +127,7 @@
                 {
                   "type": "tabset",
                   "id": "#e9618473-7f24-4b75-af7c-4b03ffdc25e5",
-                  "weight": 1,
+                  "weight": 2,
                   "enableClose": false,
                   "children": [
                     {
@@ -158,7 +159,7 @@
                 {
                   "type": "tabset",
                   "id": "#e604e5f5-7b48-44f4-ace8-da55825fef32",
-                  "weight": 1,
+                  "weight": 0,
                   "enableClose": false,
                   "children": [
                     {
@@ -192,29 +193,17 @@
             {
               "type": "tabset",
               "id": "EDITORS",
-              "weight": 48.39565714021991,
-              "selected": 1,
+              "weight": 35.55839156428692,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
                 {
                   "type": "tab",
-                  "id": "#41d25233-6dc3-435e-b447-79cef5d6a490",
-                  "name": "CMP_CONFIRM_DIALOG",
+                  "id": "#9b350182-761c-4c67-9ece-429ca7d88b9f",
+                  "name": "SCR_TRAY_SELECT",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userWidgets/10",
-                    "permanent": false
-                  },
-                  "icon": "svg:user_widget"
-                },
-                {
-                  "type": "tab",
-                  "id": "#11a98da1-9ed9-4735-9f30-963f3a479bc6",
-                  "name": "SCR_SETTINGS_HOME",
-                  "component": "editor",
-                  "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/3",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/8",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -225,7 +214,7 @@
             {
               "type": "row",
               "id": "#c9759a35-4104-4443-bbaa-5163c4e2a827",
-              "weight": 24.520466284378088,
+              "weight": 37.35773186031108,
               "children": [
                 {
                   "type": "tabset",
@@ -1095,9 +1084,11 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "14": {
+          "3": {},
+          "4": {
             "$selected": true
-          }
+          },
+          "14": {}
         }
       },
       "transform": {
@@ -1471,6 +1462,57 @@
         "secondToPx": 200,
         "scrollLeft": 0
       }
+    },
+    "[FilamentStation.eez-project]:/userPages/6[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {},
+      "transform": {
+        "translate": {
+          "x": -240,
+          "y": -160
+        },
+        "scale": 1
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[FilamentStation.eez-project]:/userPages/7[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {},
+      "transform": {
+        "translate": {
+          "x": -240,
+          "y": -160
+        },
+        "scale": 1
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[FilamentStation.eez-project]:/userPages/8[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {},
+      "transform": {
+        "translate": {
+          "x": -240,
+          "y": -160
+        },
+        "scale": 1
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
     }
   },
   "activeOutputSection": 0,
@@ -1491,5 +1533,6 @@
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,
   "flowZoom": 1,
-  "implementationLanguage": "C"
+  "implementationLanguage": "C",
+  "openDialogDefaultPath": "C:\\VSCode\\Projects\\FilamentStation\\ui-project\\DejaVuSans.ttf"
 }

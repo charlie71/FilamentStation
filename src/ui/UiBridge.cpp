@@ -16,6 +16,10 @@
 #include "ui/generated/ui.h"
 #include "ui/models/MockUiDataProvider.h"
 
+extern "C" {
+extern const lv_font_t ui_font_ui_german16;
+}
+
 namespace filament_station::ui {
 namespace {
 
@@ -26,12 +30,18 @@ lv_indev_t* touchInput = nullptr;
 rtos::RtosContext* rtosContext = nullptr;
 rtos::PrinterId currentPrinterId = 1;
 std::uint8_t currentAmsId = 1;
+std::uint8_t selectedTrayAmsId = 1;
+std::uint8_t selectedTrayId = 0;
+rtos::SpoolId selectedTraySpoolId = 0;
+std::uint8_t selectedTrayTab = 0;
+bool trayTargetSelected = false;
 std::uint32_t nextRequestId = 100;
 constexpr std::size_t kHomeColorStripGroups = 6;
 std::array<std::array<lv_obj_t*, models::kMaximumFilamentColors>,
            kHomeColorStripGroups>
     homeColorStrips{};
 std::array<lv_obj_t*, 8> stagingTableRows{};
+std::array<lv_obj_t*, 6> trayDetailsRows{};
 
 std::uint32_t tickMilliseconds() { return millis(); }
 
@@ -189,6 +199,28 @@ void stagingActionClicked(lv_event_t* event) {
              models::mock::staging().spoolId);
 }
 
+void trayDetailsClicked(lv_event_t* event) {
+  const auto value = static_cast<std::int32_t>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  sendAction(rtos::UiActionType::SelectTray, currentPrinterId,
+             selectedTrayAmsId, selectedTrayId, value, selectedTraySpoolId);
+}
+
+void trayActionClicked(lv_event_t* event) {
+  const auto type = static_cast<rtos::UiActionType>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  sendAction(type, currentPrinterId, selectedTrayAmsId, selectedTrayId, 0,
+             selectedTraySpoolId);
+}
+
+void trayTargetClicked(lv_event_t* event) {
+  const auto trayId = static_cast<std::uint8_t>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  const std::uint8_t amsId = trayId == 0xFF ? 0xFF : currentAmsId;
+  sendAction(rtos::UiActionType::SelectTray, currentPrinterId, amsId, trayId,
+             2, models::mock::staging().spoolId);
+}
+
 void bindClick(lv_obj_t* object, lv_event_cb_t callback,
                std::uintptr_t userData = 0) {
   lv_obj_add_event_cb(object, callback, LV_EVENT_CLICKED,
@@ -303,6 +335,38 @@ void createStagingTableDecoration() {
   }
 }
 
+void createTrayDetailsDecoration() {
+  lv_obj_add_flag(objects.tray_details_content, LV_OBJ_FLAG_HIDDEN);
+  for (std::size_t row = 0; row < trayDetailsRows.size(); ++row) {
+    lv_obj_t* label = lv_label_create(objects.scr_tray_details);
+    trayDetailsRows[row] = label;
+    lv_obj_set_pos(label, 8, 128 + static_cast<lv_coord_t>(row * 21));
+    lv_obj_set_size(label, 464, 21);
+    lv_obj_remove_flag(label, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(label, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_pad_left(label, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(label, 2, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(label, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(label,
+                              lv_color_hex((row % 2U) == 0U ? 0xECEFF1
+                                                            : 0xB8BDC0),
+                              LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, lv_color_hex(0x101820), LV_PART_MAIN);
+  }
+}
+
+void applyApplicationFont() {
+  const std::array<lv_obj_t*, 9> screens{{
+      objects.scr_boot, objects.scr_home, objects.scr_printer_select,
+      objects.scr_settings_home, objects.scr_staging_details,
+      objects.scr_staging_actions, objects.scr_tray_details,
+      objects.scr_tray_actions, objects.scr_tray_select,
+  }};
+  for (lv_obj_t* screen : screens) {
+    lv_obj_set_style_text_font(screen, &ui_font_ui_german16, LV_PART_MAIN);
+  }
+}
+
 void bindGeneratedWidgets() {
   bindClick(objects.home_header, headerClicked);
   bindClick(objects.home_bottom_printers, headerClicked);
@@ -344,6 +408,43 @@ void bindGeneratedWidgets() {
             static_cast<std::uintptr_t>(rtos::UiActionType::SearchSpool));
   bindClick(objects.staging_action_spool_details, stagingActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::SelectSpool));
+
+  bindClick(objects.tray_details_header, headerClicked);
+  bindClick(objects.tray_actions_header, headerClicked);
+  bindClick(objects.tray_select_header, headerClicked);
+  bindClick(objects.tray_details_settings, settingsClicked);
+  bindClick(objects.tray_actions_settings, settingsClicked);
+  bindClick(objects.tray_select_settings, settingsClicked);
+  bindClick(objects.tray_details_tab_slot, trayDetailsClicked, 3);
+  bindClick(objects.tray_details_tab_spool, trayDetailsClicked, 4);
+  bindClick(objects.tray_details_more, trayDetailsClicked, 1);
+  bindClick(objects.tray_details_refresh, trayActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::RefreshSlot));
+  bindClick(objects.tray_details_close, backClicked);
+  bindClick(objects.tray_action_from_staging, trayActionClicked,
+            static_cast<std::uintptr_t>(
+                rtos::UiActionType::ConfigureSlotFromStaging));
+  bindClick(objects.tray_action_manual, trayActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::SelectSpool));
+  bindClick(objects.tray_action_untag, trayActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::UntagSlot));
+  bindClick(objects.tray_action_reset, trayActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::ResetSlot));
+  bindClick(objects.tray_action_reapply, trayActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::ReapplySlot));
+  bindClick(objects.tray_action_refresh, trayActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::RefreshSlot));
+  bindClick(objects.tray_actions_back, backClicked);
+  bindClick(objects.tray_select_ams_1, amsClicked, 1);
+  bindClick(objects.tray_select_ams_2, amsClicked, 2);
+  bindClick(objects.tray_select_ams_3, amsClicked, 3);
+  bindClick(objects.tray_select_ams_4, amsClicked, 4);
+  bindClick(objects.tray_select_slot_1, trayTargetClicked, 0);
+  bindClick(objects.tray_select_slot_2, trayTargetClicked, 1);
+  bindClick(objects.tray_select_slot_3, trayTargetClicked, 2);
+  bindClick(objects.tray_select_slot_4, trayTargetClicked, 3);
+  bindClick(objects.tray_select_external, trayTargetClicked, 0xFF);
+  bindClick(objects.tray_select_cancel, backClicked);
 
   bindClick(objects.home_ams_1, amsClicked, 1);
   bindClick(objects.home_ams_2, amsClicked, 2);
@@ -397,6 +498,28 @@ void bindGeneratedWidgets() {
   styleLabelButton(objects.staging_action_clear, 0xC62828);
   styleLabelButton(objects.staging_action_erase_tag, 0xC62828);
   styleLabelButton(objects.staging_actions_back, 0x455A64);
+  const std::array<lv_obj_t*, 23> trayButtons{{
+      objects.tray_details_header, objects.tray_details_settings,
+      objects.tray_details_tab_slot, objects.tray_details_tab_spool,
+      objects.tray_details_more, objects.tray_details_refresh,
+      objects.tray_actions_header, objects.tray_actions_settings,
+      objects.tray_action_from_staging, objects.tray_action_manual,
+      objects.tray_action_reapply, objects.tray_action_refresh,
+      objects.tray_select_header, objects.tray_select_settings,
+      objects.tray_select_ams_1, objects.tray_select_ams_2,
+      objects.tray_select_ams_3, objects.tray_select_ams_4,
+      objects.tray_select_slot_1, objects.tray_select_slot_2,
+      objects.tray_select_slot_3, objects.tray_select_slot_4,
+      objects.tray_select_external,
+  }};
+  for (lv_obj_t* button : trayButtons) {
+    styleLabelButton(button);
+  }
+  styleLabelButton(objects.tray_action_untag, 0xC62828);
+  styleLabelButton(objects.tray_action_reset, 0xC62828);
+  styleLabelButton(objects.tray_details_close, 0x455A64);
+  styleLabelButton(objects.tray_actions_back, 0x455A64);
+  styleLabelButton(objects.tray_select_cancel, 0x455A64);
   styleLabelButton(objects.home_active_ams, 0x455A64);
   styleLabelButton(objects.home_ams_4, 0x455A64);
   const lv_font_t* amsFont =
@@ -409,6 +532,7 @@ void bindGeneratedWidgets() {
   }
   createHomeColorStrips();
   createStagingTableDecoration();
+  createTrayDetailsDecoration();
 }
 
 void updatePrinterList() {
@@ -497,31 +621,19 @@ void updateHomeContent() {
       std::snprintf(text, sizeof(text), "AMS %u  %u/%u", amsId,
                     ams->occupiedTrayCount, ams->trayCount);
     }
-    if (amsId <= 2) {
-      setButtonText(button, text);
-    } else {
-      lv_label_set_text(button, text);
-    }
+    setButtonText(button, text);
     const bool available = ams != nullptr && ams->trayCount > 0;
     lv_obj_set_state(button, LV_STATE_DISABLED, false);
     lv_obj_set_flag(button, LV_OBJ_FLAG_CLICKABLE, available);
     const std::uint32_t background =
         !available ? 0x616161 : (amsId == currentAmsId ? 0xF9A825 : 0x1565C0);
-    if (amsId <= 2) {
-      setButtonColors(button, background);
-      if (!available) {
-        lv_obj_t* label = buttonLabel(button);
-        if (label != nullptr) {
-          lv_obj_set_style_text_color(label, lv_color_hex(0xD7DCE0),
-                                      LV_PART_MAIN);
-        }
+    setButtonColors(button, background);
+    if (!available) {
+      lv_obj_t* label = buttonLabel(button);
+      if (label != nullptr) {
+        lv_obj_set_style_text_color(label, lv_color_hex(0xD7DCE0),
+                                    LV_PART_MAIN);
       }
-    } else {
-      lv_obj_set_style_bg_opa(button, LV_OPA_COVER, LV_PART_MAIN);
-      lv_obj_set_style_bg_color(button, lv_color_hex(background), LV_PART_MAIN);
-      lv_obj_set_style_text_color(button,
-                                  lv_color_hex(available ? 0xFFFFFF : 0xD7DCE0),
-                                  LV_PART_MAIN);
     }
   }
 
@@ -649,6 +761,179 @@ void updateStagingContent() {
   }
 }
 
+const char* trayStateText(models::UiTrayState state) {
+  switch (state) {
+    case models::UiTrayState::Empty: return "leer";
+    case models::UiTrayState::Reading: return "wird gelesen";
+    case models::UiTrayState::Ready: return "bereit";
+    case models::UiTrayState::Loading: return "wird geladen";
+    case models::UiTrayState::Loaded: return "geladen";
+    case models::UiTrayState::Unloading: return "wird entladen";
+    case models::UiTrayState::Error: return "Fehler";
+    case models::UiTrayState::Unknown: return "unbekannt";
+  }
+  return "unbekannt";
+}
+
+void updateTrayDetails() {
+  const models::UiTraySummary* tray = models::mock::findTray(
+      currentPrinterId, selectedTrayAmsId, selectedTrayId);
+  char title[48];
+  if (selectedTrayId == 0xFF) {
+    std::snprintf(title, sizeof(title), "External Slot");
+  } else {
+    std::snprintf(title, sizeof(title), "AMS %u | Slot %u",
+                  selectedTrayAmsId, selectedTrayId + 1U);
+  }
+  lv_label_set_text(objects.tray_details_title, title);
+
+  std::array<std::array<char, 96>, 6> rows{};
+  if (tray == nullptr) {
+    std::snprintf(rows[0].data(), rows[0].size(), "Keine Slotdaten verfügbar");
+  } else if (selectedTrayTab == 0) {
+    std::snprintf(rows[0].data(), rows[0].size(), "Status: %s",
+                  trayStateText(tray->state));
+    std::snprintf(rows[1].data(), rows[1].size(), "Material: %s", tray->material);
+    if (tray->colorCount == 1) {
+      std::snprintf(rows[2].data(), rows[2].size(), "Farben: #%06lX",
+                    static_cast<unsigned long>(tray->colorRgb[0] & 0xFFFFFFU));
+    } else if (tray->colorCount == 2) {
+      std::snprintf(rows[2].data(), rows[2].size(), "Farben: #%06lX / #%06lX",
+                    static_cast<unsigned long>(tray->colorRgb[0] & 0xFFFFFFU),
+                    static_cast<unsigned long>(tray->colorRgb[1] & 0xFFFFFFU));
+    } else {
+      std::snprintf(rows[2].data(), rows[2].size(),
+                    "Farben: #%06lX / #%06lX / #%06lX",
+                    static_cast<unsigned long>(tray->colorRgb[0] & 0xFFFFFFU),
+                    static_cast<unsigned long>(tray->colorRgb[1] & 0xFFFFFFU),
+                    static_cast<unsigned long>(tray->colorRgb[2] & 0xFFFFFFU));
+    }
+    std::snprintf(rows[3].data(), rows[3].size(), "Loaded: %s",
+                  tray->loaded ? "ja" : "nein");
+    std::snprintf(rows[4].data(), rows[4].size(), "In Use: %s",
+                  tray->inUse ? "ja" : "nein");
+    std::snprintf(rows[5].data(), rows[5].size(), "Zuordnung: Spule %lu",
+                  static_cast<unsigned long>(tray->spoolId));
+  } else {
+    std::snprintf(rows[0].data(), rows[0].size(), "Spoolman-ID: %lu",
+                  static_cast<unsigned long>(tray->spoolId));
+    std::snprintf(rows[1].data(), rows[1].size(), "Material: %s", tray->material);
+    if (tray->colorCount == 1) {
+      std::snprintf(rows[2].data(), rows[2].size(), "Farben: #%06lX",
+                    static_cast<unsigned long>(tray->colorRgb[0] & 0xFFFFFFU));
+    } else if (tray->colorCount == 2) {
+      std::snprintf(rows[2].data(), rows[2].size(), "Farben: #%06lX / #%06lX",
+                    static_cast<unsigned long>(tray->colorRgb[0] & 0xFFFFFFU),
+                    static_cast<unsigned long>(tray->colorRgb[1] & 0xFFFFFFU));
+    } else {
+      std::snprintf(rows[2].data(), rows[2].size(),
+                    "Farben: #%06lX / #%06lX / #%06lX",
+                    static_cast<unsigned long>(tray->colorRgb[0] & 0xFFFFFFU),
+                    static_cast<unsigned long>(tray->colorRgb[1] & 0xFFFFFFU),
+                    static_cast<unsigned long>(tray->colorRgb[2] & 0xFFFFFFU));
+    }
+    std::snprintf(rows[3].data(), rows[3].size(), "Restgewicht: %.0f g",
+                  static_cast<double>(tray->remainingWeightGrams));
+    std::snprintf(rows[4].data(), rows[4].size(), "Letzte Messung: Mock-Daten");
+  }
+  for (std::size_t row = 0; row < trayDetailsRows.size(); ++row) {
+    lv_label_set_text(trayDetailsRows[row], rows[row].data());
+  }
+  const std::array<lv_obj_t*, models::kMaximumFilamentColors> colorFields{{
+      objects.tray_details_color_1, objects.tray_details_color_2,
+      objects.tray_details_color_3,
+  }};
+  for (std::size_t index = 0; index < colorFields.size(); ++index) {
+    lv_obj_t* field = colorFields[index];
+    if (tray == nullptr || index >= tray->colorCount) {
+      lv_obj_add_flag(field, LV_OBJ_FLAG_HIDDEN);
+      continue;
+    }
+    lv_obj_remove_flag(field, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_bg_opa(field, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(field, lv_color_hex(tray->colorRgb[index]),
+                              LV_PART_MAIN);
+    lv_obj_set_style_border_width(field, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(field, lv_color_hex(0x101820), LV_PART_MAIN);
+    lv_obj_set_style_radius(field, 4, LV_PART_MAIN);
+    lv_obj_move_foreground(field);
+  }
+  lv_obj_set_style_bg_color(objects.tray_details_tab_slot,
+                            lv_color_hex(selectedTrayTab == 0 ? 0xF9A825 : 0x1565C0),
+                            LV_PART_MAIN);
+  lv_obj_set_style_bg_color(objects.tray_details_tab_spool,
+                            lv_color_hex(selectedTrayTab == 1 ? 0xF9A825 : 0x1565C0),
+                            LV_PART_MAIN);
+}
+
+void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
+                         std::uint8_t trayId, bool selected) {
+  if (selected) {
+    currentPrinterId = printerId;
+    selectedTrayAmsId = amsId;
+    selectedTrayId = trayId;
+    trayTargetSelected = true;
+  }
+  const auto& staging = models::mock::staging();
+  char title[80];
+  std::snprintf(title, sizeof(title), "Zielslot für Spule %lu auswählen",
+                static_cast<unsigned long>(staging.spoolId));
+  lv_label_set_text(objects.tray_select_title, title);
+
+  const std::array<lv_obj_t*, 4> amsButtons{{
+      objects.tray_select_ams_1, objects.tray_select_ams_2,
+      objects.tray_select_ams_3, objects.tray_select_ams_4,
+  }};
+  for (std::uint8_t id = 1; id <= amsButtons.size(); ++id) {
+    const bool available = models::mock::findAms(currentPrinterId, id) != nullptr;
+    char label[12];
+    std::snprintf(label, sizeof(label), "AMS %u", id);
+    lv_label_set_text(amsButtons[id - 1U], label);
+    lv_obj_set_flag(amsButtons[id - 1U], LV_OBJ_FLAG_CLICKABLE, available);
+    lv_obj_set_style_bg_color(
+        amsButtons[id - 1U],
+        lv_color_hex(!available ? 0x616161
+                                : (id == currentAmsId ? 0xF9A825 : 0x1565C0)),
+        LV_PART_MAIN);
+  }
+
+  const std::array<lv_obj_t*, 4> slotButtons{{
+      objects.tray_select_slot_1, objects.tray_select_slot_2,
+      objects.tray_select_slot_3, objects.tray_select_slot_4,
+  }};
+  for (std::uint8_t id = 0; id < slotButtons.size(); ++id) {
+    char label[32];
+    const auto* tray = models::mock::findTray(currentPrinterId, currentAmsId, id);
+    std::snprintf(label, sizeof(label), "Slot %u\n%s", id + 1U,
+                  tray == nullptr ? "frei" : trayStateText(tray->state));
+    lv_label_set_text(slotButtons[id], label);
+    const bool highlighted = trayTargetSelected && selectedTrayAmsId == currentAmsId &&
+                             selectedTrayId == id;
+    lv_obj_set_style_bg_color(slotButtons[id],
+                              lv_color_hex(highlighted ? 0xF9A825 : 0x1565C0),
+                              LV_PART_MAIN);
+  }
+  lv_obj_set_style_bg_color(
+      objects.tray_select_external,
+      lv_color_hex(trayTargetSelected && selectedTrayId == 0xFF ? 0xF9A825
+                                                                 : 0x1565C0),
+      LV_PART_MAIN);
+
+  char summary[96];
+  if (!trayTargetSelected) {
+    std::snprintf(summary, sizeof(summary), "Noch kein Zielslot ausgewählt");
+  } else if (selectedTrayId == 0xFF) {
+    std::snprintf(summary, sizeof(summary), "Ziel: Drucker %u | External | Spule %lu",
+                  currentPrinterId, static_cast<unsigned long>(staging.spoolId));
+  } else {
+    std::snprintf(summary, sizeof(summary),
+                  "Ziel: Drucker %u | AMS %u | Slot %u | Spule %lu",
+                  currentPrinterId, selectedTrayAmsId, selectedTrayId + 1U,
+                  static_cast<unsigned long>(staging.spoolId));
+  }
+  lv_label_set_text(objects.tray_select_summary, summary);
+}
+
 void updateHeaders(rtos::PrinterId printerId) {
   const models::UiPrinterSummary* printer = models::mock::findPrinter(printerId);
   if (printer == nullptr) {
@@ -672,10 +957,15 @@ void updateHeaders(rtos::PrinterId printerId) {
   setButtonText(objects.settings_header, header);
   lv_label_set_text(objects.staging_details_header, header);
   lv_label_set_text(objects.staging_actions_header, header);
+  lv_label_set_text(objects.tray_details_header, header);
+  lv_label_set_text(objects.tray_actions_header, header);
+  lv_label_set_text(objects.tray_select_header, header);
 
   updateHomeContent();
   updatePrinterList();
   updateStagingContent();
+  updateTrayDetails();
+  updateTraySelection(currentPrinterId, currentAmsId, 0, false);
 }
 
 void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
@@ -695,7 +985,11 @@ void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
   setButtonText(objects.settings_header, header);
   lv_label_set_text(objects.staging_details_header, header);
   lv_label_set_text(objects.staging_actions_header, header);
+  lv_label_set_text(objects.tray_details_header, header);
+  lv_label_set_text(objects.tray_actions_header, header);
+  lv_label_set_text(objects.tray_select_header, header);
   updateHomeContent();
+  updateTraySelection(currentPrinterId, currentAmsId, 0, false);
 }
 
 void showScreen(rtos::UiScreenId screenId) {
@@ -719,6 +1013,18 @@ void showScreen(rtos::UiScreenId screenId) {
       break;
     case rtos::UiScreenId::StagingActions:
       loadScreen(SCREEN_ID_SCR_STAGING_ACTIONS);
+      break;
+    case rtos::UiScreenId::TrayDetails:
+      updateTrayDetails();
+      loadScreen(SCREEN_ID_SCR_TRAY_DETAILS);
+      break;
+    case rtos::UiScreenId::TrayActions:
+      loadScreen(SCREEN_ID_SCR_TRAY_ACTIONS);
+      break;
+    case rtos::UiScreenId::TraySelect:
+      trayTargetSelected = false;
+      updateTraySelection(currentPrinterId, currentAmsId, 0, false);
+      loadScreen(SCREEN_ID_SCR_TRAY_SELECT);
       break;
   }
 }
@@ -777,6 +1083,7 @@ bool initializeLvgl(UiRuntimeInfo& runtimeInfo, rtos::RtosContext& context) {
   lv_indev_set_read_cb(touchInput, readTouch);
 
   ui_init();
+  applyApplicationFont();
   bindGeneratedWidgets();
   updateHeaders(currentPrinterId);
   loadScreen(SCREEN_ID_SCR_HOME);
@@ -796,6 +1103,13 @@ std::uint32_t runLvglTimers() {
 void processUiCommand(const rtos::UiCommand& command) {
   switch (command.type) {
     case rtos::UiCommandType::ShowScreen:
+      if (command.screenId == rtos::UiScreenId::TrayDetails ||
+          command.screenId == rtos::UiScreenId::TrayActions) {
+        currentPrinterId = command.printerId;
+        selectedTrayAmsId = command.amsId;
+        selectedTrayId = command.trayId;
+        selectedTraySpoolId = command.spoolId;
+      }
       showScreen(command.screenId);
       break;
     case rtos::UiCommandType::UpdateHeader:
@@ -803,6 +1117,16 @@ void processUiCommand(const rtos::UiCommand& command) {
       break;
     case rtos::UiCommandType::UpdateAmsOverview:
       updateAmsOverview(command.printerId, command.amsId);
+      break;
+    case rtos::UiCommandType::UpdateTrayDetails:
+      if (command.value == 2) {
+        selectedTraySpoolId = command.spoolId;
+        updateTraySelection(command.printerId, command.amsId, command.trayId,
+                            true);
+      } else {
+        selectedTrayTab = command.value == 4 ? 1 : 0;
+        updateTrayDetails();
+      }
       break;
     case rtos::UiCommandType::ShowStatus:
     case rtos::UiCommandType::ShowToast:

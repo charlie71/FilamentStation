@@ -21,8 +21,10 @@ struct UiCommand {
   std::uint32_t requestId;
   UiScreenId screenId;
   PrinterId printerId;
+  SpoolId spoolId;
   std::uint8_t amsId;
   std::uint8_t trayId;
+  std::int32_t value;
   float weightGrams;
   char title[48];
   char text[96];

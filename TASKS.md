@@ -361,21 +361,21 @@ Die bereits vorhandene Implementierung aus Aufgabe 3.5 ist Ausgangspunkt und mus
 
 ## 3.11 Slot-Screens
 
-* [ ] `SCR_TRAY_DETAILS`
-* [ ] Tab Slotinformationen
-* [ ] Tab Spuleninformationen
-* [ ] `SCR_TRAY_ACTIONS`
-* [ ] aus Staging konfigurieren
-* [ ] manuell konfigurieren
-* [ ] Zuordnung entfernen
-* [ ] Slot zurücksetzen
-* [ ] Zuordnung erneut anwenden
-* [ ] Slot aktualisieren
-* [ ] `SCR_TRAY_SELECT`
-* [ ] Druckerwechsel im Auswahlmodus
-* [ ] AMS-Wechsel im Auswahlmodus
-* [ ] Slot hervorheben
-* [ ] Zusammenfassung nach Auswahl
+* [x] `SCR_TRAY_DETAILS`
+* [x] Tab Slotinformationen
+* [x] Tab Spuleninformationen
+* [x] `SCR_TRAY_ACTIONS`
+* [x] aus Staging konfigurieren
+* [x] manuell konfigurieren
+* [x] Zuordnung entfernen
+* [x] Slot zurücksetzen
+* [x] Zuordnung erneut anwenden
+* [x] Slot aktualisieren
+* [x] `SCR_TRAY_SELECT`
+* [x] Druckerwechsel im Auswahlmodus
+* [x] AMS-Wechsel im Auswahlmodus
+* [x] Slot hervorheben
+* [x] Zusammenfassung nach Auswahl
 
 ## 3.12 Spulen-Screens
 

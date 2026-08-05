@@ -14,6 +14,9 @@ enum class UiScreenId : std::uint8_t {
   SettingsHome,
   StagingDetails,
   StagingActions,
+  TrayDetails,
+  TrayActions,
+  TraySelect,
 };
 
 enum class UiCommandType : std::uint8_t {

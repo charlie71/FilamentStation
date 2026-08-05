@@ -23,8 +23,10 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
   rtos::UiCommand command{};
   command.requestId = action.requestId;
   command.printerId = action.printerId;
+  command.spoolId = action.spoolId;
   command.amsId = action.amsId;
   command.trayId = action.trayId;
+  command.value = action.value;
 
   switch (action.type) {
     case rtos::UiActionType::SelectPrinter:
@@ -69,6 +71,18 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         command.screenId = rtos::UiScreenId::Home;
         currentScreen = rtos::UiScreenId::Home;
         previousScreen = rtos::UiScreenId::Home;
+      } else if (currentScreen == rtos::UiScreenId::TrayActions) {
+        command.screenId = rtos::UiScreenId::TrayDetails;
+        currentScreen = rtos::UiScreenId::TrayDetails;
+        previousScreen = rtos::UiScreenId::Home;
+      } else if (currentScreen == rtos::UiScreenId::TrayDetails) {
+        command.screenId = rtos::UiScreenId::Home;
+        currentScreen = rtos::UiScreenId::Home;
+        previousScreen = rtos::UiScreenId::Home;
+      } else if (currentScreen == rtos::UiScreenId::TraySelect) {
+        command.screenId = rtos::UiScreenId::StagingActions;
+        currentScreen = rtos::UiScreenId::StagingActions;
+        previousScreen = rtos::UiScreenId::StagingDetails;
       } else {
         command.screenId = previousScreen;
         currentScreen = previousScreen;
@@ -91,11 +105,37 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       return;
 
     case rtos::UiActionType::SelectTray:
+      if (action.value == 0 || action.value == 1) {
+        previousScreen = action.value == 1 ? rtos::UiScreenId::TrayDetails
+                                            : currentScreen;
+        currentScreen = action.value == 1 ? rtos::UiScreenId::TrayActions
+                                           : rtos::UiScreenId::TrayDetails;
+        command.type = rtos::UiCommandType::ShowScreen;
+        command.screenId = currentScreen;
+      } else {
+        command.type = rtos::UiCommandType::UpdateTrayDetails;
+      }
+      sendUiCommand(ctx, command, "AppTask: tray command queue overflow");
+      return;
+
+    case rtos::UiActionType::ConfigureSlotFromStaging:
+    case rtos::UiActionType::ConfigureSlot:
+      previousScreen = currentScreen;
+      currentScreen = rtos::UiScreenId::TraySelect;
+      command.type = rtos::UiCommandType::ShowScreen;
+      command.screenId = currentScreen;
+      sendUiCommand(ctx, command, "AppTask: tray-select queue overflow");
+      return;
+
+    case rtos::UiActionType::ResetSlot:
+    case rtos::UiActionType::UntagSlot:
+    case rtos::UiActionType::ReapplySlot:
+    case rtos::UiActionType::RefreshSlot:
       command.type = rtos::UiCommandType::ShowToast;
       std::snprintf(command.text, sizeof(command.text),
-                    "Aktion vorgemerkt (Drucker %u)", action.printerId);
-      sendUiCommand(ctx, command,
-                    "AppTask: action acknowledgement queue overflow");
+                    "Slot-Aktion vorgemerkt (%u/%u)", action.amsId,
+                    action.trayId);
+      sendUiCommand(ctx, command, "AppTask: slot action queue overflow");
       return;
 
     case rtos::UiActionType::SelectStaging:
@@ -111,7 +151,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
 
     case rtos::UiActionType::QuickWeight:
     case rtos::UiActionType::AdvancedWeight:
-    case rtos::UiActionType::ConfigureSlot:
     case rtos::UiActionType::ClearStaging:
     case rtos::UiActionType::WriteTag:
     case rtos::UiActionType::LinkTag:
