@@ -5,7 +5,6 @@
 #include <lvgl.h>
 #include <soc/soc_memory_types.h>
 
-#include <array>
 #include <cstdint>
 #include <cstdio>
 
@@ -14,29 +13,10 @@
 #include "drivers/DisplayDriver.h"
 #include "drivers/TouchDriver.h"
 #include "ui/generated/ui.h"
+#include "ui/models/MockUiDataProvider.h"
 
 namespace filament_station::ui {
 namespace {
-
-enum class PrinterConnectionState : std::uint8_t {
-  Connecting,
-  Connected,
-  Offline,
-};
-
-struct MockPrinter {
-  rtos::PrinterId id;
-  const char* name;
-  PrinterConnectionState connectionState;
-  std::uint8_t activeAmsId;
-  bool isDefault;
-};
-
-constexpr std::array<MockPrinter, 3> kMockPrinters{{
-    {1, "P1S Werkstatt", PrinterConnectionState::Connected, 1, true},
-    {2, "X1C Labor", PrinterConnectionState::Connected, 2, false},
-    {3, "A1 Mini Buero", PrinterConnectionState::Offline, 0, false},
-}};
 
 void* drawBuffer1 = nullptr;
 void* drawBuffer2 = nullptr;
@@ -70,23 +50,18 @@ void readTouch(lv_indev_t*, lv_indev_data_t* data) {
   }
 }
 
-const MockPrinter* findPrinter(rtos::PrinterId id) {
-  for (const auto& printer : kMockPrinters) {
-    if (printer.id == id) {
-      return &printer;
-    }
-  }
-  return nullptr;
-}
-
-const char* connectionText(PrinterConnectionState state) {
+const char* connectionText(models::UiConnectionState state) {
   switch (state) {
-    case PrinterConnectionState::Connecting:
+    case models::UiConnectionState::Disabled:
+      return "deaktiviert";
+    case models::UiConnectionState::Connecting:
       return "verbindet";
-    case PrinterConnectionState::Connected:
+    case models::UiConnectionState::Connected:
       return "online";
-    case PrinterConnectionState::Offline:
+    case models::UiConnectionState::Offline:
       return "offline";
+    case models::UiConnectionState::Error:
+      return "Fehler";
   }
   return "unbekannt";
 }
@@ -104,7 +79,7 @@ void setButtonText(lv_obj_t* button, const char* text) {
 
 void sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
                 std::uint8_t amsId = 0, std::uint8_t trayId = 0,
-                std::int32_t value = 0) {
+                std::int32_t value = 0, rtos::SpoolId spoolId = 0) {
   if (rtosContext == nullptr) {
     return;
   }
@@ -114,6 +89,7 @@ void sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
   event.uiAction.type = type;
   event.uiAction.requestId = event.requestId;
   event.uiAction.printerId = printerId;
+  event.uiAction.spoolId = spoolId;
   event.uiAction.amsId = amsId;
   event.uiAction.trayId = trayId;
   event.uiAction.value = value;
@@ -147,7 +123,8 @@ void amsClicked(lv_event_t* event) {
 void trayClicked(lv_event_t* event) {
   const auto trayId = static_cast<std::uint8_t>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
-  const MockPrinter* printer = findPrinter(currentPrinterId);
+  const models::UiPrinterSummary* printer =
+      models::mock::findPrinter(currentPrinterId);
   const std::uint8_t amsId =
       trayId == 0xFF
           ? 0xFF
@@ -216,7 +193,7 @@ void bindGeneratedWidgets() {
 }
 
 void updateHeaders(rtos::PrinterId printerId) {
-  const MockPrinter* printer = findPrinter(printerId);
+  const models::UiPrinterSummary* printer = models::mock::findPrinter(printerId);
   if (printer == nullptr) {
     return;
   }

@@ -287,20 +287,20 @@ Die bereits vorhandene Implementierung aus Aufgabe 3.5 ist Ausgangspunkt und mus
 
 ## 3.7 UI-Datenmodelle
 
-* [ ] `UiPrinterSummary`
-* [ ] `UiAmsSummary`
-* [ ] `UiTraySummary`
-* [ ] `UiStagingSummary`
-* [ ] `UiSpoolSummary`
-* [ ] `UiWeightState`
-* [ ] `UiConnectionState`
-* [ ] `UiSettingsState`
-* [ ] mehrere Drucker berücksichtigen
-* [ ] `printerId` in Aktionen
-* [ ] `amsId` in Aktionen
-* [ ] `trayId` in Aktionen
-* [ ] `spoolId` in Aktionen
-* [ ] Mock-Datenprovider
+* [x] `UiPrinterSummary`
+* [x] `UiAmsSummary`
+* [x] `UiTraySummary`
+* [x] `UiStagingSummary`
+* [x] `UiSpoolSummary`
+* [x] `UiWeightState`
+* [x] `UiConnectionState`
+* [x] `UiSettingsState`
+* [x] mehrere Drucker berücksichtigen
+* [x] `printerId` in Aktionen
+* [x] `amsId` in Aktionen
+* [x] `trayId` in Aktionen
+* [x] `spoolId` in Aktionen
+* [x] Mock-Datenprovider
 
 ## 3.8 Home-Screen
 
