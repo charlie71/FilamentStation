@@ -304,23 +304,23 @@ Die bereits vorhandene Implementierung aus Aufgabe 3.5 ist Ausgangspunkt und mus
 
 ## 3.8 Home-Screen
 
-* [ ] `SCR_HOME`
-* [ ] Drucker-Kopfzeile
-* [ ] Druckerstatus
-* [ ] aktives AMS
-* [ ] mehrere AMS-Einheiten
-* [ ] vier Slots
-* [ ] External Slot
-* [ ] Staging
-* [ ] Gewicht
-* [ ] Stabilitätsstatus
-* [ ] NFC-Status
-* [ ] Spoolman-Status
-* [ ] WLAN-Status
-* [ ] Slot-Aktionen senden
-* [ ] Staging-Aktion senden
-* [ ] Druckerauswahl senden
-* [ ] Settings öffnen
+* [x] `SCR_HOME`
+* [x] Drucker-Kopfzeile
+* [x] Druckerstatus
+* [x] aktives AMS
+* [x] mehrere AMS-Einheiten
+* [x] vier Slots
+* [x] External Slot
+* [x] Staging
+* [x] Gewicht
+* [x] Stabilitätsstatus
+* [x] NFC-Status
+* [x] Spoolman-Status
+* [x] WLAN-Status
+* [x] Slot-Aktionen senden
+* [x] Staging-Aktion senden
+* [x] Druckerauswahl senden
+* [x] Settings öffnen
 
 ## 3.9 Druckerauswahl
 

@@ -58,6 +58,11 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       return;
 
     case rtos::UiActionType::SelectAms:
+      command.type = rtos::UiCommandType::UpdateAmsOverview;
+      sendUiCommand(ctx, command,
+                    "AppTask: AMS overview command queue overflow");
+      return;
+
     case rtos::UiActionType::SelectTray:
     case rtos::UiActionType::SelectStaging:
       command.type = rtos::UiCommandType::ShowToast;

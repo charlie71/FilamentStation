@@ -24,6 +24,7 @@ lv_display_t* lvglDisplay = nullptr;
 lv_indev_t* touchInput = nullptr;
 rtos::RtosContext* rtosContext = nullptr;
 rtos::PrinterId currentPrinterId = 1;
+std::uint8_t currentAmsId = 1;
 std::uint32_t nextRequestId = 100;
 
 std::uint32_t tickMilliseconds() { return millis(); }
@@ -77,6 +78,20 @@ void setButtonText(lv_obj_t* button, const char* text) {
   }
 }
 
+void setButtonColors(lv_obj_t* button, std::uint32_t backgroundRgb) {
+  lv_obj_set_style_bg_color(button, lv_color_hex(backgroundRgb), LV_PART_MAIN);
+  const std::uint32_t red = (backgroundRgb >> 16U) & 0xFFU;
+  const std::uint32_t green = (backgroundRgb >> 8U) & 0xFFU;
+  const std::uint32_t blue = backgroundRgb & 0xFFU;
+  const bool useDarkText = (red * 299U + green * 587U + blue * 114U) > 150000U;
+  lv_obj_t* label = buttonLabel(button);
+  if (label != nullptr) {
+    lv_obj_set_style_text_color(label,
+                                lv_color_hex(useDarkText ? 0x101820 : 0xFFFFFF),
+                                LV_PART_MAIN);
+  }
+}
+
 void sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
                 std::uint8_t amsId = 0, std::uint8_t trayId = 0,
                 std::int32_t value = 0, rtos::SpoolId spoolId = 0) {
@@ -111,7 +126,11 @@ void backClicked(lv_event_t*) {
 }
 
 void stagingClicked(lv_event_t*) {
-  sendAction(rtos::UiActionType::SelectStaging, currentPrinterId);
+  const auto& staging = models::mock::staging();
+  const rtos::SpoolId spoolId =
+      staging.printerId == currentPrinterId ? staging.spoolId : 0;
+  sendAction(rtos::UiActionType::SelectStaging, currentPrinterId, 0, 0, 0,
+             spoolId);
 }
 
 void amsClicked(lv_event_t* event) {
@@ -128,9 +147,11 @@ void trayClicked(lv_event_t* event) {
   const std::uint8_t amsId =
       trayId == 0xFF
           ? 0xFF
-          : (printer == nullptr ? 0 : printer->activeAmsId);
-  sendAction(rtos::UiActionType::SelectTray, currentPrinterId, amsId,
-             trayId);
+          : (printer == nullptr ? 0 : currentAmsId);
+  const models::UiTraySummary* tray =
+      models::mock::findTray(currentPrinterId, amsId, trayId);
+  sendAction(rtos::UiActionType::SelectTray, currentPrinterId, amsId, trayId,
+             0, tray == nullptr ? 0 : tray->spoolId);
 }
 
 void printerClicked(lv_event_t* event) {
@@ -192,12 +213,101 @@ void bindGeneratedWidgets() {
             static_cast<std::uintptr_t>(rtos::UiActionType::OpenDiagnostics));
 }
 
+void updateTrayButton(lv_obj_t* button, rtos::PrinterId printerId,
+                      std::uint8_t amsId, std::uint8_t trayId,
+                      const char* title) {
+  const models::UiTraySummary* tray =
+      models::mock::findTray(printerId, amsId, trayId);
+  char text[64];
+  if (tray == nullptr || tray->state == models::UiTrayState::Empty) {
+    std::snprintf(text, sizeof(text), "%s\nleer", title);
+    setButtonColors(button, 0x455A64);
+  } else {
+    std::snprintf(text, sizeof(text), "%s\n%s #%lu\n%.0f g", title,
+                  tray->material, static_cast<unsigned long>(tray->spoolId),
+                  static_cast<double>(tray->remainingWeightGrams));
+    setButtonColors(button, tray->colorRgb);
+  }
+  setButtonText(button, text);
+}
+
+void updateHomeContent() {
+  const models::UiPrinterSummary* printer =
+      models::mock::findPrinter(currentPrinterId);
+  if (printer == nullptr) {
+    return;
+  }
+
+  for (std::uint8_t amsId = 1; amsId <= 2; ++amsId) {
+    lv_obj_t* button = amsId == 1 ? objects.home_ams_1 : objects.home_ams_2;
+    const models::UiAmsSummary* ams =
+        models::mock::findAms(currentPrinterId, amsId);
+    char text[32];
+    if (ams == nullptr || ams->trayCount == 0) {
+      std::snprintf(text, sizeof(text), "AMS %u --", amsId);
+    } else {
+      std::snprintf(text, sizeof(text), "AMS %u  %u/%u", amsId,
+                    ams->occupiedTrayCount, ams->trayCount);
+    }
+    setButtonText(button, text);
+    lv_obj_set_state(button, LV_STATE_DISABLED,
+                     ams == nullptr || ams->trayCount == 0);
+  }
+
+  char activeAms[32];
+  if (currentAmsId == 0) {
+    std::snprintf(activeAms, sizeof(activeAms), "Kein AMS aktiv");
+  } else {
+    std::snprintf(activeAms, sizeof(activeAms), "Aktiv: AMS %u", currentAmsId);
+  }
+  lv_label_set_text(objects.home_active_ams, activeAms);
+
+  updateTrayButton(objects.home_tray_1, currentPrinterId, currentAmsId, 0,
+                   "Slot 1");
+  updateTrayButton(objects.home_tray_2, currentPrinterId, currentAmsId, 1,
+                   "Slot 2");
+  updateTrayButton(objects.home_tray_3, currentPrinterId, currentAmsId, 2,
+                   "Slot 3");
+  updateTrayButton(objects.home_tray_4, currentPrinterId, currentAmsId, 3,
+                   "Slot 4");
+  updateTrayButton(objects.home_external, currentPrinterId, 0xFF, 0xFF,
+                   "External");
+
+  const auto& staging = models::mock::staging();
+  char stagingText[64];
+  if (staging.printerId == currentPrinterId && staging.spoolId != 0) {
+    std::snprintf(stagingText, sizeof(stagingText), "Staging\n%s #%lu\n%.0f g",
+                  staging.material, static_cast<unsigned long>(staging.spoolId),
+                  static_cast<double>(staging.remainingWeightGrams));
+    setButtonColors(objects.home_staging, staging.colorRgb);
+  } else {
+    std::snprintf(stagingText, sizeof(stagingText), "Staging\nleer");
+    setButtonColors(objects.home_staging, 0x455A64);
+  }
+  setButtonText(objects.home_staging, stagingText);
+
+  const auto& weight = models::mock::weight();
+  char weightText[64];
+  std::snprintf(weightText, sizeof(weightText), "Waage\n%.0f g\n%s",
+                static_cast<double>(weight.grossWeightGrams), weight.status);
+  setButtonText(objects.home_weight, weightText);
+
+  const auto& settings = models::mock::settings();
+  char statusText[96];
+  std::snprintf(statusText, sizeof(statusText),
+                "NFC: %s\nSpoolman: %s\nWLAN: %s", staging.nfcStatus,
+                connectionText(settings.spoolmanState),
+                connectionText(settings.wifiState));
+  setButtonText(objects.home_status, statusText);
+}
+
 void updateHeaders(rtos::PrinterId printerId) {
   const models::UiPrinterSummary* printer = models::mock::findPrinter(printerId);
   if (printer == nullptr) {
     return;
   }
   currentPrinterId = printerId;
+  currentAmsId = printer->activeAmsId;
 
   char header[64];
   char ams[24];
@@ -213,9 +323,25 @@ void updateHeaders(rtos::PrinterId printerId) {
   setButtonText(objects.select_header, header);
   setButtonText(objects.settings_header, header);
 
-  char activeAms[32];
-  std::snprintf(activeAms, sizeof(activeAms), "Aktiv: %s", ams);
-  lv_label_set_text(objects.home_active_ams, activeAms);
+  updateHomeContent();
+}
+
+void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
+  const models::UiPrinterSummary* printer = models::mock::findPrinter(printerId);
+  if (printerId != currentPrinterId || printer == nullptr ||
+      models::mock::findAms(printerId, amsId) == nullptr) {
+    return;
+  }
+  currentAmsId = amsId;
+
+  char header[64];
+  std::snprintf(header, sizeof(header), "%s | %s | AMS %u",
+                connectionText(printer->connectionState), printer->name,
+                currentAmsId);
+  setButtonText(objects.home_header, header);
+  setButtonText(objects.select_header, header);
+  setButtonText(objects.settings_header, header);
+  updateHomeContent();
 }
 
 void showScreen(rtos::UiScreenId screenId) {
@@ -312,6 +438,9 @@ void processUiCommand(const rtos::UiCommand& command) {
       break;
     case rtos::UiCommandType::UpdateHeader:
       updateHeaders(command.printerId);
+      break;
+    case rtos::UiCommandType::UpdateAmsOverview:
+      updateAmsOverview(command.printerId, command.amsId);
       break;
     case rtos::UiCommandType::ShowStatus:
     case rtos::UiCommandType::ShowToast:
