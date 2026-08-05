@@ -642,10 +642,10 @@
             {
               "objID": "10000000-0038-4000-8000-000000000000",
               "type": "LVGLLabelWidget",
-              "left": 252,
-              "top": 49,
-              "width": 150,
-              "height": 28,
+              "left": 236,
+              "top": 44,
+              "width": 116,
+              "height": 36,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -673,10 +673,23 @@
                 "objID": "30000000-0040-4000-8000-000000000000"
               },
               "groupIndex": 0,
-              "text": "Aktiv: AMS 1",
+              "text": "AMS 3",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false,
+              "useStaticText": true
+            },
+            {
+              "objID": "10000000-0039-4000-8000-000000000004",
+              "type": "LVGLLabelWidget",
+              "left": 356,
+              "top": 44,
+              "width": 116,
+              "height": 36,
+              "identifier": "home_ams_4",
+              "text": "AMS 4",
+              "textType": "literal",
+              "longMode": "WRAP",
               "useStaticText": true
             },
             {
@@ -2970,6 +2983,82 @@
       "componentGroups": [],
       "userProperties": [],
       "name": "SCR_SETTINGS_HOME",
+      "left": 0,
+      "top": 0,
+      "width": 480,
+      "height": 320,
+      "isUsedAsUserWidget": false,
+      "createAtStart": true,
+      "deleteOnScreenUnload": false
+    },
+    {
+      "objID": "60000000-0001-4600-8600-100000000000",
+      "components": [
+        {
+          "objID": "60000000-0002-4600-8600-100000000000",
+          "type": "LVGLScreenWidget",
+          "left": 0,
+          "top": 0,
+          "width": 480,
+          "height": 320,
+          "children": [
+            { "objID": "60000000-0010-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 0, "top": 0, "width": 408, "height": 40, "identifier": "staging_details_header", "text": "online | P1S Werkstatt | AMS 1", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "60000000-0011-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 412, "top": 0, "width": 68, "height": 40, "identifier": "staging_details_settings", "text": "SET", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "60000000-0012-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 46, "width": 464, "height": 30, "identifier": "staging_details_title", "text": "Staging", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "60000000-0013-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 80, "width": 464, "height": 176, "identifier": "staging_details_content", "text": "Spoolman-ID: 91\nHersteller: Bambu Lab | Material: PLA\nFarben: #FDD835 / #FB8C00 / #212121\nLeergewicht: 250 g | Brutto: 1247 g\nRestgewicht: 997 g (99,7 %) | NFC: Tag erkannt", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "60000000-0017-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 350, "top": 116, "width": 34, "height": 24, "identifier": "staging_details_color_1", "text": "", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "60000000-0018-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 390, "top": 116, "width": 34, "height": 24, "identifier": "staging_details_color_2", "text": "", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "60000000-0019-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 430, "top": 116, "width": 34, "height": 24, "identifier": "staging_details_color_3", "text": "", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "60000000-0014-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 4, "top": 264, "width": 156, "height": 56, "identifier": "staging_details_quick_weight", "text": "Quick Weight", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "60000000-0015-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 164, "top": 264, "width": 152, "height": 56, "identifier": "staging_details_more", "text": "Mehr ...", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "60000000-0016-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 320, "top": 264, "width": 156, "height": 56, "identifier": "staging_details_close", "text": "Schliessen", "textType": "literal", "longMode": "WRAP", "useStaticText": true }
+          ]
+        }
+      ],
+      "connectionLines": [],
+      "localVariables": [],
+      "componentGroups": [],
+      "userProperties": [],
+      "name": "SCR_STAGING_DETAILS",
+      "left": 0,
+      "top": 0,
+      "width": 480,
+      "height": 320,
+      "isUsedAsUserWidget": false,
+      "createAtStart": true,
+      "deleteOnScreenUnload": false
+    },
+    {
+      "objID": "61000000-0001-4600-8600-100000000000",
+      "components": [
+        {
+          "objID": "61000000-0002-4600-8600-100000000000",
+          "type": "LVGLScreenWidget",
+          "left": 0,
+          "top": 0,
+          "width": 480,
+          "height": 320,
+          "children": [
+            { "objID": "61000000-0010-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 0, "top": 0, "width": 408, "height": 40, "identifier": "staging_actions_header", "text": "online | P1S Werkstatt | AMS 1", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "61000000-0011-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 412, "top": 0, "width": 68, "height": 40, "identifier": "staging_actions_settings", "text": "SET", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "61000000-0012-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 4, "top": 44, "width": 152, "height": 52, "identifier": "staging_action_configure", "text": "Slot konfigurieren", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "61000000-0013-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 164, "top": 44, "width": 152, "height": 52, "identifier": "staging_action_advanced_weight", "text": "Advanced Weight", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "61000000-0014-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 324, "top": 44, "width": 152, "height": 52, "identifier": "staging_action_clear", "text": "Staging leeren", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "61000000-0015-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 4, "top": 100, "width": 152, "height": 52, "identifier": "staging_action_write_tag", "text": "Tag schreiben", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "61000000-0016-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 164, "top": 100, "width": 152, "height": 52, "identifier": "staging_action_link_tag", "text": "Tag verknuepfen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "61000000-0017-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 324, "top": 100, "width": 152, "height": 52, "identifier": "staging_action_unlink_tag", "text": "Tag trennen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "61000000-0018-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 4, "top": 156, "width": 152, "height": 52, "identifier": "staging_action_erase_tag", "text": "Tag loeschen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "61000000-0019-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 164, "top": 156, "width": 152, "height": 52, "identifier": "staging_action_search_spool", "text": "Spule suchen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "61000000-0020-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 324, "top": 156, "width": 152, "height": 52, "identifier": "staging_action_spool_details", "text": "Spulendetails", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "61000000-0021-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 4, "top": 264, "width": 472, "height": 56, "identifier": "staging_actions_back", "text": "Zurueck", "textType": "literal", "longMode": "WRAP", "useStaticText": true }
+          ]
+        }
+      ],
+      "connectionLines": [],
+      "localVariables": [],
+      "componentGroups": [],
+      "userProperties": [],
+      "name": "SCR_STAGING_ACTIONS",
       "left": 0,
       "top": 0,
       "width": 480,

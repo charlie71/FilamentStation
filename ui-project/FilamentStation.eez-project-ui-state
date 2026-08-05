@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/2",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/3",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/10",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
     "subnavigationSelectedItems": {
@@ -211,10 +211,10 @@
                 {
                   "type": "tab",
                   "id": "#11a98da1-9ed9-4735-9f30-963f3a479bc6",
-                  "name": "SCR_PRINTER_SELECT",
+                  "name": "SCR_SETTINGS_HOME",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/2",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/3",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -1445,6 +1445,23 @@
         "translate": {
           "x": -200,
           "y": -100
+        },
+        "scale": 1
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[FilamentStation.eez-project]:/userPages/5[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {},
+      "transform": {
+        "translate": {
+          "x": -240,
+          "y": -160
         },
         "scale": 1
       },

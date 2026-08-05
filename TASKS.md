@@ -181,7 +181,7 @@ Jeder Task muss auf Queue, Event Group oder Task Notification blockieren.
 * [x] `/config/network.json`
 * [x] `/config/spoolman.json`
 * [x] `/config/bambu.json`
-* [x] `/config/ui.json`
+gebaut* [x] `/config/ui.json`
 * [x] `/config/scale.json`
 * [x] `/config/nfc.json`
 
@@ -336,28 +336,28 @@ Die bereits vorhandene Implementierung aus Aufgabe 3.5 ist Ausgangspunkt und mus
 
 ## 3.10 Staging-Screens
 
-* [ ] `SCR_STAGING_DETAILS`
-* [ ] Spoolman-ID
-* [ ] Hersteller
-* [ ] Material
-* [ ] Farbe
-* [ ] Leergewicht
-* [ ] Bruttogewicht
-* [ ] Restgewicht
-* [ ] NFC-Status
-* [ ] Quick Weight
-* [ ] Mehr
-* [ ] Schließen
-* [ ] `SCR_STAGING_ACTIONS`
-* [ ] Slot konfigurieren
-* [ ] Advanced Weight
-* [ ] Staging leeren
-* [ ] Tag schreiben
-* [ ] Tag verknüpfen
-* [ ] Tag trennen
-* [ ] Tag löschen
-* [ ] Spule suchen
-* [ ] Spulendetails
+* [x] `SCR_STAGING_DETAILS`
+* [x] Spoolman-ID
+* [x] Hersteller
+* [x] Material
+* [x] Farbe
+* [x] Leergewicht
+* [x] Bruttogewicht
+* [x] Restgewicht
+* [x] NFC-Status
+* [x] Quick Weight
+* [x] Mehr
+* [x] Schließen
+* [x] `SCR_STAGING_ACTIONS`
+* [x] Slot konfigurieren
+* [x] Advanced Weight
+* [x] Staging leeren
+* [x] Tag schreiben
+* [x] Tag verknüpfen
+* [x] Tag trennen
+* [x] Tag löschen
+* [x] Spule suchen
+* [x] Spulendetails
 
 ## 3.11 Slot-Screens
 

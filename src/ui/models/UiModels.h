@@ -19,6 +19,7 @@ constexpr std::size_t kSsidCapacity = 33;
 constexpr std::size_t kIpAddressCapacity = 40;
 constexpr std::size_t kMaximumAmsPerPrinter = 4;
 constexpr std::size_t kTraysPerAms = 4;
+constexpr std::size_t kMaximumFilamentColors = 3;
 
 enum class UiConnectionState : std::uint8_t {
   Disabled,
@@ -74,7 +75,8 @@ struct UiTraySummary {
   std::uint8_t trayId = 0;
   rtos::SpoolId spoolId = 0;
   UiTrayState state = UiTrayState::Unknown;
-  std::uint32_t colorRgb = 0;
+  std::array<std::uint32_t, kMaximumFilamentColors> colorRgb{};
+  std::uint8_t colorCount = 0;
   float remainingWeightGrams = 0.0F;
   char material[kMaterialNameCapacity]{};
   bool external = false;
@@ -86,7 +88,8 @@ struct UiStagingSummary {
   rtos::PrinterId printerId = 0;
   rtos::SpoolId spoolId = 0;
   UiStagingState state = UiStagingState::Empty;
-  std::uint32_t colorRgb = 0;
+  std::array<std::uint32_t, kMaximumFilamentColors> colorRgb{};
+  std::uint8_t colorCount = 0;
   float grossWeightGrams = 0.0F;
   float remainingWeightGrams = 0.0F;
   char vendor[kVendorNameCapacity]{};
@@ -99,7 +102,8 @@ struct UiSpoolSummary {
   char vendor[kVendorNameCapacity]{};
   char filament[kFilamentNameCapacity]{};
   char material[kMaterialNameCapacity]{};
-  std::uint32_t colorRgb = 0;
+  std::array<std::uint32_t, kMaximumFilamentColors> colorRgb{};
+  std::uint8_t colorCount = 0;
   float emptyWeightGrams = 0.0F;
   float initialWeightGrams = 0.0F;
   float grossWeightGrams = 0.0F;

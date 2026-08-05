@@ -15,7 +15,9 @@ enum ScreensEnum {
     SCREEN_ID_SCR_HOME = 2,
     SCREEN_ID_SCR_PRINTER_SELECT = 3,
     SCREEN_ID_SCR_SETTINGS_HOME = 4,
-    _SCREEN_ID_LAST = 4
+    SCREEN_ID_SCR_STAGING_DETAILS = 5,
+    SCREEN_ID_SCR_STAGING_ACTIONS = 6,
+    _SCREEN_ID_LAST = 6
 };
 
 typedef struct _objects_t {
@@ -23,6 +25,8 @@ typedef struct _objects_t {
     lv_obj_t *scr_home;
     lv_obj_t *scr_printer_select;
     lv_obj_t *scr_settings_home;
+    lv_obj_t *scr_staging_details;
+    lv_obj_t *scr_staging_actions;
     lv_obj_t *boot_title;
     lv_obj_t *boot_version;
     lv_obj_t *boot_status;
@@ -31,6 +35,7 @@ typedef struct _objects_t {
     lv_obj_t *home_ams_1;
     lv_obj_t *home_ams_2;
     lv_obj_t *home_active_ams;
+    lv_obj_t *home_ams_4;
     lv_obj_t *home_tray_1;
     lv_obj_t *home_tray_2;
     lv_obj_t *home_tray_3;
@@ -60,6 +65,28 @@ typedef struct _objects_t {
     lv_obj_t *settings_diagnostics;
     lv_obj_t *settings_back;
     lv_obj_t *settings_bottom_status;
+    lv_obj_t *staging_details_header;
+    lv_obj_t *staging_details_settings;
+    lv_obj_t *staging_details_title;
+    lv_obj_t *staging_details_content;
+    lv_obj_t *staging_details_color_1;
+    lv_obj_t *staging_details_color_2;
+    lv_obj_t *staging_details_color_3;
+    lv_obj_t *staging_details_quick_weight;
+    lv_obj_t *staging_details_more;
+    lv_obj_t *staging_details_close;
+    lv_obj_t *staging_actions_header;
+    lv_obj_t *staging_actions_settings;
+    lv_obj_t *staging_action_configure;
+    lv_obj_t *staging_action_advanced_weight;
+    lv_obj_t *staging_action_clear;
+    lv_obj_t *staging_action_write_tag;
+    lv_obj_t *staging_action_link_tag;
+    lv_obj_t *staging_action_unlink_tag;
+    lv_obj_t *staging_action_erase_tag;
+    lv_obj_t *staging_action_search_spool;
+    lv_obj_t *staging_action_spool_details;
+    lv_obj_t *staging_actions_back;
 } objects_t;
 
 extern objects_t objects;
@@ -75,6 +102,12 @@ void tick_screen_scr_printer_select();
 
 void create_screen_scr_settings_home();
 void tick_screen_scr_settings_home();
+
+void create_screen_scr_staging_details();
+void tick_screen_scr_staging_details();
+
+void create_screen_scr_staging_actions();
+void tick_screen_scr_staging_actions();
 
 void create_user_widget_cmp_top_printer_bar(lv_obj_t *parent_obj, int startWidgetIndex);
 void tick_user_widget_cmp_top_printer_bar(int startWidgetIndex);

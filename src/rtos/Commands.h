@@ -12,6 +12,8 @@ enum class UiScreenId : std::uint8_t {
   Home,
   PrinterSelect,
   SettingsHome,
+  StagingDetails,
+  StagingActions,
 };
 
 enum class UiCommandType : std::uint8_t {
@@ -38,6 +40,7 @@ enum class UiActionType : std::uint8_t {
   SelectAms,
   SelectTray,
   SelectStaging,
+  ClearStaging,
   OpenSettings,
   Back,
   Cancel,

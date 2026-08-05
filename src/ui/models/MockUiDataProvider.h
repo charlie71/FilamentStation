@@ -7,7 +7,7 @@
 namespace filament_station::ui::models::mock {
 
 const std::array<UiPrinterSummary, 3>& printers();
-const std::array<UiAmsSummary, 4>& amsUnits();
+const std::array<UiAmsSummary, 6>& amsUnits();
 const std::array<UiTraySummary, 9>& trays();
 const UiStagingSummary& staging();
 const UiSpoolSummary& spool();
