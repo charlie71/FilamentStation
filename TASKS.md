@@ -264,26 +264,26 @@ Die bereits vorhandene Implementierung aus Aufgabe 3.5 ist Ausgangspunkt und mus
 
 ## 3.6 Designsystem und Komponenten
 
-* [ ] globale Farben
-* [ ] globale Schriftgrößen
-* [ ] globale Abstände
-* [ ] Mindesthöhe der Touchflächen
-* [ ] `CMP_TOP_PRINTER_BAR`
-* [ ] `CMP_BOTTOM_ACTION_BAR`
-* [ ] `CMP_STATUS_BADGE`
-* [ ] `CMP_CONNECTION_INDICATOR`
-* [ ] `CMP_AMS_SELECTOR`
-* [ ] `CMP_TRAY_CARD`
-* [ ] `CMP_STAGING_CARD`
-* [ ] `CMP_SPOOL_SUMMARY`
-* [ ] `CMP_WEIGHT_DISPLAY`
-* [ ] `CMP_PROGRESS_OVERLAY`
-* [ ] `CMP_CONFIRM_DIALOG`
-* [ ] `CMP_RESULT_DIALOG`
-* [ ] `CMP_ERROR_DIALOG`
-* [ ] `CMP_NUMERIC_INPUT`
-* [ ] `CMP_TEXT_INPUT`
-* [ ] `CMP_SETTINGS_BUTTON`
+* [x] globale Farben
+* [x] globale Schriftgrößen
+* [x] globale Abstände
+* [x] Mindesthöhe der Touchflächen
+* [x] `CMP_TOP_PRINTER_BAR`
+* [x] `CMP_BOTTOM_ACTION_BAR`
+* [x] `CMP_STATUS_BADGE`
+* [x] `CMP_CONNECTION_INDICATOR`
+* [x] `CMP_AMS_SELECTOR`
+* [x] `CMP_TRAY_CARD`
+* [x] `CMP_STAGING_CARD`
+* [x] `CMP_SPOOL_SUMMARY`
+* [x] `CMP_WEIGHT_DISPLAY`
+* [x] `CMP_PROGRESS_OVERLAY`
+* [x] `CMP_CONFIRM_DIALOG`
+* [x] `CMP_RESULT_DIALOG`
+* [x] `CMP_ERROR_DIALOG`
+* [x] `CMP_NUMERIC_INPUT`
+* [x] `CMP_TEXT_INPUT`
+* [x] `CMP_SETTINGS_BUTTON`
 
 ## 3.7 UI-Datenmodelle
 
