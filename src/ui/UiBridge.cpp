@@ -5,6 +5,7 @@
 #include <lvgl.h>
 #include <soc/soc_memory_types.h>
 
+#include <array>
 #include <cstdint>
 #include <cstdio>
 
@@ -166,6 +167,10 @@ void settingsCategoryClicked(lv_event_t* event) {
   sendAction(type, currentPrinterId);
 }
 
+void managePrintersClicked(lv_event_t*) {
+  sendAction(rtos::UiActionType::OpenPrinterSettings, currentPrinterId);
+}
+
 void bindClick(lv_obj_t* object, lv_event_cb_t callback,
                std::uintptr_t userData = 0) {
   lv_obj_add_event_cb(object, callback, LV_EVENT_CLICKED,
@@ -182,6 +187,7 @@ void bindGeneratedWidgets() {
   bindClick(objects.select_settings, settingsClicked);
   bindClick(objects.settings_settings, settingsClicked);
   bindClick(objects.select_back, backClicked);
+  bindClick(objects.select_bottom_status, managePrintersClicked);
   bindClick(objects.settings_back, backClicked);
 
   bindClick(objects.home_ams_1, amsClicked, 1);
@@ -211,6 +217,47 @@ void bindGeneratedWidgets() {
             static_cast<std::uintptr_t>(rtos::UiActionType::OpenDeviceSettings));
   bindClick(objects.settings_diagnostics, settingsCategoryClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::OpenDiagnostics));
+}
+
+void updatePrinterList() {
+  const auto& printers = models::mock::printers();
+  const std::array<lv_obj_t*, 3> buttons{{
+      objects.select_printer_1,
+      objects.select_printer_2,
+      objects.select_printer_3,
+  }};
+
+  for (std::size_t index = 0; index < printers.size(); ++index) {
+    const auto& printer = printers[index];
+    char text[96];
+    std::snprintf(
+        text, sizeof(text), "%s%s\n%s | %u AMS%s",
+        printer.printerId == currentPrinterId ? "> " : "", printer.name,
+        connectionText(printer.connectionState), printer.amsCount,
+        printer.isDefault ? " | Standard" : "");
+    setButtonText(buttons[index], text);
+
+    const std::uint32_t color =
+        printer.printerId == currentPrinterId
+            ? 0x1565C0
+            : (printer.connectionState == models::UiConnectionState::Connected
+                   ? 0x2E7D32
+                   : 0x616161);
+    setButtonColors(buttons[index], color);
+  }
+
+  lv_obj_set_size(objects.select_bottom_status, 300, 48);
+  lv_obj_set_style_bg_opa(objects.select_bottom_status, LV_OPA_COVER,
+                          LV_PART_MAIN);
+  lv_obj_set_style_bg_color(objects.select_bottom_status,
+                            lv_color_hex(0x1565C0), LV_PART_MAIN);
+  lv_obj_set_style_radius(objects.select_bottom_status, 8, LV_PART_MAIN);
+  lv_obj_set_style_text_color(objects.select_bottom_status,
+                              lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  lv_obj_set_style_text_align(objects.select_bottom_status,
+                              LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+  lv_obj_set_style_pad_top(objects.select_bottom_status, 14, LV_PART_MAIN);
+  lv_label_set_text(objects.select_bottom_status, "Drucker verwalten");
 }
 
 void updateTrayButton(lv_obj_t* button, rtos::PrinterId printerId,
@@ -324,6 +371,7 @@ void updateHeaders(rtos::PrinterId printerId) {
   setButtonText(objects.settings_header, header);
 
   updateHomeContent();
+  updatePrinterList();
 }
 
 void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
@@ -353,6 +401,7 @@ void showScreen(rtos::UiScreenId screenId) {
       loadScreen(SCREEN_ID_SCR_HOME);
       break;
     case rtos::UiScreenId::PrinterSelect:
+      updatePrinterList();
       loadScreen(SCREEN_ID_SCR_PRINTER_SELECT);
       break;
     case rtos::UiScreenId::SettingsHome:

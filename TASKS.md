@@ -324,15 +324,15 @@ Die bereits vorhandene Implementierung aus Aufgabe 3.5 ist Ausgangspunkt und mus
 
 ## 3.9 Druckerauswahl
 
-* [ ] `SCR_PRINTER_SELECT`
-* [ ] Druckerliste
-* [ ] aktueller Drucker markiert
-* [ ] Standarddrucker markiert
-* [ ] Online-/Offline-Status
-* [ ] AMS-Anzahl
-* [ ] Druckerwechsel als UiAction
-* [ ] Rückkehr zur vorherigen Ansicht
-* [ ] Drucker verwalten
+* [x] `SCR_PRINTER_SELECT`
+* [x] Druckerliste
+* [x] aktueller Drucker markiert
+* [x] Standarddrucker markiert
+* [x] Online-/Offline-Status
+* [x] AMS-Anzahl
+* [x] Druckerwechsel als UiAction
+* [x] Rückkehr zur vorherigen Ansicht
+* [x] Drucker verwalten
 
 ## 3.10 Staging-Screens
 

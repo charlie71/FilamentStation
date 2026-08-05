@@ -2045,9 +2045,9 @@
               "objID": "10000000-0152-4000-8000-000000000000",
               "type": "LVGLLabelWidget",
               "left": 166,
-              "top": 278,
+              "top": 268,
               "width": 300,
-              "height": 28,
+              "height": 48,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -2075,7 +2075,7 @@
                 "objID": "30000000-0154-4000-8000-000000000000"
               },
               "groupIndex": 0,
-              "text": "3 Drucker | Mock-Daten",
+              "text": "Drucker verwalten",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false,

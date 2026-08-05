@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/3",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/2",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/10",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
     "subnavigationSelectedItems": {
@@ -127,7 +127,6 @@
                   "type": "tabset",
                   "id": "#e9618473-7f24-4b75-af7c-4b03ffdc25e5",
                   "weight": 1,
-                  "selected": 1,
                   "enableClose": false,
                   "children": [
                     {
@@ -194,6 +193,7 @@
               "type": "tabset",
               "id": "EDITORS",
               "weight": 48.39565714021991,
+              "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
@@ -211,10 +211,10 @@
                 {
                   "type": "tab",
                   "id": "#11a98da1-9ed9-4735-9f30-963f3a479bc6",
-                  "name": "SCR_SETTINGS_HOME",
+                  "name": "SCR_PRINTER_SELECT",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/3",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/2",
                     "permanent": false
                   },
                   "icon": "svg:page"

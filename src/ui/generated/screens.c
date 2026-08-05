@@ -522,11 +522,11 @@ void create_screen_scr_printer_select() {
             // select_bottom_status
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.select_bottom_status = obj;
-            lv_obj_set_pos(obj, 166, 278);
-            lv_obj_set_size(obj, 300, 28);
+            lv_obj_set_pos(obj, 166, 268);
+            lv_obj_set_size(obj, 300, 48);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
-            lv_label_set_text_static(obj, "3 Drucker | Mock-Daten");
+            lv_label_set_text_static(obj, "Drucker verwalten");
         }
     }
     

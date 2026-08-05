@@ -7,6 +7,9 @@
 namespace filament_station::tasks {
 namespace {
 
+rtos::UiScreenId currentScreen = rtos::UiScreenId::Home;
+rtos::UiScreenId previousScreen = rtos::UiScreenId::Home;
+
 bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
                    const char* failureMessage) {
   if (xQueueSend(ctx.uiCommandQueue, &command, pdMS_TO_TICKS(1000)) == pdPASS) {
@@ -26,6 +29,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
   switch (action.type) {
     case rtos::UiActionType::SelectPrinter:
       if (action.value == 1) {
+        previousScreen = currentScreen;
+        currentScreen = rtos::UiScreenId::PrinterSelect;
         command.type = rtos::UiCommandType::ShowScreen;
         command.screenId = rtos::UiScreenId::PrinterSelect;
         sendUiCommand(ctx, command,
@@ -38,12 +43,15 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       command.type = rtos::UiCommandType::ShowScreen;
-      command.screenId = rtos::UiScreenId::Home;
+      command.screenId = previousScreen;
+      currentScreen = previousScreen;
       sendUiCommand(ctx, command,
-                    "AppTask: home command queue overflow");
+                    "AppTask: printer return command queue overflow");
       return;
 
     case rtos::UiActionType::OpenSettings:
+      previousScreen = currentScreen;
+      currentScreen = rtos::UiScreenId::SettingsHome;
       command.type = rtos::UiCommandType::ShowScreen;
       command.screenId = rtos::UiScreenId::SettingsHome;
       sendUiCommand(ctx, command,
@@ -53,8 +61,17 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::Back:
     case rtos::UiActionType::Close:
       command.type = rtos::UiCommandType::ShowScreen;
-      command.screenId = rtos::UiScreenId::Home;
+      command.screenId = previousScreen;
+      currentScreen = previousScreen;
       sendUiCommand(ctx, command, "AppTask: back command queue overflow");
+      return;
+
+    case rtos::UiActionType::OpenPrinterSettings:
+      command.type = rtos::UiCommandType::ShowToast;
+      std::snprintf(command.text, sizeof(command.text),
+                    "Druckerverwaltung folgt in Phase 3.15");
+      sendUiCommand(ctx, command,
+                    "AppTask: printer-management queue overflow");
       return;
 
     case rtos::UiActionType::SelectAms:
