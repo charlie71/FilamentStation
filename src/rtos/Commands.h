@@ -18,6 +18,8 @@ enum class UiScreenId : std::uint8_t {
   TrayActions,
   TraySelect,
   SettingsSpoolman,
+  SettingsPrinters,
+  SettingsPrinterEdit,
 };
 
 enum class UiCommandType : std::uint8_t {
@@ -77,6 +79,11 @@ enum class UiActionType : std::uint8_t {
   DeletePrinter,
   TestPrinterConnection,
   SetDefaultPrinter,
+  SetActivePrinter,
+  TogglePrinterEnabled,
+  SelectManagedPrinter,
+  EditPrinterField,
+  SavePrinterSettings,
   TestSpoolmanConnection,
   SaveSpoolmanSettings,
   EditSpoolmanSetting,

@@ -21,7 +21,9 @@ enum ScreensEnum {
     SCREEN_ID_SCR_TRAY_ACTIONS = 8,
     SCREEN_ID_SCR_TRAY_SELECT = 9,
     SCREEN_ID_SCR_SETTINGS_SPOOLMAN = 10,
-    _SCREEN_ID_LAST = 10
+    SCREEN_ID_SCR_SETTINGS_PRINTERS = 11,
+    SCREEN_ID_SCR_SETTINGS_PRINTER_EDIT = 12,
+    _SCREEN_ID_LAST = 12
 };
 
 typedef struct _objects_t {
@@ -35,6 +37,8 @@ typedef struct _objects_t {
     lv_obj_t *scr_tray_actions;
     lv_obj_t *scr_tray_select;
     lv_obj_t *scr_settings_spoolman;
+    lv_obj_t *scr_settings_printers;
+    lv_obj_t *scr_settings_printer_edit;
     lv_obj_t *boot_title;
     lv_obj_t *boot_version;
     lv_obj_t *boot_status;
@@ -143,6 +147,32 @@ typedef struct _objects_t {
     lv_obj_t *spoolman_setting_test;
     lv_obj_t *spoolman_setting_save;
     lv_obj_t *spoolman_setting_cancel;
+    lv_obj_t *printer_settings_header;
+    lv_obj_t *printer_settings_settings;
+    lv_obj_t *printer_settings_title;
+    lv_obj_t *printer_settings_row_1;
+    lv_obj_t *printer_settings_row_2;
+    lv_obj_t *printer_settings_row_3;
+    lv_obj_t *printer_settings_row_4;
+    lv_obj_t *printer_settings_active;
+    lv_obj_t *printer_settings_enabled;
+    lv_obj_t *printer_settings_default;
+    lv_obj_t *printer_settings_add;
+    lv_obj_t *printer_settings_edit;
+    lv_obj_t *printer_settings_back;
+    lv_obj_t *printer_edit_header;
+    lv_obj_t *printer_edit_settings;
+    lv_obj_t *printer_edit_title;
+    lv_obj_t *printer_edit_name;
+    lv_obj_t *printer_edit_host;
+    lv_obj_t *printer_edit_serial;
+    lv_obj_t *printer_edit_access_code;
+    lv_obj_t *printer_edit_mask;
+    lv_obj_t *printer_edit_test;
+    lv_obj_t *printer_edit_save;
+    lv_obj_t *printer_edit_delete;
+    lv_obj_t *printer_edit_cancel;
+    lv_obj_t *printer_edit_status;
 } objects_t;
 
 extern objects_t objects;
@@ -176,6 +206,12 @@ void tick_screen_scr_tray_select();
 
 void create_screen_scr_settings_spoolman();
 void tick_screen_scr_settings_spoolman();
+
+void create_screen_scr_settings_printers();
+void tick_screen_scr_settings_printers();
+
+void create_screen_scr_settings_printer_edit();
+void tick_screen_scr_settings_printer_edit();
 
 void create_user_widget_cmp_top_printer_bar(lv_obj_t *parent_obj, int startWidgetIndex);
 void tick_user_widget_cmp_top_printer_bar(int startWidgetIndex);

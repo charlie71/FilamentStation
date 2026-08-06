@@ -48,6 +48,33 @@ SpoolmanUiDraft spoolmanDraft{};
 lv_obj_t* spoolmanEditor = nullptr;
 lv_obj_t* spoolmanKeyboard = nullptr;
 std::int32_t activeSpoolmanField = 0;
+enum class EditorContext : std::uint8_t { None, Spoolman, Printer };
+EditorContext editorContext = EditorContext::None;
+std::int32_t activePrinterField = 0;
+rtos::PrinterId managedPrinterId = 1;
+rtos::PrinterId editingPrinterId = 1;
+bool showPrinterAccessCode = false;
+struct PrinterUiEntry {
+  rtos::PrinterId id;
+  char name[32];
+  bool enabled;
+  bool isDefault;
+  bool isActive;
+  bool exists;
+};
+std::array<PrinterUiEntry, 4> printerEntries{{
+    {1, "P1S Werkstatt", true, true, true, true},
+    {2, "X1C Labor", true, false, false, true},
+    {3, "A1 Mini Buero", false, false, false, true},
+    {4, "Neuer Drucker", true, false, false, false},
+}};
+struct PrinterUiDraft {
+  char name[32];
+  char host[64];
+  char serial[32];
+  char accessCode[16];
+};
+PrinterUiDraft printerUiDraft{};
 constexpr const char* kKeyboardLowerMap[] = {
     "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "DEL", "\n",
     "a", "s", "d", "f", "g", "h", "j", "k", "l", "OK", "\n",
@@ -67,7 +94,6 @@ std::array<std::array<lv_obj_t*, models::kMaximumFilamentColors>,
            kHomeColorStripGroups>
     homeColorStrips{};
 std::array<lv_obj_t*, 8> stagingTableRows{};
-std::array<lv_obj_t*, 6> trayDetailsRows{};
 bool touchWasPressed = false;
 std::size_t touchMarkerColorIndex = 0;
 
@@ -328,6 +354,8 @@ void closeSpoolmanEditor() {
     spoolmanEditor = nullptr;
   }
   activeSpoolmanField = 0;
+  activePrinterField = 0;
+  editorContext = EditorContext::None;
 }
 
 void spoolmanKeyboardEvent(lv_event_t* event) {
@@ -345,8 +373,11 @@ void spoolmanKeyboardEvent(lv_event_t* event) {
     return;
   }
   if (std::strcmp(key, "OK") == 0) {
-    sendAction(rtos::UiActionType::EditSpoolmanSetting, currentPrinterId, 0,
-               0, activeSpoolmanField, 0,
+    const bool printerEditor = editorContext == EditorContext::Printer;
+    sendAction(printerEditor ? rtos::UiActionType::EditPrinterField
+                             : rtos::UiActionType::EditSpoolmanSetting,
+               printerEditor ? editingPrinterId : currentPrinterId, 0, 0,
+               printerEditor ? activePrinterField : activeSpoolmanField, 0,
                lv_textarea_get_text(spoolmanEditor));
     closeSpoolmanEditor();
   } else if (std::strcmp(key, "CANCEL") == 0) {
@@ -382,6 +413,7 @@ void spoolmanFieldClicked(lv_event_t* event) {
   }
   closeSpoolmanEditor();
   activeSpoolmanField = field;
+  editorContext = EditorContext::Spoolman;
   lv_obj_scroll_to_y(objects.scr_settings_spoolman, 0, LV_ANIM_OFF);
   lv_obj_remove_flag(objects.scr_settings_spoolman, LV_OBJ_FLAG_SCROLLABLE);
   spoolmanEditor = lv_textarea_create(objects.scr_settings_spoolman);
@@ -415,6 +447,156 @@ void spoolmanActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   sendAction(type, currentPrinterId);
+}
+
+PrinterUiEntry* printerEntry(rtos::PrinterId id) {
+  for (auto& entry : printerEntries) {
+    if (entry.id == id) return &entry;
+  }
+  return nullptr;
+}
+
+const char* printerDraftValue(std::int32_t field) {
+  switch (field) {
+    case 1: return printerUiDraft.name;
+    case 2: return printerUiDraft.host;
+    case 3: return printerUiDraft.serial;
+    case 4: return printerUiDraft.accessCode;
+    default: return "";
+  }
+}
+
+char* printerDraftDestination(std::int32_t field) {
+  return const_cast<char*>(printerDraftValue(field));
+}
+
+std::size_t printerDraftCapacity(std::int32_t field) {
+  switch (field) {
+    case 1: return sizeof(printerUiDraft.name);
+    case 2: return sizeof(printerUiDraft.host);
+    case 3: return sizeof(printerUiDraft.serial);
+    case 4: return sizeof(printerUiDraft.accessCode);
+    default: return 0;
+  }
+}
+
+void loadPrinterUiDraft(rtos::PrinterId id) {
+  editingPrinterId = id;
+  showPrinterAccessCode = false;
+  if (id == 2) {
+    std::snprintf(printerUiDraft.name, sizeof(printerUiDraft.name), "X1C Labor");
+    std::snprintf(printerUiDraft.host, sizeof(printerUiDraft.host), "192.168.1.51");
+    std::snprintf(printerUiDraft.serial, sizeof(printerUiDraft.serial), "00M987654321");
+    std::snprintf(printerUiDraft.accessCode, sizeof(printerUiDraft.accessCode), "87654321");
+  } else if (id == 3) {
+    std::snprintf(printerUiDraft.name, sizeof(printerUiDraft.name), "A1 Mini Buero");
+    std::snprintf(printerUiDraft.host, sizeof(printerUiDraft.host), "192.168.1.52");
+    std::snprintf(printerUiDraft.serial, sizeof(printerUiDraft.serial), "030123456789");
+    std::snprintf(printerUiDraft.accessCode, sizeof(printerUiDraft.accessCode), "11223344");
+  } else if (id == 4) {
+    std::snprintf(printerUiDraft.name, sizeof(printerUiDraft.name), "Neuer Drucker");
+    printerUiDraft.host[0] = '\0';
+    printerUiDraft.serial[0] = '\0';
+    printerUiDraft.accessCode[0] = '\0';
+  } else {
+    std::snprintf(printerUiDraft.name, sizeof(printerUiDraft.name), "P1S Werkstatt");
+    std::snprintf(printerUiDraft.host, sizeof(printerUiDraft.host), "192.168.1.50");
+    std::snprintf(printerUiDraft.serial, sizeof(printerUiDraft.serial), "01P123456789");
+    std::snprintf(printerUiDraft.accessCode, sizeof(printerUiDraft.accessCode), "12345678");
+  }
+}
+
+void updatePrinterEditorContent() {
+  char text[96];
+  std::snprintf(text, sizeof(text), "Anzeigename: %s", printerUiDraft.name);
+  lv_label_set_text(objects.printer_edit_name, text);
+  std::snprintf(text, sizeof(text), "Host/IP: %s", printerUiDraft.host);
+  lv_label_set_text(objects.printer_edit_host, text);
+  std::snprintf(text, sizeof(text), "Seriennummer: %s", printerUiDraft.serial);
+  lv_label_set_text(objects.printer_edit_serial, text);
+  std::snprintf(text, sizeof(text), "LAN-Zugangscode: %s",
+                showPrinterAccessCode ? printerUiDraft.accessCode : "********");
+  lv_label_set_text(objects.printer_edit_access_code, text);
+  lv_label_set_text(objects.printer_edit_mask,
+                    showPrinterAccessCode ? "Verbergen" : "Anzeigen");
+}
+
+void updatePrinterSettingsList() {
+  const std::array<lv_obj_t*, 4> rows{{objects.printer_settings_row_1,
+                                      objects.printer_settings_row_2,
+                                      objects.printer_settings_row_3,
+                                      objects.printer_settings_row_4}};
+  for (std::size_t index = 0; index < rows.size(); ++index) {
+    const auto& entry = printerEntries[index];
+    char text[96];
+    if (!entry.exists) {
+      std::snprintf(text, sizeof(text), "+ freier Druckerplatz (ID %u)", entry.id);
+    } else {
+      std::snprintf(text, sizeof(text), "%c %s | %s%s%s", entry.isActive ? '>' : ' ',
+                    entry.name, entry.enabled ? "aktiv" : "deaktiviert",
+                    entry.isDefault ? " | Standard" : "",
+                    entry.isActive ? " | ausgewaehlt" : "");
+    }
+    lv_label_set_text(rows[index], text);
+    lv_obj_set_style_bg_color(rows[index],
+                              lv_color_hex(entry.id == managedPrinterId
+                                               ? 0xEF6C00
+                                               : (entry.enabled && entry.exists
+                                                      ? 0x1565C0
+                                                      : 0x78909C)),
+                              LV_PART_MAIN);
+  }
+}
+
+void printerRowClicked(lv_event_t* event) {
+  const auto id = static_cast<rtos::PrinterId>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  sendAction(rtos::UiActionType::SelectManagedPrinter, id);
+}
+
+void printerListActionClicked(lv_event_t* event) {
+  const auto type = static_cast<rtos::UiActionType>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  const rtos::PrinterId id = type == rtos::UiActionType::AddPrinter ? 4 : managedPrinterId;
+  sendAction(type, id);
+}
+
+void printerFieldClicked(lv_event_t* event) {
+  const auto field = static_cast<std::int32_t>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  closeSpoolmanEditor();
+  editorContext = EditorContext::Printer;
+  activePrinterField = field;
+  spoolmanEditor = lv_textarea_create(objects.scr_settings_printer_edit);
+  lv_obj_set_pos(spoolmanEditor, 4, 0);
+  lv_obj_set_size(spoolmanEditor, 472, 40);
+  lv_obj_set_style_text_font(spoolmanEditor, &ui_font_ui_german16, LV_PART_MAIN);
+  lv_textarea_set_one_line(spoolmanEditor, true);
+  lv_textarea_set_max_length(spoolmanEditor, printerDraftCapacity(field) - 1U);
+  lv_textarea_set_text(spoolmanEditor, printerDraftValue(field));
+  spoolmanKeyboard = lv_buttonmatrix_create(objects.scr_settings_printer_edit);
+  lv_obj_set_pos(spoolmanKeyboard, 0, 40);
+  lv_obj_set_size(spoolmanKeyboard, 480, 180);
+  lv_buttonmatrix_set_map(spoolmanKeyboard, kKeyboardLowerMap);
+  lv_obj_set_style_pad_all(spoolmanKeyboard, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_row(spoolmanKeyboard, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(spoolmanKeyboard, 2, LV_PART_MAIN);
+  lv_obj_set_style_text_font(spoolmanKeyboard, LV_FONT_DEFAULT, LV_PART_ITEMS);
+  lv_obj_add_event_cb(spoolmanKeyboard, spoolmanKeyboardEvent,
+                      LV_EVENT_VALUE_CHANGED, nullptr);
+  lv_obj_move_foreground(spoolmanEditor);
+  lv_obj_move_foreground(spoolmanKeyboard);
+}
+
+void printerMaskClicked(lv_event_t*) {
+  showPrinterAccessCode = !showPrinterAccessCode;
+  updatePrinterEditorContent();
+}
+
+void printerEditActionClicked(lv_event_t* event) {
+  const auto type = static_cast<rtos::UiActionType>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  sendAction(type, editingPrinterId);
 }
 
 void managePrintersClicked(lv_event_t*) {
@@ -460,6 +642,10 @@ void bindClick(lv_obj_t* object, lv_event_cb_t callback,
                std::uintptr_t userData = 0) {
   lv_obj_add_event_cb(object, callback, LV_EVENT_CLICKED,
                       reinterpret_cast<void*>(userData));
+  // Widget binding is performed once at startup. Let IDLE0 run between the
+  // many generated objects instead of monopolizing its core for several
+  // watchdog periods.
+  vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 void styleLabelButton(lv_obj_t* object, std::uint32_t color = 0x1565C0) {
@@ -470,6 +656,7 @@ void styleLabelButton(lv_obj_t* object, std::uint32_t color = 0x1565C0) {
   lv_obj_set_style_text_align(object, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
   lv_obj_set_style_radius(object, 8, LV_PART_MAIN);
   lv_obj_set_style_pad_top(object, 14, LV_PART_MAIN);
+  vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 void createHomeColorStrips() {
@@ -502,6 +689,7 @@ void createHomeColorStrips() {
       lv_obj_set_style_border_color(strip, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
       lv_obj_set_style_radius(strip, LV_RADIUS_CIRCLE, LV_PART_MAIN);
       lv_obj_set_style_pad_all(strip, 0, LV_PART_MAIN);
+      vTaskDelay(pdMS_TO_TICKS(5));
     }
   }
 }
@@ -567,36 +755,32 @@ void createStagingTableDecoration() {
       lv_obj_set_style_bg_opa(label, LV_OPA_COVER, LV_PART_MAIN);
     }
     lv_obj_set_style_text_color(label, lv_color_hex(0x101820), LV_PART_MAIN);
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
 void createTrayDetailsDecoration() {
-  lv_obj_add_flag(objects.tray_details_content, LV_OBJ_FLAG_HIDDEN);
-  for (std::size_t row = 0; row < trayDetailsRows.size(); ++row) {
-    lv_obj_t* label = lv_label_create(objects.scr_tray_details);
-    trayDetailsRows[row] = label;
-    lv_obj_set_pos(label, 8, 128 + static_cast<lv_coord_t>(row * 21));
-    lv_obj_set_size(label, 464, 21);
-    lv_obj_remove_flag(label, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_remove_flag(label, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_pad_left(label, 6, LV_PART_MAIN);
-    lv_obj_set_style_pad_top(label, 2, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(label, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(label,
-                              lv_color_hex((row % 2U) == 0U ? 0xECEFF1
-                                                            : 0xB8BDC0),
-                              LV_PART_MAIN);
-    lv_obj_set_style_text_color(label, lv_color_hex(0x101820), LV_PART_MAIN);
-  }
+  // Reuse the EEZ-owned label. Creating six additional labels here exhausted
+  // the remaining internal LVGL heap after the printer-management screens
+  // were added.
+  lv_obj_remove_flag(objects.tray_details_content, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_style_bg_opa(objects.tray_details_content, LV_OPA_COVER,
+                          LV_PART_MAIN);
+  lv_obj_set_style_bg_color(objects.tray_details_content,
+                            lv_color_hex(0xECEFF1), LV_PART_MAIN);
+  lv_obj_set_style_text_color(objects.tray_details_content,
+                              lv_color_hex(0x101820), LV_PART_MAIN);
+  lv_obj_set_style_pad_all(objects.tray_details_content, 6, LV_PART_MAIN);
 }
 
 void applyApplicationFont() {
-  const std::array<lv_obj_t*, 10> screens{{
+  const std::array<lv_obj_t*, 12> screens{{
       objects.scr_boot, objects.scr_home, objects.scr_printer_select,
       objects.scr_settings_home, objects.scr_staging_details,
       objects.scr_staging_actions, objects.scr_tray_details,
       objects.scr_tray_actions, objects.scr_tray_select,
       objects.scr_settings_spoolman,
+      objects.scr_settings_printers, objects.scr_settings_printer_edit,
   }};
   for (lv_obj_t* screen : screens) {
     lv_obj_set_style_text_font(screen, &ui_font_ui_german16, LV_PART_MAIN);
@@ -728,6 +912,56 @@ void bindGeneratedWidgets() {
                 rtos::UiActionType::SaveSpoolmanSettings));
   bindClick(objects.spoolman_setting_cancel, backClicked);
 
+  bindClick(objects.printer_settings_header, headerClicked);
+  bindClick(objects.printer_settings_settings, settingsClicked);
+  bindClick(objects.printer_settings_row_1, printerRowClicked, 1);
+  bindClick(objects.printer_settings_row_2, printerRowClicked, 2);
+  bindClick(objects.printer_settings_row_3, printerRowClicked, 3);
+  bindClick(objects.printer_settings_row_4, printerRowClicked, 4);
+  bindClick(objects.printer_settings_active, printerListActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::SetActivePrinter));
+  bindClick(objects.printer_settings_enabled, printerListActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::TogglePrinterEnabled));
+  bindClick(objects.printer_settings_default, printerListActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::SetDefaultPrinter));
+  bindClick(objects.printer_settings_add, printerListActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::AddPrinter));
+  bindClick(objects.printer_settings_edit, printerListActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::EditPrinter));
+  bindClick(objects.printer_settings_back, backClicked);
+
+  bindClick(objects.printer_edit_header, headerClicked);
+  bindClick(objects.printer_edit_settings, settingsClicked);
+  bindClick(objects.printer_edit_name, printerFieldClicked, 1);
+  bindClick(objects.printer_edit_host, printerFieldClicked, 2);
+  bindClick(objects.printer_edit_serial, printerFieldClicked, 3);
+  bindClick(objects.printer_edit_access_code, printerFieldClicked, 4);
+  bindClick(objects.printer_edit_mask, printerMaskClicked);
+  bindClick(objects.printer_edit_test, printerEditActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::TestPrinterConnection));
+  bindClick(objects.printer_edit_save, printerEditActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::SavePrinterSettings));
+  bindClick(objects.printer_edit_delete, printerEditActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::DeletePrinter));
+  bindClick(objects.printer_edit_cancel, backClicked);
+
+  const std::array<lv_obj_t*, 20> printerButtons{{
+      objects.printer_settings_header, objects.printer_settings_settings,
+      objects.printer_settings_row_1, objects.printer_settings_row_2,
+      objects.printer_settings_row_3, objects.printer_settings_row_4,
+      objects.printer_settings_active, objects.printer_settings_enabled,
+      objects.printer_settings_default, objects.printer_settings_add,
+      objects.printer_settings_edit, objects.printer_edit_header,
+      objects.printer_edit_settings, objects.printer_edit_name,
+      objects.printer_edit_host, objects.printer_edit_serial,
+      objects.printer_edit_access_code, objects.printer_edit_mask,
+      objects.printer_edit_test, objects.printer_edit_save,
+  }};
+  for (lv_obj_t* button : printerButtons) styleLabelButton(button);
+  styleLabelButton(objects.printer_settings_back, 0x455A64);
+  styleLabelButton(objects.printer_edit_delete, 0xC62828);
+  styleLabelButton(objects.printer_edit_cancel, 0x455A64);
+
   const std::array<lv_obj_t*, 10> spoolmanButtons{{
       objects.spoolman_settings_header, objects.spoolman_settings_settings,
       objects.spoolman_setting_name, objects.spoolman_setting_protocol,
@@ -792,8 +1026,11 @@ void bindGeneratedWidgets() {
     lv_obj_set_style_text_align(amsLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_set_style_pad_top(amsLabel, 10, LV_PART_MAIN);
   }
+  vTaskDelay(pdMS_TO_TICKS(250));
   createHomeColorStrips();
+  vTaskDelay(pdMS_TO_TICKS(250));
   createStagingTableDecoration();
+  vTaskDelay(pdMS_TO_TICKS(250));
   createTrayDetailsDecoration();
 }
 
@@ -1098,9 +1335,11 @@ void updateTrayDetails() {
                   static_cast<double>(tray->remainingWeightGrams));
     std::snprintf(rows[4].data(), rows[4].size(), "Letzte Messung: Mock-Daten");
   }
-  for (std::size_t row = 0; row < trayDetailsRows.size(); ++row) {
-    lv_label_set_text(trayDetailsRows[row], rows[row].data());
-  }
+  char content[448];
+  std::snprintf(content, sizeof(content), "%s\n%s\n%s\n%s\n%s\n%s",
+                rows[0].data(), rows[1].data(), rows[2].data(), rows[3].data(),
+                rows[4].data(), rows[5].data());
+  lv_label_set_text(objects.tray_details_content, content);
   const std::array<lv_obj_t*, models::kMaximumFilamentColors> colorFields{{
       objects.tray_details_color_1, objects.tray_details_color_2,
       objects.tray_details_color_3,
@@ -1223,12 +1462,15 @@ void updateHeaders(rtos::PrinterId printerId) {
   lv_label_set_text(objects.tray_actions_header, header);
   lv_label_set_text(objects.tray_select_header, header);
   lv_label_set_text(objects.spoolman_settings_header, header);
+  lv_label_set_text(objects.printer_settings_header, header);
+  lv_label_set_text(objects.printer_edit_header, header);
 
   updateHomeContent();
   updatePrinterList();
   updateStagingContent();
   updateTrayDetails();
   updateTraySelection(currentPrinterId, currentAmsId, 0, false);
+  updatePrinterSettingsList();
 }
 
 void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
@@ -1252,6 +1494,8 @@ void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
   lv_label_set_text(objects.tray_actions_header, header);
   lv_label_set_text(objects.tray_select_header, header);
   lv_label_set_text(objects.spoolman_settings_header, header);
+  lv_label_set_text(objects.printer_settings_header, header);
+  lv_label_set_text(objects.printer_edit_header, header);
   updateHomeContent();
   updateTraySelection(currentPrinterId, currentAmsId, 0, false);
 }
@@ -1294,6 +1538,17 @@ void showScreen(rtos::UiScreenId screenId) {
       closeSpoolmanEditor();
       updateSpoolmanSettingsContent();
       loadScreen(SCREEN_ID_SCR_SETTINGS_SPOOLMAN);
+      break;
+    case rtos::UiScreenId::SettingsPrinters:
+      closeSpoolmanEditor();
+      updatePrinterSettingsList();
+      loadScreen(SCREEN_ID_SCR_SETTINGS_PRINTERS);
+      break;
+    case rtos::UiScreenId::SettingsPrinterEdit:
+      closeSpoolmanEditor();
+      updatePrinterEditorContent();
+      lv_label_set_text(objects.printer_edit_status, "Status: Mock-Daten");
+      loadScreen(SCREEN_ID_SCR_SETTINGS_PRINTER_EDIT);
       break;
   }
 }
@@ -1352,9 +1607,19 @@ bool initializeLvgl(UiRuntimeInfo& runtimeInfo, rtos::RtosContext& context) {
   lv_indev_set_read_cb(touchInput, readTouch);
 
   ui_init();
+  rtos::logLine("UiTask: EEZ screens created");
+  // A one-tick delay can expire on the next tick boundary without IDLE0 ever
+  // running. Reserve a real scheduling window during this one-time startup.
+  vTaskDelay(pdMS_TO_TICKS(250));
   applyApplicationFont();
+  rtos::logLine("UiTask: UI font applied");
+  vTaskDelay(pdMS_TO_TICKS(250));
   bindGeneratedWidgets();
+  rtos::logLine("UiTask: UI widgets bound");
+  vTaskDelay(pdMS_TO_TICKS(250));
   updateHeaders(currentPrinterId);
+  rtos::logLine("UiTask: initial UI model applied");
+  vTaskDelay(pdMS_TO_TICKS(250));
   loadScreen(SCREEN_ID_SCR_HOME);
 
   runtimeInfo.bytesPerDrawBuffer = bufferBytes;
@@ -1379,6 +1644,9 @@ void processUiCommand(const rtos::UiCommand& command) {
         selectedTrayId = command.trayId;
         selectedTraySpoolId = command.spoolId;
       }
+      if (command.screenId == rtos::UiScreenId::SettingsPrinterEdit) {
+        loadPrinterUiDraft(command.printerId);
+      }
       showScreen(command.screenId);
       break;
     case rtos::UiCommandType::UpdateHeader:
@@ -1398,15 +1666,45 @@ void processUiCommand(const rtos::UiCommand& command) {
       }
       break;
     case rtos::UiCommandType::UpdateSettings: {
-      char* destination = spoolmanFieldDestination(command.value);
-      const std::size_t capacity = spoolmanFieldCapacity(command.value);
+      const bool printerFieldUpdate = command.value >= 21 && command.value <= 24;
+      const std::int32_t field = printerFieldUpdate ? command.value - 20 : command.value;
+      char* destination = printerFieldUpdate ? printerDraftDestination(field)
+                                             : spoolmanFieldDestination(field);
+      const std::size_t capacity = printerFieldUpdate
+                                       ? printerDraftCapacity(field)
+                                       : spoolmanFieldCapacity(field);
       if (destination != nullptr && capacity > 0) {
         std::snprintf(destination, capacity, "%s", command.text);
-        updateSpoolmanSettingsContent();
-        lv_label_set_text(objects.spoolman_setting_status,
-                          "Status: geaendert, nicht gespeichert");
-        lv_label_set_text(objects.spoolman_setting_version, "Server: -");
+        if (printerFieldUpdate) {
+          updatePrinterEditorContent();
+          lv_label_set_text(objects.printer_edit_status,
+                            "Status: geaendert, nicht gespeichert");
+        } else {
+          updateSpoolmanSettingsContent();
+          lv_label_set_text(objects.spoolman_setting_status,
+                            "Status: geaendert, nicht gespeichert");
+          lv_label_set_text(objects.spoolman_setting_version, "Server: -");
+        }
       }
+      break;
+    }
+    case rtos::UiCommandType::UpdatePrinterList: {
+      managedPrinterId = command.printerId;
+      PrinterUiEntry* entry = printerEntry(command.printerId);
+      if (entry != nullptr) {
+        if (command.value == 1) entry->enabled = !entry->enabled;
+        if (command.value == 2) {
+          for (auto& item : printerEntries) item.isDefault = false;
+          entry->isDefault = true;
+        }
+        if (command.value == 3 && entry->exists && entry->enabled) {
+          for (auto& item : printerEntries) item.isActive = false;
+          entry->isActive = true;
+          updateHeaders(entry->id);
+        }
+        if (command.value == 4) entry->exists = false;
+      }
+      updatePrinterSettingsList();
       break;
     }
     case rtos::UiCommandType::ShowStatus:
@@ -1415,6 +1713,17 @@ void processUiCommand(const rtos::UiCommand& command) {
       lv_label_set_text(objects.settings_bottom_status, command.text);
       if (command.value >= 100) {
         lv_label_set_text(objects.spoolman_setting_status, command.text);
+      }
+      if (command.value >= 200) {
+        lv_label_set_text(objects.printer_edit_status, command.text);
+        if (command.value == 202) {
+          PrinterUiEntry* entry = printerEntry(command.printerId);
+          if (entry != nullptr) {
+            entry->exists = true;
+            std::snprintf(entry->name, sizeof(entry->name), "%s",
+                          printerUiDraft.name);
+          }
+        }
       }
       if (command.value == 101 && command.title[0] != '\0') {
         char version[64];

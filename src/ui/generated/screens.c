@@ -1524,6 +1524,272 @@ void create_screen_scr_settings_spoolman() {
 void tick_screen_scr_settings_spoolman() {
 }
 
+void create_screen_scr_settings_printers() {
+    lv_obj_t *obj = lv_obj_create(0);
+    objects.scr_settings_printers = obj;
+    lv_obj_set_pos(obj, 0, 0);
+    lv_obj_set_size(obj, 480, 320);
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SNAPPABLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+    {
+        lv_obj_t *parent_obj = obj;
+        {
+            // printer_settings_header
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_settings_header = obj;
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, 408, 40);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+        }
+        {
+            // printer_settings_settings
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_settings_settings = obj;
+            lv_obj_set_pos(obj, 412, 0);
+            lv_obj_set_size(obj, 68, 40);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "SET");
+        }
+        {
+            // printer_settings_title
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_settings_title = obj;
+            lv_obj_set_pos(obj, 8, 44);
+            lv_obj_set_size(obj, 464, 24);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Bambu-Drucker verwalten");
+        }
+        {
+            // printer_settings_row_1
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_settings_row_1 = obj;
+            lv_obj_set_pos(obj, 8, 72);
+            lv_obj_set_size(obj, 464, 42);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "P1S Werkstatt | online | aktiv | Standard");
+        }
+        {
+            // printer_settings_row_2
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_settings_row_2 = obj;
+            lv_obj_set_pos(obj, 8, 118);
+            lv_obj_set_size(obj, 464, 42);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "X1C Labor | online");
+        }
+        {
+            // printer_settings_row_3
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_settings_row_3 = obj;
+            lv_obj_set_pos(obj, 8, 164);
+            lv_obj_set_size(obj, 464, 42);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "A1 Mini Buero | offline");
+        }
+        {
+            // printer_settings_row_4
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_settings_row_4 = obj;
+            lv_obj_set_pos(obj, 8, 210);
+            lv_obj_set_size(obj, 464, 42);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Neuer Drucker");
+        }
+        {
+            // printer_settings_active
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_settings_active = obj;
+            lv_obj_set_pos(obj, 4, 264);
+            lv_obj_set_size(obj, 76, 56);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Aktiv");
+        }
+        {
+            // printer_settings_enabled
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_settings_enabled = obj;
+            lv_obj_set_pos(obj, 84, 264);
+            lv_obj_set_size(obj, 76, 56);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Ein/Aus");
+        }
+        {
+            // printer_settings_default
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_settings_default = obj;
+            lv_obj_set_pos(obj, 164, 264);
+            lv_obj_set_size(obj, 76, 56);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Standard");
+        }
+        {
+            // printer_settings_add
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_settings_add = obj;
+            lv_obj_set_pos(obj, 244, 264);
+            lv_obj_set_size(obj, 76, 56);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "+ Neu");
+        }
+        {
+            // printer_settings_edit
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_settings_edit = obj;
+            lv_obj_set_pos(obj, 324, 264);
+            lv_obj_set_size(obj, 76, 56);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Edit");
+        }
+        {
+            // printer_settings_back
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_settings_back = obj;
+            lv_obj_set_pos(obj, 404, 264);
+            lv_obj_set_size(obj, 72, 56);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Zurueck");
+        }
+    }
+    
+    tick_screen_scr_settings_printers();
+}
+
+void tick_screen_scr_settings_printers() {
+}
+
+void create_screen_scr_settings_printer_edit() {
+    lv_obj_t *obj = lv_obj_create(0);
+    objects.scr_settings_printer_edit = obj;
+    lv_obj_set_pos(obj, 0, 0);
+    lv_obj_set_size(obj, 480, 320);
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SNAPPABLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+    {
+        lv_obj_t *parent_obj = obj;
+        {
+            // printer_edit_header
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_edit_header = obj;
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, 408, 40);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+        }
+        {
+            // printer_edit_settings
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_edit_settings = obj;
+            lv_obj_set_pos(obj, 412, 0);
+            lv_obj_set_size(obj, 68, 40);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "SET");
+        }
+        {
+            // printer_edit_title
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_edit_title = obj;
+            lv_obj_set_pos(obj, 8, 44);
+            lv_obj_set_size(obj, 464, 24);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Drucker bearbeiten");
+        }
+        {
+            // printer_edit_name
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_edit_name = obj;
+            lv_obj_set_pos(obj, 8, 72);
+            lv_obj_set_size(obj, 464, 40);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Anzeigename: P1S Werkstatt");
+        }
+        {
+            // printer_edit_host
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_edit_host = obj;
+            lv_obj_set_pos(obj, 8, 116);
+            lv_obj_set_size(obj, 464, 40);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Host/IP: 192.168.1.50");
+        }
+        {
+            // printer_edit_serial
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_edit_serial = obj;
+            lv_obj_set_pos(obj, 8, 160);
+            lv_obj_set_size(obj, 464, 40);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Seriennummer: 01P123456789");
+        }
+        {
+            // printer_edit_access_code
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_edit_access_code = obj;
+            lv_obj_set_pos(obj, 8, 204);
+            lv_obj_set_size(obj, 300, 40);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "LAN-Code: ********");
+        }
+        {
+            // printer_edit_mask
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_edit_mask = obj;
+            lv_obj_set_pos(obj, 312, 204);
+            lv_obj_set_size(obj, 160, 40);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Anzeigen");
+        }
+        {
+            // printer_edit_test
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_edit_test = obj;
+            lv_obj_set_pos(obj, 4, 264);
+            lv_obj_set_size(obj, 92, 56);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Testen");
+        }
+        {
+            // printer_edit_save
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_edit_save = obj;
+            lv_obj_set_pos(obj, 100, 264);
+            lv_obj_set_size(obj, 92, 56);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Speichern");
+        }
+        {
+            // printer_edit_delete
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_edit_delete = obj;
+            lv_obj_set_pos(obj, 196, 264);
+            lv_obj_set_size(obj, 92, 56);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Loeschen");
+        }
+        {
+            // printer_edit_cancel
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_edit_cancel = obj;
+            lv_obj_set_pos(obj, 292, 264);
+            lv_obj_set_size(obj, 184, 56);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Abbrechen");
+        }
+        {
+            // printer_edit_status
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.printer_edit_status = obj;
+            lv_obj_set_pos(obj, 8, 244);
+            lv_obj_set_size(obj, 464, 16);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Status: bereit");
+        }
+    }
+    
+    tick_screen_scr_settings_printer_edit();
+}
+
+void tick_screen_scr_settings_printer_edit() {
+}
+
 void create_user_widget_cmp_top_printer_bar(lv_obj_t *parent_obj, int startWidgetIndex) {
     (void)startWidgetIndex;
     lv_obj_t *obj = parent_obj;
@@ -2400,9 +2666,11 @@ tick_screen_func_t tick_screen_funcs[] = {
     tick_screen_scr_tray_actions,
     tick_screen_scr_tray_select,
     tick_screen_scr_settings_spoolman,
+    tick_screen_scr_settings_printers,
+    tick_screen_scr_settings_printer_edit,
 };
 void tick_screen(int screen_index) {
-    if (screen_index >= 0 && screen_index < 10) {
+    if (screen_index >= 0 && screen_index < 12) {
         tick_screen_funcs[screen_index]();
     }
 }
@@ -2510,4 +2778,6 @@ void create_screens() {
     create_screen_scr_tray_actions();
     create_screen_scr_tray_select();
     create_screen_scr_settings_spoolman();
+    create_screen_scr_settings_printers();
+    create_screen_scr_settings_printer_edit();
 }

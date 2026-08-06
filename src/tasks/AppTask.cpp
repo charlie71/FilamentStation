@@ -22,6 +22,69 @@ struct SpoolmanDraft {
 };
 
 SpoolmanDraft spoolmanDraft{};
+struct PrinterDraft {
+  rtos::PrinterId id = 1;
+  char name[32] = "P1S Werkstatt";
+  char host[64] = "192.168.1.50";
+  char serial[32] = "01P123456789";
+  char accessCode[16] = "12345678";
+};
+PrinterDraft printerDraft{};
+
+void loadPrinterDraft(rtos::PrinterId id) {
+  printerDraft.id = id;
+  if (id == 2) {
+    std::snprintf(printerDraft.name, sizeof(printerDraft.name), "X1C Labor");
+    std::snprintf(printerDraft.host, sizeof(printerDraft.host), "192.168.1.51");
+    std::snprintf(printerDraft.serial, sizeof(printerDraft.serial), "00M987654321");
+    std::snprintf(printerDraft.accessCode, sizeof(printerDraft.accessCode), "87654321");
+  } else if (id == 3) {
+    std::snprintf(printerDraft.name, sizeof(printerDraft.name), "A1 Mini Buero");
+    std::snprintf(printerDraft.host, sizeof(printerDraft.host), "192.168.1.52");
+    std::snprintf(printerDraft.serial, sizeof(printerDraft.serial), "030123456789");
+    std::snprintf(printerDraft.accessCode, sizeof(printerDraft.accessCode), "11223344");
+  } else if (id == 4) {
+    std::snprintf(printerDraft.name, sizeof(printerDraft.name), "Neuer Drucker");
+    printerDraft.host[0] = '\0';
+    printerDraft.serial[0] = '\0';
+    printerDraft.accessCode[0] = '\0';
+  } else {
+    std::snprintf(printerDraft.name, sizeof(printerDraft.name), "P1S Werkstatt");
+    std::snprintf(printerDraft.host, sizeof(printerDraft.host), "192.168.1.50");
+    std::snprintf(printerDraft.serial, sizeof(printerDraft.serial), "01P123456789");
+    std::snprintf(printerDraft.accessCode, sizeof(printerDraft.accessCode), "12345678");
+  }
+}
+
+char* printerField(std::int32_t field) {
+  switch (field) {
+    case 1: return printerDraft.name;
+    case 2: return printerDraft.host;
+    case 3: return printerDraft.serial;
+    case 4: return printerDraft.accessCode;
+    default: return nullptr;
+  }
+}
+
+std::size_t printerFieldCapacity(std::int32_t field) {
+  switch (field) {
+    case 1: return sizeof(printerDraft.name);
+    case 2: return sizeof(printerDraft.host);
+    case 3: return sizeof(printerDraft.serial);
+    case 4: return sizeof(printerDraft.accessCode);
+    default: return 0;
+  }
+}
+
+const char* validatePrinterDraft() {
+  if (printerDraft.name[0] == '\0') return "Fehler: Anzeigename fehlt";
+  if (printerDraft.host[0] == '\0' || std::strchr(printerDraft.host, ' ') != nullptr)
+    return "Fehler: Host/IP ungueltig";
+  if (printerDraft.serial[0] == '\0') return "Fehler: Seriennummer fehlt";
+  if (std::strlen(printerDraft.accessCode) != 8)
+    return "Fehler: LAN-Code muss 8 Zeichen haben";
+  return nullptr;
+}
 
 char* spoolmanField(std::int32_t field) {
   switch (field) {
@@ -171,6 +234,12 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       } else if (currentScreen == rtos::UiScreenId::SettingsSpoolman) {
         command.screenId = rtos::UiScreenId::SettingsHome;
         currentScreen = rtos::UiScreenId::SettingsHome;
+      } else if (currentScreen == rtos::UiScreenId::SettingsPrinterEdit) {
+        command.screenId = rtos::UiScreenId::SettingsPrinters;
+        currentScreen = rtos::UiScreenId::SettingsPrinters;
+      } else if (currentScreen == rtos::UiScreenId::SettingsPrinters) {
+        command.screenId = rtos::UiScreenId::SettingsHome;
+        currentScreen = rtos::UiScreenId::SettingsHome;
       } else {
         command.screenId = previousScreen;
         currentScreen = previousScreen;
@@ -180,7 +249,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
 
     case rtos::UiActionType::OpenWifiSettings:
     case rtos::UiActionType::OpenScaleSettings:
-    case rtos::UiActionType::OpenPrinterSettings:
     case rtos::UiActionType::OpenDeviceSettings:
     case rtos::UiActionType::OpenDiagnostics:
     case rtos::UiActionType::OpenFirmwareSettings: {
@@ -191,9 +259,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
           break;
         case rtos::UiActionType::OpenScaleSettings:
           section = "Waage";
-          break;
-        case rtos::UiActionType::OpenPrinterSettings:
-          section = "Bambu-Drucker";
           break;
         case rtos::UiActionType::OpenDeviceSettings:
           section = "Geraet";
@@ -212,6 +277,84 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     section);
       sendUiCommand(ctx, command,
                     "AppTask: settings navigation queue overflow");
+      return;
+    }
+
+    case rtos::UiActionType::OpenPrinterSettings:
+      previousScreen = currentScreen;
+      currentScreen = rtos::UiScreenId::SettingsPrinters;
+      command.type = rtos::UiCommandType::ShowScreen;
+      command.screenId = currentScreen;
+      sendUiCommand(ctx, command, "AppTask: printer settings queue overflow");
+      return;
+
+    case rtos::UiActionType::AddPrinter:
+    case rtos::UiActionType::EditPrinter:
+      loadPrinterDraft(action.type == rtos::UiActionType::AddPrinter ? 4 : action.printerId);
+      currentScreen = rtos::UiScreenId::SettingsPrinterEdit;
+      command.type = rtos::UiCommandType::ShowScreen;
+      command.screenId = currentScreen;
+      command.printerId = printerDraft.id;
+      sendUiCommand(ctx, command, "AppTask: printer editor queue overflow");
+      return;
+
+    case rtos::UiActionType::SetActivePrinter:
+      command.type = rtos::UiCommandType::UpdatePrinterList;
+      command.value = 3;
+      sendUiCommand(ctx, command, "AppTask: active printer queue overflow");
+      return;
+    case rtos::UiActionType::TogglePrinterEnabled:
+      command.type = rtos::UiCommandType::UpdatePrinterList;
+      command.value = 1;
+      sendUiCommand(ctx, command, "AppTask: enabled printer queue overflow");
+      return;
+    case rtos::UiActionType::SetDefaultPrinter:
+      command.type = rtos::UiCommandType::UpdatePrinterList;
+      command.value = 2;
+      sendUiCommand(ctx, command, "AppTask: default printer queue overflow");
+      return;
+    case rtos::UiActionType::SelectManagedPrinter:
+      command.type = rtos::UiCommandType::UpdatePrinterList;
+      command.value = 0;
+      sendUiCommand(ctx, command, "AppTask: printer selection queue overflow");
+      return;
+    case rtos::UiActionType::DeletePrinter:
+      command.type = rtos::UiCommandType::UpdatePrinterList;
+      command.value = 4;
+      sendUiCommand(ctx, command, "AppTask: delete printer queue overflow");
+      currentScreen = rtos::UiScreenId::SettingsPrinters;
+      command.type = rtos::UiCommandType::ShowScreen;
+      command.screenId = currentScreen;
+      sendUiCommand(ctx, command, "AppTask: printer return queue overflow");
+      return;
+    case rtos::UiActionType::EditPrinterField: {
+      char* destination = printerField(action.value);
+      const std::size_t capacity = printerFieldCapacity(action.value);
+      if (destination == nullptr || capacity == 0) return;
+      std::snprintf(destination, capacity, "%s", action.text);
+      command.type = rtos::UiCommandType::UpdateSettings;
+      command.value = 20 + action.value;
+      std::snprintf(command.text, sizeof(command.text), "%s", destination);
+      sendUiCommand(ctx, command, "AppTask: printer field queue overflow");
+      return;
+    }
+    case rtos::UiActionType::TestPrinterConnection:
+    case rtos::UiActionType::SavePrinterSettings: {
+      const char* error = validatePrinterDraft();
+      command.type = rtos::UiCommandType::ShowToast;
+      if (error != nullptr) {
+        command.value = 200;
+        std::snprintf(command.text, sizeof(command.text), "%s", error);
+      } else if (action.type == rtos::UiActionType::TestPrinterConnection) {
+        command.value = 201;
+        std::snprintf(command.text, sizeof(command.text),
+                      "Status: Mock-Verbindung erfolgreich");
+      } else {
+        command.value = 202;
+        std::snprintf(command.text, sizeof(command.text),
+                      "Status: Drucker validiert");
+      }
+      sendUiCommand(ctx, command, "AppTask: printer validation queue overflow");
       return;
     }
 

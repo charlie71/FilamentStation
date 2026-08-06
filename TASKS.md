@@ -414,24 +414,24 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 3.15 Druckerverwaltung
 
-* [ ] `SCR_SETTINGS_PRINTERS`
-* [ ] Druckerliste
-* [ ] hinzufügen
-* [ ] bearbeiten
-* [ ] löschen
-* [ ] aktivieren/deaktivieren
-* [ ] Standarddrucker
-* [ ] aktiver Drucker
-* [ ] `SCR_SETTINGS_PRINTER_EDIT`
-* [ ] Anzeigename
-* [ ] Host/IP
-* [ ] Seriennummer
-* [ ] LAN-Zugangscode
-* [ ] Zugangscode maskieren
-* [ ] Verbindung testen
-* [ ] Speichern
-* [ ] Abbrechen
-* [ ] kein Security Key
+* [x] `SCR_SETTINGS_PRINTERS`
+* [x] Druckerliste
+* [x] hinzufügen
+* [x] bearbeiten
+* [x] löschen
+* [x] aktivieren/deaktivieren
+* [x] Standarddrucker
+* [x] aktiver Drucker
+* [x] `SCR_SETTINGS_PRINTER_EDIT`
+* [x] Anzeigename
+* [x] Host/IP
+* [x] Seriennummer
+* [x] LAN-Zugangscode
+* [x] Zugangscode maskieren
+* [x] Verbindung testen
+* [x] Speichern
+* [x] Abbrechen
+* [x] kein Security Key
 
 ## 3.16 Weitere Settings-Screens
 

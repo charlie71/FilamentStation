@@ -5520,6 +5520,52 @@
       "isUsedAsUserWidget": false,
       "createAtStart": true,
       "deleteOnScreenUnload": false
+    },
+    {
+      "objID": "69000000-0001-4600-8600-100000000000",
+      "components": [{
+        "objID": "69000000-0002-4600-8600-100000000000", "type": "LVGLScreenWidget", "left": 0, "top": 0, "width": 480, "height": 320,
+        "children": [
+          { "objID": "69000000-0010-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 0, "top": 0, "width": 408, "height": 40, "identifier": "printer_settings_header", "text": "online | P1S Werkstatt | AMS 1", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0011-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 412, "top": 0, "width": 68, "height": 40, "identifier": "printer_settings_settings", "text": "SET", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0012-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 44, "width": 464, "height": 24, "identifier": "printer_settings_title", "text": "Bambu-Drucker verwalten", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0013-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 72, "width": 464, "height": 42, "identifier": "printer_settings_row_1", "text": "P1S Werkstatt | online | aktiv | Standard", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0014-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 118, "width": 464, "height": 42, "identifier": "printer_settings_row_2", "text": "X1C Labor | online", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0015-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 164, "width": 464, "height": 42, "identifier": "printer_settings_row_3", "text": "A1 Mini Buero | offline", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0016-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 210, "width": 464, "height": 42, "identifier": "printer_settings_row_4", "text": "Neuer Drucker", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0020-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 4, "top": 264, "width": 76, "height": 56, "identifier": "printer_settings_active", "text": "Aktiv", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0021-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 84, "top": 264, "width": 76, "height": 56, "identifier": "printer_settings_enabled", "text": "Ein/Aus", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0022-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 164, "top": 264, "width": 76, "height": 56, "identifier": "printer_settings_default", "text": "Standard", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0023-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 244, "top": 264, "width": 76, "height": 56, "identifier": "printer_settings_add", "text": "+ Neu", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0024-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 324, "top": 264, "width": 76, "height": 56, "identifier": "printer_settings_edit", "text": "Edit", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0025-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 404, "top": 264, "width": 72, "height": 56, "identifier": "printer_settings_back", "text": "Zurueck", "textType": "literal", "longMode": "WRAP", "useStaticText": true }
+        ]
+      }],
+      "connectionLines": [], "localVariables": [], "componentGroups": [], "userProperties": [],
+      "name": "SCR_SETTINGS_PRINTERS", "left": 0, "top": 0, "width": 480, "height": 320, "isUsedAsUserWidget": false, "createAtStart": true, "deleteOnScreenUnload": false
+    },
+    {
+      "objID": "6a000000-0001-4600-8600-100000000000",
+      "components": [{
+        "objID": "6a000000-0002-4600-8600-100000000000", "type": "LVGLScreenWidget", "left": 0, "top": 0, "width": 480, "height": 320,
+        "children": [
+          { "objID": "6a000000-0010-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 0, "top": 0, "width": 408, "height": 40, "identifier": "printer_edit_header", "text": "online | P1S Werkstatt | AMS 1", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "6a000000-0011-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 412, "top": 0, "width": 68, "height": 40, "identifier": "printer_edit_settings", "text": "SET", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "6a000000-0012-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 44, "width": 464, "height": 24, "identifier": "printer_edit_title", "text": "Drucker bearbeiten", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "6a000000-0013-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 72, "width": 464, "height": 40, "identifier": "printer_edit_name", "text": "Anzeigename: P1S Werkstatt", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "6a000000-0014-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 116, "width": 464, "height": 40, "identifier": "printer_edit_host", "text": "Host/IP: 192.168.1.50", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "6a000000-0015-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 160, "width": 464, "height": 40, "identifier": "printer_edit_serial", "text": "Seriennummer: 01P123456789", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "6a000000-0016-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 204, "width": 300, "height": 40, "identifier": "printer_edit_access_code", "text": "LAN-Code: ********", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "6a000000-0017-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 312, "top": 204, "width": 160, "height": 40, "identifier": "printer_edit_mask", "text": "Anzeigen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "6a000000-0020-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 4, "top": 264, "width": 92, "height": 56, "identifier": "printer_edit_test", "text": "Testen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "6a000000-0021-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 100, "top": 264, "width": 92, "height": 56, "identifier": "printer_edit_save", "text": "Speichern", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "6a000000-0022-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 196, "top": 264, "width": 92, "height": 56, "identifier": "printer_edit_delete", "text": "Loeschen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "6a000000-0023-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 292, "top": 264, "width": 184, "height": 56, "identifier": "printer_edit_cancel", "text": "Abbrechen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "6a000000-0024-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 244, "width": 464, "height": 16, "identifier": "printer_edit_status", "text": "Status: bereit", "textType": "literal", "longMode": "WRAP", "useStaticText": true }
+        ]
+      }],
+      "connectionLines": [], "localVariables": [], "componentGroups": [], "userProperties": [],
+      "name": "SCR_SETTINGS_PRINTER_EDIT", "left": 0, "top": 0, "width": 480, "height": 320, "isUsedAsUserWidget": false, "createAtStart": true, "deleteOnScreenUnload": false
     }
   ],
   "userWidgets": [
