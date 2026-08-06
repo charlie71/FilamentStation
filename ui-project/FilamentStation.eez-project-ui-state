@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/5",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/3",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/10",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
     "selectedFontObject": "[FilamentStation.eez-project]:/fonts/0",
@@ -193,17 +193,17 @@
             {
               "type": "tabset",
               "id": "EDITORS",
-              "weight": 35.55839156428692,
+              "weight": 44.98350740060393,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
                 {
                   "type": "tab",
                   "id": "#9b350182-761c-4c67-9ece-429ca7d88b9f",
-                  "name": "SCR_STAGING_ACTIONS",
+                  "name": "SCR_SETTINGS_HOME",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/5",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/3",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -214,7 +214,7 @@
             {
               "type": "row",
               "id": "#c9759a35-4104-4443-bbaa-5163c4e2a827",
-              "weight": 37.35773186031108,
+              "weight": 27.932616023994065,
               "children": [
                 {
                   "type": "tabset",
@@ -1124,7 +1124,11 @@
     },
     "[FilamentStation.eez-project]:/userPages/3[flow-state]": {
       "selectionFront": {},
-      "selectionBack": {},
+      "selectionBack": {
+        "0": {
+          "9": {}
+        }
+      },
       "transform": {
         "translate": {
           "x": -240,
@@ -1532,6 +1536,108 @@
       }
     },
     "[FilamentStation.eez-project]:/userPages/11[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {},
+      "transform": {
+        "translate": {
+          "x": -240,
+          "y": -160
+        },
+        "scale": 1
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[FilamentStation.eez-project]:/userPages/9[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {},
+      "transform": {
+        "translate": {
+          "x": -240,
+          "y": -160
+        },
+        "scale": 1
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[FilamentStation.eez-project]:/userPages/12[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {},
+      "transform": {
+        "translate": {
+          "x": -240,
+          "y": -160
+        },
+        "scale": 1
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[FilamentStation.eez-project]:/userPages/13[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {},
+      "transform": {
+        "translate": {
+          "x": -240,
+          "y": -160
+        },
+        "scale": 1
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[FilamentStation.eez-project]:/userPages/14[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {},
+      "transform": {
+        "translate": {
+          "x": -240,
+          "y": -160
+        },
+        "scale": 1
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[FilamentStation.eez-project]:/userPages/15[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {},
+      "transform": {
+        "translate": {
+          "x": -240,
+          "y": -160
+        },
+        "scale": 1
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[FilamentStation.eez-project]:/userPages/16[flow-state]": {
       "selectionFront": {},
       "selectionBack": {},
       "transform": {

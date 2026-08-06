@@ -23,7 +23,12 @@ enum ScreensEnum {
     SCREEN_ID_SCR_SETTINGS_SPOOLMAN = 10,
     SCREEN_ID_SCR_SETTINGS_PRINTERS = 11,
     SCREEN_ID_SCR_SETTINGS_PRINTER_EDIT = 12,
-    _SCREEN_ID_LAST = 12
+    SCREEN_ID_SCR_SETTINGS_WIFI = 13,
+    SCREEN_ID_SCR_SETTINGS_SCALE = 14,
+    SCREEN_ID_SCR_SETTINGS_DEVICE = 15,
+    SCREEN_ID_SCR_SETTINGS_DIAGNOSTICS = 16,
+    SCREEN_ID_SCR_SETTINGS_FIRMWARE = 17,
+    _SCREEN_ID_LAST = 17
 };
 
 typedef struct _objects_t {
@@ -39,6 +44,11 @@ typedef struct _objects_t {
     lv_obj_t *scr_settings_spoolman;
     lv_obj_t *scr_settings_printers;
     lv_obj_t *scr_settings_printer_edit;
+    lv_obj_t *scr_settings_wifi;
+    lv_obj_t *scr_settings_scale;
+    lv_obj_t *scr_settings_device;
+    lv_obj_t *scr_settings_diagnostics;
+    lv_obj_t *scr_settings_firmware;
     lv_obj_t *boot_title;
     lv_obj_t *boot_version;
     lv_obj_t *boot_status;
@@ -173,6 +183,48 @@ typedef struct _objects_t {
     lv_obj_t *printer_edit_delete;
     lv_obj_t *printer_edit_cancel;
     lv_obj_t *printer_edit_status;
+    lv_obj_t *wifi_settings_header;
+    lv_obj_t *wifi_settings_settings;
+    lv_obj_t *wifi_settings_title;
+    lv_obj_t *wifi_settings_status;
+    lv_obj_t *wifi_settings_ssid;
+    lv_obj_t *wifi_settings_ip;
+    lv_obj_t *wifi_settings_portal;
+    lv_obj_t *wifi_settings_reset;
+    lv_obj_t *wifi_settings_back;
+    lv_obj_t *scale_settings_header;
+    lv_obj_t *scale_settings_settings;
+    lv_obj_t *scale_settings_title;
+    lv_obj_t *scale_settings_weight;
+    lv_obj_t *scale_settings_calibration;
+    lv_obj_t *scale_settings_tare;
+    lv_obj_t *scale_settings_calibrate;
+    lv_obj_t *scale_settings_reset;
+    lv_obj_t *scale_settings_back;
+    lv_obj_t *device_settings_header;
+    lv_obj_t *device_settings_settings;
+    lv_obj_t *device_settings_title;
+    lv_obj_t *device_settings_name;
+    lv_obj_t *device_settings_version;
+    lv_obj_t *device_settings_storage;
+    lv_obj_t *device_settings_restart;
+    lv_obj_t *device_settings_back;
+    lv_obj_t *diagnostics_settings_header;
+    lv_obj_t *diagnostics_settings_settings;
+    lv_obj_t *diagnostics_settings_title;
+    lv_obj_t *diagnostics_settings_heap;
+    lv_obj_t *diagnostics_settings_psram;
+    lv_obj_t *diagnostics_settings_tasks;
+    lv_obj_t *diagnostics_settings_refresh;
+    lv_obj_t *diagnostics_settings_back;
+    lv_obj_t *firmware_settings_header;
+    lv_obj_t *firmware_settings_settings;
+    lv_obj_t *firmware_settings_title;
+    lv_obj_t *firmware_settings_current;
+    lv_obj_t *firmware_settings_available;
+    lv_obj_t *firmware_settings_status;
+    lv_obj_t *firmware_settings_check;
+    lv_obj_t *firmware_settings_back;
 } objects_t;
 
 extern objects_t objects;
@@ -212,6 +264,21 @@ void tick_screen_scr_settings_printers();
 
 void create_screen_scr_settings_printer_edit();
 void tick_screen_scr_settings_printer_edit();
+
+void create_screen_scr_settings_wifi();
+void tick_screen_scr_settings_wifi();
+
+void create_screen_scr_settings_scale();
+void tick_screen_scr_settings_scale();
+
+void create_screen_scr_settings_device();
+void tick_screen_scr_settings_device();
+
+void create_screen_scr_settings_diagnostics();
+void tick_screen_scr_settings_diagnostics();
+
+void create_screen_scr_settings_firmware();
+void tick_screen_scr_settings_firmware();
 
 void create_user_widget_cmp_top_printer_bar(lv_obj_t *parent_obj, int startWidgetIndex);
 void tick_user_widget_cmp_top_printer_bar(int startWidgetIndex);

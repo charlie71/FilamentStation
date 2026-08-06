@@ -435,11 +435,11 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 3.16 Weitere Settings-Screens
 
-* [ ] `SCR_SETTINGS_WIFI`
-* [ ] `SCR_SETTINGS_SCALE`
-* [ ] `SCR_SETTINGS_DEVICE`
-* [ ] `SCR_SETTINGS_DIAGNOSTICS`
-* [ ] `SCR_SETTINGS_FIRMWARE`
+* [x] `SCR_SETTINGS_WIFI`
+* [x] `SCR_SETTINGS_SCALE`
+* [x] `SCR_SETTINGS_DEVICE`
+* [x] `SCR_SETTINGS_DIAGNOSTICS`
+* [x] `SCR_SETTINGS_FIRMWARE`
 
 ## 3.17 Dialoge und Overlays
 

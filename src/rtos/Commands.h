@@ -20,6 +20,11 @@ enum class UiScreenId : std::uint8_t {
   SettingsSpoolman,
   SettingsPrinters,
   SettingsPrinterEdit,
+  SettingsWifi,
+  SettingsScale,
+  SettingsDevice,
+  SettingsDiagnostics,
+  SettingsFirmware,
 };
 
 enum class UiCommandType : std::uint8_t {
@@ -92,6 +97,9 @@ enum class UiActionType : std::uint8_t {
   TareScale,
   StartScaleCalibration,
   ResetScaleCalibration,
+  PrepareRestart,
+  RefreshDiagnostics,
+  CheckFirmwareUpdate,
 };
 
 struct UiAction {

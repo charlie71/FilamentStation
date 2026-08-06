@@ -779,13 +779,16 @@ void createTrayDetailsDecoration() {
 }
 
 void applyApplicationFont() {
-  const std::array<lv_obj_t*, 12> screens{{
+  const std::array<lv_obj_t*, 17> screens{{
       objects.scr_boot, objects.scr_home, objects.scr_printer_select,
       objects.scr_settings_home, objects.scr_staging_details,
       objects.scr_staging_actions, objects.scr_tray_details,
       objects.scr_tray_actions, objects.scr_tray_select,
       objects.scr_settings_spoolman,
       objects.scr_settings_printers, objects.scr_settings_printer_edit,
+      objects.scr_settings_wifi, objects.scr_settings_scale,
+      objects.scr_settings_device, objects.scr_settings_diagnostics,
+      objects.scr_settings_firmware,
   }};
   for (lv_obj_t* screen : screens) {
     lv_obj_set_style_text_font(screen, &ui_font_ui_german16, LV_PART_MAIN);
@@ -949,6 +952,57 @@ void bindGeneratedWidgets() {
   bindClick(objects.printer_edit_delete, printerEditActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::DeletePrinter));
   bindClick(objects.printer_edit_cancel, backClicked);
+
+  bindClick(objects.wifi_settings_header, headerClicked);
+  bindClick(objects.wifi_settings_settings, settingsClicked);
+  bindClick(objects.wifi_settings_portal, spoolmanActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::StartWifiPortal));
+  bindClick(objects.wifi_settings_reset, spoolmanActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::ResetWifiCredentials));
+  bindClick(objects.wifi_settings_back, backClicked);
+  bindClick(objects.scale_settings_header, headerClicked);
+  bindClick(objects.scale_settings_settings, settingsClicked);
+  bindClick(objects.scale_settings_tare, spoolmanActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::TareScale));
+  bindClick(objects.scale_settings_calibrate, spoolmanActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::StartScaleCalibration));
+  bindClick(objects.scale_settings_reset, spoolmanActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::ResetScaleCalibration));
+  bindClick(objects.scale_settings_back, backClicked);
+  bindClick(objects.device_settings_header, headerClicked);
+  bindClick(objects.device_settings_settings, settingsClicked);
+  bindClick(objects.device_settings_restart, spoolmanActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::PrepareRestart));
+  bindClick(objects.device_settings_back, backClicked);
+  bindClick(objects.diagnostics_settings_header, headerClicked);
+  bindClick(objects.diagnostics_settings_settings, settingsClicked);
+  bindClick(objects.diagnostics_settings_refresh, spoolmanActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::RefreshDiagnostics));
+  bindClick(objects.diagnostics_settings_back, backClicked);
+  bindClick(objects.firmware_settings_header, headerClicked);
+  bindClick(objects.firmware_settings_settings, settingsClicked);
+  bindClick(objects.firmware_settings_check, spoolmanActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::CheckFirmwareUpdate));
+  bindClick(objects.firmware_settings_back, backClicked);
+
+  const std::array<lv_obj_t*, 17> additionalSettingsButtons{{
+      objects.wifi_settings_header, objects.wifi_settings_settings,
+      objects.wifi_settings_portal, objects.wifi_settings_reset,
+      objects.scale_settings_header, objects.scale_settings_settings,
+      objects.scale_settings_tare, objects.scale_settings_calibrate,
+      objects.scale_settings_reset, objects.device_settings_header,
+      objects.device_settings_settings, objects.device_settings_restart,
+      objects.diagnostics_settings_header, objects.diagnostics_settings_settings,
+      objects.diagnostics_settings_refresh, objects.firmware_settings_header,
+      objects.firmware_settings_settings,
+  }};
+  for (lv_obj_t* button : additionalSettingsButtons) styleLabelButton(button);
+  styleLabelButton(objects.firmware_settings_check);
+  styleLabelButton(objects.wifi_settings_back, 0x455A64);
+  styleLabelButton(objects.scale_settings_back, 0x455A64);
+  styleLabelButton(objects.device_settings_back, 0x455A64);
+  styleLabelButton(objects.diagnostics_settings_back, 0x455A64);
+  styleLabelButton(objects.firmware_settings_back, 0x455A64);
 
   const std::array<lv_obj_t*, 20> printerButtons{{
       objects.printer_settings_header, objects.printer_settings_settings,
@@ -1469,6 +1523,11 @@ void updateHeaders(rtos::PrinterId printerId) {
   lv_label_set_text(objects.spoolman_settings_header, header);
   lv_label_set_text(objects.printer_settings_header, header);
   lv_label_set_text(objects.printer_edit_header, header);
+  lv_label_set_text(objects.wifi_settings_header, header);
+  lv_label_set_text(objects.scale_settings_header, header);
+  lv_label_set_text(objects.device_settings_header, header);
+  lv_label_set_text(objects.diagnostics_settings_header, header);
+  lv_label_set_text(objects.firmware_settings_header, header);
 
   updateHomeContent();
   updatePrinterList();
@@ -1501,6 +1560,11 @@ void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
   lv_label_set_text(objects.spoolman_settings_header, header);
   lv_label_set_text(objects.printer_settings_header, header);
   lv_label_set_text(objects.printer_edit_header, header);
+  lv_label_set_text(objects.wifi_settings_header, header);
+  lv_label_set_text(objects.scale_settings_header, header);
+  lv_label_set_text(objects.device_settings_header, header);
+  lv_label_set_text(objects.diagnostics_settings_header, header);
+  lv_label_set_text(objects.firmware_settings_header, header);
   updateHomeContent();
   updateTraySelection(currentPrinterId, currentAmsId, 0, false);
 }
@@ -1554,6 +1618,29 @@ void showScreen(rtos::UiScreenId screenId) {
       updatePrinterEditorContent();
       lv_label_set_text(objects.printer_edit_status, "Status: Mock-Daten");
       loadScreen(SCREEN_ID_SCR_SETTINGS_PRINTER_EDIT);
+      break;
+    case rtos::UiScreenId::SettingsWifi:
+      loadScreen(SCREEN_ID_SCR_SETTINGS_WIFI);
+      break;
+    case rtos::UiScreenId::SettingsScale:
+      loadScreen(SCREEN_ID_SCR_SETTINGS_SCALE);
+      break;
+    case rtos::UiScreenId::SettingsDevice:
+      loadScreen(SCREEN_ID_SCR_SETTINGS_DEVICE);
+      break;
+    case rtos::UiScreenId::SettingsDiagnostics: {
+      char text[72];
+      std::snprintf(text, sizeof(text), "Heap: %lu Bytes frei",
+                    static_cast<unsigned long>(ESP.getFreeHeap()));
+      lv_label_set_text(objects.diagnostics_settings_heap, text);
+      std::snprintf(text, sizeof(text), "PSRAM: %lu Bytes frei",
+                    static_cast<unsigned long>(ESP.getFreePsram()));
+      lv_label_set_text(objects.diagnostics_settings_psram, text);
+      loadScreen(SCREEN_ID_SCR_SETTINGS_DIAGNOSTICS);
+      break;
+    }
+    case rtos::UiScreenId::SettingsFirmware:
+      loadScreen(SCREEN_ID_SCR_SETTINGS_FIRMWARE);
       break;
   }
 }
@@ -1729,6 +1816,36 @@ void processUiCommand(const rtos::UiCommand& command) {
                           printerUiDraft.name);
           }
         }
+      }
+      if (command.value ==
+          300 + static_cast<std::int32_t>(rtos::UiActionType::StartWifiPortal) ||
+          command.value == 300 + static_cast<std::int32_t>(
+                                     rtos::UiActionType::ResetWifiCredentials)) {
+        lv_label_set_text(objects.wifi_settings_status, command.text);
+      } else if (command.value ==
+                     300 + static_cast<std::int32_t>(rtos::UiActionType::TareScale) ||
+                 command.value == 300 + static_cast<std::int32_t>(
+                                            rtos::UiActionType::StartScaleCalibration) ||
+                 command.value == 300 + static_cast<std::int32_t>(
+                                            rtos::UiActionType::ResetScaleCalibration)) {
+        lv_label_set_text(objects.scale_settings_calibration, command.text);
+      } else if (command.value == 300 + static_cast<std::int32_t>(
+                                            rtos::UiActionType::PrepareRestart)) {
+        lv_label_set_text(objects.device_settings_storage, command.text);
+      } else if (command.value == 300 + static_cast<std::int32_t>(
+                                            rtos::UiActionType::RefreshDiagnostics)) {
+        char text[72];
+        std::snprintf(text, sizeof(text), "Heap: %lu Bytes frei",
+                      static_cast<unsigned long>(ESP.getFreeHeap()));
+        lv_label_set_text(objects.diagnostics_settings_heap, text);
+        std::snprintf(text, sizeof(text), "PSRAM: %lu Bytes frei",
+                      static_cast<unsigned long>(ESP.getFreePsram()));
+        lv_label_set_text(objects.diagnostics_settings_psram, text);
+        lv_label_set_text(objects.diagnostics_settings_tasks,
+                          "Tasks: 8 | Diagnose aktualisiert");
+      } else if (command.value == 300 + static_cast<std::int32_t>(
+                                            rtos::UiActionType::CheckFirmwareUpdate)) {
+        lv_label_set_text(objects.firmware_settings_status, command.text);
       }
       if (command.value == 101 && command.title[0] != '\0') {
         char version[64];

@@ -255,6 +255,13 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       } else if (currentScreen == rtos::UiScreenId::SettingsPrinters) {
         command.screenId = rtos::UiScreenId::SettingsHome;
         currentScreen = rtos::UiScreenId::SettingsHome;
+      } else if (currentScreen == rtos::UiScreenId::SettingsWifi ||
+                 currentScreen == rtos::UiScreenId::SettingsScale ||
+                 currentScreen == rtos::UiScreenId::SettingsDevice ||
+                 currentScreen == rtos::UiScreenId::SettingsDiagnostics ||
+                 currentScreen == rtos::UiScreenId::SettingsFirmware) {
+        command.screenId = rtos::UiScreenId::SettingsHome;
+        currentScreen = rtos::UiScreenId::SettingsHome;
       } else {
         command.screenId = previousScreen;
         currentScreen = previousScreen;
@@ -267,31 +274,53 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::OpenDeviceSettings:
     case rtos::UiActionType::OpenDiagnostics:
     case rtos::UiActionType::OpenFirmwareSettings: {
-      const char* section = "Einstellungen";
       switch (action.type) {
         case rtos::UiActionType::OpenWifiSettings:
-          section = "WLAN";
+          currentScreen = rtos::UiScreenId::SettingsWifi;
           break;
         case rtos::UiActionType::OpenScaleSettings:
-          section = "Waage";
+          currentScreen = rtos::UiScreenId::SettingsScale;
           break;
         case rtos::UiActionType::OpenDeviceSettings:
-          section = "Gerät";
+          currentScreen = rtos::UiScreenId::SettingsDevice;
           break;
         case rtos::UiActionType::OpenDiagnostics:
-          section = "Diagnose";
+          currentScreen = rtos::UiScreenId::SettingsDiagnostics;
           break;
         case rtos::UiActionType::OpenFirmwareSettings:
-          section = "Firmware";
+          currentScreen = rtos::UiScreenId::SettingsFirmware;
           break;
         default:
           break;
       }
-      command.type = rtos::UiCommandType::ShowToast;
-      std::snprintf(command.text, sizeof(command.text), "%s ausgewählt",
-                    section);
+      command.type = rtos::UiCommandType::ShowScreen;
+      command.screenId = currentScreen;
       sendUiCommand(ctx, command,
                     "AppTask: settings navigation queue overflow");
+      return;
+    }
+
+    case rtos::UiActionType::StartWifiPortal:
+    case rtos::UiActionType::ResetWifiCredentials:
+    case rtos::UiActionType::TareScale:
+    case rtos::UiActionType::StartScaleCalibration:
+    case rtos::UiActionType::ResetScaleCalibration:
+    case rtos::UiActionType::PrepareRestart:
+    case rtos::UiActionType::RefreshDiagnostics:
+    case rtos::UiActionType::CheckFirmwareUpdate: {
+      command.type = rtos::UiCommandType::ShowToast;
+      command.value = 300 + static_cast<std::int32_t>(action.type);
+      const char* text = "Mock-Aktion vorgemerkt";
+      if (action.type == rtos::UiActionType::StartWifiPortal) text = "WLAN-Konfiguration vorgemerkt";
+      else if (action.type == rtos::UiActionType::ResetWifiCredentials) text = "WLAN-Reset nicht ausgeführt (Mock)";
+      else if (action.type == rtos::UiActionType::TareScale) text = "Tarieren vorgemerkt (Mock)";
+      else if (action.type == rtos::UiActionType::StartScaleCalibration) text = "Kalibrierung vorgemerkt (Mock)";
+      else if (action.type == rtos::UiActionType::ResetScaleCalibration) text = "Kalibrier-Reset nicht ausgeführt (Mock)";
+      else if (action.type == rtos::UiActionType::PrepareRestart) text = "Neustart nicht ausgeführt (Mock)";
+      else if (action.type == rtos::UiActionType::RefreshDiagnostics) text = "Diagnose aktualisiert";
+      else if (action.type == rtos::UiActionType::CheckFirmwareUpdate) text = "Update-Prüfung nicht ausgeführt (Mock)";
+      std::snprintf(command.text, sizeof(command.text), "%s", text);
+      sendUiCommand(ctx, command, "AppTask: settings mock action queue overflow");
       return;
     }
 
