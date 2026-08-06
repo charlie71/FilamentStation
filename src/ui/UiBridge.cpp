@@ -6,6 +6,7 @@
 #include <soc/soc_memory_types.h>
 
 #include <array>
+#include <cstring>
 #include <cstdint>
 #include <cstdio>
 
@@ -35,6 +36,31 @@ std::uint8_t selectedTrayId = 0;
 rtos::SpoolId selectedTraySpoolId = 0;
 std::uint8_t selectedTrayTab = 0;
 bool trayTargetSelected = false;
+struct SpoolmanUiDraft {
+  char name[32] = "Werkstatt";
+  char protocol[8] = "http";
+  char host[64] = "spoolman.local";
+  char port[8] = "7912";
+  char basePath[32] = "/api/v1";
+  char timeoutMs[8] = "5000";
+};
+SpoolmanUiDraft spoolmanDraft{};
+lv_obj_t* spoolmanEditor = nullptr;
+lv_obj_t* spoolmanKeyboard = nullptr;
+std::int32_t activeSpoolmanField = 0;
+constexpr const char* kKeyboardLowerMap[] = {
+    "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "DEL", "\n",
+    "a", "s", "d", "f", "g", "h", "j", "k", "l", "OK", "\n",
+    "_", "-", "z", "x", "c", "v", "b", "n", "m", ".", ",", ":", "\n",
+    "ABC", "123", "<", "SPACE", ">", "CANCEL", ""};
+constexpr const char* kKeyboardUpperMap[] = {
+    "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "DEL", "\n",
+    "A", "S", "D", "F", "G", "H", "J", "K", "L", "OK", "\n",
+    "_", "-", "Z", "X", "C", "V", "B", "N", "M", ".", ",", ":", "\n",
+    "abc", "123", "<", "SPACE", ">", "CANCEL", ""};
+constexpr const char* kKeyboardNumberMap[] = {
+    "1", "2", "3", "DEL", "\n", "4", "5", "6", "CANCEL", "\n",
+    "7", "8", "9", "OK", "\n", "ABC", "0", ".", "<", ">", ""};
 std::uint32_t nextRequestId = 100;
 constexpr std::size_t kHomeColorStripGroups = 6;
 std::array<std::array<lv_obj_t*, models::kMaximumFilamentColors>,
@@ -42,6 +68,48 @@ std::array<std::array<lv_obj_t*, models::kMaximumFilamentColors>,
     homeColorStrips{};
 std::array<lv_obj_t*, 8> stagingTableRows{};
 std::array<lv_obj_t*, 6> trayDetailsRows{};
+bool touchWasPressed = false;
+std::size_t touchMarkerColorIndex = 0;
+
+void deleteTouchMarker(lv_timer_t* timer) {
+  auto* marker = static_cast<lv_obj_t*>(lv_timer_get_user_data(timer));
+  if (marker != nullptr) {
+    lv_obj_delete(marker);
+  }
+}
+
+void showTouchMarker(std::int32_t x, std::int32_t y) {
+  constexpr std::array<std::uint32_t, 5> kMarkerColors{{
+      0xFFEB3B, 0x00E676, 0x00BCD4, 0xFF4081, 0xFF9100,
+  }};
+  constexpr lv_coord_t kMarkerDiameter = 12;
+  lv_obj_t* marker = lv_obj_create(lv_layer_top());
+  if (marker == nullptr) {
+    return;
+  }
+  lv_obj_set_pos(marker, x - kMarkerDiameter / 2,
+                 y - kMarkerDiameter / 2);
+  lv_obj_set_size(marker, kMarkerDiameter, kMarkerDiameter);
+  lv_obj_remove_flag(marker, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_remove_flag(marker, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_pad_all(marker, 0, LV_PART_MAIN);
+  lv_obj_set_style_border_width(marker, 1, LV_PART_MAIN);
+  lv_obj_set_style_border_color(marker, lv_color_hex(0x101820), LV_PART_MAIN);
+  lv_obj_set_style_radius(marker, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(marker, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(
+      marker,
+      lv_color_hex(kMarkerColors[touchMarkerColorIndex % kMarkerColors.size()]),
+      LV_PART_MAIN);
+  ++touchMarkerColorIndex;
+
+  lv_timer_t* timer = lv_timer_create(deleteTouchMarker, 2000, marker);
+  if (timer == nullptr) {
+    lv_obj_delete(marker);
+    return;
+  }
+  lv_timer_set_repeat_count(timer, 1);
+}
 
 std::uint32_t tickMilliseconds() { return millis(); }
 
@@ -62,8 +130,13 @@ void readTouch(lv_indev_t*, lv_indev_data_t* data) {
     data->state = LV_INDEV_STATE_PRESSED;
     data->point.x = x;
     data->point.y = y;
+    if (!touchWasPressed) {
+      showTouchMarker(x, y);
+    }
+    touchWasPressed = true;
   } else {
     data->state = LV_INDEV_STATE_RELEASED;
+    touchWasPressed = false;
   }
 }
 
@@ -110,7 +183,8 @@ void setButtonColors(lv_obj_t* button, std::uint32_t backgroundRgb) {
 
 void sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
                 std::uint8_t amsId = 0, std::uint8_t trayId = 0,
-                std::int32_t value = 0, rtos::SpoolId spoolId = 0) {
+                std::int32_t value = 0, rtos::SpoolId spoolId = 0,
+                const char* text = nullptr) {
   if (rtosContext == nullptr) {
     return;
   }
@@ -124,6 +198,9 @@ void sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
   event.uiAction.amsId = amsId;
   event.uiAction.trayId = trayId;
   event.uiAction.value = value;
+  if (text != nullptr) {
+    std::snprintf(event.uiAction.text, sizeof(event.uiAction.text), "%s", text);
+  }
   if (xQueueSend(rtosContext->appEventQueue, &event, 0) != pdPASS) {
     rtos::logLine("UiTask: appEventQueue overflow while sending UiAction");
   }
@@ -177,6 +254,164 @@ void printerClicked(lv_event_t* event) {
 }
 
 void settingsCategoryClicked(lv_event_t* event) {
+  const auto type = static_cast<rtos::UiActionType>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  sendAction(type, currentPrinterId);
+}
+
+const char* spoolmanFieldValue(std::int32_t field) {
+  switch (field) {
+    case 1:
+      return spoolmanDraft.name;
+    case 2:
+      return spoolmanDraft.protocol;
+    case 3:
+      return spoolmanDraft.host;
+    case 4:
+      return spoolmanDraft.port;
+    case 5:
+      return spoolmanDraft.basePath;
+    case 6:
+      return spoolmanDraft.timeoutMs;
+    default:
+      return "";
+  }
+}
+
+char* spoolmanFieldDestination(std::int32_t field) {
+  return const_cast<char*>(spoolmanFieldValue(field));
+}
+
+std::size_t spoolmanFieldCapacity(std::int32_t field) {
+  switch (field) {
+    case 1:
+      return sizeof(spoolmanDraft.name);
+    case 2:
+      return sizeof(spoolmanDraft.protocol);
+    case 3:
+      return sizeof(spoolmanDraft.host);
+    case 4:
+      return sizeof(spoolmanDraft.port);
+    case 5:
+      return sizeof(spoolmanDraft.basePath);
+    case 6:
+      return sizeof(spoolmanDraft.timeoutMs);
+    default:
+      return 0;
+  }
+}
+
+void updateSpoolmanSettingsContent() {
+  char text[96];
+  std::snprintf(text, sizeof(text), "Name: %s", spoolmanDraft.name);
+  lv_label_set_text(objects.spoolman_setting_name, text);
+  std::snprintf(text, sizeof(text), "Protokoll: %s",
+                spoolmanDraft.protocol);
+  lv_label_set_text(objects.spoolman_setting_protocol, text);
+  std::snprintf(text, sizeof(text), "Host: %s", spoolmanDraft.host);
+  lv_label_set_text(objects.spoolman_setting_host, text);
+  std::snprintf(text, sizeof(text), "Port: %s", spoolmanDraft.port);
+  lv_label_set_text(objects.spoolman_setting_port, text);
+  std::snprintf(text, sizeof(text), "Basispfad: %s", spoolmanDraft.basePath);
+  lv_label_set_text(objects.spoolman_setting_base_path, text);
+  std::snprintf(text, sizeof(text), "Timeout: %s ms", spoolmanDraft.timeoutMs);
+  lv_label_set_text(objects.spoolman_setting_timeout, text);
+}
+
+void closeSpoolmanEditor() {
+  if (spoolmanKeyboard != nullptr) {
+    lv_obj_delete_async(spoolmanKeyboard);
+    spoolmanKeyboard = nullptr;
+  }
+  if (spoolmanEditor != nullptr) {
+    lv_obj_delete_async(spoolmanEditor);
+    spoolmanEditor = nullptr;
+  }
+  activeSpoolmanField = 0;
+}
+
+void spoolmanKeyboardEvent(lv_event_t* event) {
+  if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED ||
+      spoolmanEditor == nullptr || spoolmanKeyboard == nullptr) {
+    return;
+  }
+  const std::uint32_t button =
+      lv_buttonmatrix_get_selected_button(spoolmanKeyboard);
+  if (button == LV_BUTTONMATRIX_BUTTON_NONE) {
+    return;
+  }
+  const char* key = lv_buttonmatrix_get_button_text(spoolmanKeyboard, button);
+  if (key == nullptr) {
+    return;
+  }
+  if (std::strcmp(key, "OK") == 0) {
+    sendAction(rtos::UiActionType::EditSpoolmanSetting, currentPrinterId, 0,
+               0, activeSpoolmanField, 0,
+               lv_textarea_get_text(spoolmanEditor));
+    closeSpoolmanEditor();
+  } else if (std::strcmp(key, "CANCEL") == 0) {
+    closeSpoolmanEditor();
+  } else if (std::strcmp(key, "DEL") == 0) {
+    lv_textarea_delete_char(spoolmanEditor);
+  } else if (std::strcmp(key, "<") == 0) {
+    lv_textarea_cursor_left(spoolmanEditor);
+  } else if (std::strcmp(key, ">") == 0) {
+    lv_textarea_cursor_right(spoolmanEditor);
+  } else if (std::strcmp(key, "SPACE") == 0) {
+    lv_textarea_add_char(spoolmanEditor, ' ');
+  } else if (std::strcmp(key, "ABC") == 0) {
+    lv_buttonmatrix_set_map(spoolmanKeyboard, kKeyboardUpperMap);
+  } else if (std::strcmp(key, "abc") == 0) {
+    lv_buttonmatrix_set_map(spoolmanKeyboard, kKeyboardLowerMap);
+  } else if (std::strcmp(key, "123") == 0) {
+    lv_buttonmatrix_set_map(spoolmanKeyboard, kKeyboardNumberMap);
+  } else {
+    lv_textarea_add_text(spoolmanEditor, key);
+  }
+}
+
+void spoolmanFieldClicked(lv_event_t* event) {
+  const auto field = static_cast<std::int32_t>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  if (field == 2) {
+    const char* protocol =
+        spoolmanDraft.protocol[4] == 's' ? "http" : "https";
+    sendAction(rtos::UiActionType::EditSpoolmanSetting, currentPrinterId, 0,
+               0, field, 0, protocol);
+    return;
+  }
+  closeSpoolmanEditor();
+  activeSpoolmanField = field;
+  lv_obj_scroll_to_y(objects.scr_settings_spoolman, 0, LV_ANIM_OFF);
+  lv_obj_remove_flag(objects.scr_settings_spoolman, LV_OBJ_FLAG_SCROLLABLE);
+  spoolmanEditor = lv_textarea_create(objects.scr_settings_spoolman);
+  lv_obj_set_pos(spoolmanEditor, 4, 0);
+  lv_obj_set_size(spoolmanEditor, 472, 40);
+  lv_obj_set_style_pad_top(spoolmanEditor, 7, LV_PART_MAIN);
+  lv_obj_set_style_text_font(spoolmanEditor, &ui_font_ui_german16,
+                             LV_PART_MAIN);
+  lv_textarea_set_one_line(spoolmanEditor, true);
+  lv_textarea_set_max_length(spoolmanEditor,
+                             spoolmanFieldCapacity(field) - 1U);
+  lv_textarea_set_text(spoolmanEditor, spoolmanFieldValue(field));
+  spoolmanKeyboard = lv_buttonmatrix_create(objects.scr_settings_spoolman);
+  lv_obj_set_pos(spoolmanKeyboard, 0, 40);
+  lv_obj_set_size(spoolmanKeyboard, 480, 180);
+  lv_buttonmatrix_set_map(spoolmanKeyboard,
+                          (field == 4 || field == 6) ? kKeyboardNumberMap
+                                                     : kKeyboardLowerMap);
+  lv_obj_set_style_pad_all(spoolmanKeyboard, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_row(spoolmanKeyboard, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(spoolmanKeyboard, 2, LV_PART_MAIN);
+  lv_obj_set_style_text_font(spoolmanKeyboard, LV_FONT_DEFAULT,
+                             LV_PART_ITEMS);
+  lv_obj_add_event_cb(spoolmanKeyboard, spoolmanKeyboardEvent,
+                      LV_EVENT_VALUE_CHANGED, nullptr);
+  lv_obj_move_foreground(spoolmanEditor);
+  lv_obj_move_foreground(spoolmanKeyboard);
+}
+
+void spoolmanActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   sendAction(type, currentPrinterId);
@@ -356,11 +591,12 @@ void createTrayDetailsDecoration() {
 }
 
 void applyApplicationFont() {
-  const std::array<lv_obj_t*, 9> screens{{
+  const std::array<lv_obj_t*, 10> screens{{
       objects.scr_boot, objects.scr_home, objects.scr_printer_select,
       objects.scr_settings_home, objects.scr_staging_details,
       objects.scr_staging_actions, objects.scr_tray_details,
       objects.scr_tray_actions, objects.scr_tray_select,
+      objects.scr_settings_spoolman,
   }};
   for (lv_obj_t* screen : screens) {
     lv_obj_set_style_text_font(screen, &ui_font_ui_german16, LV_PART_MAIN);
@@ -475,6 +711,34 @@ void bindGeneratedWidgets() {
   bindClick(objects.settings_firmware, settingsCategoryClicked,
             static_cast<std::uintptr_t>(
                 rtos::UiActionType::OpenFirmwareSettings));
+
+  bindClick(objects.spoolman_settings_header, headerClicked);
+  bindClick(objects.spoolman_settings_settings, settingsClicked);
+  bindClick(objects.spoolman_setting_name, spoolmanFieldClicked, 1);
+  bindClick(objects.spoolman_setting_protocol, spoolmanFieldClicked, 2);
+  bindClick(objects.spoolman_setting_host, spoolmanFieldClicked, 3);
+  bindClick(objects.spoolman_setting_port, spoolmanFieldClicked, 4);
+  bindClick(objects.spoolman_setting_base_path, spoolmanFieldClicked, 5);
+  bindClick(objects.spoolman_setting_timeout, spoolmanFieldClicked, 6);
+  bindClick(objects.spoolman_setting_test, spoolmanActionClicked,
+            static_cast<std::uintptr_t>(
+                rtos::UiActionType::TestSpoolmanConnection));
+  bindClick(objects.spoolman_setting_save, spoolmanActionClicked,
+            static_cast<std::uintptr_t>(
+                rtos::UiActionType::SaveSpoolmanSettings));
+  bindClick(objects.spoolman_setting_cancel, backClicked);
+
+  const std::array<lv_obj_t*, 10> spoolmanButtons{{
+      objects.spoolman_settings_header, objects.spoolman_settings_settings,
+      objects.spoolman_setting_name, objects.spoolman_setting_protocol,
+      objects.spoolman_setting_host, objects.spoolman_setting_port,
+      objects.spoolman_setting_base_path, objects.spoolman_setting_timeout,
+      objects.spoolman_setting_test, objects.spoolman_setting_save,
+  }};
+  for (lv_obj_t* button : spoolmanButtons) {
+    styleLabelButton(button);
+  }
+  styleLabelButton(objects.spoolman_setting_cancel, 0x455A64);
 
   const std::array<lv_obj_t*, 12> stagingButtons{{
       objects.staging_details_header,
@@ -958,6 +1222,7 @@ void updateHeaders(rtos::PrinterId printerId) {
   lv_label_set_text(objects.tray_details_header, header);
   lv_label_set_text(objects.tray_actions_header, header);
   lv_label_set_text(objects.tray_select_header, header);
+  lv_label_set_text(objects.spoolman_settings_header, header);
 
   updateHomeContent();
   updatePrinterList();
@@ -986,6 +1251,7 @@ void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
   lv_label_set_text(objects.tray_details_header, header);
   lv_label_set_text(objects.tray_actions_header, header);
   lv_label_set_text(objects.tray_select_header, header);
+  lv_label_set_text(objects.spoolman_settings_header, header);
   updateHomeContent();
   updateTraySelection(currentPrinterId, currentAmsId, 0, false);
 }
@@ -1023,6 +1289,11 @@ void showScreen(rtos::UiScreenId screenId) {
       trayTargetSelected = false;
       updateTraySelection(currentPrinterId, currentAmsId, 0, false);
       loadScreen(SCREEN_ID_SCR_TRAY_SELECT);
+      break;
+    case rtos::UiScreenId::SettingsSpoolman:
+      closeSpoolmanEditor();
+      updateSpoolmanSettingsContent();
+      loadScreen(SCREEN_ID_SCR_SETTINGS_SPOOLMAN);
       break;
   }
 }
@@ -1126,10 +1397,32 @@ void processUiCommand(const rtos::UiCommand& command) {
         updateTrayDetails();
       }
       break;
+    case rtos::UiCommandType::UpdateSettings: {
+      char* destination = spoolmanFieldDestination(command.value);
+      const std::size_t capacity = spoolmanFieldCapacity(command.value);
+      if (destination != nullptr && capacity > 0) {
+        std::snprintf(destination, capacity, "%s", command.text);
+        updateSpoolmanSettingsContent();
+        lv_label_set_text(objects.spoolman_setting_status,
+                          "Status: geaendert, nicht gespeichert");
+        lv_label_set_text(objects.spoolman_setting_version, "Server: -");
+      }
+      break;
+    }
     case rtos::UiCommandType::ShowStatus:
     case rtos::UiCommandType::ShowToast:
       lv_label_set_text(objects.home_bottom_status, command.text);
       lv_label_set_text(objects.settings_bottom_status, command.text);
+      if (command.value >= 100) {
+        lv_label_set_text(objects.spoolman_setting_status, command.text);
+      }
+      if (command.value == 101 && command.title[0] != '\0') {
+        char version[64];
+        std::snprintf(version, sizeof(version), "Server: %s", command.title);
+        lv_label_set_text(objects.spoolman_setting_version, version);
+      } else if (command.value == 100) {
+        lv_label_set_text(objects.spoolman_setting_version, "Server: -");
+      }
       break;
     default:
       break;

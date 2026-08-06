@@ -397,20 +397,20 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 3.14 Spoolman-Settings
 
-* [ ] `SCR_SETTINGS_SPOOLMAN`
-* [ ] Verbindungsname
-* [ ] HTTP/HTTPS
-* [ ] Host/IP
-* [ ] Port
-* [ ] API-Basispfad
-* [ ] Timeout
-* [ ] Verbindung testen
-* [ ] Status
-* [ ] Serverversion
-* [ ] Speichern
-* [ ] Abbrechen
-* [ ] Eingabevalidierung
-* [ ] kein Security-Key-Feld
+* [x] `SCR_SETTINGS_SPOOLMAN`
+* [x] Verbindungsname
+* [x] HTTP/HTTPS
+* [x] Host/IP
+* [x] Port
+* [x] API-Basispfad
+* [x] Timeout
+* [x] Verbindung testen
+* [x] Status
+* [x] Serverversion
+* [x] Speichern
+* [x] Abbrechen
+* [x] Eingabevalidierung
+* [x] kein Security-Key-Feld
 
 ## 3.15 Druckerverwaltung
 

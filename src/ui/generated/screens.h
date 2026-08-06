@@ -20,7 +20,8 @@ enum ScreensEnum {
     SCREEN_ID_SCR_TRAY_DETAILS = 7,
     SCREEN_ID_SCR_TRAY_ACTIONS = 8,
     SCREEN_ID_SCR_TRAY_SELECT = 9,
-    _SCREEN_ID_LAST = 9
+    SCREEN_ID_SCR_SETTINGS_SPOOLMAN = 10,
+    _SCREEN_ID_LAST = 10
 };
 
 typedef struct _objects_t {
@@ -33,6 +34,7 @@ typedef struct _objects_t {
     lv_obj_t *scr_tray_details;
     lv_obj_t *scr_tray_actions;
     lv_obj_t *scr_tray_select;
+    lv_obj_t *scr_settings_spoolman;
     lv_obj_t *boot_title;
     lv_obj_t *boot_version;
     lv_obj_t *boot_status;
@@ -127,6 +129,20 @@ typedef struct _objects_t {
     lv_obj_t *tray_select_external;
     lv_obj_t *tray_select_summary;
     lv_obj_t *tray_select_cancel;
+    lv_obj_t *spoolman_settings_header;
+    lv_obj_t *spoolman_settings_settings;
+    lv_obj_t *spoolman_settings_title;
+    lv_obj_t *spoolman_setting_name;
+    lv_obj_t *spoolman_setting_protocol;
+    lv_obj_t *spoolman_setting_host;
+    lv_obj_t *spoolman_setting_port;
+    lv_obj_t *spoolman_setting_base_path;
+    lv_obj_t *spoolman_setting_timeout;
+    lv_obj_t *spoolman_setting_status;
+    lv_obj_t *spoolman_setting_version;
+    lv_obj_t *spoolman_setting_test;
+    lv_obj_t *spoolman_setting_save;
+    lv_obj_t *spoolman_setting_cancel;
 } objects_t;
 
 extern objects_t objects;
@@ -157,6 +173,9 @@ void tick_screen_scr_tray_actions();
 
 void create_screen_scr_tray_select();
 void tick_screen_scr_tray_select();
+
+void create_screen_scr_settings_spoolman();
+void tick_screen_scr_settings_spoolman();
 
 void create_user_widget_cmp_top_printer_bar(lv_obj_t *parent_obj, int startWidgetIndex);
 void tick_user_widget_cmp_top_printer_bar(int startWidgetIndex);

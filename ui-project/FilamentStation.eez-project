@@ -5479,6 +5479,47 @@
       "isUsedAsUserWidget": false,
       "createAtStart": true,
       "deleteOnScreenUnload": false
+    },
+    {
+      "objID": "68000000-0001-4600-8600-100000000000",
+      "components": [
+        {
+          "objID": "68000000-0002-4600-8600-100000000000",
+          "type": "LVGLScreenWidget",
+          "left": 0,
+          "top": 0,
+          "width": 480,
+          "height": 320,
+          "children": [
+            { "objID": "68000000-0010-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 0, "top": 0, "width": 408, "height": 40, "identifier": "spoolman_settings_header", "text": "online | P1S Werkstatt | AMS 1", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "68000000-0011-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 412, "top": 0, "width": 68, "height": 40, "identifier": "spoolman_settings_settings", "text": "SET", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "68000000-0012-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 44, "width": 464, "height": 24, "identifier": "spoolman_settings_title", "text": "Spoolman-Einstellungen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "68000000-0013-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 72, "width": 300, "height": 40, "identifier": "spoolman_setting_name", "text": "Name: Werkstatt", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "68000000-0014-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 312, "top": 72, "width": 160, "height": 40, "identifier": "spoolman_setting_protocol", "text": "Protokoll: HTTP", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "68000000-0015-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 116, "width": 300, "height": 40, "identifier": "spoolman_setting_host", "text": "Host: spoolman.local", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "68000000-0016-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 312, "top": 116, "width": 160, "height": 40, "identifier": "spoolman_setting_port", "text": "Port: 7912", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "68000000-0017-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 160, "width": 300, "height": 40, "identifier": "spoolman_setting_base_path", "text": "Basispfad: /api/v1", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "68000000-0018-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 312, "top": 160, "width": 160, "height": 40, "identifier": "spoolman_setting_timeout", "text": "Timeout: 5000 ms", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "68000000-0019-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 204, "width": 300, "height": 24, "identifier": "spoolman_setting_status", "text": "Status: nicht getestet", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "68000000-0020-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 312, "top": 204, "width": 160, "height": 24, "identifier": "spoolman_setting_version", "text": "Server: -", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "68000000-0021-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 4, "top": 264, "width": 152, "height": 56, "identifier": "spoolman_setting_test", "text": "Testen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "68000000-0022-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 164, "top": 264, "width": 152, "height": 56, "identifier": "spoolman_setting_save", "text": "Speichern", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+            { "objID": "68000000-0023-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 324, "top": 264, "width": 152, "height": 56, "identifier": "spoolman_setting_cancel", "text": "Abbrechen", "textType": "literal", "longMode": "WRAP", "useStaticText": true }
+          ]
+        }
+      ],
+      "connectionLines": [],
+      "localVariables": [],
+      "componentGroups": [],
+      "userProperties": [],
+      "name": "SCR_SETTINGS_SPOOLMAN",
+      "left": 0,
+      "top": 0,
+      "width": 480,
+      "height": 320,
+      "isUsedAsUserWidget": false,
+      "createAtStart": true,
+      "deleteOnScreenUnload": false
     }
   ],
   "userWidgets": [

@@ -1,6 +1,8 @@
 #include "tasks/Tasks.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 
@@ -9,6 +11,86 @@ namespace {
 
 rtos::UiScreenId currentScreen = rtos::UiScreenId::Home;
 rtos::UiScreenId previousScreen = rtos::UiScreenId::Home;
+
+struct SpoolmanDraft {
+  char name[32] = "Werkstatt";
+  char protocol[8] = "http";
+  char host[64] = "spoolman.local";
+  char port[8] = "7912";
+  char basePath[32] = "/api/v1";
+  char timeoutMs[8] = "5000";
+};
+
+SpoolmanDraft spoolmanDraft{};
+
+char* spoolmanField(std::int32_t field) {
+  switch (field) {
+    case 1:
+      return spoolmanDraft.name;
+    case 2:
+      return spoolmanDraft.protocol;
+    case 3:
+      return spoolmanDraft.host;
+    case 4:
+      return spoolmanDraft.port;
+    case 5:
+      return spoolmanDraft.basePath;
+    case 6:
+      return spoolmanDraft.timeoutMs;
+    default:
+      return nullptr;
+  }
+}
+
+std::size_t spoolmanFieldCapacity(std::int32_t field) {
+  switch (field) {
+    case 1:
+      return sizeof(spoolmanDraft.name);
+    case 2:
+      return sizeof(spoolmanDraft.protocol);
+    case 3:
+      return sizeof(spoolmanDraft.host);
+    case 4:
+      return sizeof(spoolmanDraft.port);
+    case 5:
+      return sizeof(spoolmanDraft.basePath);
+    case 6:
+      return sizeof(spoolmanDraft.timeoutMs);
+    default:
+      return 0;
+  }
+}
+
+bool validNumber(const char* text, long minimum, long maximum) {
+  char* end = nullptr;
+  const long value = std::strtol(text, &end, 10);
+  return text[0] != '\0' && end != nullptr && *end == '\0' &&
+         value >= minimum && value <= maximum;
+}
+
+const char* validateSpoolmanDraft() {
+  if (spoolmanDraft.name[0] == '\0') {
+    return "Fehler: Verbindungsname fehlt";
+  }
+  if (std::strcmp(spoolmanDraft.protocol, "http") != 0 &&
+      std::strcmp(spoolmanDraft.protocol, "https") != 0) {
+    return "Fehler: Protokoll ungueltig";
+  }
+  if (spoolmanDraft.host[0] == '\0' ||
+      std::strchr(spoolmanDraft.host, ' ') != nullptr) {
+    return "Fehler: Host/IP ungueltig";
+  }
+  if (!validNumber(spoolmanDraft.port, 1, 65535)) {
+    return "Fehler: Port muss 1..65535 sein";
+  }
+  if (spoolmanDraft.basePath[0] != '/') {
+    return "Fehler: Basispfad muss mit / beginnen";
+  }
+  if (!validNumber(spoolmanDraft.timeoutMs, 1000, 60000)) {
+    return "Fehler: Timeout muss 1000..60000 ms sein";
+  }
+  return nullptr;
+}
 
 bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
                    const char* failureMessage) {
@@ -86,6 +168,9 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         command.screenId = rtos::UiScreenId::StagingActions;
         currentScreen = rtos::UiScreenId::StagingActions;
         previousScreen = rtos::UiScreenId::StagingDetails;
+      } else if (currentScreen == rtos::UiScreenId::SettingsSpoolman) {
+        command.screenId = rtos::UiScreenId::SettingsHome;
+        currentScreen = rtos::UiScreenId::SettingsHome;
       } else {
         command.screenId = previousScreen;
         currentScreen = previousScreen;
@@ -94,7 +179,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       return;
 
     case rtos::UiActionType::OpenWifiSettings:
-    case rtos::UiActionType::OpenSpoolmanSettings:
     case rtos::UiActionType::OpenScaleSettings:
     case rtos::UiActionType::OpenPrinterSettings:
     case rtos::UiActionType::OpenDeviceSettings:
@@ -104,9 +188,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       switch (action.type) {
         case rtos::UiActionType::OpenWifiSettings:
           section = "WLAN";
-          break;
-        case rtos::UiActionType::OpenSpoolmanSettings:
-          section = "Spoolman";
           break;
         case rtos::UiActionType::OpenScaleSettings:
           section = "Waage";
@@ -131,6 +212,51 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     section);
       sendUiCommand(ctx, command,
                     "AppTask: settings navigation queue overflow");
+      return;
+    }
+
+    case rtos::UiActionType::OpenSpoolmanSettings:
+      previousScreen = currentScreen;
+      currentScreen = rtos::UiScreenId::SettingsSpoolman;
+      command.type = rtos::UiCommandType::ShowScreen;
+      command.screenId = currentScreen;
+      sendUiCommand(ctx, command,
+                    "AppTask: Spoolman settings queue overflow");
+      return;
+
+    case rtos::UiActionType::EditSpoolmanSetting: {
+      char* destination = spoolmanField(action.value);
+      const std::size_t capacity = spoolmanFieldCapacity(action.value);
+      if (destination == nullptr || capacity == 0) {
+        return;
+      }
+      std::snprintf(destination, capacity, "%s", action.text);
+      command.type = rtos::UiCommandType::UpdateSettings;
+      std::snprintf(command.text, sizeof(command.text), "%s", destination);
+      sendUiCommand(ctx, command,
+                    "AppTask: Spoolman field update queue overflow");
+      return;
+    }
+
+    case rtos::UiActionType::TestSpoolmanConnection:
+    case rtos::UiActionType::SaveSpoolmanSettings: {
+      const char* error = validateSpoolmanDraft();
+      command.type = rtos::UiCommandType::ShowToast;
+      if (error != nullptr) {
+        command.value = 100;
+        std::snprintf(command.text, sizeof(command.text), "%s", error);
+      } else if (action.type == rtos::UiActionType::TestSpoolmanConnection) {
+        command.value = 101;
+        std::snprintf(command.title, sizeof(command.title), "Mock 0.22.1");
+        std::snprintf(command.text, sizeof(command.text),
+                      "Status: Mock-Verbindung erfolgreich");
+      } else {
+        command.value = 102;
+        std::snprintf(command.text, sizeof(command.text),
+                      "Status: Einstellungen validiert");
+      }
+      sendUiCommand(ctx, command,
+                    "AppTask: Spoolman validation queue overflow");
       return;
     }
 

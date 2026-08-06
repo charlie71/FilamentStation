@@ -17,6 +17,7 @@ enum class UiScreenId : std::uint8_t {
   TrayDetails,
   TrayActions,
   TraySelect,
+  SettingsSpoolman,
 };
 
 enum class UiCommandType : std::uint8_t {
@@ -78,6 +79,7 @@ enum class UiActionType : std::uint8_t {
   SetDefaultPrinter,
   TestSpoolmanConnection,
   SaveSpoolmanSettings,
+  EditSpoolmanSetting,
   StartWifiPortal,
   ResetWifiCredentials,
   TareScale,
@@ -93,6 +95,7 @@ struct UiAction {
   std::uint8_t amsId = 0;
   std::uint8_t trayId = 0;
   std::int32_t value = 0;
+  char text[64]{};
 };
 enum class ScaleCommandType : std::uint8_t { Tare, StartCalibration, ResetCalibration, RequestMeasurement };
 enum class NfcCommandType : std::uint8_t { StartReading, StopReading, WriteSpoolTag };
