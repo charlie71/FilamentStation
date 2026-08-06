@@ -2060,7 +2060,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "A1 Mini Buero\\noffline | kein AMS",
+                  "text": "A1 Mini Büro\\noffline | kein AMS",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -2848,7 +2848,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "Geraet",
+                  "text": "Gerät",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -3852,7 +3852,7 @@
                 "objID": "385e1154-df12-799d-46e9-ebaf8c745b93"
               },
               "groupIndex": 0,
-              "text": "Tag verknuepfen",
+              "text": "Tag verknüpfen",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -3928,7 +3928,7 @@
                 "objID": "ff48ccaa-b81f-b796-34fb-9763b9e2321e"
               },
               "groupIndex": 0,
-              "text": "Tag loeschen",
+              "text": "Tag löschen",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -5411,7 +5411,7 @@
                 "objID": "00a0a192-b514-9e5d-8c21-d7434e997a8f"
               },
               "groupIndex": 0,
-              "text": "Noch kein Zielslot ausgewaehlt",
+              "text": "Noch kein Zielslot ausgewählt",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -5531,14 +5531,14 @@
           { "objID": "69000000-0012-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 44, "width": 464, "height": 24, "identifier": "printer_settings_title", "text": "Bambu-Drucker verwalten", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
           { "objID": "69000000-0013-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 72, "width": 464, "height": 42, "identifier": "printer_settings_row_1", "text": "P1S Werkstatt | online | aktiv | Standard", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
           { "objID": "69000000-0014-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 118, "width": 464, "height": 42, "identifier": "printer_settings_row_2", "text": "X1C Labor | online", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
-          { "objID": "69000000-0015-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 164, "width": 464, "height": 42, "identifier": "printer_settings_row_3", "text": "A1 Mini Buero | offline", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0015-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 164, "width": 464, "height": 42, "identifier": "printer_settings_row_3", "text": "A1 Mini Büro | offline", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
           { "objID": "69000000-0016-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 210, "width": 464, "height": 42, "identifier": "printer_settings_row_4", "text": "Neuer Drucker", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
           { "objID": "69000000-0020-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 4, "top": 264, "width": 76, "height": 56, "identifier": "printer_settings_active", "text": "Aktiv", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
           { "objID": "69000000-0021-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 84, "top": 264, "width": 76, "height": 56, "identifier": "printer_settings_enabled", "text": "Ein/Aus", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
           { "objID": "69000000-0022-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 164, "top": 264, "width": 76, "height": 56, "identifier": "printer_settings_default", "text": "Standard", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
           { "objID": "69000000-0023-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 244, "top": 264, "width": 76, "height": 56, "identifier": "printer_settings_add", "text": "+ Neu", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
-          { "objID": "69000000-0024-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 324, "top": 264, "width": 76, "height": 56, "identifier": "printer_settings_edit", "text": "Edit", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
-          { "objID": "69000000-0025-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 404, "top": 264, "width": 72, "height": 56, "identifier": "printer_settings_back", "text": "Zurueck", "textType": "literal", "longMode": "WRAP", "useStaticText": true }
+          { "objID": "69000000-0024-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 324, "top": 264, "width": 76, "height": 56, "identifier": "printer_settings_edit", "text": "Ändern", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "69000000-0025-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 404, "top": 264, "width": 72, "height": 56, "identifier": "printer_settings_back", "text": "Zurück", "textType": "literal", "longMode": "WRAP", "useStaticText": true }
         ]
       }],
       "connectionLines": [], "localVariables": [], "componentGroups": [], "userProperties": [],
@@ -5559,7 +5559,7 @@
           { "objID": "6a000000-0017-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 312, "top": 204, "width": 160, "height": 40, "identifier": "printer_edit_mask", "text": "Anzeigen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
           { "objID": "6a000000-0020-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 4, "top": 264, "width": 92, "height": 56, "identifier": "printer_edit_test", "text": "Testen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
           { "objID": "6a000000-0021-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 100, "top": 264, "width": 92, "height": 56, "identifier": "printer_edit_save", "text": "Speichern", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
-          { "objID": "6a000000-0022-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 196, "top": 264, "width": 92, "height": 56, "identifier": "printer_edit_delete", "text": "Loeschen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
+          { "objID": "6a000000-0022-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 196, "top": 264, "width": 92, "height": 56, "identifier": "printer_edit_delete", "text": "Löschen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
           { "objID": "6a000000-0023-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 292, "top": 264, "width": 184, "height": 56, "identifier": "printer_edit_cancel", "text": "Abbrechen", "textType": "literal", "longMode": "WRAP", "useStaticText": true },
           { "objID": "6a000000-0024-4600-8600-100000000000", "type": "LVGLLabelWidget", "left": 8, "top": 244, "width": 464, "height": 16, "identifier": "printer_edit_status", "text": "Status: bereit", "textType": "literal", "longMode": "WRAP", "useStaticText": true }
         ]
@@ -7088,7 +7088,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "Vorgang laeuft\\nSchritt 2 von 4",
+                  "text": "Vorgang läuft\\nSchritt 2 von 4",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -7247,7 +7247,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "Aktion bestaetigen\\nAbbrechen | Bestaetigen",
+                  "text": "Aktion bestätigen\\nAbbrechen | Bestätigen",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,

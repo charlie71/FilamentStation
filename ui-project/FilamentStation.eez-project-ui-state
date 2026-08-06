@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/8",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/5",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/10",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
     "selectedFontObject": "[FilamentStation.eez-project]:/fonts/0",
@@ -200,10 +200,10 @@
                 {
                   "type": "tab",
                   "id": "#9b350182-761c-4c67-9ece-429ca7d88b9f",
-                  "name": "SCR_TRAY_SELECT",
+                  "name": "SCR_STAGING_ACTIONS",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/8",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/5",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -1498,6 +1498,40 @@
       }
     },
     "[FilamentStation.eez-project]:/userPages/8[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {},
+      "transform": {
+        "translate": {
+          "x": -240,
+          "y": -160
+        },
+        "scale": 1
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[FilamentStation.eez-project]:/userPages/10[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {},
+      "transform": {
+        "translate": {
+          "x": -240,
+          "y": -160
+        },
+        "scale": 1
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[FilamentStation.eez-project]:/userPages/11[flow-state]": {
       "selectionFront": {},
       "selectionBack": {},
       "transform": {

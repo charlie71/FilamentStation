@@ -6,7 +6,7 @@ namespace {
 constexpr std::array<UiPrinterSummary, 3> kPrinters{{
     {1, "P1S Werkstatt", UiConnectionState::Connected, 1, 1, true, true, true},
     {2, "X1C Labor", UiConnectionState::Connected, 2, 4, false, false, true},
-    {3, "A1 Mini Buero", UiConnectionState::Offline, 0, 0, false, false, true},
+    {3, "A1 Mini Büro", UiConnectionState::Offline, 0, 0, false, false, true},
 }};
 
 constexpr std::array<UiAmsSummary, 6> kAmsUnits{{

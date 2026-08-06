@@ -65,7 +65,7 @@ struct PrinterUiEntry {
 std::array<PrinterUiEntry, 4> printerEntries{{
     {1, "P1S Werkstatt", true, true, true, true},
     {2, "X1C Labor", true, false, false, true},
-    {3, "A1 Mini Buero", false, false, false, true},
+    {3, "A1 Mini Büro", false, false, false, true},
     {4, "Neuer Drucker", true, false, false, false},
 }};
 struct PrinterUiDraft {
@@ -489,7 +489,7 @@ void loadPrinterUiDraft(rtos::PrinterId id) {
     std::snprintf(printerUiDraft.serial, sizeof(printerUiDraft.serial), "00M987654321");
     std::snprintf(printerUiDraft.accessCode, sizeof(printerUiDraft.accessCode), "87654321");
   } else if (id == 3) {
-    std::snprintf(printerUiDraft.name, sizeof(printerUiDraft.name), "A1 Mini Buero");
+    std::snprintf(printerUiDraft.name, sizeof(printerUiDraft.name), "A1 Mini Büro");
     std::snprintf(printerUiDraft.host, sizeof(printerUiDraft.host), "192.168.1.52");
     std::snprintf(printerUiDraft.serial, sizeof(printerUiDraft.serial), "030123456789");
     std::snprintf(printerUiDraft.accessCode, sizeof(printerUiDraft.accessCode), "11223344");
@@ -535,7 +535,7 @@ void updatePrinterSettingsList() {
       std::snprintf(text, sizeof(text), "%c %s | %s%s%s", entry.isActive ? '>' : ' ',
                     entry.name, entry.enabled ? "aktiv" : "deaktiviert",
                     entry.isDefault ? " | Standard" : "",
-                    entry.isActive ? " | ausgewaehlt" : "");
+                    entry.isActive ? " | ausgewählt" : "");
     }
     lv_label_set_text(rows[index], text);
     lv_obj_set_style_bg_color(rows[index],
@@ -638,14 +638,20 @@ void trayTargetClicked(lv_event_t* event) {
              2, models::mock::staging().spoolId);
 }
 
+void makeDescendantsTouchTransparent(lv_obj_t* object) {
+  const std::uint32_t childCount = lv_obj_get_child_count(object);
+  for (std::uint32_t index = 0; index < childCount; ++index) {
+    lv_obj_t* child = lv_obj_get_child(object, static_cast<std::int32_t>(index));
+    lv_obj_remove_flag(child, LV_OBJ_FLAG_CLICKABLE);
+    makeDescendantsTouchTransparent(child);
+  }
+}
+
 void bindClick(lv_obj_t* object, lv_event_cb_t callback,
                std::uintptr_t userData = 0) {
+  makeDescendantsTouchTransparent(object);
   lv_obj_add_event_cb(object, callback, LV_EVENT_CLICKED,
                       reinterpret_cast<void*>(userData));
-  // Widget binding is performed once at startup. Let IDLE0 run between the
-  // many generated objects instead of monopolizing its core for several
-  // watchdog periods.
-  vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 void styleLabelButton(lv_obj_t* object, std::uint32_t color = 0x1565C0) {
@@ -656,7 +662,6 @@ void styleLabelButton(lv_obj_t* object, std::uint32_t color = 0x1565C0) {
   lv_obj_set_style_text_align(object, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
   lv_obj_set_style_radius(object, 8, LV_PART_MAIN);
   lv_obj_set_style_pad_top(object, 14, LV_PART_MAIN);
-  vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 void createHomeColorStrips() {
@@ -1678,11 +1683,11 @@ void processUiCommand(const rtos::UiCommand& command) {
         if (printerFieldUpdate) {
           updatePrinterEditorContent();
           lv_label_set_text(objects.printer_edit_status,
-                            "Status: geaendert, nicht gespeichert");
+                            "Status: geändert, nicht gespeichert");
         } else {
           updateSpoolmanSettingsContent();
           lv_label_set_text(objects.spoolman_setting_status,
-                            "Status: geaendert, nicht gespeichert");
+                            "Status: geändert, nicht gespeichert");
           lv_label_set_text(objects.spoolman_setting_version, "Server: -");
         }
       }

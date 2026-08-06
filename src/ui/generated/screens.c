@@ -521,7 +521,7 @@ void create_screen_scr_printer_select() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "A1 Mini Buero\noffline | kein AMS");
+                    lv_label_set_text_static(obj, "A1 Mini Büro\noffline | kein AMS");
                 }
             }
         }
@@ -724,7 +724,7 @@ void create_screen_scr_settings_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "Geraet");
+                    lv_label_set_text_static(obj, "Gerät");
                 }
             }
         }
@@ -982,7 +982,7 @@ void create_screen_scr_staging_actions() {
             lv_obj_set_pos(obj, 164, 100);
             lv_obj_set_size(obj, 152, 52);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Tag verknuepfen");
+            lv_label_set_text_static(obj, "Tag verknüpfen");
         }
         {
             // staging_action_unlink_tag
@@ -1000,7 +1000,7 @@ void create_screen_scr_staging_actions() {
             lv_obj_set_pos(obj, 4, 156);
             lv_obj_set_size(obj, 152, 52);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Tag loeschen");
+            lv_label_set_text_static(obj, "Tag löschen");
         }
         {
             // staging_actions_back
@@ -1363,7 +1363,7 @@ void create_screen_scr_tray_select() {
             lv_obj_set_pos(obj, 4, 200);
             lv_obj_set_size(obj, 472, 56);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Noch kein Zielslot ausgewaehlt");
+            lv_label_set_text_static(obj, "Noch kein Zielslot ausgewählt");
         }
         {
             // tray_select_cancel
@@ -1584,7 +1584,7 @@ void create_screen_scr_settings_printers() {
             lv_obj_set_pos(obj, 8, 164);
             lv_obj_set_size(obj, 464, 42);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "A1 Mini Buero | offline");
+            lv_label_set_text_static(obj, "A1 Mini Büro | offline");
         }
         {
             // printer_settings_row_4
@@ -1638,7 +1638,7 @@ void create_screen_scr_settings_printers() {
             lv_obj_set_pos(obj, 324, 264);
             lv_obj_set_size(obj, 76, 56);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Edit");
+            lv_label_set_text_static(obj, "Ändern");
         }
         {
             // printer_settings_back
@@ -1647,7 +1647,7 @@ void create_screen_scr_settings_printers() {
             lv_obj_set_pos(obj, 404, 264);
             lv_obj_set_size(obj, 72, 56);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Zurueck");
+            lv_label_set_text_static(obj, "Zurück");
         }
     }
     
@@ -1762,7 +1762,7 @@ void create_screen_scr_settings_printer_edit() {
             lv_obj_set_pos(obj, 196, 264);
             lv_obj_set_size(obj, 92, 56);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Loeschen");
+            lv_label_set_text_static(obj, "Löschen");
         }
         {
             // printer_edit_cancel
@@ -2317,7 +2317,7 @@ void create_user_widget_cmp_progress_overlay(lv_obj_t *parent_obj, int startWidg
                             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                             lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                            lv_label_set_text_static(obj, "Vorgang laeuft\nSchritt 2 von 4");
+                            lv_label_set_text_static(obj, "Vorgang läuft\nSchritt 2 von 4");
                         }
                     }
                 }
@@ -2371,7 +2371,7 @@ void create_user_widget_cmp_confirm_dialog(lv_obj_t *parent_obj, int startWidget
                             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                             lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                            lv_label_set_text_static(obj, "Aktion bestaetigen\nAbbrechen | Bestaetigen");
+                            lv_label_set_text_static(obj, "Aktion bestätigen\nAbbrechen | Bestätigen");
                         }
                     }
                 }

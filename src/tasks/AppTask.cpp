@@ -39,7 +39,7 @@ void loadPrinterDraft(rtos::PrinterId id) {
     std::snprintf(printerDraft.serial, sizeof(printerDraft.serial), "00M987654321");
     std::snprintf(printerDraft.accessCode, sizeof(printerDraft.accessCode), "87654321");
   } else if (id == 3) {
-    std::snprintf(printerDraft.name, sizeof(printerDraft.name), "A1 Mini Buero");
+    std::snprintf(printerDraft.name, sizeof(printerDraft.name), "A1 Mini Büro");
     std::snprintf(printerDraft.host, sizeof(printerDraft.host), "192.168.1.52");
     std::snprintf(printerDraft.serial, sizeof(printerDraft.serial), "030123456789");
     std::snprintf(printerDraft.accessCode, sizeof(printerDraft.accessCode), "11223344");
@@ -79,7 +79,7 @@ std::size_t printerFieldCapacity(std::int32_t field) {
 const char* validatePrinterDraft() {
   if (printerDraft.name[0] == '\0') return "Fehler: Anzeigename fehlt";
   if (printerDraft.host[0] == '\0' || std::strchr(printerDraft.host, ' ') != nullptr)
-    return "Fehler: Host/IP ungueltig";
+    return "Fehler: Host/IP ungültig";
   if (printerDraft.serial[0] == '\0') return "Fehler: Seriennummer fehlt";
   if (std::strlen(printerDraft.accessCode) != 8)
     return "Fehler: LAN-Code muss 8 Zeichen haben";
@@ -137,11 +137,11 @@ const char* validateSpoolmanDraft() {
   }
   if (std::strcmp(spoolmanDraft.protocol, "http") != 0 &&
       std::strcmp(spoolmanDraft.protocol, "https") != 0) {
-    return "Fehler: Protokoll ungueltig";
+    return "Fehler: Protokoll ungültig";
   }
   if (spoolmanDraft.host[0] == '\0' ||
       std::strchr(spoolmanDraft.host, ' ') != nullptr) {
-    return "Fehler: Host/IP ungueltig";
+    return "Fehler: Host/IP ungültig";
   }
   if (!validNumber(spoolmanDraft.port, 1, 65535)) {
     return "Fehler: Port muss 1..65535 sein";
@@ -261,7 +261,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
           section = "Waage";
           break;
         case rtos::UiActionType::OpenDeviceSettings:
-          section = "Geraet";
+          section = "Gerät";
           break;
         case rtos::UiActionType::OpenDiagnostics:
           section = "Diagnose";
@@ -273,7 +273,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
           break;
       }
       command.type = rtos::UiCommandType::ShowToast;
-      std::snprintf(command.text, sizeof(command.text), "%s ausgewaehlt",
+      std::snprintf(command.text, sizeof(command.text), "%s ausgewählt",
                     section);
       sendUiCommand(ctx, command,
                     "AppTask: settings navigation queue overflow");
