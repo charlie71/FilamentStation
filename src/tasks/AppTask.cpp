@@ -9,8 +9,11 @@
 namespace filament_station::tasks {
 namespace {
 
-rtos::UiScreenId currentScreen = rtos::UiScreenId::Home;
+rtos::UiScreenId currentScreen = rtos::UiScreenId::Boot;
 rtos::UiScreenId previousScreen = rtos::UiScreenId::Home;
+bool uiStartupReady = false;
+bool storageStartupReady = false;
+bool startupNavigationSent = false;
 
 struct SpoolmanDraft {
   char name[32] = "Werkstatt";
@@ -162,6 +165,18 @@ bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
   }
   rtos::logLine(failureMessage);
   return false;
+}
+
+void showHomeWhenStartupReady(rtos::RtosContext& ctx) {
+  if (startupNavigationSent || !uiStartupReady || !storageStartupReady) return;
+  rtos::UiCommand command{};
+  command.type = rtos::UiCommandType::ShowScreen;
+  command.screenId = rtos::UiScreenId::Home;
+  if (sendUiCommand(ctx, command, "AppTask: startup navigation queue overflow")) {
+    startupNavigationSent = true;
+    currentScreen = rtos::UiScreenId::Home;
+    previousScreen = rtos::UiScreenId::Home;
+  }
 }
 
 void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
@@ -490,6 +505,7 @@ void appTask(void* parameter) {
     if (event.type == rtos::AppEventType::UiAction) {
       handleUiAction(ctx, event.uiAction);
     } else if (event.type == rtos::AppEventType::UiCommunicationTest) {
+      uiStartupReady = true;
       rtos::UiCommand response{};
       response.type = rtos::UiCommandType::CommunicationTestResponse;
       response.requestId = event.requestId;
@@ -499,6 +515,7 @@ void appTask(void* parameter) {
                         "AppTask: uiCommandQueue timeout/overflow")) {
         rtos::logLine("AppTask: response sent");
       }
+      showHomeWhenStartupReady(ctx);
     } else if (event.type == rtos::AppEventType::SdMounted ||
                event.type == rtos::AppEventType::SdRemoved ||
                event.type == rtos::AppEventType::SdReinserted ||
@@ -513,6 +530,10 @@ void appTask(void* parameter) {
       std::snprintf(status.text, sizeof(status.text), "%s", event.text);
       sendUiCommand(ctx, status,
                     "AppTask: storage status UI queue timeout/overflow");
+      if (event.type == rtos::AppEventType::SdMounted) {
+        storageStartupReady = true;
+        showHomeWhenStartupReady(ctx);
+      }
     }
   }
 }

@@ -1625,7 +1625,7 @@ bool initializeLvgl(UiRuntimeInfo& runtimeInfo, rtos::RtosContext& context) {
   updateHeaders(currentPrinterId);
   rtos::logLine("UiTask: initial UI model applied");
   vTaskDelay(pdMS_TO_TICKS(250));
-  loadScreen(SCREEN_ID_SCR_HOME);
+  loadScreen(SCREEN_ID_SCR_BOOT);
 
   runtimeInfo.bytesPerDrawBuffer = bufferBytes;
   runtimeInfo.totalDrawBufferBytes = bufferBytes * 2U;

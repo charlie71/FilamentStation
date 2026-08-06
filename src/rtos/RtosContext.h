@@ -29,6 +29,8 @@ struct RtosContext {
   TaskHandle_t bambuTask = nullptr;
 
   bool createObjects();
+  bool createUiTask();
+  bool createServiceTasks();
   bool createTasks();
 };
 

@@ -45,16 +45,23 @@ bool RtosContext::createObjects() {
          bambuCommandQueue && systemEventGroup && debugMutex;
 }
 
-bool RtosContext::createTasks() {
+bool RtosContext::createUiTask() {
+  return createTask(tasks::uiTask, config::kUiTask, this, &uiTask);
+}
+
+bool RtosContext::createServiceTasks() {
   // Storage wird zuerst angelegt, danach die zentrale Anwendungssteuerung.
   return createTask(tasks::storageTask, config::kStorageTask, this, &storageTask) &&
          createTask(tasks::appTask, config::kAppTask, this, &appTask) &&
-         createTask(tasks::uiTask, config::kUiTask, this, &uiTask) &&
          createTask(tasks::scaleTask, config::kScaleTask, this, &scaleTask) &&
          createTask(tasks::nfcTask, config::kNfcTask, this, &nfcTask) &&
          createTask(tasks::networkTask, config::kNetworkTask, this, &networkTask) &&
          createTask(tasks::spoolmanTask, config::kSpoolmanTask, this, &spoolmanTask) &&
          createTask(tasks::bambuTask, config::kBambuTask, this, &bambuTask);
+}
+
+bool RtosContext::createTasks() {
+  return createUiTask() && createServiceTasks();
 }
 
 }  // namespace filament_station::rtos
