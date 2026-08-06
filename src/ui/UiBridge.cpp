@@ -96,6 +96,123 @@ std::array<std::array<lv_obj_t*, models::kMaximumFilamentColors>,
 std::array<lv_obj_t*, 8> stagingTableRows{};
 bool touchWasPressed = false;
 std::size_t touchMarkerColorIndex = 0;
+lv_obj_t* overlayBackdrop = nullptr;
+lv_obj_t* overlayTitle = nullptr;
+lv_obj_t* overlayText = nullptr;
+lv_obj_t* overlayProgress = nullptr;
+lv_obj_t* overlayCancel = nullptr;
+lv_obj_t* overlayConfirm = nullptr;
+rtos::UiOverlayKind activeOverlayKind = rtos::UiOverlayKind::None;
+std::uint32_t activeOverlayRequestId = 0;
+
+void sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
+                std::uint8_t amsId = 0, std::uint8_t trayId = 0,
+                std::int32_t value = 0, rtos::SpoolId spoolId = 0,
+                const char* text = nullptr);
+
+void overlayActionClicked(lv_event_t* event) {
+  const auto action = static_cast<rtos::UiActionType>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  sendAction(action, currentPrinterId, currentAmsId, 0,
+             static_cast<std::int32_t>(activeOverlayKind), 0, nullptr);
+}
+
+lv_obj_t* createOverlayButton(lv_obj_t* parent, const char* text,
+                              std::int32_t x, std::uint32_t color,
+                              rtos::UiActionType action) {
+  lv_obj_t* button = lv_button_create(parent);
+  lv_obj_set_pos(button, x, 158);
+  lv_obj_set_size(button, 170, 50);
+  lv_obj_set_style_bg_color(button, lv_color_hex(color), LV_PART_MAIN);
+  lv_obj_set_style_radius(button, 8, LV_PART_MAIN);
+  lv_obj_t* label = lv_label_create(button);
+  lv_label_set_text(label, text);
+  lv_obj_set_style_text_font(label, &ui_font_ui_german16, LV_PART_MAIN);
+  lv_obj_center(label);
+  lv_obj_remove_flag(label, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(button, overlayActionClicked, LV_EVENT_CLICKED,
+                      reinterpret_cast<void*>(
+                          static_cast<std::uintptr_t>(action)));
+  return button;
+}
+
+void ensureOverlay() {
+  if (overlayBackdrop != nullptr) return;
+  overlayBackdrop = lv_obj_create(lv_layer_top());
+  lv_obj_set_pos(overlayBackdrop, 0, 0);
+  lv_obj_set_size(overlayBackdrop, 480, 320);
+  lv_obj_remove_flag(overlayBackdrop, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_bg_color(overlayBackdrop, lv_color_hex(0x000000), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(overlayBackdrop, LV_OPA_60, LV_PART_MAIN);
+  lv_obj_set_style_border_width(overlayBackdrop, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(overlayBackdrop, 0, LV_PART_MAIN);
+
+  lv_obj_t* panel = lv_obj_create(overlayBackdrop);
+  lv_obj_set_size(panel, 420, 238);
+  lv_obj_center(panel);
+  lv_obj_remove_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_bg_color(panel, lv_color_hex(0xF4F6F8), LV_PART_MAIN);
+  lv_obj_set_style_border_color(panel, lv_color_hex(0x1565C0), LV_PART_MAIN);
+  lv_obj_set_style_border_width(panel, 2, LV_PART_MAIN);
+  lv_obj_set_style_radius(panel, 12, LV_PART_MAIN);
+  lv_obj_set_style_text_color(panel, lv_color_hex(0x101820), LV_PART_MAIN);
+
+  overlayTitle = lv_label_create(panel);
+  lv_obj_set_pos(overlayTitle, 16, 12);
+  lv_obj_set_size(overlayTitle, 388, 32);
+  lv_obj_set_style_text_font(overlayTitle, &ui_font_ui_german16, LV_PART_MAIN);
+  overlayText = lv_label_create(panel);
+  lv_obj_set_pos(overlayText, 16, 52);
+  lv_obj_set_size(overlayText, 388, 70);
+  lv_label_set_long_mode(overlayText, LV_LABEL_LONG_WRAP);
+  lv_obj_set_style_text_font(overlayText, &ui_font_ui_german16, LV_PART_MAIN);
+
+  overlayProgress = lv_bar_create(panel);
+  lv_obj_set_pos(overlayProgress, 16, 126);
+  lv_obj_set_size(overlayProgress, 388, 14);
+  lv_bar_set_range(overlayProgress, 0, 100);
+  lv_bar_set_value(overlayProgress, 60, LV_ANIM_OFF);
+
+  overlayCancel = createOverlayButton(panel, "Abbrechen", 16, 0x607D8B,
+                                      rtos::UiActionType::Cancel);
+  overlayConfirm = createOverlayButton(panel, "Best\xC3\xA4tigen", 218,
+                                       0x1565C0,
+                                       rtos::UiActionType::Confirm);
+}
+
+void hideOverlay() {
+  if (overlayBackdrop != nullptr) lv_obj_add_flag(overlayBackdrop, LV_OBJ_FLAG_HIDDEN);
+  activeOverlayKind = rtos::UiOverlayKind::None;
+  activeOverlayRequestId = 0;
+}
+
+void showOverlay(const rtos::UiCommand& command, bool progress) {
+  ensureOverlay();
+  activeOverlayKind = command.overlayKind;
+  activeOverlayRequestId = command.requestId;
+  lv_label_set_text(overlayTitle, command.title);
+  lv_label_set_text(overlayText, command.text);
+  lv_obj_remove_flag(overlayBackdrop, LV_OBJ_FLAG_HIDDEN);
+  if (progress) {
+    lv_obj_remove_flag(overlayProgress, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Schlie\xC3\x9F" "en");
+  } else {
+    lv_obj_add_flag(overlayProgress, LV_OBJ_FLAG_HIDDEN);
+    const bool confirmation =
+        command.overlayKind == rtos::UiOverlayKind::Confirmation ||
+        command.overlayKind == rtos::UiOverlayKind::RestartConfirmation ||
+        command.overlayKind == rtos::UiOverlayKind::WifiResetConfirmation;
+    if (confirmation) {
+      lv_obj_remove_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
+      lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Abbrechen");
+    } else {
+      lv_obj_add_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
+      lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Schlie\xC3\x9F" "en");
+    }
+  }
+  lv_obj_move_foreground(overlayBackdrop);
+}
 
 void deleteTouchMarker(lv_timer_t* timer) {
   auto* marker = static_cast<lv_obj_t*>(lv_timer_get_user_data(timer));
@@ -208,9 +325,9 @@ void setButtonColors(lv_obj_t* button, std::uint32_t backgroundRgb) {
 }
 
 void sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
-                std::uint8_t amsId = 0, std::uint8_t trayId = 0,
-                std::int32_t value = 0, rtos::SpoolId spoolId = 0,
-                const char* text = nullptr) {
+                std::uint8_t amsId, std::uint8_t trayId,
+                std::int32_t value, rtos::SpoolId spoolId,
+                const char* text) {
   if (rtosContext == nullptr) {
     return;
   }
@@ -1728,6 +1845,15 @@ std::uint32_t runLvglTimers() {
 
 void processUiCommand(const rtos::UiCommand& command) {
   switch (command.type) {
+    case rtos::UiCommandType::ShowProgress:
+      showOverlay(command, true);
+      break;
+    case rtos::UiCommandType::ShowDialog:
+      showOverlay(command, false);
+      break;
+    case rtos::UiCommandType::HideProgress:
+      hideOverlay();
+      break;
     case rtos::UiCommandType::ShowScreen:
       if (command.screenId == rtos::UiScreenId::TrayDetails ||
           command.screenId == rtos::UiScreenId::TrayActions) {

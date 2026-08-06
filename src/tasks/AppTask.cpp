@@ -14,6 +14,7 @@ rtos::UiScreenId previousScreen = rtos::UiScreenId::Home;
 bool uiStartupReady = false;
 bool storageStartupReady = false;
 bool startupNavigationSent = false;
+rtos::UiOverlayKind pendingOverlay = rtos::UiOverlayKind::None;
 
 struct SpoolmanDraft {
   char name[32] = "Werkstatt";
@@ -167,9 +168,25 @@ bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
   return false;
 }
 
+void sendOverlay(rtos::RtosContext& ctx, rtos::UiCommandType type,
+                 rtos::UiOverlayKind kind, std::uint32_t requestId,
+                 const char* title, const char* text) {
+  rtos::UiCommand command{};
+  command.type = type;
+  command.overlayKind = kind;
+  command.requestId = requestId;
+  std::snprintf(command.title, sizeof(command.title), "%s", title);
+  std::snprintf(command.text, sizeof(command.text), "%s", text);
+  if (sendUiCommand(ctx, command, "AppTask: overlay queue overflow")) {
+    pendingOverlay = kind;
+  }
+}
+
 void showHomeWhenStartupReady(rtos::RtosContext& ctx) {
   if (startupNavigationSent || !uiStartupReady || !storageStartupReady) return;
   rtos::UiCommand command{};
+  command.type = rtos::UiCommandType::HideProgress;
+  sendUiCommand(ctx, command, "AppTask: boot overlay queue overflow");
   command.type = rtos::UiCommandType::ShowScreen;
   command.screenId = rtos::UiScreenId::Home;
   if (sendUiCommand(ctx, command, "AppTask: startup navigation queue overflow")) {
@@ -189,6 +206,29 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
   command.value = action.value;
 
   switch (action.type) {
+    case rtos::UiActionType::Cancel:
+      command.type = rtos::UiCommandType::HideProgress;
+      sendUiCommand(ctx, command, "AppTask: hide overlay queue overflow");
+      pendingOverlay = rtos::UiOverlayKind::None;
+      return;
+
+    case rtos::UiActionType::Confirm: {
+      const auto confirmedOverlay = pendingOverlay;
+      command.type = rtos::UiCommandType::HideProgress;
+      sendUiCommand(ctx, command, "AppTask: hide confirmed overlay queue overflow");
+      pendingOverlay = rtos::UiOverlayKind::None;
+      const char* result = "Mock-Aktion best\xC3\xA4tigt; keine reale Funktion ausgef\xC3\xBChrt.";
+      if (confirmedOverlay == rtos::UiOverlayKind::RestartConfirmation) {
+        result = "Neustart best\xC3\xA4tigt; im Mock nicht ausgef\xC3\xBChrt.";
+      } else if (confirmedOverlay == rtos::UiOverlayKind::WifiResetConfirmation) {
+        result = "WLAN-Reset best\xC3\xA4tigt; Zugangsdaten bleiben im Mock erhalten.";
+      }
+      sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                  rtos::UiOverlayKind::Success, action.requestId,
+                  "Vorgang erfolgreich", result);
+      return;
+    }
+
     case rtos::UiActionType::SelectPrinter:
       if (action.value == 1) {
         previousScreen = currentScreen;
@@ -308,6 +348,35 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::PrepareRestart:
     case rtos::UiActionType::RefreshDiagnostics:
     case rtos::UiActionType::CheckFirmwareUpdate: {
+      if (action.type == rtos::UiActionType::StartWifiPortal) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::ConnectionProgress,
+                    action.requestId, "Verbindung wird vorbereitet",
+                    "WLAN-Konfiguration wird gestartet (Mock)." );
+        return;
+      }
+      if (action.type == rtos::UiActionType::ResetWifiCredentials) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::WifiResetConfirmation,
+                    action.requestId, "WLAN zur\xC3\xBC" "cksetzen?",
+                    "Gespeicherte WLAN-Zugangsdaten wirklich entfernen?");
+        return;
+      }
+      if (action.type == rtos::UiActionType::PrepareRestart) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::RestartConfirmation,
+                    action.requestId, "Ger\xC3\xA4t neu starten?",
+                    "Der Neustart wird erst nach Best\xC3\xA4tigung ausgel\xC3\xB6st (Mock)." );
+        return;
+      }
+      if (action.type == rtos::UiActionType::TareScale ||
+          action.type == rtos::UiActionType::StartScaleCalibration) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::WeightStabilizing,
+                    action.requestId, "Gewicht stabilisieren",
+                    "Bitte Spule ruhig auf der Waage stehen lassen (Mock)." );
+        return;
+      }
       command.type = rtos::UiCommandType::ShowToast;
       command.value = 300 + static_cast<std::int32_t>(action.type);
       const char* text = "Mock-Aktion vorgemerkt";
@@ -385,20 +454,21 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::TestPrinterConnection:
     case rtos::UiActionType::SavePrinterSettings: {
       const char* error = validatePrinterDraft();
-      command.type = rtos::UiCommandType::ShowToast;
       if (error != nullptr) {
-        command.value = 200;
-        std::snprintf(command.text, sizeof(command.text), "%s", error);
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Eingabefehler", error);
       } else if (action.type == rtos::UiActionType::TestPrinterConnection) {
-        command.value = 201;
-        std::snprintf(command.text, sizeof(command.text),
-                      "Status: Mock-Verbindung erfolgreich");
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::BambuConnection,
+                    action.requestId, "Bambu-Verbindung",
+                    "Verbindung zum gew\xC3\xA4hlten Drucker wird gepr\xC3\xBC" "ft (Mock)." );
       } else {
-        command.value = 202;
-        std::snprintf(command.text, sizeof(command.text),
-                      "Status: Drucker validiert");
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Success, action.requestId,
+                    "Einstellungen g\xC3\xBCltig",
+                    "Druckerkonfiguration wurde validiert (Mock)." );
       }
-      sendUiCommand(ctx, command, "AppTask: printer validation queue overflow");
       return;
     }
 
@@ -428,22 +498,21 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::TestSpoolmanConnection:
     case rtos::UiActionType::SaveSpoolmanSettings: {
       const char* error = validateSpoolmanDraft();
-      command.type = rtos::UiCommandType::ShowToast;
       if (error != nullptr) {
-        command.value = 100;
-        std::snprintf(command.text, sizeof(command.text), "%s", error);
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Eingabefehler", error);
       } else if (action.type == rtos::UiActionType::TestSpoolmanConnection) {
-        command.value = 101;
-        std::snprintf(command.title, sizeof(command.title), "Mock 0.22.1");
-        std::snprintf(command.text, sizeof(command.text),
-                      "Status: Mock-Verbindung erfolgreich");
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::SpoolmanRequest,
+                    action.requestId, "Spoolman-Anfrage",
+                    "Serverstatus wird abgefragt (Mock)." );
       } else {
-        command.value = 102;
-        std::snprintf(command.text, sizeof(command.text),
-                      "Status: Einstellungen validiert");
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Success, action.requestId,
+                    "Einstellungen g\xC3\xBCltig",
+                    "Spoolman-Konfiguration wurde validiert (Mock)." );
       }
-      sendUiCommand(ctx, command,
-                    "AppTask: Spoolman validation queue overflow");
       return;
     }
 
@@ -507,6 +576,36 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::EraseTag:
     case rtos::UiActionType::SearchSpool:
     case rtos::UiActionType::SelectSpool:
+      if (action.type == rtos::UiActionType::QuickWeight ||
+          action.type == rtos::UiActionType::AdvancedWeight) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::WeightStabilizing,
+                    action.requestId, "Gewicht stabilisieren",
+                    "Messwert wird auf Stabilit\xC3\xA4t gepr\xC3\xBC" "ft (Mock)." );
+        return;
+      }
+      if (action.type == rtos::UiActionType::LinkTag) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::NfcRead, action.requestId,
+                    "NFC-Tag lesen", "Tag bitte am Leser belassen (Mock)." );
+        return;
+      }
+      if (action.type == rtos::UiActionType::WriteTag) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::NfcWrite, action.requestId,
+                    "NFC-Tag schreiben",
+                    "Tag wird geschrieben und anschlie\xC3\x9F" "end verifiziert (Mock)." );
+        return;
+      }
+      if (action.type == rtos::UiActionType::ClearStaging ||
+          action.type == rtos::UiActionType::EraseTag ||
+          action.type == rtos::UiActionType::UnlinkTag) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Confirmation, action.requestId,
+                    "Aktion best\xC3\xA4tigen",
+                    "Diese Mock-Aktion kann eine Zuordnung entfernen. Fortfahren?");
+        return;
+      }
       command.type = rtos::UiCommandType::ShowToast;
       std::snprintf(command.text, sizeof(command.text),
                     "Staging-Aktion vorgemerkt (Spule %lu)",
@@ -544,6 +643,10 @@ void appTask(void* parameter) {
                         "AppTask: uiCommandQueue timeout/overflow")) {
         rtos::logLine("AppTask: response sent");
       }
+      sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                  rtos::UiOverlayKind::BootProgress, event.requestId,
+                  "FilamentStation startet",
+                  "Display bereit. SD-Karte und Konfiguration werden gepr\xC3\xBC" "ft." );
       showHomeWhenStartupReady(ctx);
     } else if (event.type == rtos::AppEventType::SdMounted ||
                event.type == rtos::AppEventType::SdRemoved ||

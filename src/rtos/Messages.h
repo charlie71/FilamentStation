@@ -18,6 +18,7 @@ struct AppEvent {
 
 struct UiCommand {
   UiCommandType type;
+  UiOverlayKind overlayKind;
   std::uint32_t requestId;
   UiScreenId screenId;
   PrinterId printerId;

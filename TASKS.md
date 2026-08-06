@@ -443,18 +443,18 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 3.17 Dialoge und Overlays
 
-* [ ] Boot-Fortschritt
-* [ ] Verbindungsfortschritt
-* [ ] NFC-Leseoverlay
-* [ ] NFC-Schreiboverlay
-* [ ] Gewichtsstabilisierung
-* [ ] Spoolman-Anfrage
-* [ ] Bambu-Verbindung
-* [ ] Bestätigungsdialog
-* [ ] Fehlerdialog
-* [ ] Erfolgsdialog
-* [ ] Neustartbestätigung
-* [ ] WLAN-Resetbestätigung
+* [x] Boot-Fortschritt
+* [x] Verbindungsfortschritt
+* [x] NFC-Leseoverlay
+* [x] NFC-Schreiboverlay
+* [x] Gewichtsstabilisierung
+* [x] Spoolman-Anfrage
+* [x] Bambu-Verbindung
+* [x] Bestätigungsdialog
+* [x] Fehlerdialog
+* [x] Erfolgsdialog
+* [x] Neustartbestätigung
+* [x] WLAN-Resetbestätigung
 
 ### Abnahmekriterien Phase 3
 

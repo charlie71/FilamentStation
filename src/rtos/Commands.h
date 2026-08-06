@@ -46,6 +46,22 @@ enum class UiCommandType : std::uint8_t {
   ShowToast,
 };
 
+enum class UiOverlayKind : std::uint8_t {
+  None,
+  BootProgress,
+  ConnectionProgress,
+  NfcRead,
+  NfcWrite,
+  WeightStabilizing,
+  SpoolmanRequest,
+  BambuConnection,
+  Confirmation,
+  Error,
+  Success,
+  RestartConfirmation,
+  WifiResetConfirmation,
+};
+
 enum class UiActionType : std::uint8_t {
   SelectPrinter,
   SelectAms,
