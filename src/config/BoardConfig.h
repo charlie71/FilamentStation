@@ -43,4 +43,12 @@ constexpr bool kSdCardDetectAvailable = false;
 // Entfernung bleibt der Storage-Fehler bis zum Neustart verriegelt.
 constexpr std::uint32_t kSdHealthCheckIntervalMs = 2000;
 
+// HX711 am herausgefuehrten EXT-Anschluss des WT32-SC01-Plus:
+// EXT_IO1/GPIO10 ist ein interruptfaehiger Eingang fuer DOUT,
+// EXT_IO2/GPIO11 ist der Taktausgang. Beide Pins sind laut Boarddatenblatt
+// frei herausgefuehrt und kollidieren nicht mit Display, Touch oder SD.
+constexpr std::int8_t kHx711DataPin = 10;
+constexpr std::int8_t kHx711ClockPin = 11;
+constexpr std::uint32_t kHx711ReadyTimeoutMs = 1500;
+
 }  // namespace filament_station::config

@@ -83,6 +83,40 @@ HX711 oder PN532, solange die jeweilige Onboard-Funktion verwendet werden soll.
 Konkrete externe GPIO-Zuweisungen werden erst nach Pruefung der angeschlossenen
 Module festgelegt.
 
+## HX711-Anschluss
+
+Fuer den HX711 werden zwei dokumentierte EXT-Leitungen verwendet:
+
+| HX711-Signal | Boardanschluss | GPIO | Richtung |
+|---|---|---:|---|
+| DOUT | EXT_IO1 | 10 | Eingang, fallende Flanke |
+| SCK | EXT_IO2 | 11 | Ausgang, Startpegel Low |
+
+GPIO10 und GPIO11 sind beim WT32-SC01-Plus als 0-3,3-V-EXT-I/O
+herausgefuehrt. Der ESP32-S3 beschreibt beide als normale Ein-/Ausgaenge;
+GPIO10 kann ueber den GPIO-ISR-Service eine fallende Flanke ausloesen. Die
+Pins kollidieren nicht mit Display, Touch, SD, USB, Audio oder RS485.
+
+Quellen:
+
+* [WT32-SC01 Plus Datasheet V1.5](https://docs.makehub.tw/wt32-sc01plus/WT32-SC01%2BPLUS%2BDatasheet-V1.5%2BEN.pdf)
+* [ESP32-S3 GPIO API](https://docs.espressif.com/projects/esp-idf/en/release-v5.0/esp32s3/api-reference/peripherals/gpio.html)
+* [ESP32-S3 Datasheet](https://www.espressif.com/sites/default/files/documentation/esp32-s3_datasheet_en.pdf)
+
+Der GPIO-Interrupt ist mit einem `IRAM_ATTR`-Handler registriert. Die ISR
+sendet ausschliesslich eine FreeRTOS-Task-Notification an den ScaleTask und
+fordert bei Bedarf einen Kontextwechsel an. Sie liest keine HX711-Daten und
+fuehrt keine Taktimpulse aus. Ein Hardwaretest mit angeschlossenem HX711 steht
+noch aus.
+
+Der ScaleTask liest nach der Notification den vorzeichenbehafteten 24-Bit-
+Rohwert und sendet mit dem 25. Taktimpuls die Auswahl fuer Kanal A/Gain 128.
+Bleibt DOUT 1,5 Sekunden ohne fallende Flanke, wird `EVENT_SCALE_READY`
+geloescht und einmalig ein `ScaleError` an den AppTask gemeldet. Nach dem
+naechsten gueltigen Rohwert wird der Ready-Zustand wieder gesetzt. Die
+Umrechnung in Gramm, Filteralgorithmen und Stabilitaetserkennung sind noch
+nicht Bestandteil dieser Phase.
+
 ### Hintergrundbeleuchtung
 
 Das Datenblatt bestaetigt GPIO45 als aktiv-hohen PWM-Eingang. Bei maximaler

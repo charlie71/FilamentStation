@@ -632,6 +632,17 @@ void appTask(void* parameter) {
 
     if (event.type == rtos::AppEventType::UiAction) {
       handleUiAction(ctx, event.uiAction);
+    } else if (event.type == rtos::AppEventType::ScaleMeasurement) {
+      // Raw/filtered counts are intentionally consumed without UI conversion.
+      // Calibration to grams and GUI binding belong to later phases.
+    } else if (event.type == rtos::AppEventType::ScaleReady ||
+               event.type == rtos::AppEventType::ScaleError) {
+      rtos::UiCommand status{};
+      status.type = rtos::UiCommandType::ShowStatus;
+      status.requestId = event.requestId;
+      std::snprintf(status.title, sizeof(status.title), "Scale");
+      std::snprintf(status.text, sizeof(status.text), "%s", event.text);
+      sendUiCommand(ctx, status, "AppTask: scale status UI queue overflow");
     } else if (event.type == rtos::AppEventType::UiCommunicationTest) {
       uiStartupReady = true;
       rtos::UiCommand response{};

@@ -471,20 +471,20 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 4.1 HX711-Hardware
 
-* [ ] HX711-Pins verifizieren
-* [ ] DOUT-Interruptfähigkeit prüfen
-* [ ] Interrupt registrieren
-* [ ] ISR mit `IRAM_ATTR`
-* [ ] ISR weckt ScaleTask
-* [ ] keine HX711-Kommunikation in ISR
+* [x] HX711-Pins verifizieren
+* [x] DOUT-Interruptfähigkeit prüfen
+* [x] Interrupt registrieren
+* [x] ISR mit `IRAM_ATTR`
+* [x] ISR weckt ScaleTask
+* [x] keine HX711-Kommunikation in ISR
 
 ## 4.2 ScaleTask
 
-* [ ] auf Notification blockieren
-* [ ] Messwert lesen
-* [ ] Verbindungsfehler
-* [ ] Filter aufrufen
-* [ ] Event an AppTask
+* [x] auf Notification blockieren
+* [x] Messwert lesen
+* [x] Verbindungsfehler
+* [x] Filter aufrufen
+* [x] Event an AppTask
 
 ## 4.3 Filter
 
