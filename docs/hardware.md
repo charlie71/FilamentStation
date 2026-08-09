@@ -89,12 +89,12 @@ Fuer den HX711 werden zwei dokumentierte EXT-Leitungen verwendet:
 
 | HX711-Signal | Boardanschluss | GPIO | Richtung |
 |---|---|---:|---|
-| DOUT | EXT_IO1 | 10 | Eingang, fallende Flanke |
-| SCK | EXT_IO2 | 11 | Ausgang, Startpegel Low |
+| DOUT | EXT_IO2 | 11 | Eingang, fallende Flanke |
+| SCK | EXT_IO1 | 10 | Ausgang, Startpegel Low |
 
 GPIO10 und GPIO11 sind beim WT32-SC01-Plus als 0-3,3-V-EXT-I/O
 herausgefuehrt. Der ESP32-S3 beschreibt beide als normale Ein-/Ausgaenge;
-GPIO10 kann ueber den GPIO-ISR-Service eine fallende Flanke ausloesen. Die
+GPIO11 kann ueber den GPIO-ISR-Service eine fallende Flanke ausloesen. Die
 Pins kollidieren nicht mit Display, Touch, SD, USB, Audio oder RS485.
 
 Quellen:
