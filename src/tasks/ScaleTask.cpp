@@ -9,6 +9,7 @@
 #include <cstdio>
 
 #include "config/BoardConfig.h"
+#include "config/ScaleConfig.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/ScaleFilter.h"
@@ -121,7 +122,16 @@ void scaleTask(void* parameter) {
   }
 
   rtos::logLine("ScaleTask: HX711 DOUT interrupt registered");
-  services::ScaleFilter filter;
+  const services::ScaleFilterConfig filterConfig{
+      config::kScaleMovingAverageWindow,
+      config::kScaleLowPassAlpha,
+      config::kScaleOutlierThresholdCounts,
+      config::kScaleOutlierConfirmationSamples,
+      config::kScaleNegativeSmallThresholdCounts,
+      config::kScaleStabilityToleranceCounts,
+      config::kScaleStabilityTimeMs,
+  };
+  services::ScaleFilter filter(filterConfig);
   bool connected = false;
   bool connectionErrorReported = false;
   bool measurementOverflowReported = false;
@@ -143,7 +153,9 @@ void scaleTask(void* parameter) {
 
     std::int32_t rawCounts = 0;
     if (!readHx711Sample(rawCounts)) continue;
-    const std::int32_t filteredCounts = filter.process(rawCounts);
+    const services::ScaleFilterResult filterResult =
+        filter.process(rawCounts, millis());
+    const std::int32_t filteredCounts = filterResult.value;
 
     if (!connected) {
       connected = true;
@@ -162,6 +174,13 @@ void scaleTask(void* parameter) {
       }
     } else {
       measurementOverflowReported = false;
+    }
+    if (filterResult.stabilityChanged) {
+      const rtos::AppEventType eventType = filterResult.stable
+                                               ? rtos::AppEventType::ScaleStable
+                                               : rtos::AppEventType::ScaleUnstable;
+      sendScaleEvent(ctx, eventType, filteredCounts,
+                     filterResult.stable ? "Scale stable" : "Scale unstable");
     }
   }
 }

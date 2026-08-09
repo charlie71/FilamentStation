@@ -635,6 +635,10 @@ void appTask(void* parameter) {
     } else if (event.type == rtos::AppEventType::ScaleMeasurement) {
       // Raw/filtered counts are intentionally consumed without UI conversion.
       // Calibration to grams and GUI binding belong to later phases.
+    } else if (event.type == rtos::AppEventType::ScaleStable ||
+               event.type == rtos::AppEventType::ScaleUnstable) {
+      // Stability is part of the application state; UI weight binding follows
+      // in phase 4.5 after calibration provides meaningful gram values.
     } else if (event.type == rtos::AppEventType::ScaleReady ||
                event.type == rtos::AppEventType::ScaleError) {
       rtos::UiCommand status{};

@@ -488,13 +488,13 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 4.3 Filter
 
-* [ ] gleitender Mittelwert
-* [ ] Tiefpassfilter
-* [ ] Ausreißer
-* [ ] negative Kleinwerte
-* [ ] Stabilität
-* [ ] Stabilitätszeit
-* [ ] Konfiguration zentral
+* [x] gleitender Mittelwert
+* [x] Tiefpassfilter
+* [x] Ausreißer
+* [x] negative Kleinwerte
+* [x] Stabilität
+* [x] Stabilitätszeit
+* [x] Konfiguration zentral
 
 ## 4.4 Tarierung und Kalibrierung
 

@@ -12,6 +12,7 @@ enum class AppEventType : std::uint8_t {
   ScaleReady,
   ScaleMeasurement,
   ScaleStable,
+  ScaleUnstable,
   ScaleError,
   NfcTagDetected,
   NfcTagRead,
