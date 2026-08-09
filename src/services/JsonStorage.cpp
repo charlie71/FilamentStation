@@ -148,6 +148,15 @@ JsonStorageResult JsonStorage::load(
   }
 
   JsonStorageError error = applyDefaults(document);
+  if (error == JsonStorageError::Ok &&
+      documentType == rtos::StorageDocumentType::Scale) {
+    if (document["tareOffsetCounts"].isNull()) {
+      document["tareOffsetCounts"] = 0;
+    }
+    if (document["factorCountsPerGram"].isNull()) {
+      document["factorCountsPerGram"] = 1.0F;
+    }
+  }
   if (error == JsonStorageError::Ok) {
     error = validate(document, documentType);
   }
@@ -248,6 +257,8 @@ JsonStorageError JsonStorage::createDefault(
       break;
     case rtos::StorageDocumentType::Scale:
       document["calibrated"] = false;
+      document["tareOffsetCounts"] = 0;
+      document["factorCountsPerGram"] = 1.0F;
       break;
     case rtos::StorageDocumentType::Nfc:
       document["tagSchemaVersion"] = 1;
@@ -295,9 +306,16 @@ JsonStorageError JsonStorage::validate(
                  ? JsonStorageError::Ok
                  : JsonStorageError::InvalidDocumentField;
     case rtos::StorageDocumentType::Scale:
-      return document["calibrated"].is<bool>()
-                 ? JsonStorageError::Ok
-                 : JsonStorageError::InvalidDocumentField;
+      if (!document["calibrated"].is<bool>() ||
+          !document["tareOffsetCounts"].is<std::int32_t>() ||
+          !document["factorCountsPerGram"].is<float>()) {
+        return JsonStorageError::InvalidDocumentField;
+      }
+      if (document["calibrated"].as<bool>() &&
+          document["factorCountsPerGram"].as<float>() == 0.0F) {
+        return JsonStorageError::InvalidDocumentField;
+      }
+      return JsonStorageError::Ok;
     case rtos::StorageDocumentType::Nfc:
       return document["tagSchemaVersion"].is<std::uint32_t>() &&
                      document["tagSchemaVersion"].as<std::uint32_t>() == 1U

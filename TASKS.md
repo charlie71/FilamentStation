@@ -498,14 +498,14 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 4.4 Tarierung und Kalibrierung
 
-* [ ] Commands über Queue
-* [ ] Tarieren
-* [ ] Kalibrierung
-* [ ] Kalibrierfaktor
-* [ ] Speicherung über StorageTask
-* [ ] `/config/scale.json`
-* [ ] Laden beim Start
-* [ ] Zurücksetzen
+* [x] Commands über Queue
+* [x] Tarieren
+* [x] Kalibrierung
+* [x] Kalibrierfaktor
+* [x] Speicherung über StorageTask
+* [x] `/config/scale.json`
+* [x] Laden beim Start
+* [x] Zurücksetzen
 
 ## 4.5 GUI-Anbindung
 

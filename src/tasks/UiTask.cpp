@@ -45,9 +45,11 @@ void uiTask(void* parameter) {
 
   xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_UI_READY);
 
-  const rtos::AppEvent event{rtos::AppEventType::UiCommunicationTest,
-                             config::kCommunicationTestRequestId, 0,
-                             "UiTask communication test", {}};
+  rtos::AppEvent event{};
+  event.type = rtos::AppEventType::UiCommunicationTest;
+  event.requestId = config::kCommunicationTestRequestId;
+  std::snprintf(event.text, sizeof(event.text),
+                "UiTask communication test");
   if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS) {
     rtos::logLine("UiTask: appEventQueue timeout/overflow");
   } else {

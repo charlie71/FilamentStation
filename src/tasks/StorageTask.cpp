@@ -94,6 +94,23 @@ void processLoadCommand(rtos::RtosContext& ctx,
   const services::JsonStorageResult result =
       services::JsonStorage::load(file, command.documentType, document);
   file.close();
+  if (result.ok() &&
+      command.documentType == rtos::StorageDocumentType::Scale) {
+    rtos::AppEvent event{};
+    event.type = rtos::AppEventType::StorageReadCompleted;
+    event.requestId = command.requestId;
+    event.value = static_cast<std::int32_t>(result.bytesProcessed);
+    event.scaleCalibrated = document["calibrated"].as<bool>();
+    event.scaleOffsetCounts = document["tareOffsetCounts"].as<std::int32_t>();
+    event.scaleFactorCountsPerGram =
+        document["factorCountsPerGram"].as<float>();
+    std::snprintf(event.text, sizeof(event.text),
+                  "Scale configuration loaded");
+    if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS) {
+      rtos::logLine("StorageTask: scale config event queue overflow");
+    }
+    return;
+  }
   sendStorageResult(ctx, command, rtos::AppEventType::StorageReadCompleted,
                     result, "JSON loaded and validated");
 }

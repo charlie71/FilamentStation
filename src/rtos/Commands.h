@@ -128,7 +128,13 @@ struct UiAction {
   std::int32_t value = 0;
   char text[64]{};
 };
-enum class ScaleCommandType : std::uint8_t { Tare, StartCalibration, ResetCalibration, RequestMeasurement };
+enum class ScaleCommandType : std::uint8_t {
+  Tare,
+  StartCalibration,
+  ResetCalibration,
+  RequestMeasurement,
+  ApplyCalibration,
+};
 enum class NfcCommandType : std::uint8_t { StartReading, StopReading, WriteSpoolTag };
 enum class StorageCommandType : std::uint8_t { LoadJson, SaveJson, DeleteJson, CreateBackup };
 enum class NetworkCommandType : std::uint8_t { Connect, Reconfigure, StartPortal, ClearCredentials };

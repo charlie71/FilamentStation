@@ -68,7 +68,14 @@ bool initializeHx711PinsAndInterrupt() {
   if (serviceResult != ESP_OK && serviceResult != ESP_ERR_INVALID_STATE) {
     return false;
   }
-  return gpio_isr_handler_add(dataPin, hx711DataReadyIsr, nullptr) == ESP_OK;
+  if (gpio_isr_handler_add(dataPin, hx711DataReadyIsr, nullptr) != ESP_OK) {
+    return false;
+  }
+  // DOUT may already be low before the edge handler is installed.
+  if (gpio_get_level(dataPin) == 0 && scaleTaskHandle != nullptr) {
+    xTaskNotifyGive(scaleTaskHandle);
+  }
+  return true;
 }
 
 bool readHx711Sample(std::int32_t& rawCounts) {
@@ -99,12 +106,110 @@ bool readHx711Sample(std::int32_t& rawCounts) {
 }
 
 bool sendScaleEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
-                    std::int32_t value, const char* text) {
+                    std::int32_t value, const char* text,
+                    std::uint32_t requestId = 0) {
   rtos::AppEvent event{};
   event.type = type;
+  event.requestId = requestId;
   event.value = value;
   std::snprintf(event.text, sizeof(event.text), "%s", text);
   return xQueueSend(ctx.appEventQueue, &event, 0) == pdPASS;
+}
+
+struct ScaleCalibrationState {
+  std::int32_t offsetCounts = 0;
+  float factorCountsPerGram = 1.0F;
+  bool calibrated = false;
+};
+
+bool sendCalibrationEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
+                          std::uint32_t requestId,
+                          const ScaleCalibrationState& calibration,
+                          const char* text) {
+  rtos::AppEvent event{};
+  event.type = type;
+  event.requestId = requestId;
+  event.scaleOffsetCounts = calibration.offsetCounts;
+  event.scaleFactorCountsPerGram = calibration.factorCountsPerGram;
+  event.scaleCalibrated = calibration.calibrated;
+  std::snprintf(event.text, sizeof(event.text), "%s", text);
+  return xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(100)) == pdPASS;
+}
+
+void processScaleCommand(rtos::RtosContext& ctx,
+                         const rtos::ScaleCommand& command,
+                         bool hasMeasurement, std::int32_t latestCounts,
+                         ScaleCalibrationState& calibration,
+                         services::ScaleFilter& filter) {
+  switch (command.type) {
+    case rtos::ScaleCommandType::Tare:
+      if (!hasMeasurement) {
+        sendScaleEvent(ctx, rtos::AppEventType::ScaleError, 0,
+                       "Tare failed: no measurement", command.requestId);
+        return;
+      }
+      calibration.offsetCounts = latestCounts;
+      filter.reset();
+      sendCalibrationEvent(ctx, rtos::AppEventType::ScaleTared,
+                           command.requestId, calibration, "Scale tared");
+      return;
+
+    case rtos::ScaleCommandType::StartCalibration: {
+      if (!hasMeasurement || command.referenceWeightGrams <= 0.0F) {
+        sendScaleEvent(ctx, rtos::AppEventType::ScaleError, 0,
+                       "Calibration requires measurement and reference weight",
+                       command.requestId);
+        return;
+      }
+      const std::int32_t delta = latestCounts - calibration.offsetCounts;
+      if (delta == 0) {
+        sendScaleEvent(ctx, rtos::AppEventType::ScaleError, 0,
+                       "Calibration delta is zero", command.requestId);
+        return;
+      }
+      calibration.factorCountsPerGram =
+          static_cast<float>(delta) / command.referenceWeightGrams;
+      calibration.calibrated = true;
+      filter.reset();
+      sendCalibrationEvent(ctx, rtos::AppEventType::ScaleCalibrated,
+                           command.requestId, calibration,
+                           "Scale calibrated");
+      return;
+    }
+
+    case rtos::ScaleCommandType::ResetCalibration:
+      calibration = {};
+      filter.reset();
+      sendCalibrationEvent(ctx, rtos::AppEventType::ScaleCalibrationReset,
+                           command.requestId, calibration,
+                           "Scale calibration reset");
+      return;
+
+    case rtos::ScaleCommandType::RequestMeasurement:
+      if (hasMeasurement) {
+        sendScaleEvent(ctx, rtos::AppEventType::ScaleMeasurement,
+                       latestCounts, "Scale measurement", command.requestId);
+      } else {
+        sendScaleEvent(ctx, rtos::AppEventType::ScaleError, 0,
+                       "Measurement unavailable", command.requestId);
+      }
+      return;
+
+    case rtos::ScaleCommandType::ApplyCalibration:
+      if (command.calibrated && command.factorCountsPerGram == 0.0F) {
+        sendScaleEvent(ctx, rtos::AppEventType::ScaleError, 0,
+                       "Stored calibration factor invalid", command.requestId);
+        return;
+      }
+      calibration.offsetCounts = command.offsetCounts;
+      calibration.factorCountsPerGram = command.factorCountsPerGram;
+      calibration.calibrated = command.calibrated;
+      filter.reset();
+      rtos::logLine(calibration.calibrated
+                        ? "ScaleTask: calibration loaded"
+                        : "ScaleTask: uncalibrated defaults loaded");
+      return;
+  }
 }
 
 }  // namespace
@@ -132,55 +237,70 @@ void scaleTask(void* parameter) {
       config::kScaleStabilityTimeMs,
   };
   services::ScaleFilter filter(filterConfig);
+  ScaleCalibrationState calibration;
   bool connected = false;
   bool connectionErrorReported = false;
   bool measurementOverflowReported = false;
+  bool hasMeasurement = false;
+  std::int32_t latestCounts = 0;
+  std::uint32_t lastMeasurementMs = millis();
   for (;;) {
-    const std::uint32_t notifications = ulTaskNotifyTake(
+    ulTaskNotifyTake(
         pdTRUE, pdMS_TO_TICKS(config::kHx711ReadyTimeoutMs));
-    if (notifications == 0) {
-      if (!connectionErrorReported) {
-        connected = false;
-        connectionErrorReported = true;
-        xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SCALE_READY);
-        if (!sendScaleEvent(ctx, rtos::AppEventType::ScaleError, 0,
-                            "HX711 not responding")) {
-          rtos::logLine("ScaleTask: appEventQueue overflow on ScaleError");
-        }
-      }
-      continue;
+
+    rtos::ScaleCommand command{};
+    while (xQueueReceive(ctx.scaleCommandQueue, &command, 0) == pdTRUE) {
+      processScaleCommand(ctx, command, hasMeasurement, latestCounts,
+                          calibration, filter);
     }
 
     std::int32_t rawCounts = 0;
-    if (!readHx711Sample(rawCounts)) continue;
-    const services::ScaleFilterResult filterResult =
-        filter.process(rawCounts, millis());
-    const std::int32_t filteredCounts = filterResult.value;
+    if (readHx711Sample(rawCounts)) {
+      const std::uint32_t measurementMs = millis();
+      lastMeasurementMs = measurementMs;
+      const services::ScaleFilterResult filterResult =
+          filter.process(rawCounts, measurementMs);
+      const std::int32_t filteredCounts = filterResult.value;
+      latestCounts = filteredCounts;
+      hasMeasurement = true;
 
-    if (!connected) {
-      connected = true;
-      connectionErrorReported = false;
-      xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_SCALE_READY);
-      if (!sendScaleEvent(ctx, rtos::AppEventType::ScaleReady, filteredCounts,
-                          "HX711 ready")) {
-        rtos::logLine("ScaleTask: appEventQueue overflow on ScaleReady");
+      if (!connected) {
+        connected = true;
+        connectionErrorReported = false;
+        xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_SCALE_READY);
+        if (!sendScaleEvent(ctx, rtos::AppEventType::ScaleReady, filteredCounts,
+                            "HX711 ready")) {
+          rtos::logLine("ScaleTask: appEventQueue overflow on ScaleReady");
+        }
+      }
+      if (!sendScaleEvent(ctx, rtos::AppEventType::ScaleMeasurement,
+                          filteredCounts, "HX711 raw measurement")) {
+        if (!measurementOverflowReported) {
+          measurementOverflowReported = true;
+          rtos::logLine("ScaleTask: appEventQueue overflow on ScaleMeasurement");
+        }
+      } else {
+        measurementOverflowReported = false;
+      }
+      if (filterResult.stabilityChanged) {
+        const rtos::AppEventType eventType =
+            filterResult.stable ? rtos::AppEventType::ScaleStable
+                                : rtos::AppEventType::ScaleUnstable;
+        sendScaleEvent(ctx, eventType, filteredCounts,
+                       filterResult.stable ? "Scale stable" : "Scale unstable");
       }
     }
-    if (!sendScaleEvent(ctx, rtos::AppEventType::ScaleMeasurement,
-                        filteredCounts, "HX711 raw measurement")) {
-      if (!measurementOverflowReported) {
-        measurementOverflowReported = true;
-        rtos::logLine("ScaleTask: appEventQueue overflow on ScaleMeasurement");
+
+    if (millis() - lastMeasurementMs >= config::kHx711ReadyTimeoutMs &&
+        !connectionErrorReported) {
+      connected = false;
+      connectionErrorReported = true;
+      hasMeasurement = false;
+      xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SCALE_READY);
+      if (!sendScaleEvent(ctx, rtos::AppEventType::ScaleError, 0,
+                          "HX711 not responding")) {
+        rtos::logLine("ScaleTask: appEventQueue overflow on ScaleError");
       }
-    } else {
-      measurementOverflowReported = false;
-    }
-    if (filterResult.stabilityChanged) {
-      const rtos::AppEventType eventType = filterResult.stable
-                                               ? rtos::AppEventType::ScaleStable
-                                               : rtos::AppEventType::ScaleUnstable;
-      sendScaleEvent(ctx, eventType, filteredCounts,
-                     filterResult.stable ? "Scale stable" : "Scale unstable");
     }
   }
 }

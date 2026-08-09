@@ -12,6 +12,9 @@ struct AppEvent {
   AppEventType type;
   std::uint32_t requestId;
   std::int32_t value;
+  std::int32_t scaleOffsetCounts;
+  float scaleFactorCountsPerGram;
+  bool scaleCalibrated;
   char text[64];
   UiAction uiAction;
 };
@@ -31,7 +34,14 @@ struct UiCommand {
   char text[96];
 };
 
-struct ScaleCommand { ScaleCommandType type; std::uint32_t requestId; float referenceWeightGrams; };
+struct ScaleCommand {
+  ScaleCommandType type;
+  std::uint32_t requestId;
+  float referenceWeightGrams;
+  std::int32_t offsetCounts;
+  float factorCountsPerGram;
+  bool calibrated;
+};
 struct NfcCommand { NfcCommandType type; std::uint32_t requestId; std::uint32_t spoolId; };
 
 enum class StorageDocumentType : std::uint8_t { Device, Network, Spoolman, Bambu, Ui, Scale, Nfc, Diagnostics };

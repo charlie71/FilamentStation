@@ -27,7 +27,7 @@ erkannt. Die ersten fachlichen Felder und Standardwerte sind:
 | `/config/network.json` | `network` | `hostname`: `"filamentstation"`, `dhcp`: `true` |
 | `/config/spoolman.json` | `spoolman` | `enabled`: `false`, `serverUrl`: `""` |
 | `/config/ui.json` | `ui` | `language`: `"de"`, `weightUnit`: `"g"` |
-| `/config/scale.json` | `scale` | `calibrated`: `false` |
+| `/config/scale.json` | `scale` | `calibrated`: `false`, `tareOffsetCounts`: `0`, `factorCountsPerGram`: `1.0` |
 | `/config/nfc.json` | `nfc` | `tagSchemaVersion`: `1` |
 
 `deviceName`, `hostname`, `language` und `weightUnit` muessen nichtleere
@@ -35,8 +35,13 @@ Zeichenketten sein. `dhcp`, `enabled` und `calibrated` sind boolesche Werte.
 Wenn Spoolman aktiviert wird, darf `serverUrl` nicht leer sein.
 `tagSchemaVersion` muss aktuell den Wert 1 besitzen.
 
-Die Scale-Datei enthaelt absichtlich noch keinen erfundenen Kalibrierfaktor oder
-GPIO-Wert. Spoolman enthaelt keine Zugangsdaten. Netzwerkparameter enthalten
+Die Scale-Datei speichert den zuletzt tarierten HX711-Rohwert und den bei der
+Referenzkalibrierung ermittelten Faktor in Counts pro Gramm. Bei
+`calibrated: true` darf der Faktor nicht null sein. Aeltere Scale-Dateien aus
+Schema-Version 1 erhalten beim Laden kompatible Standardwerte. GPIO-Werte
+bleiben weiterhin ausschliesslich in `BoardConfig.h`.
+
+Spoolman enthaelt keine Zugangsdaten. Netzwerkparameter enthalten
 kein WLAN-Passwort; dieses bleibt wie vorgesehen im ESP32-/WiFiManager-
 Systembereich. Weitere Felder werden erst zusammen mit der jeweiligen
 Funktionsphase definiert und validiert.

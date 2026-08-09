@@ -120,6 +120,25 @@ void test_bambu_defaults_support_multiple_printers() {
   TEST_ASSERT_EQUAL_UINT32(0, document["printers"].size());
 }
 
+void test_scale_defaults_and_calibration_validation() {
+  JsonDocument document;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::Ok),
+      static_cast<int>(JsonStorage::createDefault(
+          StorageDocumentType::Scale, document)));
+  TEST_ASSERT_FALSE(document["calibrated"].as<bool>());
+  TEST_ASSERT_EQUAL_INT32(0, document["tareOffsetCounts"].as<std::int32_t>());
+  TEST_ASSERT_FLOAT_WITHIN(
+      0.0001F, 1.0F, document["factorCountsPerGram"].as<float>());
+
+  document["calibrated"] = true;
+  document["factorCountsPerGram"] = 0.0F;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Scale)));
+}
+
 void test_document_type_mismatch_is_rejected() {
   JsonDocument document;
   JsonStorage::createDefault(StorageDocumentType::Device, document);
@@ -146,6 +165,7 @@ void setup() {
   RUN_TEST(test_valid_document_serializes);
   RUN_TEST(test_initial_document_defaults_validate);
   RUN_TEST(test_bambu_defaults_support_multiple_printers);
+  RUN_TEST(test_scale_defaults_and_calibration_validation);
   RUN_TEST(test_document_type_mismatch_is_rejected);
   UNITY_END();
 }

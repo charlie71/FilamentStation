@@ -15,6 +15,7 @@ bool uiStartupReady = false;
 bool storageStartupReady = false;
 bool startupNavigationSent = false;
 rtos::UiOverlayKind pendingOverlay = rtos::UiOverlayKind::None;
+constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;
 
 struct SpoolmanDraft {
   char name[32] = "Werkstatt";
@@ -166,6 +167,59 @@ bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
   }
   rtos::logLine(failureMessage);
   return false;
+}
+
+bool sendScaleCommand(rtos::RtosContext& ctx,
+                      const rtos::ScaleCommand& command) {
+  if (xQueueSend(ctx.scaleCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
+      pdPASS) {
+    rtos::logLine("AppTask: scaleCommandQueue timeout/overflow");
+    return false;
+  }
+  xTaskNotifyGive(ctx.scaleTask);
+  return true;
+}
+
+bool requestScaleConfiguration(rtos::RtosContext& ctx) {
+  rtos::StorageCommand command{};
+  command.type = rtos::StorageCommandType::LoadJson;
+  command.requestId = kScaleLoadRequestId;
+  command.documentType = rtos::StorageDocumentType::Scale;
+  std::snprintf(command.path, sizeof(command.path), "/config/scale.json");
+  if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
+      pdPASS) {
+    rtos::logLine("AppTask: scale config load queue timeout/overflow");
+    return false;
+  }
+  return true;
+}
+
+bool persistScaleConfiguration(rtos::RtosContext& ctx,
+                               const rtos::AppEvent& event) {
+  rtos::StorageCommand command{};
+  command.type = rtos::StorageCommandType::SaveJson;
+  command.requestId = event.requestId;
+  command.documentType = rtos::StorageDocumentType::Scale;
+  std::snprintf(command.path, sizeof(command.path), "/config/scale.json");
+  const int length = std::snprintf(
+      command.json, sizeof(command.json),
+      "{\"schemaVersion\":1,\"updatedAt\":\"1970-01-01T00:00:00Z\","
+      "\"documentType\":\"scale\",\"calibrated\":%s,"
+      "\"tareOffsetCounts\":%ld,\"factorCountsPerGram\":%.9g}",
+      event.scaleCalibrated ? "true" : "false",
+      static_cast<long>(event.scaleOffsetCounts),
+      static_cast<double>(event.scaleFactorCountsPerGram));
+  if (length <= 0 || static_cast<std::size_t>(length) >= sizeof(command.json)) {
+    rtos::logLine("AppTask: scale configuration serialization failed");
+    return false;
+  }
+  command.jsonLength = static_cast<std::uint16_t>(length);
+  if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
+      pdPASS) {
+    rtos::logLine("AppTask: scale config save queue timeout/overflow");
+    return false;
+  }
+  return true;
 }
 
 void sendOverlay(rtos::RtosContext& ctx, rtos::UiCommandType type,
@@ -342,9 +396,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
 
     case rtos::UiActionType::StartWifiPortal:
     case rtos::UiActionType::ResetWifiCredentials:
-    case rtos::UiActionType::TareScale:
-    case rtos::UiActionType::StartScaleCalibration:
-    case rtos::UiActionType::ResetScaleCalibration:
     case rtos::UiActionType::PrepareRestart:
     case rtos::UiActionType::RefreshDiagnostics:
     case rtos::UiActionType::CheckFirmwareUpdate: {
@@ -369,14 +420,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Der Neustart wird erst nach Best\xC3\xA4tigung ausgel\xC3\xB6st (Mock)." );
         return;
       }
-      if (action.type == rtos::UiActionType::TareScale ||
-          action.type == rtos::UiActionType::StartScaleCalibration) {
-        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                    rtos::UiOverlayKind::WeightStabilizing,
-                    action.requestId, "Gewicht stabilisieren",
-                    "Bitte Spule ruhig auf der Waage stehen lassen (Mock)." );
-        return;
-      }
       command.type = rtos::UiCommandType::ShowToast;
       command.value = 300 + static_cast<std::int32_t>(action.type);
       const char* text = "Mock-Aktion vorgemerkt";
@@ -390,6 +433,23 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       else if (action.type == rtos::UiActionType::CheckFirmwareUpdate) text = "Update-Prüfung nicht ausgeführt (Mock)";
       std::snprintf(command.text, sizeof(command.text), "%s", text);
       sendUiCommand(ctx, command, "AppTask: settings mock action queue overflow");
+      return;
+    }
+
+    case rtos::UiActionType::TareScale:
+    case rtos::UiActionType::StartScaleCalibration:
+    case rtos::UiActionType::ResetScaleCalibration: {
+      rtos::ScaleCommand scaleCommand{};
+      scaleCommand.requestId = action.requestId;
+      if (action.type == rtos::UiActionType::TareScale) {
+        scaleCommand.type = rtos::ScaleCommandType::Tare;
+      } else if (action.type == rtos::UiActionType::StartScaleCalibration) {
+        scaleCommand.type = rtos::ScaleCommandType::StartCalibration;
+        scaleCommand.referenceWeightGrams = static_cast<float>(action.value);
+      } else {
+        scaleCommand.type = rtos::ScaleCommandType::ResetCalibration;
+      }
+      sendScaleCommand(ctx, scaleCommand);
       return;
     }
 
@@ -639,6 +699,10 @@ void appTask(void* parameter) {
                event.type == rtos::AppEventType::ScaleUnstable) {
       // Stability is part of the application state; UI weight binding follows
       // in phase 4.5 after calibration provides meaningful gram values.
+    } else if (event.type == rtos::AppEventType::ScaleTared ||
+               event.type == rtos::AppEventType::ScaleCalibrated ||
+               event.type == rtos::AppEventType::ScaleCalibrationReset) {
+      persistScaleConfiguration(ctx, event);
     } else if (event.type == rtos::AppEventType::ScaleReady ||
                event.type == rtos::AppEventType::ScaleError) {
       rtos::UiCommand status{};
@@ -670,6 +734,16 @@ void appTask(void* parameter) {
                event.type == rtos::AppEventType::StorageReadCompleted ||
                event.type == rtos::AppEventType::StorageWriteCompleted ||
                event.type == rtos::AppEventType::StorageRequestError) {
+      if (event.type == rtos::AppEventType::StorageReadCompleted &&
+          event.requestId == kScaleLoadRequestId) {
+        rtos::ScaleCommand scaleCommand{};
+        scaleCommand.type = rtos::ScaleCommandType::ApplyCalibration;
+        scaleCommand.requestId = event.requestId;
+        scaleCommand.offsetCounts = event.scaleOffsetCounts;
+        scaleCommand.factorCountsPerGram = event.scaleFactorCountsPerGram;
+        scaleCommand.calibrated = event.scaleCalibrated;
+        sendScaleCommand(ctx, scaleCommand);
+      }
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
       status.requestId = event.requestId;
@@ -679,6 +753,7 @@ void appTask(void* parameter) {
                     "AppTask: storage status UI queue timeout/overflow");
       if (event.type == rtos::AppEventType::SdMounted) {
         storageStartupReady = true;
+        requestScaleConfiguration(ctx);
         showHomeWhenStartupReady(ctx);
       }
     }
