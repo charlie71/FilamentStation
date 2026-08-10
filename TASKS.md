@@ -569,10 +569,10 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 5.2 Gemeinsamer Bus
 
-* [ ] Touch-/PN532-Bus prüfen
-* [ ] I²C-Mutex falls nötig
-* [ ] maximale Haltezeit
-* [ ] Deadlocks vermeiden
+* [x] Touch-/PN532-Bus prüfen
+* [x] I²C-Mutex falls nötig
+* [x] maximale Haltezeit
+* [x] Deadlocks vermeiden
 
 ## 5.3 NFC lesen und schreiben
 

@@ -32,6 +32,17 @@ bool initializePn532Uart(QueueHandle_t& uartEventQueue) {
                 "PN532 UART TX must be an output-capable GPIO");
   static_assert(GPIO_IS_VALID_GPIO(rxPin),
                 "PN532 UART RX must be a valid GPIO");
+  static_assert(txPin != rxPin, "PN532 UART TX and RX must differ");
+  static_assert(config::kPn532UartTxPin != config::kTouchSdaPin &&
+                    config::kPn532UartTxPin != config::kTouchSclPin &&
+                    config::kPn532UartRxPin != config::kTouchSdaPin &&
+                    config::kPn532UartRxPin != config::kTouchSclPin,
+                "PN532 UART must not use the touch I2C bus pins");
+  static_assert(config::kPn532UartTxPin != config::kHx711DataPin &&
+                    config::kPn532UartTxPin != config::kHx711ClockPin &&
+                    config::kPn532UartRxPin != config::kHx711DataPin &&
+                    config::kPn532UartRxPin != config::kHx711ClockPin,
+                "PN532 UART must not use the HX711 pins");
 
   const uart_config_t uartConfig{
       static_cast<int>(config::kPn532UartBaudRate),

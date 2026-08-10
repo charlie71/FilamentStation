@@ -44,3 +44,28 @@ waehrend eine Task Notification nicht gemeinsam mit einer Queue blockierend
 abgewartet werden kann. Zudem muss LVGL den Touchzustand bis zum Loslassen
 weiter lesen. Eine Queue-Set- oder IRQ-Loesung wird erst sinnvoll, wenn das
 exakte elektrische Interruptverhalten auf der Zielhardware vermessen ist.
+
+## Touch- und PN532-Busse
+
+Touch und PN532 teilen keinen Bus:
+
+* Der FT6336U wird ausschliesslich vom UiTask ueber I2C auf GPIO6/GPIO5
+  angesprochen.
+* Der PN532 wird ausschliesslich vom NfcTask ueber UART1 auf GPIO12/GPIO13
+  angesprochen.
+
+Deshalb wird fuer Phase 5.2 bewusst kein gemeinsamer I2C-Mutex angelegt. Der
+PN532 kann den Touch-Bus weder blockieren noch dessen Taktfrequenz oder
+Transaktionen beeinflussen. Umgekehrt greift der UiTask nicht auf UART1 zu.
+Compile-Time-Pruefungen im NfcTask verhindern eine versehentliche Belegung der
+Touch-I2C- oder HX711-Pins durch den PN532-UART.
+
+Da keine gemeinsame Bussperre existiert, betraegt deren maximale Haltezeit
+null und es gibt keine Lock-Reihenfolge zwischen UiTask und NfcTask. Der
+NfcTask wartet blockierend auf einem Queue Set aus Command-Queue und UART-
+Event-Queue. Er haelt dabei keinen Mutex. Damit kann zwischen Touch- und
+NFC-Verarbeitung kein Bus-Mutex-Deadlock entstehen.
+
+Falls der PN532 spaeter von UART auf I2C umgestellt wird, ist diese Entscheidung
+ungueltig: Dann muessen Busbesitz, maximale Haltezeit und Lock-Reihenfolge vor
+der Umstellung neu festgelegt und getestet werden.
