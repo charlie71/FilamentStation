@@ -541,11 +541,11 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 4.8 Tests
 
-* [ ] Filtertest
-* [ ] Stabilitätstest
-* [ ] Ausreißertest
-* [ ] Kalibrierberechnung
-* [ ] simulierte Interruptfolge
+* [x] Filtertest
+* [x] Stabilitätstest
+* [x] Ausreißertest
+* [x] Kalibrierberechnung
+* [x] simulierte Interruptfolge
 
 ### Abnahmekriterien Phase 4
 

@@ -2,7 +2,11 @@
 
 #include <algorithm>
 
-namespace filament_station::services {
+namespace filament_station {
+namespace services {
+
+constexpr std::size_t ScaleFilter::kMaximumMovingAverageWindow;
+
 namespace {
 
 std::int64_t absoluteDifference(std::int32_t left, std::int32_t right) {
@@ -20,9 +24,9 @@ std::int32_t roundToInt(float value) {
 
 ScaleFilter::ScaleFilter(const ScaleFilterConfig& config) : config_(config) {
   config_.movingAverageWindow =
-      std::clamp(config_.movingAverageWindow, std::size_t{1},
-                 kMaximumMovingAverageWindow);
-  config_.lowPassAlpha = std::clamp(config_.lowPassAlpha, 0.0F, 1.0F);
+      std::min(std::max(config_.movingAverageWindow, std::size_t{1}),
+               kMaximumMovingAverageWindow);
+  config_.lowPassAlpha = std::min(std::max(config_.lowPassAlpha, 0.0F), 1.0F);
   config_.outlierConfirmationSamples =
       std::max<std::uint8_t>(config_.outlierConfirmationSamples, 1);
   config_.outlierThreshold = std::max(config_.outlierThreshold, 0);
@@ -163,4 +167,5 @@ ScaleFilterResult ScaleFilter::process(std::int32_t rawCounts,
   return updateStability(filtered, timestampMs, false);
 }
 
-}  // namespace filament_station::services
+}  // namespace services
+}  // namespace filament_station

@@ -13,6 +13,7 @@
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/ScaleFilter.h"
+#include "services/ScaleMath.h"
 
 namespace filament_station::tasks {
 
@@ -161,14 +162,15 @@ void processScaleCommand(rtos::RtosContext& ctx,
                        command.requestId);
         return;
       }
-      const std::int32_t delta = latestCounts - calibration.offsetCounts;
-      if (delta == 0) {
+      float factorCountsPerGram = 0.0F;
+      if (!services::calculateScaleFactor(
+              latestCounts, calibration.offsetCounts,
+              command.referenceWeightGrams, factorCountsPerGram)) {
         sendScaleEvent(ctx, rtos::AppEventType::ScaleError, 0,
-                       "Calibration delta is zero", command.requestId);
+                       "Calibration values invalid", command.requestId);
         return;
       }
-      calibration.factorCountsPerGram =
-          static_cast<float>(delta) / command.referenceWeightGrams;
+      calibration.factorCountsPerGram = factorCountsPerGram;
       calibration.calibrated = true;
       filter.reset();
       sendCalibrationEvent(ctx, rtos::AppEventType::ScaleCalibrated,

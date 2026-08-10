@@ -4,7 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace filament_station::services {
+namespace filament_station {
+namespace services {
 
 struct ScaleFilterConfig {
   std::size_t movingAverageWindow;
@@ -58,4 +59,5 @@ class ScaleFilter {
   bool stable_ = false;
 };
 
-}  // namespace filament_station::services
+}  // namespace services
+}  // namespace filament_station
