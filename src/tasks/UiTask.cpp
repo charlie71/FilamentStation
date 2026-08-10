@@ -71,12 +71,16 @@ void uiTask(void* parameter) {
                       waitTicks) == pdTRUE) {
       do {
         ui::processUiCommand(command);
-        char line[128];
-        std::snprintf(
-            line, sizeof(line),
-            "UiTask: response received (requestId=%lu): %s",
-            static_cast<unsigned long>(command.requestId), command.text);
-        rtos::logLine(line);
+        // Continuous weight updates are expected and would otherwise flood
+        // USB-CDC. User-visible responses and explicit errors remain logged.
+        if (command.type != rtos::UiCommandType::UpdateWeight) {
+          char line[128];
+          std::snprintf(
+              line, sizeof(line),
+              "UiTask: response received (requestId=%lu): %s",
+              static_cast<unsigned long>(command.requestId), command.text);
+          rtos::logLine(line);
+        }
       } while (xQueueReceive(ctx.uiCommandQueue, &command, 0) == pdTRUE);
     }
   }

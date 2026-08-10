@@ -509,15 +509,15 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 4.5 GUI-Anbindung
 
-* [ ] WeightDisplay mit ScaleTask
-* [ ] stabil anzeigen
-* [ ] instabil anzeigen
-* [ ] Fehler anzeigen
-* [ ] Quick Weight freischalten
-* [ ] Advanced Weight mit realen Daten
-* [ ] Scale-Settings mit realen Daten
-* [ ] Tarierworkflow
-* [ ] Kalibrierworkflow
+* [x] WeightDisplay mit ScaleTask
+* [x] stabil anzeigen
+* [x] instabil anzeigen
+* [x] Fehler anzeigen
+* [x] Quick Weight freischalten
+* [x] Advanced Weight mit realen Daten
+* [x] Scale-Settings mit realen Daten
+* [x] Tarierworkflow
+* [x] Kalibrierworkflow
 
 ## 4.6 Quick Weight
 

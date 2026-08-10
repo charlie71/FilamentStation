@@ -7760,7 +7760,7 @@
                 "objID": "6e390133-d7f0-806c-85a8-fab742034724"
               },
               "groupIndex": 0,
-              "text": "Gewicht: 1247 g | stabil",
+              "text": "Gewicht: -- g | wartet auf Messwert",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -7798,7 +7798,7 @@
                 "objID": "05870cc5-51ae-bfcd-d0a6-4b26e8f46fef"
               },
               "groupIndex": 0,
-              "text": "Kalibrierung: Mock bereit",
+              "text": "Kalibrierung: wird geladen",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true

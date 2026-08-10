@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include "config/ScaleConfig.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 
@@ -16,6 +17,18 @@ bool storageStartupReady = false;
 bool startupNavigationSent = false;
 rtos::UiOverlayKind pendingOverlay = rtos::UiOverlayKind::None;
 constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;
+std::int32_t scaleCounts = 0;
+std::int32_t scaleOffsetCounts = 0;
+float scaleFactorCountsPerGram = 1.0F;
+bool scaleCalibrated = false;
+bool scaleStable = false;
+bool scaleError = true;
+
+float scaleWeightGrams() {
+  if (!scaleCalibrated || scaleFactorCountsPerGram == 0.0F) return 0.0F;
+  return static_cast<float>(scaleCounts - scaleOffsetCounts) /
+         scaleFactorCountsPerGram;
+}
 
 struct SpoolmanDraft {
   char name[32] = "Werkstatt";
@@ -178,6 +191,36 @@ bool sendScaleCommand(rtos::RtosContext& ctx,
   }
   xTaskNotifyGive(ctx.scaleTask);
   return true;
+}
+
+void sendScaleUiState(rtos::RtosContext& ctx, std::uint32_t requestId = 0) {
+  static TickType_t lastUpdateTick = 0;
+  static std::int32_t lastFlags = -1;
+  const std::int32_t flags = (scaleStable ? 1 : 0) |
+                             (scaleCalibrated ? 2 : 0) |
+                             (scaleError ? 4 : 0);
+  const TickType_t now = xTaskGetTickCount();
+  const TickType_t minimumInterval =
+      pdMS_TO_TICKS(config::kScaleUiUpdateIntervalMs);
+  const bool stateChanged = flags != lastFlags;
+  if (requestId == 0 && !stateChanged &&
+      static_cast<TickType_t>(now - lastUpdateTick) < minimumInterval) {
+    return;
+  }
+
+  rtos::UiCommand command{};
+  command.type = rtos::UiCommandType::UpdateWeight;
+  command.requestId = requestId;
+  command.weightGrams = scaleWeightGrams();
+  command.value = flags;
+  std::snprintf(command.text, sizeof(command.text), "%s",
+                scaleError ? "Waagenfehler"
+                           : (!scaleCalibrated ? "nicht kalibriert"
+                                               : (scaleStable ? "stabil" : "instabil")));
+  if (sendUiCommand(ctx, command, "AppTask: weight UI queue overflow")) {
+    lastUpdateTick = now;
+    lastFlags = flags;
+  }
 }
 
 bool requestScaleConfiguration(rtos::RtosContext& ctx) {
@@ -425,9 +468,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       const char* text = "Mock-Aktion vorgemerkt";
       if (action.type == rtos::UiActionType::StartWifiPortal) text = "WLAN-Konfiguration vorgemerkt";
       else if (action.type == rtos::UiActionType::ResetWifiCredentials) text = "WLAN-Reset nicht ausgeführt (Mock)";
-      else if (action.type == rtos::UiActionType::TareScale) text = "Tarieren vorgemerkt (Mock)";
-      else if (action.type == rtos::UiActionType::StartScaleCalibration) text = "Kalibrierung vorgemerkt (Mock)";
-      else if (action.type == rtos::UiActionType::ResetScaleCalibration) text = "Kalibrier-Reset nicht ausgeführt (Mock)";
       else if (action.type == rtos::UiActionType::PrepareRestart) text = "Neustart nicht ausgeführt (Mock)";
       else if (action.type == rtos::UiActionType::RefreshDiagnostics) text = "Diagnose aktualisiert";
       else if (action.type == rtos::UiActionType::CheckFirmwareUpdate) text = "Update-Prüfung nicht ausgeführt (Mock)";
@@ -638,10 +678,33 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::SelectSpool:
       if (action.type == rtos::UiActionType::QuickWeight ||
           action.type == rtos::UiActionType::AdvancedWeight) {
-        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                    rtos::UiOverlayKind::WeightStabilizing,
-                    action.requestId, "Gewicht stabilisieren",
-                    "Messwert wird auf Stabilit\xC3\xA4t gepr\xC3\xBC" "ft (Mock)." );
+        if (scaleError) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Waage nicht bereit",
+                      "Der HX711 liefert derzeit keine Messwerte.");
+        } else if (!scaleCalibrated) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Kalibrierung erforderlich",
+                      "Die Waage muss vor dem Wiegen kalibriert werden.");
+        } else if (!scaleStable) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                      rtos::UiOverlayKind::WeightStabilizing,
+                      action.requestId, "Gewicht stabilisieren",
+                      "Der reale Messwert ist noch instabil.");
+        } else {
+          char measurement[96];
+          std::snprintf(measurement, sizeof(measurement),
+                        "%s: %.1f g\nMesswert stabil.",
+                        action.type == rtos::UiActionType::QuickWeight
+                            ? "Quick Weight"
+                            : "Advanced Weight",
+                        static_cast<double>(scaleWeightGrams()));
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Success, action.requestId,
+                      "Waagenmessung", measurement);
+        }
         return;
       }
       if (action.type == rtos::UiActionType::LinkTag) {
@@ -693,24 +756,63 @@ void appTask(void* parameter) {
     if (event.type == rtos::AppEventType::UiAction) {
       handleUiAction(ctx, event.uiAction);
     } else if (event.type == rtos::AppEventType::ScaleMeasurement) {
-      // Raw/filtered counts are intentionally consumed without UI conversion.
-      // Calibration to grams and GUI binding belong to later phases.
+      scaleCounts = event.value;
+      scaleError = false;
+      sendScaleUiState(ctx, event.requestId);
     } else if (event.type == rtos::AppEventType::ScaleStable ||
                event.type == rtos::AppEventType::ScaleUnstable) {
-      // Stability is part of the application state; UI weight binding follows
-      // in phase 4.5 after calibration provides meaningful gram values.
+      scaleCounts = event.value;
+      scaleStable = event.type == rtos::AppEventType::ScaleStable;
+      scaleError = false;
+      sendScaleUiState(ctx, event.requestId);
     } else if (event.type == rtos::AppEventType::ScaleTared ||
                event.type == rtos::AppEventType::ScaleCalibrated ||
                event.type == rtos::AppEventType::ScaleCalibrationReset) {
+      scaleOffsetCounts = event.scaleOffsetCounts;
+      scaleFactorCountsPerGram = event.scaleFactorCountsPerGram;
+      scaleCalibrated = event.scaleCalibrated;
+      scaleStable = false;
+      scaleError = false;
       persistScaleConfiguration(ctx, event);
+      sendScaleUiState(ctx, event.requestId);
+      rtos::UiCommand result{};
+      result.type = rtos::UiCommandType::ShowToast;
+      result.requestId = event.requestId;
+      result.value = 300 + static_cast<std::int32_t>(
+          event.type == rtos::AppEventType::ScaleTared
+              ? rtos::UiActionType::TareScale
+              : (event.type == rtos::AppEventType::ScaleCalibrated
+                     ? rtos::UiActionType::StartScaleCalibration
+                     : rtos::UiActionType::ResetScaleCalibration));
+      std::snprintf(result.text, sizeof(result.text), "%s",
+                    event.type == rtos::AppEventType::ScaleTared
+                        ? "Waage tariert"
+                        : (event.type == rtos::AppEventType::ScaleCalibrated
+                               ? "Kalibrierung gespeichert"
+                               : "Kalibrierung zur\xC3\xBC" "ckgesetzt"));
+      sendUiCommand(ctx, result, "AppTask: scale result UI queue overflow");
     } else if (event.type == rtos::AppEventType::ScaleReady ||
                event.type == rtos::AppEventType::ScaleError) {
+      if (event.type == rtos::AppEventType::ScaleReady) {
+        scaleCounts = event.value;
+        scaleError = false;
+      } else {
+        scaleError = true;
+        scaleStable = false;
+      }
+      sendScaleUiState(ctx, event.requestId);
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
       status.requestId = event.requestId;
       std::snprintf(status.title, sizeof(status.title), "Scale");
       std::snprintf(status.text, sizeof(status.text), "%s", event.text);
       sendUiCommand(ctx, status, "AppTask: scale status UI queue overflow");
+      if (event.type == rtos::AppEventType::ScaleError &&
+          event.requestId != 0) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Waagenaktion fehlgeschlagen", event.text);
+      }
     } else if (event.type == rtos::AppEventType::UiCommunicationTest) {
       uiStartupReady = true;
       rtos::UiCommand response{};
@@ -736,6 +838,9 @@ void appTask(void* parameter) {
                event.type == rtos::AppEventType::StorageRequestError) {
       if (event.type == rtos::AppEventType::StorageReadCompleted &&
           event.requestId == kScaleLoadRequestId) {
+        scaleOffsetCounts = event.scaleOffsetCounts;
+        scaleFactorCountsPerGram = event.scaleFactorCountsPerGram;
+        scaleCalibrated = event.scaleCalibrated;
         rtos::ScaleCommand scaleCommand{};
         scaleCommand.type = rtos::ScaleCommandType::ApplyCalibration;
         scaleCommand.requestId = event.requestId;
@@ -743,6 +848,7 @@ void appTask(void* parameter) {
         scaleCommand.factorCountsPerGram = event.scaleFactorCountsPerGram;
         scaleCommand.calibrated = event.scaleCalibrated;
         sendScaleCommand(ctx, scaleCommand);
+        sendScaleUiState(ctx, event.requestId);
       }
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;

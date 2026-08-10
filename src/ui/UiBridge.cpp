@@ -6,6 +6,7 @@
 #include <soc/soc_memory_types.h>
 
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <cstdint>
 #include <cstdio>
@@ -89,6 +90,10 @@ constexpr const char* kKeyboardNumberMap[] = {
     "1", "2", "3", "DEL", "\n", "4", "5", "6", "CANCEL", "\n",
     "7", "8", "9", "OK", "\n", "ABC", "0", ".", "<", ">", ""};
 std::uint32_t nextRequestId = 100;
+models::UiWeightState liveWeight{0.0F, 0.0F, false, false, true,
+                                 "wartet auf Messwert"};
+lv_obj_t* calibrationEditor = nullptr;
+lv_obj_t* calibrationKeyboard = nullptr;
 constexpr std::size_t kHomeColorStripGroups = 6;
 std::array<std::array<lv_obj_t*, models::kMaximumFilamentColors>,
            kHomeColorStripGroups>
@@ -109,6 +114,7 @@ void sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
                 std::uint8_t amsId = 0, std::uint8_t trayId = 0,
                 std::int32_t value = 0, rtos::SpoolId spoolId = 0,
                 const char* text = nullptr);
+void updateWeightDisplays();
 
 void overlayActionClicked(lv_event_t* event) {
   const auto action = static_cast<rtos::UiActionType>(
@@ -564,6 +570,69 @@ void spoolmanActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   sendAction(type, currentPrinterId);
+}
+
+void closeCalibrationEditor() {
+  if (calibrationKeyboard != nullptr) {
+    lv_obj_delete_async(calibrationKeyboard);
+    calibrationKeyboard = nullptr;
+  }
+  if (calibrationEditor != nullptr) {
+    lv_obj_delete_async(calibrationEditor);
+    calibrationEditor = nullptr;
+  }
+}
+
+void calibrationKeyboardEvent(lv_event_t* event) {
+  if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED ||
+      calibrationEditor == nullptr || calibrationKeyboard == nullptr) return;
+  const std::uint32_t button =
+      lv_buttonmatrix_get_selected_button(calibrationKeyboard);
+  if (button == LV_BUTTONMATRIX_BUTTON_NONE) return;
+  const char* key = lv_buttonmatrix_get_button_text(calibrationKeyboard, button);
+  if (key == nullptr) return;
+  if (std::strcmp(key, "OK") == 0) {
+    char* end = nullptr;
+    const long grams =
+        std::strtol(lv_textarea_get_text(calibrationEditor), &end, 10);
+    if (end != nullptr && *end == '\0' && grams > 0 && grams <= 100000) {
+      sendAction(rtos::UiActionType::StartScaleCalibration, currentPrinterId,
+                 0, 0, static_cast<std::int32_t>(grams));
+      closeCalibrationEditor();
+    } else {
+      lv_label_set_text(objects.scale_settings_calibration,
+                        "Referenzgewicht: 1 bis 100000 g eingeben");
+    }
+  } else if (std::strcmp(key, "CANCEL") == 0) {
+    closeCalibrationEditor();
+  } else if (std::strcmp(key, "DEL") == 0) {
+    lv_textarea_delete_char(calibrationEditor);
+  } else if (key[1] == '\0' && key[0] >= '0' && key[0] <= '9') {
+    lv_textarea_add_text(calibrationEditor, key);
+  }
+}
+
+void calibrationClicked(lv_event_t*) {
+  closeCalibrationEditor();
+  calibrationEditor = lv_textarea_create(objects.scr_settings_scale);
+  lv_obj_set_pos(calibrationEditor, 8, 76);
+  lv_obj_set_size(calibrationEditor, 464, 44);
+  lv_textarea_set_one_line(calibrationEditor, true);
+  lv_textarea_set_max_length(calibrationEditor, 6);
+  lv_textarea_set_placeholder_text(calibrationEditor, "Referenzgewicht in g");
+  lv_obj_set_style_text_font(calibrationEditor, &ui_font_ui_german16,
+                             LV_PART_MAIN);
+  calibrationKeyboard = lv_buttonmatrix_create(objects.scr_settings_scale);
+  lv_obj_set_pos(calibrationKeyboard, 8, 124);
+  lv_obj_set_size(calibrationKeyboard, 464, 132);
+  lv_buttonmatrix_set_map(calibrationKeyboard, kKeyboardNumberMap);
+  lv_obj_set_style_pad_all(calibrationKeyboard, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_row(calibrationKeyboard, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(calibrationKeyboard, 2, LV_PART_MAIN);
+  lv_obj_add_event_cb(calibrationKeyboard, calibrationKeyboardEvent,
+                      LV_EVENT_VALUE_CHANGED, nullptr);
+  lv_obj_move_foreground(calibrationEditor);
+  lv_obj_move_foreground(calibrationKeyboard);
 }
 
 PrinterUiEntry* printerEntry(rtos::PrinterId id) {
@@ -1081,8 +1150,7 @@ void bindGeneratedWidgets() {
   bindClick(objects.scale_settings_settings, settingsClicked);
   bindClick(objects.scale_settings_tare, spoolmanActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::TareScale));
-  bindClick(objects.scale_settings_calibrate, spoolmanActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::StartScaleCalibration));
+  bindClick(objects.scale_settings_calibrate, calibrationClicked);
   bindClick(objects.scale_settings_reset, spoolmanActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::ResetScaleCalibration));
   bindClick(objects.scale_settings_back, backClicked);
@@ -1339,11 +1407,7 @@ void updateHomeContent() {
   }
   setButtonText(objects.home_staging, stagingText);
 
-  const auto& weight = models::mock::weight();
-  char weightText[64];
-  std::snprintf(weightText, sizeof(weightText), "Waage\n%.0f g\n%s",
-                static_cast<double>(weight.grossWeightGrams), weight.status);
-  setButtonText(objects.home_weight, weightText);
+  updateWeightDisplays();
 
   const auto& settings = models::mock::settings();
   char statusText[96];
@@ -1352,6 +1416,42 @@ void updateHomeContent() {
                 connectionText(settings.spoolmanState),
                 connectionText(settings.wifiState));
   setButtonText(objects.home_status, statusText);
+}
+
+void updateWeightDisplays() {
+  const models::UiWeightState& weight = liveWeight;
+  char text[96];
+  if (weight.error) {
+    std::snprintf(text, sizeof(text), "Waage\nFehler\n%s", weight.status);
+    setButtonColors(objects.home_weight, 0xC62828);
+  } else if (!weight.calibrated) {
+    std::snprintf(text, sizeof(text), "Waage\n-- g\nnicht kalibriert");
+    setButtonColors(objects.home_weight, 0xF9A825);
+  } else {
+    std::snprintf(text, sizeof(text), "Waage\n%.1f g\n%s",
+                  static_cast<double>(weight.grossWeightGrams), weight.status);
+    setButtonColors(objects.home_weight, weight.stable ? 0x2E7D32 : 0xF9A825);
+  }
+  setButtonText(objects.home_weight, text);
+
+  if (weight.error) {
+    std::snprintf(text, sizeof(text), "Gewicht: Fehler - %s", weight.status);
+  } else if (!weight.calibrated) {
+    std::snprintf(text, sizeof(text), "Gewicht: -- g | nicht kalibriert");
+  } else {
+    std::snprintf(text, sizeof(text), "Gewicht: %.1f g | %s",
+                  static_cast<double>(weight.grossWeightGrams), weight.status);
+  }
+  lv_label_set_text(objects.scale_settings_weight, text);
+  lv_obj_set_style_text_color(objects.scale_settings_weight,
+                              lv_color_hex(weight.error ? 0xC62828
+                                                        : (weight.stable
+                                                               ? 0x2E7D32
+                                                               : 0xB26A00)),
+                              LV_PART_MAIN);
+  std::snprintf(text, sizeof(text), "Kalibrierung: %s",
+                weight.calibrated ? "geladen" : "nicht vorhanden");
+  lv_label_set_text(objects.scale_settings_calibration, text);
 }
 
 void updateStagingContent() {
@@ -1740,6 +1840,8 @@ void showScreen(rtos::UiScreenId screenId) {
       loadScreen(SCREEN_ID_SCR_SETTINGS_WIFI);
       break;
     case rtos::UiScreenId::SettingsScale:
+      closeCalibrationEditor();
+      updateWeightDisplays();
       loadScreen(SCREEN_ID_SCR_SETTINGS_SCALE);
       break;
     case rtos::UiScreenId::SettingsDevice:
@@ -1882,6 +1984,16 @@ void processUiCommand(const rtos::UiCommand& command) {
         selectedTrayTab = command.value == 4 ? 1 : 0;
         updateTrayDetails();
       }
+      break;
+    case rtos::UiCommandType::UpdateWeight:
+      liveWeight.grossWeightGrams = command.weightGrams;
+      liveWeight.netWeightGrams = command.weightGrams;
+      liveWeight.stable = (command.value & 1) != 0;
+      liveWeight.calibrated = (command.value & 2) != 0;
+      liveWeight.error = (command.value & 4) != 0;
+      std::snprintf(liveWeight.status, sizeof(liveWeight.status), "%s",
+                    command.text);
+      updateWeightDisplays();
       break;
     case rtos::UiCommandType::UpdateSettings: {
       const bool printerFieldUpdate = command.value >= 21 && command.value <= 24;
