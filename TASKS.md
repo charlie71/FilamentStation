@@ -561,11 +561,11 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 5.1 PN532-Hardware
 
-* [ ] Schnittstelle festlegen
-* [ ] IRQ prüfen
-* [ ] Interrupt einrichten
-* [ ] ISR weckt NfcTask
-* [ ] keine Buskommunikation in ISR
+* [x] Schnittstelle festlegen
+* [x] IRQ prüfen
+* [x] Interrupt einrichten
+* [x] ISR weckt NfcTask
+* [x] keine Buskommunikation in ISR
 
 ## 5.2 Gemeinsamer Bus
 

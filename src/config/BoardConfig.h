@@ -51,4 +51,16 @@ constexpr std::int8_t kHx711DataPin = 11;
 constexpr std::int8_t kHx711ClockPin = 10;
 constexpr std::uint32_t kHx711ReadyTimeoutMs = 1500;
 
+// PN532 ueber HSU/UART am herausgefuehrten EXT-Anschluss:
+// ESP32 TX/GPIO12 -> PN532 RX, ESP32 RX/GPIO13 <- PN532 TX.
+// GPIO12 und GPIO13 sind laut Boarddatenblatt freie EXT-I/Os und kollidieren
+// nicht mit Display, Touch, SD, USB oder HX711.
+constexpr std::int8_t kPn532UartNumber = 1;
+constexpr std::int8_t kPn532UartTxPin = 12;
+constexpr std::int8_t kPn532UartRxPin = 13;
+constexpr std::uint32_t kPn532UartBaudRate = 115200;
+constexpr std::size_t kPn532UartRxBufferSize = 256;
+constexpr std::uint8_t kPn532UartEventQueueLength = 8;
+constexpr bool kPn532UsesExternalIrq = false;
+
 }  // namespace filament_station::config

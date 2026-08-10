@@ -117,6 +117,39 @@ naechsten gueltigen Rohwert wird der Ready-Zustand wieder gesetzt. Die
 Umrechnung in Gramm, Filteralgorithmen und Stabilitaetserkennung sind noch
 nicht Bestandteil dieser Phase.
 
+## PN532-Anschluss
+
+Der PN532 wird ueber seine HSU/UART-Schnittstelle mit 115200 Baud und 8N1
+angebunden. Die Verbindung verwendet zwei weitere dokumentierte EXT-Leitungen:
+
+| Richtung | Boardanschluss | GPIO | PN532-Signal |
+|---|---|---:|---|
+| ESP32 -> PN532 | EXT_IO3 | 12 | RX |
+| PN532 -> ESP32 | EXT_IO4 | 13 | TX |
+
+GPIO12 und GPIO13 sind normale Ein-/Ausgaenge des ESP32-S3. Sie sind am
+WT32-SC01-Plus herausgefuehrt und kollidieren nicht mit Display, Touch, SD,
+USB oder den HX711-Leitungen GPIO10/GPIO11.
+
+Ein zusaetzlicher externer PN532-IRQ wird im HSU-Betrieb nicht verwendet. Der
+P70/IRQ-Pin des PN532 ist waehrend des Resets zugleich an der Modusauswahl
+beteiligt und wird von Breakout-Modulen nicht einheitlich herausgefuehrt. Im
+UART-Betrieb signalisiert der PN532 seine Antwort ohnehin ueber RX-Daten. Der
+ESP32-UART-Treiber empfaengt diese interruptgesteuert und stellt dem NfcTask
+ein Queue-Ereignis bereit. Die Anwendungssoftware besitzt deshalb keine eigene
+NFC-ISR und fuehrt insbesondere keine PN532-Protokollkommunikation in einer ISR
+aus.
+
+Der NfcTask blockiert gemeinsam auf seiner Command-Queue und der UART-
+Event-Queue. Phase 5.1 initialisiert nur den Transport; der PN532 wird noch
+nicht abgefragt und NFC-Daten werden erst in Phase 5.3 verarbeitet.
+
+Quellen:
+
+* [PN532 User Manual UM0701-02](https://www.nxp.com/docs/en/user-guide/141520.pdf)
+* [ESP32-S3 GPIO API](https://docs.espressif.com/projects/esp-idf/en/release-v5.0/esp32s3/api-reference/peripherals/gpio.html)
+* [ESP32-S3 UART API](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-reference/peripherals/uart.html)
+
 ### Hintergrundbeleuchtung
 
 Das Datenblatt bestaetigt GPIO45 als aktiv-hohen PWM-Eingang. Bei maximaler
