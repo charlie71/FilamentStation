@@ -36,6 +36,18 @@ struct QuickWeightState {
   char spoolName[32]{};
 };
 QuickWeightState quickWeight{};
+struct AdvancedWeightState {
+  bool pending = false;
+  bool committed = false;
+  std::int32_t mode = 0;
+  rtos::SpoolId spoolId = 0;
+  float grossWeightGrams = 0.0F;
+  float emptyWeightGrams = 0.0F;
+  float initialWeightGrams = 0.0F;
+  float remainingWeightGrams = 0.0F;
+  char spoolName[32]{};
+};
+AdvancedWeightState advancedWeight{};
 
 float scaleWeightGrams() {
   if (!scaleCalibrated || scaleFactorCountsPerGram == 0.0F) return 0.0F;
@@ -280,11 +292,13 @@ bool persistScaleConfiguration(rtos::RtosContext& ctx,
 
 void sendOverlay(rtos::RtosContext& ctx, rtos::UiCommandType type,
                  rtos::UiOverlayKind kind, std::uint32_t requestId,
-                 const char* title, const char* text) {
+                 const char* title, const char* text,
+                 std::int32_t value = 0) {
   rtos::UiCommand command{};
   command.type = type;
   command.overlayKind = kind;
   command.requestId = requestId;
+  command.value = value;
   std::snprintf(command.title, sizeof(command.title), "%s", title);
   std::snprintf(command.text, sizeof(command.text), "%s", text);
   if (sendUiCommand(ctx, command, "AppTask: overlay queue overflow")) {
@@ -321,6 +335,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       sendUiCommand(ctx, command, "AppTask: hide overlay queue overflow");
       pendingOverlay = rtos::UiOverlayKind::None;
       quickWeight.pending = false;
+      advancedWeight.pending = false;
       return;
 
     case rtos::UiActionType::Confirm: {
@@ -354,11 +369,27 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Messung best\xC3\xA4tigt", result);
         return;
       }
+      if (confirmedOverlay == rtos::UiOverlayKind::AdvancedWeightConfirmation) {
+        if (!advancedWeight.pending) return;
+        advancedWeight.pending = false;
+        advancedWeight.committed = true;
+        char result[128];
+        std::snprintf(result, sizeof(result),
+                      "Spule: #%lu\nRestgewicht: %.1f g\nLeergewicht: %.1f g\nAusgangsgewicht: %.1f g",
+                      static_cast<unsigned long>(advancedWeight.spoolId),
+                      static_cast<double>(advancedWeight.remainingWeightGrams),
+                      static_cast<double>(advancedWeight.emptyWeightGrams),
+                      static_cast<double>(advancedWeight.initialWeightGrams));
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::AdvancedWeightResult, action.requestId,
+                    "Erweitertes Wiegen best\xC3\xA4tigt", result);
+        return;
+      }
       const char* result = "Mock-Aktion best\xC3\xA4tigt; keine reale Funktion ausgef\xC3\xBChrt.";
       if (confirmedOverlay == rtos::UiOverlayKind::RestartConfirmation) {
         result = "Neustart best\xC3\xA4tigt; im Mock nicht ausgef\xC3\xBChrt.";
       } else if (confirmedOverlay == rtos::UiOverlayKind::WifiResetConfirmation) {
-        result = "WLAN-Reset best\xC3\xA4tigt; Zugangsdaten bleiben im Mock erhalten.";
+        result = "WLAN-Zur\xC3\xBC" "cksetzen best\xC3\xA4tigt; Zugangsdaten bleiben im Mock erhalten.";
       }
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                   rtos::UiOverlayKind::Success, action.requestId,
@@ -507,7 +538,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       command.value = 300 + static_cast<std::int32_t>(action.type);
       const char* text = "Mock-Aktion vorgemerkt";
       if (action.type == rtos::UiActionType::StartWifiPortal) text = "WLAN-Konfiguration vorgemerkt";
-      else if (action.type == rtos::UiActionType::ResetWifiCredentials) text = "WLAN-Reset nicht ausgeführt (Mock)";
+      else if (action.type == rtos::UiActionType::ResetWifiCredentials) text = "WLAN-Zugangsdaten nicht zur\xC3\xBC" "ckgesetzt (Mock)";
       else if (action.type == rtos::UiActionType::PrepareRestart) text = "Neustart nicht ausgeführt (Mock)";
       else if (action.type == rtos::UiActionType::RefreshDiagnostics) text = "Diagnose aktualisiert";
       else if (action.type == rtos::UiActionType::CheckFirmwareUpdate) text = "Update-Prüfung nicht ausgeführt (Mock)";
@@ -707,7 +738,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "AppTask: staging screen command queue overflow");
       return;
 
-    case rtos::UiActionType::AdvancedWeight:
     case rtos::UiActionType::ClearStaging:
     case rtos::UiActionType::WriteTag:
     case rtos::UiActionType::LinkTag:
@@ -715,34 +745,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::EraseTag:
     case rtos::UiActionType::SearchSpool:
     case rtos::UiActionType::SelectSpool:
-      if (action.type == rtos::UiActionType::AdvancedWeight) {
-        if (scaleError) {
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, action.requestId,
-                      "Waage nicht bereit",
-                      "Der HX711 liefert derzeit keine Messwerte.");
-        } else if (!scaleCalibrated) {
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, action.requestId,
-                      "Kalibrierung erforderlich",
-                      "Die Waage muss vor dem Wiegen kalibriert werden.");
-        } else if (!scaleStable) {
-          sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                      rtos::UiOverlayKind::WeightStabilizing,
-                      action.requestId, "Gewicht stabilisieren",
-                      "Der reale Messwert ist noch instabil.");
-        } else {
-          char measurement[96];
-          std::snprintf(measurement, sizeof(measurement),
-                        "%s: %.1f g\nMesswert stabil.",
-                        "Advanced Weight",
-                        static_cast<double>(scaleWeightGrams()));
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Success, action.requestId,
-                      "Waagenmessung", measurement);
-        }
-        return;
-      }
       if (action.type == rtos::UiActionType::LinkTag) {
         sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                     rtos::UiOverlayKind::NfcRead, action.requestId,
@@ -772,6 +774,120 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       sendUiCommand(ctx, command,
                     "AppTask: staging action queue overflow");
       return;
+
+    case rtos::UiActionType::AdvancedWeight: {
+      if (action.value == 0) {
+        if (action.spoolId == 0) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Keine Spule", "Im Staging ist keine Spule ausgew\xC3\xA4hlt.");
+          return;
+        }
+        if (scaleError || !scaleCalibrated || !scaleStable) {
+          sendOverlay(ctx,
+                      scaleError || !scaleCalibrated
+                          ? rtos::UiCommandType::ShowDialog
+                          : rtos::UiCommandType::ShowProgress,
+                      scaleError || !scaleCalibrated
+                          ? rtos::UiOverlayKind::Error
+                          : rtos::UiOverlayKind::WeightStabilizing,
+                      action.requestId, "Waage nicht bereit",
+                      scaleError
+                          ? "Der HX711 liefert keine Messwerte."
+                          : (!scaleCalibrated
+                                 ? "Die Waage ist nicht kalibriert."
+                                 : "Der reale Messwert ist noch instabil."));
+          return;
+        }
+        const bool retainCommitted =
+            advancedWeight.committed && advancedWeight.spoolId == action.spoolId;
+        float emptyWeight = 0.0F;
+        float initialWeight = 0.0F;
+        char spoolName[32]{};
+        if (std::sscanf(action.text, "%31[^|]|%f|%f", spoolName,
+                        &emptyWeight, &initialWeight) != 3) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Spulendaten fehlen",
+                      "Leer- oder Ausgangsgewicht ist nicht verf\xC3\xBCgbar.");
+          return;
+        }
+        advancedWeight.pending = false;
+        advancedWeight.mode = 0;
+        advancedWeight.spoolId = action.spoolId;
+        advancedWeight.grossWeightGrams = scaleWeightGrams();
+        if (!retainCommitted) {
+          advancedWeight.emptyWeightGrams = emptyWeight;
+          advancedWeight.initialWeightGrams = initialWeight;
+        }
+        std::snprintf(advancedWeight.spoolName,
+                      sizeof(advancedWeight.spoolName), "%s", spoolName);
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::AdvancedWeightMode,
+                    action.requestId, "Erweitertes Wiegen", "");
+        return;
+      }
+
+      if (action.value < 1 || action.value > 4 || advancedWeight.spoolId == 0)
+        return;
+      advancedWeight.mode = action.value;
+      if ((action.value == 3 || action.value == 4) && action.text[0] == '\0') {
+        char currentValue[24];
+        std::snprintf(currentValue, sizeof(currentValue), "%.1f",
+                      static_cast<double>(action.value == 3
+                                              ? advancedWeight.emptyWeightGrams
+                                              : advancedWeight.initialWeightGrams));
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::AdvancedWeightInput,
+                    action.requestId,
+                    action.value == 3 ? "Neues Leergewicht in g"
+                                      : "Ausgangsgewicht in g (0 = l\xC3\xB6schen)",
+                    currentValue, action.value);
+        return;
+      }
+
+      if (action.value == 3 || action.value == 4) {
+        char* end = nullptr;
+        const float entered = std::strtof(action.text, &end);
+        const float minimum = action.value == 3 ? 1.0F : 0.0F;
+        if (action.text[0] == '\0' || end == nullptr || *end != '\0' ||
+            entered < minimum || entered > 100000.0F) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Ung\xC3\xBCltige Eingabe",
+                      action.value == 3 ? "Leergewicht muss 1 bis 100000 g sein."
+                                        : "Ausgangsgewicht muss 0 bis 100000 g sein.");
+          return;
+        }
+        if (action.value == 3)
+          advancedWeight.emptyWeightGrams = entered;
+        else
+          advancedWeight.initialWeightGrams = entered;
+      } else if (action.value == 2) {
+        advancedWeight.initialWeightGrams =
+            advancedWeight.grossWeightGrams - advancedWeight.emptyWeightGrams;
+        if (advancedWeight.initialWeightGrams < 0.0F)
+          advancedWeight.initialWeightGrams = 0.0F;
+      }
+      advancedWeight.remainingWeightGrams =
+          advancedWeight.grossWeightGrams - advancedWeight.emptyWeightGrams;
+      if (advancedWeight.remainingWeightGrams < 0.0F)
+        advancedWeight.remainingWeightGrams = 0.0F;
+      advancedWeight.pending = true;
+      char summary[128];
+      std::snprintf(summary, sizeof(summary),
+                    "#%lu %s\nBrutto: %.1f g\nLeergewicht: %.1f g\nAusgangsgewicht: %.1f g\nRestgewicht: %.1f g\nBest\xC3\xA4tigen?",
+                    static_cast<unsigned long>(advancedWeight.spoolId),
+                    advancedWeight.spoolName,
+                    static_cast<double>(advancedWeight.grossWeightGrams),
+                    static_cast<double>(advancedWeight.emptyWeightGrams),
+                    static_cast<double>(advancedWeight.initialWeightGrams),
+                    static_cast<double>(advancedWeight.remainingWeightGrams));
+      sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                  rtos::UiOverlayKind::AdvancedWeightConfirmation,
+                  action.requestId, "Erweitertes Wiegen - Zusammenfassung", summary);
+      return;
+    }
 
     case rtos::UiActionType::QuickWeight: {
       if (action.spoolId == 0) {
@@ -827,7 +943,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       }
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                   rtos::UiOverlayKind::QuickWeightConfirmation,
-                  action.requestId, "Quick Weight - stabil", summary);
+                  action.requestId, "Schnellwiegen - stabil", summary);
       return;
     }
 

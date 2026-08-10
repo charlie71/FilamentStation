@@ -31,7 +31,7 @@ struct UiCommand {
   std::int32_t value;
   float weightGrams;
   char title[48];
-  char text[96];
+  char text[128];
 };
 
 struct ScaleCommand {

@@ -91,7 +91,7 @@ void create_screen_scr_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+                    lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
                 }
             }
         }
@@ -112,7 +112,7 @@ void create_screen_scr_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "SET");
+                    lv_label_set_text_static(obj, "Einst.");
                 }
             }
         }
@@ -297,7 +297,7 @@ void create_screen_scr_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "External");
+                    lv_label_set_text_static(obj, "Extern");
                 }
             }
         }
@@ -360,7 +360,7 @@ void create_screen_scr_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "NFC: bereit\nSpoolman: online");
+                    lv_label_set_text_static(obj, "NFC: bereit\nSpoolman: verbunden");
                 }
             }
         }
@@ -427,7 +427,7 @@ void create_screen_scr_printer_select() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+                    lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
                 }
             }
         }
@@ -448,7 +448,7 @@ void create_screen_scr_printer_select() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "SET");
+                    lv_label_set_text_static(obj, "Einst.");
                 }
             }
         }
@@ -479,7 +479,7 @@ void create_screen_scr_printer_select() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "* P1S Werkstatt\nonline | AMS 1");
+                    lv_label_set_text_static(obj, "* P1S Werkstatt\nverbunden | AMS 1");
                 }
             }
         }
@@ -500,7 +500,7 @@ void create_screen_scr_printer_select() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "X1C Labor\nonline | AMS 2");
+                    lv_label_set_text_static(obj, "X1C Labor\nverbunden | AMS 2");
                 }
             }
         }
@@ -521,7 +521,7 @@ void create_screen_scr_printer_select() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "A1 Mini Büro\noffline | kein AMS");
+                    lv_label_set_text_static(obj, "A1 Mini Büro\nnicht verbunden | kein AMS");
                 }
             }
         }
@@ -588,7 +588,7 @@ void create_screen_scr_settings_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+                    lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
                 }
             }
         }
@@ -609,7 +609,7 @@ void create_screen_scr_settings_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "SET");
+                    lv_label_set_text_static(obj, "Einst.");
                 }
             }
         }
@@ -822,7 +822,7 @@ void create_screen_scr_staging_details() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 408, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
         }
         {
             // staging_details_settings
@@ -831,7 +831,7 @@ void create_screen_scr_staging_details() {
             lv_obj_set_pos(obj, 412, 0);
             lv_obj_set_size(obj, 68, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SET");
+            lv_label_set_text_static(obj, "Einst.");
         }
         {
             // staging_details_title
@@ -885,7 +885,7 @@ void create_screen_scr_staging_details() {
             lv_obj_set_pos(obj, 4, 264);
             lv_obj_set_size(obj, 156, 56);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Quick Weight");
+            lv_label_set_text_static(obj, "Schnellwiegen");
         }
         {
             // staging_details_more
@@ -928,7 +928,7 @@ void create_screen_scr_staging_actions() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 408, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
         }
         {
             // staging_actions_settings
@@ -937,7 +937,7 @@ void create_screen_scr_staging_actions() {
             lv_obj_set_pos(obj, 412, 0);
             lv_obj_set_size(obj, 68, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SET");
+            lv_label_set_text_static(obj, "Einst.");
         }
         {
             // staging_action_configure
@@ -955,7 +955,7 @@ void create_screen_scr_staging_actions() {
             lv_obj_set_pos(obj, 164, 44);
             lv_obj_set_size(obj, 152, 52);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Advanced Weight");
+            lv_label_set_text_static(obj, "Erweitertes Wiegen");
         }
         {
             // staging_action_clear
@@ -1034,7 +1034,7 @@ void create_screen_scr_tray_details() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 408, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
         }
         {
             // tray_details_settings
@@ -1043,7 +1043,7 @@ void create_screen_scr_tray_details() {
             lv_obj_set_pos(obj, 412, 0);
             lv_obj_set_size(obj, 68, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SET");
+            lv_label_set_text_static(obj, "Einst.");
         }
         {
             // tray_details_title
@@ -1158,7 +1158,7 @@ void create_screen_scr_tray_actions() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 408, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
         }
         {
             // tray_actions_settings
@@ -1167,7 +1167,7 @@ void create_screen_scr_tray_actions() {
             lv_obj_set_pos(obj, 412, 0);
             lv_obj_set_size(obj, 68, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SET");
+            lv_label_set_text_static(obj, "Einst.");
         }
         {
             // tray_action_from_staging
@@ -1255,7 +1255,7 @@ void create_screen_scr_tray_select() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 408, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
         }
         {
             // tray_select_settings
@@ -1264,7 +1264,7 @@ void create_screen_scr_tray_select() {
             lv_obj_set_pos(obj, 412, 0);
             lv_obj_set_size(obj, 68, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SET");
+            lv_label_set_text_static(obj, "Einst.");
         }
         {
             // tray_select_title
@@ -1354,7 +1354,7 @@ void create_screen_scr_tray_select() {
             lv_obj_set_pos(obj, 384, 128);
             lv_obj_set_size(obj, 92, 64);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "External");
+            lv_label_set_text_static(obj, "Extern");
         }
         {
             // tray_select_summary
@@ -1397,7 +1397,7 @@ void create_screen_scr_settings_spoolman() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 408, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
         }
         {
             // spoolman_settings_settings
@@ -1406,7 +1406,7 @@ void create_screen_scr_settings_spoolman() {
             lv_obj_set_pos(obj, 412, 0);
             lv_obj_set_size(obj, 68, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SET");
+            lv_label_set_text_static(obj, "Einst.");
         }
         {
             // spoolman_settings_title
@@ -1539,7 +1539,7 @@ void create_screen_scr_settings_printers() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 408, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
         }
         {
             // printer_settings_settings
@@ -1548,7 +1548,7 @@ void create_screen_scr_settings_printers() {
             lv_obj_set_pos(obj, 412, 0);
             lv_obj_set_size(obj, 68, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SET");
+            lv_label_set_text_static(obj, "Einst.");
         }
         {
             // printer_settings_title
@@ -1566,7 +1566,7 @@ void create_screen_scr_settings_printers() {
             lv_obj_set_pos(obj, 8, 72);
             lv_obj_set_size(obj, 464, 42);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "P1S Werkstatt | online | aktiv | Standard");
+            lv_label_set_text_static(obj, "P1S Werkstatt | verbunden | aktiv | Standard");
         }
         {
             // printer_settings_row_2
@@ -1575,7 +1575,7 @@ void create_screen_scr_settings_printers() {
             lv_obj_set_pos(obj, 8, 118);
             lv_obj_set_size(obj, 464, 42);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "X1C Labor | online");
+            lv_label_set_text_static(obj, "X1C Labor | verbunden");
         }
         {
             // printer_settings_row_3
@@ -1584,7 +1584,7 @@ void create_screen_scr_settings_printers() {
             lv_obj_set_pos(obj, 8, 164);
             lv_obj_set_size(obj, 464, 42);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "A1 Mini Büro | offline");
+            lv_label_set_text_static(obj, "A1 Mini Büro | nicht verbunden");
         }
         {
             // printer_settings_row_4
@@ -1672,7 +1672,7 @@ void create_screen_scr_settings_printer_edit() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 408, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
         }
         {
             // printer_edit_settings
@@ -1681,7 +1681,7 @@ void create_screen_scr_settings_printer_edit() {
             lv_obj_set_pos(obj, 412, 0);
             lv_obj_set_size(obj, 68, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SET");
+            lv_label_set_text_static(obj, "Einst.");
         }
         {
             // printer_edit_title
@@ -1805,7 +1805,7 @@ void create_screen_scr_settings_wifi() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 408, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
         }
         {
             // wifi_settings_settings
@@ -1814,7 +1814,7 @@ void create_screen_scr_settings_wifi() {
             lv_obj_set_pos(obj, 412, 0);
             lv_obj_set_size(obj, 68, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SET");
+            lv_label_set_text_static(obj, "Einst.");
         }
         {
             // wifi_settings_title
@@ -1902,7 +1902,7 @@ void create_screen_scr_settings_scale() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 408, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
         }
         {
             // scale_settings_settings
@@ -1911,7 +1911,7 @@ void create_screen_scr_settings_scale() {
             lv_obj_set_pos(obj, 412, 0);
             lv_obj_set_size(obj, 68, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SET");
+            lv_label_set_text_static(obj, "Einst.");
         }
         {
             // scale_settings_title
@@ -1929,7 +1929,7 @@ void create_screen_scr_settings_scale() {
             lv_obj_set_pos(obj, 8, 80);
             lv_obj_set_size(obj, 464, 44);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Gewicht: 1247 g | stabil");
+            lv_label_set_text_static(obj, "Gewicht: -- g | wartet auf Messwert");
         }
         {
             // scale_settings_calibration
@@ -1938,7 +1938,7 @@ void create_screen_scr_settings_scale() {
             lv_obj_set_pos(obj, 8, 128);
             lv_obj_set_size(obj, 464, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Kalibrierung: Mock bereit");
+            lv_label_set_text_static(obj, "Kalibrierung: wird geladen");
         }
         {
             // scale_settings_tare
@@ -1965,7 +1965,7 @@ void create_screen_scr_settings_scale() {
             lv_obj_set_pos(obj, 272, 264);
             lv_obj_set_size(obj, 100, 56);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Reset");
+            lv_label_set_text_static(obj, "Zurücksetzen");
         }
         {
             // scale_settings_back
@@ -1999,7 +1999,7 @@ void create_screen_scr_settings_device() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 408, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
         }
         {
             // device_settings_settings
@@ -2008,7 +2008,7 @@ void create_screen_scr_settings_device() {
             lv_obj_set_pos(obj, 412, 0);
             lv_obj_set_size(obj, 68, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SET");
+            lv_label_set_text_static(obj, "Einst.");
         }
         {
             // device_settings_title
@@ -2087,7 +2087,7 @@ void create_screen_scr_settings_diagnostics() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 408, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
         }
         {
             // diagnostics_settings_settings
@@ -2096,7 +2096,7 @@ void create_screen_scr_settings_diagnostics() {
             lv_obj_set_pos(obj, 412, 0);
             lv_obj_set_size(obj, 68, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SET");
+            lv_label_set_text_static(obj, "Einst.");
         }
         {
             // diagnostics_settings_title
@@ -2175,7 +2175,7 @@ void create_screen_scr_settings_firmware() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 408, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1");
+            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
         }
         {
             // firmware_settings_settings
@@ -2184,7 +2184,7 @@ void create_screen_scr_settings_firmware() {
             lv_obj_set_pos(obj, 412, 0);
             lv_obj_set_size(obj, 68, 40);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SET");
+            lv_label_set_text_static(obj, "Einst.");
         }
         {
             // firmware_settings_title
@@ -2289,7 +2289,7 @@ void create_user_widget_cmp_top_printer_bar(lv_obj_t *parent_obj, int startWidge
                             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                             lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                            lv_label_set_text_static(obj, "online | P1S Werkstatt | AMS 1 | SET");
+                            lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1 | Einst.");
                         }
                     }
                 }
@@ -2451,7 +2451,7 @@ void create_user_widget_cmp_connection_indicator(lv_obj_t *parent_obj, int start
                             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                             lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                            lv_label_set_text_static(obj, "online");
+                            lv_label_set_text_static(obj, "verbunden");
                         }
                     }
                 }
@@ -3099,7 +3099,7 @@ void create_user_widget_cmp_settings_button(lv_obj_t *parent_obj, int startWidge
                             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                             lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                            lv_label_set_text_static(obj, "SET");
+                            lv_label_set_text_static(obj, "Einst.");
                         }
                     }
                 }

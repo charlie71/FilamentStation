@@ -531,13 +531,13 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 4.7 Advanced Weight
 
-* [ ] gebrauchte Spule
-* [ ] volle/neue Spule
-* [ ] Leergewicht korrigieren
-* [ ] Ausgangsgewicht korrigieren
-* [ ] Zusammenfassung
-* [ ] Bestätigung
-* [ ] Ergebnisdialog
+* [x] gebrauchte Spule
+* [x] volle/neue Spule
+* [x] Leergewicht korrigieren
+* [x] Ausgangsgewicht korrigieren
+* [x] Zusammenfassung
+* [x] Bestätigung
+* [x] Ergebnisdialog
 
 ## 4.8 Tests
 

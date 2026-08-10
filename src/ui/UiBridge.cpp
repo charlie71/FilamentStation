@@ -77,17 +77,17 @@ struct PrinterUiDraft {
 };
 PrinterUiDraft printerUiDraft{};
 constexpr const char* kKeyboardLowerMap[] = {
-    "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "DEL", "\n",
+    "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "Entf.", "\n",
     "a", "s", "d", "f", "g", "h", "j", "k", "l", "OK", "\n",
     "_", "-", "z", "x", "c", "v", "b", "n", "m", ".", ",", ":", "\n",
-    "ABC", "123", "<", "SPACE", ">", "CANCEL", ""};
+    "ABC", "123", "<", "Leer", ">", "Abbr.", ""};
 constexpr const char* kKeyboardUpperMap[] = {
-    "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "DEL", "\n",
+    "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "Entf.", "\n",
     "A", "S", "D", "F", "G", "H", "J", "K", "L", "OK", "\n",
     "_", "-", "Z", "X", "C", "V", "B", "N", "M", ".", ",", ":", "\n",
-    "abc", "123", "<", "SPACE", ">", "CANCEL", ""};
+    "abc", "123", "<", "Leer", ">", "Abbr.", ""};
 constexpr const char* kKeyboardNumberMap[] = {
-    "1", "2", "3", "DEL", "\n", "4", "5", "6", "CANCEL", "\n",
+    "1", "2", "3", "Entf.", "\n", "4", "5", "6", "Abbr.", "\n",
     "7", "8", "9", "OK", "\n", "ABC", "0", ".", "<", ">", ""};
 std::uint32_t nextRequestId = 100;
 models::UiWeightState liveWeight{0.0F, 0.0F, false, false, true,
@@ -102,11 +102,16 @@ std::array<lv_obj_t*, 8> stagingTableRows{};
 bool touchWasPressed = false;
 std::size_t touchMarkerColorIndex = 0;
 lv_obj_t* overlayBackdrop = nullptr;
+lv_obj_t* overlayPanel = nullptr;
 lv_obj_t* overlayTitle = nullptr;
 lv_obj_t* overlayText = nullptr;
 lv_obj_t* overlayProgress = nullptr;
 lv_obj_t* overlayCancel = nullptr;
 lv_obj_t* overlayConfirm = nullptr;
+std::array<lv_obj_t*, 4> advancedModeButtons{};
+lv_obj_t* advancedInput = nullptr;
+lv_obj_t* advancedKeyboard = nullptr;
+std::int32_t advancedInputMode = 0;
 rtos::UiOverlayKind activeOverlayKind = rtos::UiOverlayKind::None;
 std::uint32_t activeOverlayRequestId = 0;
 
@@ -115,6 +120,54 @@ void sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
                 std::int32_t value = 0, rtos::SpoolId spoolId = 0,
                 const char* text = nullptr);
 void updateWeightDisplays();
+
+constexpr const char* kAdvancedNumberMap[] = {
+    "1", "2", "3", "Entf.", "\n", "4", "5", "6", "Abbr.", "\n",
+    "7", "8", "9", "OK", "\n", "0", ".", ""};
+
+void advancedModeClicked(lv_event_t* event) {
+  const auto mode = static_cast<std::int32_t>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  sendAction(rtos::UiActionType::AdvancedWeight, currentPrinterId, 0, 0, mode);
+}
+
+void advancedKeyboardEvent(lv_event_t* event) {
+  if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED ||
+      advancedInput == nullptr || advancedKeyboard == nullptr) return;
+  const std::uint32_t button =
+      lv_buttonmatrix_get_selected_button(advancedKeyboard);
+  if (button == LV_BUTTONMATRIX_BUTTON_NONE) return;
+  const char* key = lv_buttonmatrix_get_button_text(advancedKeyboard, button);
+  if (key == nullptr) return;
+  if (std::strcmp(key, "OK") == 0) {
+    sendAction(rtos::UiActionType::AdvancedWeight, currentPrinterId, 0, 0,
+               advancedInputMode, 0, lv_textarea_get_text(advancedInput));
+  } else if (std::strcmp(key, "Abbr.") == 0) {
+    sendAction(rtos::UiActionType::Cancel, currentPrinterId);
+  } else if (std::strcmp(key, "Entf.") == 0) {
+    lv_textarea_delete_char(advancedInput);
+  } else {
+    lv_textarea_add_text(advancedInput, key);
+  }
+}
+
+lv_obj_t* createAdvancedModeButton(const char* text, std::int32_t x,
+                                   std::int32_t y, std::int32_t mode) {
+  lv_obj_t* button = lv_button_create(overlayPanel);
+  lv_obj_set_pos(button, x, y);
+  lv_obj_set_size(button, 186, 48);
+  lv_obj_set_style_bg_color(button, lv_color_hex(0x1565C0), LV_PART_MAIN);
+  lv_obj_set_style_radius(button, 8, LV_PART_MAIN);
+  lv_obj_t* label = lv_label_create(button);
+  lv_label_set_text(label, text);
+  lv_obj_set_style_text_font(label, &ui_font_ui_german16, LV_PART_MAIN);
+  lv_obj_center(label);
+  lv_obj_remove_flag(label, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(button, advancedModeClicked, LV_EVENT_CLICKED,
+                      reinterpret_cast<void*>(static_cast<std::uintptr_t>(mode)));
+  lv_obj_add_flag(button, LV_OBJ_FLAG_HIDDEN);
+  return button;
+}
 
 void overlayActionClicked(lv_event_t* event) {
   const auto action = static_cast<rtos::UiActionType>(
@@ -153,37 +206,64 @@ void ensureOverlay() {
   lv_obj_set_style_border_width(overlayBackdrop, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(overlayBackdrop, 0, LV_PART_MAIN);
 
-  lv_obj_t* panel = lv_obj_create(overlayBackdrop);
-  lv_obj_set_size(panel, 420, 238);
-  lv_obj_center(panel);
-  lv_obj_remove_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_style_bg_color(panel, lv_color_hex(0xF4F6F8), LV_PART_MAIN);
-  lv_obj_set_style_border_color(panel, lv_color_hex(0x1565C0), LV_PART_MAIN);
-  lv_obj_set_style_border_width(panel, 2, LV_PART_MAIN);
-  lv_obj_set_style_radius(panel, 12, LV_PART_MAIN);
-  lv_obj_set_style_text_color(panel, lv_color_hex(0x101820), LV_PART_MAIN);
+  overlayPanel = lv_obj_create(overlayBackdrop);
+  lv_obj_set_size(overlayPanel, 420, 238);
+  lv_obj_center(overlayPanel);
+  lv_obj_remove_flag(overlayPanel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_bg_color(overlayPanel, lv_color_hex(0xF4F6F8), LV_PART_MAIN);
+  lv_obj_set_style_border_color(overlayPanel, lv_color_hex(0x1565C0), LV_PART_MAIN);
+  lv_obj_set_style_border_width(overlayPanel, 2, LV_PART_MAIN);
+  lv_obj_set_style_radius(overlayPanel, 12, LV_PART_MAIN);
+  lv_obj_set_style_text_color(overlayPanel, lv_color_hex(0x101820), LV_PART_MAIN);
+  // Child coordinates define the complete overlay layout. Removing the
+  // theme's implicit content padding keeps both action columns
+  // inside the 420 px panel with equal 16 px margins.
+  lv_obj_set_style_pad_all(overlayPanel, 0, LV_PART_MAIN);
 
-  overlayTitle = lv_label_create(panel);
+  overlayTitle = lv_label_create(overlayPanel);
   lv_obj_set_pos(overlayTitle, 16, 12);
   lv_obj_set_size(overlayTitle, 388, 32);
   lv_obj_set_style_text_font(overlayTitle, &ui_font_ui_german16, LV_PART_MAIN);
-  overlayText = lv_label_create(panel);
+  overlayText = lv_label_create(overlayPanel);
   lv_obj_set_pos(overlayText, 16, 52);
-  lv_obj_set_size(overlayText, 388, 70);
+  lv_obj_set_size(overlayText, 388, 100);
   lv_label_set_long_mode(overlayText, LV_LABEL_LONG_WRAP);
   lv_obj_set_style_text_font(overlayText, &ui_font_ui_german16, LV_PART_MAIN);
 
-  overlayProgress = lv_bar_create(panel);
+  overlayProgress = lv_bar_create(overlayPanel);
   lv_obj_set_pos(overlayProgress, 16, 126);
   lv_obj_set_size(overlayProgress, 388, 14);
   lv_bar_set_range(overlayProgress, 0, 100);
   lv_bar_set_value(overlayProgress, 60, LV_ANIM_OFF);
 
-  overlayCancel = createOverlayButton(panel, "Abbrechen", 16, 0x607D8B,
+  overlayCancel = createOverlayButton(overlayPanel, "Abbrechen", 16, 0x607D8B,
                                       rtos::UiActionType::Cancel);
-  overlayConfirm = createOverlayButton(panel, "Best\xC3\xA4tigen", 218,
+  overlayConfirm = createOverlayButton(overlayPanel, "Best\xC3\xA4tigen", 218,
                                        0x1565C0,
                                        rtos::UiActionType::Confirm);
+  advancedModeButtons = {{
+      createAdvancedModeButton("Gebrauchte Spule", 16, 50, 1),
+      createAdvancedModeButton("Volle/neue Spule", 218, 50, 2),
+      createAdvancedModeButton("Leergewicht", 16, 104, 3),
+      createAdvancedModeButton("Ausgangsgewicht", 218, 104, 4),
+  }};
+  advancedInput = lv_textarea_create(overlayPanel);
+  lv_obj_set_pos(advancedInput, 16, 44);
+  lv_obj_set_size(advancedInput, 388, 38);
+  lv_textarea_set_one_line(advancedInput, true);
+  lv_textarea_set_max_length(advancedInput, 7);
+  lv_obj_set_style_text_font(advancedInput, &ui_font_ui_german16, LV_PART_MAIN);
+  lv_obj_add_flag(advancedInput, LV_OBJ_FLAG_HIDDEN);
+  advancedKeyboard = lv_buttonmatrix_create(overlayPanel);
+  lv_obj_set_pos(advancedKeyboard, 16, 86);
+  lv_obj_set_size(advancedKeyboard, 388, 136);
+  lv_buttonmatrix_set_map(advancedKeyboard, kAdvancedNumberMap);
+  lv_obj_set_style_pad_all(advancedKeyboard, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_row(advancedKeyboard, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(advancedKeyboard, 2, LV_PART_MAIN);
+  lv_obj_add_event_cb(advancedKeyboard, advancedKeyboardEvent,
+                      LV_EVENT_VALUE_CHANGED, nullptr);
+  lv_obj_add_flag(advancedKeyboard, LV_OBJ_FLAG_HIDDEN);
 }
 
 void hideOverlay() {
@@ -194,22 +274,74 @@ void hideOverlay() {
 
 void showOverlay(const rtos::UiCommand& command, bool progress) {
   ensureOverlay();
+  // Restore the standard geometry first because the same overlay objects are
+  // reused for every dialog.
+  lv_obj_set_size(overlayPanel, 420, 238);
+  lv_obj_center(overlayPanel);
+  lv_obj_set_pos(overlayText, 16, 52);
+  lv_obj_set_size(overlayText, 388, 100);
+  lv_obj_set_y(overlayCancel, 158);
+  lv_obj_set_y(overlayConfirm, 158);
+  if (command.overlayKind == rtos::UiOverlayKind::AdvancedWeightConfirmation ||
+      command.overlayKind == rtos::UiOverlayKind::AdvancedWeightResult) {
+    // Six separate summary lines need more vertical room than ordinary
+    // messages. Keep the action buttons below the complete summary.
+    lv_obj_set_size(overlayPanel, 420, 286);
+    lv_obj_center(overlayPanel);
+    lv_obj_set_pos(overlayText, 16, 46);
+    lv_obj_set_size(overlayText, 388, 166);
+    lv_obj_set_y(overlayCancel, 220);
+    lv_obj_set_y(overlayConfirm, 220);
+  }
   activeOverlayKind = command.overlayKind;
   activeOverlayRequestId = command.requestId;
   lv_label_set_text(overlayTitle, command.title);
   lv_label_set_text(overlayText, command.text);
   lv_obj_remove_flag(overlayBackdrop, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_remove_flag(overlayText, LV_OBJ_FLAG_HIDDEN);
+  for (lv_obj_t* button : advancedModeButtons)
+    lv_obj_add_flag(button, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(advancedInput, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(advancedKeyboard, LV_OBJ_FLAG_HIDDEN);
+  if (command.overlayKind == rtos::UiOverlayKind::AdvancedWeightMode) {
+    lv_obj_add_flag(overlayText, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(overlayProgress, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(overlayCancel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
+    for (lv_obj_t* button : advancedModeButtons)
+      lv_obj_remove_flag(button, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Abbrechen");
+    lv_obj_move_foreground(overlayBackdrop);
+    return;
+  }
+  if (command.overlayKind == rtos::UiOverlayKind::AdvancedWeightInput) {
+    advancedInputMode = command.value;
+    lv_obj_add_flag(overlayText, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(overlayProgress, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(overlayCancel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
+    lv_textarea_set_text(advancedInput, command.text);
+    lv_obj_remove_flag(advancedInput, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(advancedKeyboard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(overlayBackdrop);
+    return;
+  }
   if (progress) {
     lv_obj_remove_flag(overlayProgress, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(overlayCancel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
     lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Schlie\xC3\x9F" "en");
   } else {
     lv_obj_add_flag(overlayProgress, LV_OBJ_FLAG_HIDDEN);
+    // Numeric input hides the standard buttons. Always restore the
+    // close/cancel button when the following summary or result is displayed.
+    lv_obj_remove_flag(overlayCancel, LV_OBJ_FLAG_HIDDEN);
     const bool confirmation =
         command.overlayKind == rtos::UiOverlayKind::Confirmation ||
         command.overlayKind == rtos::UiOverlayKind::RestartConfirmation ||
         command.overlayKind == rtos::UiOverlayKind::WifiResetConfirmation ||
-        command.overlayKind == rtos::UiOverlayKind::QuickWeightConfirmation;
+        command.overlayKind == rtos::UiOverlayKind::QuickWeightConfirmation ||
+        command.overlayKind == rtos::UiOverlayKind::AdvancedWeightConfirmation;
     if (confirmation) {
       lv_obj_remove_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
       lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Abbrechen");
@@ -297,23 +429,56 @@ const char* connectionText(models::UiConnectionState state) {
     case models::UiConnectionState::Connecting:
       return "verbindet";
     case models::UiConnectionState::Connected:
-      return "online";
+      return "verbunden";
     case models::UiConnectionState::Offline:
-      return "offline";
+      return "nicht verbunden";
     case models::UiConnectionState::Error:
       return "Fehler";
   }
   return "unbekannt";
 }
 
+lv_obj_t* firstLabelDescendant(lv_obj_t* object) {
+  if (object == nullptr) return nullptr;
+  const std::uint32_t childCount = lv_obj_get_child_count(object);
+  for (std::uint32_t index = 0; index < childCount; ++index) {
+    lv_obj_t* child = lv_obj_get_child(object, static_cast<std::int32_t>(index));
+    if (lv_obj_check_type(child, &lv_label_class)) return child;
+    if (lv_obj_t* label = firstLabelDescendant(child); label != nullptr)
+      return label;
+  }
+  return nullptr;
+}
+
 lv_obj_t* buttonLabel(lv_obj_t* button) {
-  return button == nullptr ? nullptr : lv_obj_get_child(button, 0);
+  return firstLabelDescendant(button);
 }
 
 void setButtonText(lv_obj_t* button, const char* text) {
   lv_obj_t* label = buttonLabel(button);
   if (label != nullptr) {
     lv_label_set_text(label, text);
+  }
+}
+
+void centerButtonLabel(lv_obj_t* button) {
+  lv_obj_t* label = buttonLabel(button);
+  if (label == nullptr || label == button) return;
+  lv_obj_update_layout(button);
+  lv_obj_set_width(label, lv_obj_get_width(button) - 8);
+  lv_obj_set_height(label, LV_SIZE_CONTENT);
+  lv_obj_center(label);
+}
+
+void setControlText(lv_obj_t* object, const char* text) {
+  if (object == nullptr) return;
+  if (lv_obj_check_type(object, &lv_label_class)) {
+    lv_obj_t* label = buttonLabel(object);
+    lv_label_set_text(label == nullptr ? object : label, text);
+    centerButtonLabel(object);
+  } else {
+    setButtonText(object, text);
+    centerButtonLabel(object);
   }
 }
 
@@ -454,18 +619,18 @@ std::size_t spoolmanFieldCapacity(std::int32_t field) {
 void updateSpoolmanSettingsContent() {
   char text[96];
   std::snprintf(text, sizeof(text), "Name: %s", spoolmanDraft.name);
-  lv_label_set_text(objects.spoolman_setting_name, text);
+  setControlText(objects.spoolman_setting_name, text);
   std::snprintf(text, sizeof(text), "Protokoll: %s",
                 spoolmanDraft.protocol);
-  lv_label_set_text(objects.spoolman_setting_protocol, text);
+  setControlText(objects.spoolman_setting_protocol, text);
   std::snprintf(text, sizeof(text), "Host: %s", spoolmanDraft.host);
-  lv_label_set_text(objects.spoolman_setting_host, text);
+  setControlText(objects.spoolman_setting_host, text);
   std::snprintf(text, sizeof(text), "Port: %s", spoolmanDraft.port);
-  lv_label_set_text(objects.spoolman_setting_port, text);
+  setControlText(objects.spoolman_setting_port, text);
   std::snprintf(text, sizeof(text), "Basispfad: %s", spoolmanDraft.basePath);
-  lv_label_set_text(objects.spoolman_setting_base_path, text);
+  setControlText(objects.spoolman_setting_base_path, text);
   std::snprintf(text, sizeof(text), "Timeout: %s ms", spoolmanDraft.timeoutMs);
-  lv_label_set_text(objects.spoolman_setting_timeout, text);
+  setControlText(objects.spoolman_setting_timeout, text);
 }
 
 void closeSpoolmanEditor() {
@@ -504,15 +669,15 @@ void spoolmanKeyboardEvent(lv_event_t* event) {
                printerEditor ? activePrinterField : activeSpoolmanField, 0,
                lv_textarea_get_text(spoolmanEditor));
     closeSpoolmanEditor();
-  } else if (std::strcmp(key, "CANCEL") == 0) {
+  } else if (std::strcmp(key, "Abbr.") == 0) {
     closeSpoolmanEditor();
-  } else if (std::strcmp(key, "DEL") == 0) {
+  } else if (std::strcmp(key, "Entf.") == 0) {
     lv_textarea_delete_char(spoolmanEditor);
   } else if (std::strcmp(key, "<") == 0) {
     lv_textarea_cursor_left(spoolmanEditor);
   } else if (std::strcmp(key, ">") == 0) {
     lv_textarea_cursor_right(spoolmanEditor);
-  } else if (std::strcmp(key, "SPACE") == 0) {
+  } else if (std::strcmp(key, "Leer") == 0) {
     lv_textarea_add_char(spoolmanEditor, ' ');
   } else if (std::strcmp(key, "ABC") == 0) {
     lv_buttonmatrix_set_map(spoolmanKeyboard, kKeyboardUpperMap);
@@ -604,9 +769,9 @@ void calibrationKeyboardEvent(lv_event_t* event) {
       lv_label_set_text(objects.scale_settings_calibration,
                         "Referenzgewicht: 1 bis 100000 g eingeben");
     }
-  } else if (std::strcmp(key, "CANCEL") == 0) {
+  } else if (std::strcmp(key, "Abbr.") == 0) {
     closeCalibrationEditor();
-  } else if (std::strcmp(key, "DEL") == 0) {
+  } else if (std::strcmp(key, "Entf.") == 0) {
     lv_textarea_delete_char(calibrationEditor);
   } else if (key[1] == '\0' && key[0] >= '0' && key[0] <= '9') {
     lv_textarea_add_text(calibrationEditor, key);
@@ -696,16 +861,16 @@ void loadPrinterUiDraft(rtos::PrinterId id) {
 void updatePrinterEditorContent() {
   char text[96];
   std::snprintf(text, sizeof(text), "Anzeigename: %s", printerUiDraft.name);
-  lv_label_set_text(objects.printer_edit_name, text);
+  setControlText(objects.printer_edit_name, text);
   std::snprintf(text, sizeof(text), "Host/IP: %s", printerUiDraft.host);
-  lv_label_set_text(objects.printer_edit_host, text);
+  setControlText(objects.printer_edit_host, text);
   std::snprintf(text, sizeof(text), "Seriennummer: %s", printerUiDraft.serial);
-  lv_label_set_text(objects.printer_edit_serial, text);
+  setControlText(objects.printer_edit_serial, text);
   std::snprintf(text, sizeof(text), "LAN-Zugangscode: %s",
                 showPrinterAccessCode ? printerUiDraft.accessCode : "********");
-  lv_label_set_text(objects.printer_edit_access_code, text);
-  lv_label_set_text(objects.printer_edit_mask,
-                    showPrinterAccessCode ? "Verbergen" : "Anzeigen");
+  setControlText(objects.printer_edit_access_code, text);
+  setControlText(objects.printer_edit_mask,
+                 showPrinterAccessCode ? "Verbergen" : "Anzeigen");
 }
 
 void updatePrinterSettingsList() {
@@ -724,7 +889,7 @@ void updatePrinterSettingsList() {
                     entry.isDefault ? " | Standard" : "",
                     entry.isActive ? " | ausgewählt" : "");
     }
-    lv_label_set_text(rows[index], text);
+    setControlText(rows[index], text);
     lv_obj_set_style_bg_color(rows[index],
                               lv_color_hex(entry.id == managedPrinterId
                                                ? 0xEF6C00
@@ -800,12 +965,22 @@ void stagingActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   const auto& spool = models::mock::spool();
+  char advancedData[64]{};
+  const char* actionText = nullptr;
+  if (type == rtos::UiActionType::QuickWeight) {
+    actionText = spool.filament;
+  } else if (type == rtos::UiActionType::AdvancedWeight) {
+    std::snprintf(advancedData, sizeof(advancedData), "%s|%.1f|%.1f",
+                  spool.filament, static_cast<double>(spool.emptyWeightGrams),
+                  static_cast<double>(spool.initialWeightGrams));
+    actionText = advancedData;
+  }
   sendAction(type, currentPrinterId, 0, 0,
              type == rtos::UiActionType::QuickWeight
                  ? static_cast<std::int32_t>(spool.emptyWeightGrams)
                  : 0,
              models::mock::staging().spoolId,
-             type == rtos::UiActionType::QuickWeight ? spool.filament : nullptr);
+             actionText);
 }
 
 void trayDetailsClicked(lv_event_t* event) {
@@ -835,25 +1010,54 @@ void makeDescendantsTouchTransparent(lv_obj_t* object) {
   for (std::uint32_t index = 0; index < childCount; ++index) {
     lv_obj_t* child = lv_obj_get_child(object, static_cast<std::int32_t>(index));
     lv_obj_remove_flag(child, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(child, LV_OBJ_FLAG_SCROLLABLE);
     makeDescendantsTouchTransparent(child);
   }
 }
 
 void bindClick(lv_obj_t* object, lv_event_cb_t callback,
                std::uintptr_t userData = 0) {
+  lv_obj_remove_flag(object, LV_OBJ_FLAG_SCROLLABLE);
   makeDescendantsTouchTransparent(object);
   lv_obj_add_event_cb(object, callback, LV_EVENT_CLICKED,
                       reinterpret_cast<void*>(userData));
 }
 
 void styleLabelButton(lv_obj_t* object, std::uint32_t color = 0x1565C0) {
+  if (object == nullptr) return;
+  if (lv_obj_check_type(object, &lv_label_class) &&
+      lv_obj_get_child_count(object) == 0) {
+    char text[128]{};
+    std::snprintf(text, sizeof(text), "%s", lv_label_get_text(object));
+    const lv_font_t* font = static_cast<const lv_font_t*>(
+        lv_obj_get_style_text_font(object, LV_PART_MAIN));
+    lv_label_set_text(object, "");
+    lv_obj_set_style_pad_all(object, 0, LV_PART_MAIN);
+
+    // EEZ uses labels as clickable buttons. Give the visible caption its own
+    // content-sized label across the full button width (4 px margin). LVGL can
+    // then center that complete one- or multi-line block reliably.
+    lv_obj_t* caption = lv_label_create(object);
+    lv_obj_set_width(caption, lv_obj_get_width(object) - 8);
+    lv_obj_set_height(caption, LV_SIZE_CONTENT);
+    lv_label_set_long_mode(caption, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(caption, text);
+    lv_obj_set_style_text_align(caption, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(caption, 0, LV_PART_MAIN);
+    if (font != nullptr)
+      lv_obj_set_style_text_font(caption, font, LV_PART_MAIN);
+    lv_obj_remove_flag(caption, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(caption, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(caption);
+  }
   lv_obj_add_flag(object, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_remove_flag(object, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_style_bg_opa(object, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_set_style_bg_color(object, lv_color_hex(color), LV_PART_MAIN);
   lv_obj_set_style_text_color(object, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
   lv_obj_set_style_text_align(object, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
   lv_obj_set_style_radius(object, 8, LV_PART_MAIN);
-  lv_obj_set_style_pad_top(object, 14, LV_PART_MAIN);
+  centerButtonLabel(object);
 }
 
 void createHomeColorStrips() {
@@ -988,6 +1192,39 @@ void applyApplicationFont() {
 }
 
 void bindGeneratedWidgets() {
+  // EEZ identifiers remain stable; only the user-facing wording is localized.
+  setControlText(objects.staging_details_quick_weight, "Schnellwiegen");
+  setControlText(objects.staging_action_advanced_weight,
+                 "Erweitertes Wiegen");
+  setControlText(objects.tray_select_external, "Extern");
+  setControlText(objects.tray_action_reset, "Slot zur\xC3\xBC" "cksetzen");
+  setControlText(objects.scale_settings_reset,
+                 "Zur\xC3\xBC" "cksetzen");
+  constexpr lv_coord_t kScaleActionWidth = 115;
+  constexpr lv_coord_t kScaleActionGap = 4;
+  const std::array<lv_obj_t*, 4> scaleActionButtons{{
+      objects.scale_settings_tare, objects.scale_settings_calibrate,
+      objects.scale_settings_reset, objects.scale_settings_back,
+  }};
+  for (std::size_t index = 0; index < scaleActionButtons.size(); ++index) {
+    lv_obj_set_pos(scaleActionButtons[index],
+                   4 + static_cast<lv_coord_t>(index) *
+                           (kScaleActionWidth + kScaleActionGap),
+                   264);
+    lv_obj_set_size(scaleActionButtons[index], kScaleActionWidth, 56);
+  }
+  const std::array<lv_obj_t*, 16> settingsControls{{
+      objects.home_settings, objects.select_settings, objects.settings_settings,
+      objects.staging_details_settings, objects.staging_actions_settings,
+      objects.tray_details_settings, objects.tray_actions_settings,
+      objects.tray_select_settings, objects.spoolman_settings_settings,
+      objects.printer_settings_settings, objects.printer_edit_settings,
+      objects.wifi_settings_settings, objects.scale_settings_settings,
+      objects.device_settings_settings, objects.diagnostics_settings_settings,
+      objects.firmware_settings_settings,
+  }};
+  for (lv_obj_t* control : settingsControls) setControlText(control, "Einst.");
+
   bindClick(objects.home_header, headerClicked);
   bindClick(objects.home_bottom_printers, headerClicked);
   bindClick(objects.select_header, headerClicked);
@@ -1322,7 +1559,7 @@ void updatePrinterList() {
   lv_obj_set_style_text_align(objects.select_bottom_status,
                               LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
   lv_obj_set_style_pad_top(objects.select_bottom_status, 14, LV_PART_MAIN);
-  lv_label_set_text(objects.select_bottom_status, "Drucker verwalten");
+  setControlText(objects.select_bottom_status, "Drucker verwalten");
 }
 
 void updateTrayButton(lv_obj_t* button, rtos::PrinterId printerId,
@@ -1395,7 +1632,7 @@ void updateHomeContent() {
   updateTrayButton(objects.home_tray_4, currentPrinterId, currentAmsId, 3,
                    "Slot 4", 3);
   updateTrayButton(objects.home_external, currentPrinterId, 0xFF, 0xFF,
-                   "External", 4);
+                   "Extern", 4);
 
   const auto& staging = models::mock::staging();
   char stagingText[64];
@@ -1561,7 +1798,7 @@ void updateTrayDetails() {
       currentPrinterId, selectedTrayAmsId, selectedTrayId);
   char title[48];
   if (selectedTrayId == 0xFF) {
-    std::snprintf(title, sizeof(title), "External Slot");
+    std::snprintf(title, sizeof(title), "Externer Slot");
   } else {
     std::snprintf(title, sizeof(title), "AMS %u | Slot %u",
                   selectedTrayAmsId, selectedTrayId + 1U);
@@ -1671,7 +1908,7 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
     const bool available = models::mock::findAms(currentPrinterId, id) != nullptr;
     char label[12];
     std::snprintf(label, sizeof(label), "AMS %u", id);
-    lv_label_set_text(amsButtons[id - 1U], label);
+    setControlText(amsButtons[id - 1U], label);
     lv_obj_set_flag(amsButtons[id - 1U], LV_OBJ_FLAG_CLICKABLE, available);
     lv_obj_set_style_bg_color(
         amsButtons[id - 1U],
@@ -1689,7 +1926,7 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
     const auto* tray = models::mock::findTray(currentPrinterId, currentAmsId, id);
     std::snprintf(label, sizeof(label), "Slot %u\n%s", id + 1U,
                   tray == nullptr ? "frei" : trayStateText(tray->state));
-    lv_label_set_text(slotButtons[id], label);
+    setControlText(slotButtons[id], label);
     const bool highlighted = trayTargetSelected && selectedTrayAmsId == currentAmsId &&
                              selectedTrayId == id;
     lv_obj_set_style_bg_color(slotButtons[id],
@@ -1706,7 +1943,7 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
   if (!trayTargetSelected) {
     std::snprintf(summary, sizeof(summary), "Noch kein Zielslot ausgewählt");
   } else if (selectedTrayId == 0xFF) {
-    std::snprintf(summary, sizeof(summary), "Ziel: Drucker %u | External | Spule %lu",
+    std::snprintf(summary, sizeof(summary), "Ziel: Drucker %u | Extern | Spule %lu",
                   currentPrinterId, static_cast<unsigned long>(staging.spoolId));
   } else {
     std::snprintf(summary, sizeof(summary),
@@ -1715,6 +1952,28 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
                   static_cast<unsigned long>(staging.spoolId));
   }
   lv_label_set_text(objects.tray_select_summary, summary);
+}
+
+void setAllHeaderTexts(const char* text) {
+  const std::array<lv_obj_t*, 16> headers{{
+      objects.home_header,
+      objects.select_header,
+      objects.settings_header,
+      objects.staging_details_header,
+      objects.staging_actions_header,
+      objects.tray_details_header,
+      objects.tray_actions_header,
+      objects.tray_select_header,
+      objects.spoolman_settings_header,
+      objects.printer_settings_header,
+      objects.printer_edit_header,
+      objects.wifi_settings_header,
+      objects.scale_settings_header,
+      objects.device_settings_header,
+      objects.diagnostics_settings_header,
+      objects.firmware_settings_header,
+  }};
+  for (lv_obj_t* header : headers) setControlText(header, text);
 }
 
 void updateHeaders(rtos::PrinterId printerId) {
@@ -1735,22 +1994,7 @@ void updateHeaders(rtos::PrinterId printerId) {
   std::snprintf(header, sizeof(header), "%s | %s | %s",
                 connectionText(printer->connectionState), printer->name, ams);
 
-  setButtonText(objects.home_header, header);
-  setButtonText(objects.select_header, header);
-  setButtonText(objects.settings_header, header);
-  lv_label_set_text(objects.staging_details_header, header);
-  lv_label_set_text(objects.staging_actions_header, header);
-  lv_label_set_text(objects.tray_details_header, header);
-  lv_label_set_text(objects.tray_actions_header, header);
-  lv_label_set_text(objects.tray_select_header, header);
-  lv_label_set_text(objects.spoolman_settings_header, header);
-  lv_label_set_text(objects.printer_settings_header, header);
-  lv_label_set_text(objects.printer_edit_header, header);
-  lv_label_set_text(objects.wifi_settings_header, header);
-  lv_label_set_text(objects.scale_settings_header, header);
-  lv_label_set_text(objects.device_settings_header, header);
-  lv_label_set_text(objects.diagnostics_settings_header, header);
-  lv_label_set_text(objects.firmware_settings_header, header);
+  setAllHeaderTexts(header);
 
   updateHomeContent();
   updatePrinterList();
@@ -1772,22 +2016,7 @@ void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
   std::snprintf(header, sizeof(header), "%s | %s | AMS %u",
                 connectionText(printer->connectionState), printer->name,
                 currentAmsId);
-  setButtonText(objects.home_header, header);
-  setButtonText(objects.select_header, header);
-  setButtonText(objects.settings_header, header);
-  lv_label_set_text(objects.staging_details_header, header);
-  lv_label_set_text(objects.staging_actions_header, header);
-  lv_label_set_text(objects.tray_details_header, header);
-  lv_label_set_text(objects.tray_actions_header, header);
-  lv_label_set_text(objects.tray_select_header, header);
-  lv_label_set_text(objects.spoolman_settings_header, header);
-  lv_label_set_text(objects.printer_settings_header, header);
-  lv_label_set_text(objects.printer_edit_header, header);
-  lv_label_set_text(objects.wifi_settings_header, header);
-  lv_label_set_text(objects.scale_settings_header, header);
-  lv_label_set_text(objects.device_settings_header, header);
-  lv_label_set_text(objects.diagnostics_settings_header, header);
-  lv_label_set_text(objects.firmware_settings_header, header);
+  setAllHeaderTexts(header);
   updateHomeContent();
   updateTraySelection(currentPrinterId, currentAmsId, 0, false);
 }

@@ -374,7 +374,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -456,7 +456,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "SET",
+              "text": "Einst.",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -1190,7 +1190,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "External",
+                  "text": "Extern",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -1436,7 +1436,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "NFC: bereit\\nSpoolman: online",
+                  "text": "NFC: bereit\\nSpoolman: verbunden",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -1692,7 +1692,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -1774,7 +1774,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "SET",
+              "text": "Einst.",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -1896,7 +1896,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "* P1S Werkstatt\\nonline | AMS 1",
+                  "text": "* P1S Werkstatt\\nverbunden | AMS 1",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -1978,7 +1978,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "X1C Labor\\nonline | AMS 2",
+                  "text": "X1C Labor\\nverbunden | AMS 2",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -2060,7 +2060,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "A1 Mini Büro\\noffline | kein AMS",
+                  "text": "A1 Mini Büro\\nnicht verbunden | kein AMS",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -2316,7 +2316,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -2398,7 +2398,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "SET",
+              "text": "Einst.",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -3235,7 +3235,7 @@
                 "objID": "cb74e2e7-257f-f77c-f332-0e6c9b8ec000"
               },
               "groupIndex": 0,
-              "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -3273,7 +3273,7 @@
                 "objID": "ff92026d-a0db-1b07-56de-d9ee7f559d4c"
               },
               "groupIndex": 0,
-              "text": "SET",
+              "text": "Einst.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -3501,7 +3501,7 @@
                 "objID": "40c889b9-47cd-012d-ca48-a8fc14843db2"
               },
               "groupIndex": 0,
-              "text": "Quick Weight",
+              "text": "Schnellwiegen",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -3666,7 +3666,7 @@
                 "objID": "86be7cff-3dc5-a5a8-bff9-a1ad3ac75360"
               },
               "groupIndex": 0,
-              "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -3704,7 +3704,7 @@
                 "objID": "f2e72d0c-4be2-01df-9e78-76d7b1cee215"
               },
               "groupIndex": 0,
-              "text": "SET",
+              "text": "Einst.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -3780,7 +3780,7 @@
                 "objID": "d15daeca-454c-0e16-5a03-b2d74261a1ef"
               },
               "groupIndex": 0,
-              "text": "Advanced Weight",
+              "text": "Erweitertes Wiegen",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -4097,7 +4097,7 @@
                 "objID": "aa1b0dfc-74b6-76e7-0078-6dc63c9acc39"
               },
               "groupIndex": 0,
-              "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -4135,7 +4135,7 @@
                 "objID": "ac85e7f5-c187-1f0a-78d7-a7e6db18b532"
               },
               "groupIndex": 0,
-              "text": "SET",
+              "text": "Einst.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -4604,7 +4604,7 @@
                 "objID": "f6c8b69d-7c41-a584-2c74-add584350652"
               },
               "groupIndex": 0,
-              "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -4642,7 +4642,7 @@
                 "objID": "d0cb9cb9-311f-f877-2442-dc1b13b7471d"
               },
               "groupIndex": 0,
-              "text": "SET",
+              "text": "Einst.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -4997,7 +4997,7 @@
                 "objID": "a04976da-894c-3464-c935-50a8a6914aa0"
               },
               "groupIndex": 0,
-              "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -5035,7 +5035,7 @@
                 "objID": "57dfbfbe-7dce-5419-815b-958b0726e2a7"
               },
               "groupIndex": 0,
-              "text": "SET",
+              "text": "Einst.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -5415,7 +5415,7 @@
                 "objID": "f7660e89-a9be-7cb1-d439-b6d7e7fec75c"
               },
               "groupIndex": 0,
-              "text": "External",
+              "text": "Extern",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -5580,7 +5580,7 @@
                 "objID": "54d273a6-e0d9-4839-da3a-9fcc199b0183"
               },
               "groupIndex": 0,
-              "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -5618,7 +5618,7 @@
                 "objID": "f1f3fe51-e26e-092d-b8aa-3353d73484d8"
               },
               "groupIndex": 0,
-              "text": "SET",
+              "text": "Einst.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -6163,7 +6163,7 @@
                 "objID": "59d3d7fd-3530-20be-df30-d71e48e8077f"
               },
               "groupIndex": 0,
-              "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -6201,7 +6201,7 @@
                 "objID": "5fe154e1-aa5d-2651-ea09-6352d8414ee9"
               },
               "groupIndex": 0,
-              "text": "SET",
+              "text": "Einst.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -6277,7 +6277,7 @@
                 "objID": "0343b24b-d77e-9754-8c70-97b9372d572b"
               },
               "groupIndex": 0,
-              "text": "P1S Werkstatt | online | aktiv | Standard",
+              "text": "P1S Werkstatt | verbunden | aktiv | Standard",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -6315,7 +6315,7 @@
                 "objID": "3d256c35-bcaf-4f15-79c0-b819ab855d5d"
               },
               "groupIndex": 0,
-              "text": "X1C Labor | online",
+              "text": "X1C Labor | verbunden",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -6353,7 +6353,7 @@
                 "objID": "b7d9a59a-32ef-4df0-ac05-ea58a098a4ab"
               },
               "groupIndex": 0,
-              "text": "A1 Mini Büro | offline",
+              "text": "A1 Mini Büro | nicht verbunden",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -6708,7 +6708,7 @@
                 "objID": "365ca2c9-6bb3-a0d6-2af0-412ed9a29ed7"
               },
               "groupIndex": 0,
-              "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -6746,7 +6746,7 @@
                 "objID": "52fb23bc-2f09-d234-e60d-1b603fc78771"
               },
               "groupIndex": 0,
-              "text": "SET",
+              "text": "Einst.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -7253,7 +7253,7 @@
                 "objID": "d4454b42-caa1-5731-92fb-27012b866caa"
               },
               "groupIndex": 0,
-              "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -7291,7 +7291,7 @@
                 "objID": "896f65fc-58d5-b197-46d8-fadde902788e"
               },
               "groupIndex": 0,
-              "text": "SET",
+              "text": "Einst.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -7646,7 +7646,7 @@
                 "objID": "6a90384e-da76-3ab8-3910-e6b9b829fa72"
               },
               "groupIndex": 0,
-              "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -7684,7 +7684,7 @@
                 "objID": "87d2b0d3-8201-f00c-475f-2f5f031025e2"
               },
               "groupIndex": 0,
-              "text": "SET",
+              "text": "Einst.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -7808,7 +7808,7 @@
               "type": "LVGLLabelWidget",
               "left": 4,
               "top": 264,
-              "width": 116,
+              "width": 115,
               "height": 56,
               "customInputs": [],
               "customOutputs": [],
@@ -7844,9 +7844,9 @@
             {
               "objID": "6c000000-0021-4600-8600-100000000000",
               "type": "LVGLLabelWidget",
-              "left": 124,
+              "left": 123,
               "top": 264,
-              "width": 144,
+              "width": 115,
               "height": 56,
               "customInputs": [],
               "customOutputs": [],
@@ -7882,9 +7882,9 @@
             {
               "objID": "6c000000-0022-4600-8600-100000000000",
               "type": "LVGLLabelWidget",
-              "left": 272,
+              "left": 242,
               "top": 264,
-              "width": 100,
+              "width": 115,
               "height": 56,
               "customInputs": [],
               "customOutputs": [],
@@ -7912,7 +7912,7 @@
                 "objID": "1fdc07f8-3370-819d-8b52-d045b6e73861"
               },
               "groupIndex": 0,
-              "text": "Reset",
+              "text": "Zurücksetzen",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -7920,9 +7920,9 @@
             {
               "objID": "6c000000-0023-4600-8600-100000000000",
               "type": "LVGLLabelWidget",
-              "left": 376,
+              "left": 361,
               "top": 264,
-              "width": 100,
+              "width": 115,
               "height": 56,
               "customInputs": [],
               "customOutputs": [],
@@ -8039,7 +8039,7 @@
                 "objID": "9c6f8fcb-4d12-1386-6a19-a65d92fda743"
               },
               "groupIndex": 0,
-              "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -8077,7 +8077,7 @@
                 "objID": "b2ac9a33-3a26-8880-7af4-250a75a55af1"
               },
               "groupIndex": 0,
-              "text": "SET",
+              "text": "Einst.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -8394,7 +8394,7 @@
                 "objID": "99e05ff6-7752-be98-c507-5c5ca9c8a2e3"
               },
               "groupIndex": 0,
-              "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -8432,7 +8432,7 @@
                 "objID": "d61dafdd-ca5d-4049-1492-78558299dc85"
               },
               "groupIndex": 0,
-              "text": "SET",
+              "text": "Einst.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -8749,7 +8749,7 @@
                 "objID": "dcd1b73c-856b-8a1b-cc69-27e0f4de5464"
               },
               "groupIndex": 0,
-              "text": "online | P1S Werkstatt | AMS 1",
+              "text": "verbunden | P1S Werkstatt | AMS 1",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -8787,7 +8787,7 @@
                 "objID": "510bcbac-4a58-a5d0-d595-19c33291bf1f"
               },
               "groupIndex": 0,
-              "text": "SET",
+              "text": "Einst.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -9136,7 +9136,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "online | P1S Werkstatt | AMS 1 | SET",
+                  "text": "verbunden | P1S Werkstatt | AMS 1 | Einst.",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -9613,7 +9613,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "online",
+                  "text": "verbunden",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -11521,7 +11521,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "SET",
+              "text": "Einst.",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,

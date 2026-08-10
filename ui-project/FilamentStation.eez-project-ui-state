@@ -1,7 +1,7 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/3",
-    "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/10",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/16",
+    "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/0",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
     "selectedFontObject": "[FilamentStation.eez-project]:/fonts/0",
     "subnavigationSelectedItems": {
@@ -194,16 +194,28 @@
               "type": "tabset",
               "id": "EDITORS",
               "weight": 44.98350740060393,
+              "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
                 {
                   "type": "tab",
-                  "id": "#9b350182-761c-4c67-9ece-429ca7d88b9f",
-                  "name": "SCR_SETTINGS_HOME",
+                  "id": "#8cca91c9-4476-4a6c-bd1a-9eefd8064973",
+                  "name": "CMP_TOP_PRINTER_BAR",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/3",
+                    "objectPath": "[FilamentStation.eez-project]:/userWidgets/0",
+                    "permanent": false
+                  },
+                  "icon": "svg:user_widget"
+                },
+                {
+                  "type": "tab",
+                  "id": "#9b350182-761c-4c67-9ece-429ca7d88b9f",
+                  "name": "SCR_SETTINGS_FIRMWARE",
+                  "component": "editor",
+                  "config": {
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/16",
                     "permanent": false
                   },
                   "icon": "svg:page"

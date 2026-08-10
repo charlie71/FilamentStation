@@ -61,6 +61,10 @@ enum class UiOverlayKind : std::uint8_t {
   RestartConfirmation,
   WifiResetConfirmation,
   QuickWeightConfirmation,
+  AdvancedWeightMode,
+  AdvancedWeightInput,
+  AdvancedWeightConfirmation,
+  AdvancedWeightResult,
 };
 
 enum class UiActionType : std::uint8_t {
