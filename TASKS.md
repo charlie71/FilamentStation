@@ -521,13 +521,13 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 4.6 Quick Weight
 
-* [ ] aktuelle Spule
-* [ ] aktuelles Gewicht
-* [ ] Stabilität
-* [ ] berechnetes Restgewicht
-* [ ] letzte Messung
-* [ ] Bestätigung
-* [ ] AppTask-Aktion
+* [x] aktuelle Spule
+* [x] aktuelles Gewicht
+* [x] Stabilität
+* [x] berechnetes Restgewicht
+* [x] letzte Messung
+* [x] Bestätigung
+* [x] AppTask-Aktion
 
 ## 4.7 Advanced Weight
 

@@ -208,7 +208,8 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
     const bool confirmation =
         command.overlayKind == rtos::UiOverlayKind::Confirmation ||
         command.overlayKind == rtos::UiOverlayKind::RestartConfirmation ||
-        command.overlayKind == rtos::UiOverlayKind::WifiResetConfirmation;
+        command.overlayKind == rtos::UiOverlayKind::WifiResetConfirmation ||
+        command.overlayKind == rtos::UiOverlayKind::QuickWeightConfirmation;
     if (confirmation) {
       lv_obj_remove_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
       lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Abbrechen");
@@ -798,8 +799,13 @@ void stagingMoreClicked(lv_event_t*) {
 void stagingActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
-  sendAction(type, currentPrinterId, 0, 0, 0,
-             models::mock::staging().spoolId);
+  const auto& spool = models::mock::spool();
+  sendAction(type, currentPrinterId, 0, 0,
+             type == rtos::UiActionType::QuickWeight
+                 ? static_cast<std::int32_t>(spool.emptyWeightGrams)
+                 : 0,
+             models::mock::staging().spoolId,
+             type == rtos::UiActionType::QuickWeight ? spool.filament : nullptr);
 }
 
 void trayDetailsClicked(lv_event_t* event) {

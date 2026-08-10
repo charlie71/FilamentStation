@@ -23,6 +23,19 @@ float scaleFactorCountsPerGram = 1.0F;
 bool scaleCalibrated = false;
 bool scaleStable = false;
 bool scaleError = true;
+struct QuickWeightState {
+  bool pending = false;
+  bool hasLastMeasurement = false;
+  std::uint32_t requestId = 0;
+  rtos::SpoolId spoolId = 0;
+  rtos::SpoolId lastMeasurementSpoolId = 0;
+  float emptyWeightGrams = 0.0F;
+  float pendingGrossWeightGrams = 0.0F;
+  float pendingRemainingWeightGrams = 0.0F;
+  float lastMeasurementGrams = 0.0F;
+  char spoolName[32]{};
+};
+QuickWeightState quickWeight{};
 
 float scaleWeightGrams() {
   if (!scaleCalibrated || scaleFactorCountsPerGram == 0.0F) return 0.0F;
@@ -307,6 +320,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       command.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, command, "AppTask: hide overlay queue overflow");
       pendingOverlay = rtos::UiOverlayKind::None;
+      quickWeight.pending = false;
       return;
 
     case rtos::UiActionType::Confirm: {
@@ -314,6 +328,32 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       command.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, command, "AppTask: hide confirmed overlay queue overflow");
       pendingOverlay = rtos::UiOverlayKind::None;
+      if (confirmedOverlay == rtos::UiOverlayKind::QuickWeightConfirmation) {
+        if (!quickWeight.pending) return;
+        if (scaleError || !scaleStable) {
+          quickWeight.pending = false;
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Messung nicht best\xC3\xA4tigt",
+                      "Der Messwert ist nicht mehr stabil. Bitte erneut wiegen.");
+          return;
+        }
+        quickWeight.lastMeasurementGrams =
+            quickWeight.pendingGrossWeightGrams;
+        quickWeight.lastMeasurementSpoolId = quickWeight.spoolId;
+        quickWeight.hasLastMeasurement = true;
+        quickWeight.pending = false;
+        char result[96];
+        std::snprintf(result, sizeof(result),
+                      "Spule #%lu: %.1f g brutto, %.1f g Restgewicht.",
+                      static_cast<unsigned long>(quickWeight.spoolId),
+                      static_cast<double>(quickWeight.lastMeasurementGrams),
+                      static_cast<double>(quickWeight.pendingRemainingWeightGrams));
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Success, action.requestId,
+                    "Messung best\xC3\xA4tigt", result);
+        return;
+      }
       const char* result = "Mock-Aktion best\xC3\xA4tigt; keine reale Funktion ausgef\xC3\xBChrt.";
       if (confirmedOverlay == rtos::UiOverlayKind::RestartConfirmation) {
         result = "Neustart best\xC3\xA4tigt; im Mock nicht ausgef\xC3\xBChrt.";
@@ -667,7 +707,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "AppTask: staging screen command queue overflow");
       return;
 
-    case rtos::UiActionType::QuickWeight:
     case rtos::UiActionType::AdvancedWeight:
     case rtos::UiActionType::ClearStaging:
     case rtos::UiActionType::WriteTag:
@@ -676,8 +715,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::EraseTag:
     case rtos::UiActionType::SearchSpool:
     case rtos::UiActionType::SelectSpool:
-      if (action.type == rtos::UiActionType::QuickWeight ||
-          action.type == rtos::UiActionType::AdvancedWeight) {
+      if (action.type == rtos::UiActionType::AdvancedWeight) {
         if (scaleError) {
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
@@ -697,9 +735,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
           char measurement[96];
           std::snprintf(measurement, sizeof(measurement),
                         "%s: %.1f g\nMesswert stabil.",
-                        action.type == rtos::UiActionType::QuickWeight
-                            ? "Quick Weight"
-                            : "Advanced Weight",
+                        "Advanced Weight",
                         static_cast<double>(scaleWeightGrams()));
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Success, action.requestId,
@@ -736,6 +772,64 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       sendUiCommand(ctx, command,
                     "AppTask: staging action queue overflow");
       return;
+
+    case rtos::UiActionType::QuickWeight: {
+      if (action.spoolId == 0) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Keine Spule", "Im Staging ist keine Spule ausgew\xC3\xA4hlt.");
+        return;
+      }
+      if (scaleError || !scaleCalibrated) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Waage nicht bereit",
+                    scaleError ? "Der HX711 liefert keine Messwerte."
+                               : "Die Waage ist nicht kalibriert.");
+        return;
+      }
+      if (!scaleStable) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::WeightStabilizing, action.requestId,
+                    "Gewicht stabilisieren",
+                    "Der reale Messwert ist noch instabil.");
+        return;
+      }
+      quickWeight.pending = true;
+      quickWeight.requestId = action.requestId;
+      quickWeight.spoolId = action.spoolId;
+      quickWeight.emptyWeightGrams =
+          action.value > 0 ? static_cast<float>(action.value) : 0.0F;
+      quickWeight.pendingGrossWeightGrams = scaleWeightGrams();
+      quickWeight.pendingRemainingWeightGrams =
+          quickWeight.pendingGrossWeightGrams - quickWeight.emptyWeightGrams;
+      if (quickWeight.pendingRemainingWeightGrams < 0.0F)
+        quickWeight.pendingRemainingWeightGrams = 0.0F;
+      std::snprintf(quickWeight.spoolName, sizeof(quickWeight.spoolName), "%s",
+                    action.text[0] == '\0' ? "Spule" : action.text);
+      char summary[96];
+      if (quickWeight.hasLastMeasurement &&
+          quickWeight.lastMeasurementSpoolId == quickWeight.spoolId) {
+        std::snprintf(summary, sizeof(summary),
+                      "#%lu %s\nBrutto: %.1f g | Rest: %.1f g\nZuletzt: %.1f g\nBest\xC3\xA4tigen?",
+                      static_cast<unsigned long>(quickWeight.spoolId),
+                      quickWeight.spoolName,
+                      static_cast<double>(quickWeight.pendingGrossWeightGrams),
+                      static_cast<double>(quickWeight.pendingRemainingWeightGrams),
+                      static_cast<double>(quickWeight.lastMeasurementGrams));
+      } else {
+        std::snprintf(summary, sizeof(summary),
+                      "#%lu %s\nBrutto: %.1f g | Rest: %.1f g\nZuletzt: keine\nBest\xC3\xA4tigen?",
+                      static_cast<unsigned long>(quickWeight.spoolId),
+                      quickWeight.spoolName,
+                      static_cast<double>(quickWeight.pendingGrossWeightGrams),
+                      static_cast<double>(quickWeight.pendingRemainingWeightGrams));
+      }
+      sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                  rtos::UiOverlayKind::QuickWeightConfirmation,
+                  action.requestId, "Quick Weight - stabil", summary);
+      return;
+    }
 
     default:
       rtos::logLine("AppTask: unhandled UiAction");
