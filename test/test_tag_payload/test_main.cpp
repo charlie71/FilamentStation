@@ -4,12 +4,14 @@
 #include <cstring>
 
 #include "nfc/TagParserRegistry.h"
+#include "nfc/TagWritePolicy.h"
 #include "services/NfcPayload.h"
 #include "services/Ntag21x.h"
 
 using filament_station::models::RawTagData;
 using filament_station::models::TagDefinition;
 using filament_station::models::TagFormat;
+using filament_station::models::TagTechnology;
 using filament_station::nfc::ITagParser;
 using filament_station::nfc::TagParseResult;
 using filament_station::nfc::TagParserRegistry;
@@ -187,6 +189,46 @@ void test_bambu_marker_is_always_read_only() {
   TEST_ASSERT_FALSE(result.erasable);
 }
 
+void test_original_bambu_mifare_definition_is_normalized_and_read_only() {
+  RawTagData raw{};
+  raw.technology = TagTechnology::MifareClassic1K;
+  raw.uidLength = 4;
+  raw.uid[0] = 0x12;
+  raw.uid[1] = 0x34;
+  raw.uid[2] = 0x56;
+  raw.uid[3] = 0x78;
+  raw.hardwareWritable = true;
+  raw.mifareBlockMask =
+      (1UL << 2) | (1UL << 4) | (1UL << 5) | (1UL << 6);
+  std::memcpy(raw.mifareBlocks[2], "PLA", 3);
+  std::memcpy(raw.mifareBlocks[4], "PLA Basic", 9);
+  raw.mifareBlocks[5][0] = 0xF5;
+  raw.mifareBlocks[5][1] = 0xF5;
+  raw.mifareBlocks[5][2] = 0xF5;
+  raw.mifareBlocks[5][3] = 0xFF;
+  raw.mifareBlocks[5][4] = 0xE8;
+  raw.mifareBlocks[5][5] = 0x03;
+  raw.mifareBlocks[6][8] = 230;
+  raw.mifareBlocks[6][10] = 190;
+
+  const auto result = TagParserRegistry{}.parse(raw);
+  TEST_ASSERT_EQUAL(TagFormat::BambuLab, result.format);
+  TEST_ASSERT_TRUE(result.knownFormat);
+  TEST_ASSERT_FALSE(result.writable);
+  TEST_ASSERT_FALSE(result.erasable);
+  TEST_ASSERT_FALSE(filament_station::nfc::mayWriteTag(result));
+  TEST_ASSERT_FALSE(filament_station::nfc::mayEraseTag(result));
+  TEST_ASSERT_EQUAL_STRING("Bambu Lab", result.definition.vendor);
+  TEST_ASSERT_EQUAL_STRING("PLA", result.definition.material);
+  TEST_ASSERT_EQUAL_STRING("PLA Basic", result.definition.filamentName);
+  TEST_ASSERT_EQUAL_STRING("", result.definition.colorName);
+  TEST_ASSERT_EQUAL_STRING("#F5F5F5", result.definition.colorCode);
+  TEST_ASSERT_EQUAL_FLOAT(1000.0F,
+                          result.definition.nominalFilamentWeightG);
+  TEST_ASSERT_EQUAL_INT16(190, result.definition.nozzleTempMinC);
+  TEST_ASSERT_EQUAL_INT16(230, result.definition.nozzleTempMaxC);
+}
+
 void test_ntag21x_versions_and_capacities_are_identified() {
   std::uint8_t version[] = {0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03};
   std::uint8_t capability[] = {0xE1, 0x10, 0x12, 0x00};
@@ -234,6 +276,7 @@ int main(int, char**) {
   RUN_TEST(test_parser_order_uses_first_successful_parser);
   RUN_TEST(test_unknown_data_does_not_match_rejecting_parser);
   RUN_TEST(test_bambu_marker_is_always_read_only);
+  RUN_TEST(test_original_bambu_mifare_definition_is_normalized_and_read_only);
   RUN_TEST(test_ntag21x_versions_and_capacities_are_identified);
   RUN_TEST(test_ntag_mismatched_or_locked_metadata_is_not_writable);
   return UNITY_END();

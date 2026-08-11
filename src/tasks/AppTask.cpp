@@ -3,7 +3,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <array>
 #include "config/ScaleConfig.h"
+#include "nfc/TagWritePolicy.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 
@@ -17,6 +19,7 @@ bool storageStartupReady = false;
 bool startupNavigationSent = false;
 rtos::UiOverlayKind pendingOverlay = rtos::UiOverlayKind::None;
 constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;
+constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;
 std::int32_t scaleCounts = 0;
 std::int32_t scaleOffsetCounts = 0;
 float scaleFactorCountsPerGram = 1.0F;
@@ -54,6 +57,60 @@ models::TagReadResult currentTag{};
 bool tagPresent = false;
 rtos::SpoolId pendingTagSpoolId = 0;
 rtos::SpoolId lastUsedTagSpoolId = 0;
+std::array<rtos::NfcUidMapping, rtos::kMaximumNfcUidMappings> bambuMappings{};
+std::uint8_t bambuMappingCount = 0;
+bool pendingBambuMapping = false;
+bool pendingBambuMappingSave = false;
+bool pendingBambuMappingWasNew = false;
+std::uint8_t pendingBambuMappingIndex = 0;
+std::uint32_t pendingBambuMappingRequestId = 0;
+rtos::SpoolId pendingBambuMappingSpoolId = 0;
+rtos::NfcUidMapping previousBambuMapping{};
+std::array<std::uint8_t, 10> pendingBambuUid{};
+std::uint8_t pendingBambuUidLength = 0;
+
+rtos::SpoolId mappedBambuSpool(const models::TagReadResult& tag) {
+  for (std::uint8_t index = 0; index < bambuMappingCount; ++index) {
+    const auto& mapping = bambuMappings[index];
+    if (mapping.uidLength == tag.uidLength &&
+        std::memcmp(mapping.uid, tag.uid, tag.uidLength) == 0)
+      return mapping.spoolId;
+  }
+  return 0;
+}
+
+bool persistBambuMappings(rtos::RtosContext& ctx, std::uint32_t requestId) {
+  rtos::StorageCommand storage{};
+  storage.type = rtos::StorageCommandType::SaveJson;
+  storage.requestId = requestId;
+  storage.documentType = rtos::StorageDocumentType::Nfc;
+  std::snprintf(storage.path, sizeof(storage.path),
+                "/mappings/bambu-tags.json");
+  std::size_t used = static_cast<std::size_t>(std::snprintf(
+      storage.json, sizeof(storage.json),
+      "{\"schemaVersion\":1,\"updatedAt\":\"1970-01-01T00:00:00Z\","
+      "\"documentType\":\"nfc\",\"tagSchemaVersion\":1,\"mappings\":["));
+  for (std::uint8_t index = 0; index < bambuMappingCount; ++index) {
+    const auto& mapping = bambuMappings[index];
+    const int written = std::snprintf(
+        storage.json + used, sizeof(storage.json) - used,
+        "%s{\"uid\":\"%02X%02X%02X%02X\",\"spoolId\":%lu}",
+        index == 0 ? "" : ",", mapping.uid[0], mapping.uid[1],
+        mapping.uid[2], mapping.uid[3],
+        static_cast<unsigned long>(mapping.spoolId));
+    if (written <= 0 || static_cast<std::size_t>(written) >=
+                            sizeof(storage.json) - used)
+      return false;
+    used += static_cast<std::size_t>(written);
+  }
+  if (used + 3 > sizeof(storage.json)) return false;
+  storage.json[used++] = ']';
+  storage.json[used++] = '}';
+  storage.json[used] = '\0';
+  storage.jsonLength = static_cast<std::uint16_t>(used);
+  return xQueueSend(ctx.storageCommandQueue, &storage,
+                    pdMS_TO_TICKS(1000)) == pdPASS;
+}
 
 float scaleWeightGrams() {
   if (!scaleCalibrated || scaleFactorCountsPerGram == 0.0F) return 0.0F;
@@ -337,6 +394,15 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
 
   switch (action.type) {
     case rtos::UiActionType::Cancel:
+      pendingBambuMapping = false;
+      if (currentScreen == rtos::UiScreenId::TagDefinitionImport ||
+          currentScreen == rtos::UiScreenId::BambuSpoolType) {
+        command.type = rtos::UiCommandType::ShowScreen;
+        command.screenId = rtos::UiScreenId::Home;
+        currentScreen = command.screenId;
+        sendUiCommand(ctx, command, "AppTask: Bambu import cancel overflow");
+        return;
+      }
       if (currentScreen == rtos::UiScreenId::TagReview ||
           currentScreen == rtos::UiScreenId::TagWrite) {
         pendingTagOperation = PendingTagOperation::None;
@@ -355,6 +421,16 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       return;
 
     case rtos::UiActionType::Confirm: {
+      if (pendingOverlay == rtos::UiOverlayKind::TagDefinitionImport) {
+        command.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, command, "AppTask: Bambu import dialog close overflow");
+        pendingOverlay = rtos::UiOverlayKind::None;
+        pendingBambuMapping = true;
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::SpoolPicker, action.requestId,
+                    "Spoolman-Spule ausw\xC3\xA4hlen", "");
+        return;
+      }
       if (currentScreen == rtos::UiScreenId::TagReview) {
         if (!tagPresent || pendingTagOperation == PendingTagOperation::None) {
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
@@ -368,6 +444,18 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         nfcCommand.type = pendingTagOperation == PendingTagOperation::Write
                               ? rtos::NfcCommandType::WriteSpoolTag
                               : rtos::NfcCommandType::EraseTag;
+        const bool mutationAllowed =
+            nfcCommand.type == rtos::NfcCommandType::WriteSpoolTag
+                ? nfc::mayWriteTag(currentTag)
+                : nfc::mayEraseTag(currentTag);
+        if (!mutationAllowed) {
+          pendingTagOperation = PendingTagOperation::None;
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Tag ist schreibgesch\xC3\xBCtzt",
+                      "Originale Bambu-Tags werden niemals ver\xC3\xA4ndert.");
+          return;
+        }
         if (xQueueSend(ctx.nfcCommandQueue, &nfcCommand,
                        pdMS_TO_TICKS(50)) != pdPASS) {
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
@@ -400,6 +488,18 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         nfcCommand.type = pendingTagOperation == PendingTagOperation::Write
                               ? rtos::NfcCommandType::WriteSpoolTag
                               : rtos::NfcCommandType::EraseTag;
+        const bool mutationAllowed =
+            nfcCommand.type == rtos::NfcCommandType::WriteSpoolTag
+                ? nfc::mayWriteTag(currentTag)
+                : nfc::mayEraseTag(currentTag);
+        if (!mutationAllowed) {
+          pendingTagOperation = PendingTagOperation::None;
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Tag ist schreibgesch\xC3\xBCtzt",
+                      "Originale Bambu-Tags werden niemals ver\xC3\xA4ndert.");
+          return;
+        }
         if (xQueueSend(ctx.nfcCommandQueue, &nfcCommand,
                        pdMS_TO_TICKS(50)) != pdPASS) {
           pendingTagOperation = PendingTagOperation::None;
@@ -829,6 +929,66 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::SearchSpool:
     case rtos::UiActionType::SelectSpool:
       if (action.type == rtos::UiActionType::SearchSpool &&
+          currentScreen == rtos::UiScreenId::TagDefinitionImport) {
+        pendingBambuMapping = true;
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::SpoolPicker, action.requestId,
+                    "Spoolman-Spule ausw\xC3\xA4hlen", "");
+        return;
+      }
+      if (pendingBambuMapping) {
+        if (action.spoolId == 0 || pendingBambuUidLength != 4) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Zuordnung fehlgeschlagen", "Keine g\xC3\xBCltige Spule ausgew\xC3\xA4hlt.");
+          return;
+        }
+        std::uint8_t index = 0;
+        for (; index < bambuMappingCount; ++index) {
+          if (bambuMappings[index].uidLength == pendingBambuUidLength &&
+              std::memcmp(bambuMappings[index].uid, pendingBambuUid.data(),
+                          pendingBambuUidLength) == 0)
+            break;
+        }
+        if (index == bambuMappingCount) {
+          if (bambuMappingCount >= bambuMappings.size()) {
+            sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                        rtos::UiOverlayKind::Error, action.requestId,
+                        "Zuordnung fehlgeschlagen", "Der lokale Mapping-Speicher ist voll.");
+            return;
+          }
+          ++bambuMappingCount;
+        }
+        auto& mapping = bambuMappings[index];
+        previousBambuMapping = mapping;
+        pendingBambuMappingWasNew = index + 1U == bambuMappingCount &&
+                                    mapping.uidLength == 0;
+        pendingBambuMappingIndex = index;
+        mapping.uidLength = pendingBambuUidLength;
+        std::memcpy(mapping.uid, pendingBambuUid.data(), pendingBambuUidLength);
+        mapping.spoolId = action.spoolId;
+        pendingBambuMapping = false;
+        command.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, command, "AppTask: Bambu picker close overflow");
+        if (!persistBambuMappings(ctx, action.requestId)) {
+          mapping = previousBambuMapping;
+          if (pendingBambuMappingWasNew) --bambuMappingCount;
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Speichern fehlgeschlagen",
+                      "Die UID-Zuordnung konnte nicht an StorageTask gesendet werden.");
+          return;
+        }
+        pendingBambuMappingSave = true;
+        pendingBambuMappingRequestId = action.requestId;
+        pendingBambuMappingSpoolId = action.spoolId;
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::BambuMappingSave, action.requestId,
+                    "Zuordnung speichern",
+                    "Die lokale UID-Zuordnung wird gespeichert.");
+        return;
+      }
+      if (action.type == rtos::UiActionType::SearchSpool &&
           currentScreen == rtos::UiScreenId::TagActionSelect) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::SpoolPicker, action.requestId,
@@ -1224,6 +1384,42 @@ void appTask(void* parameter) {
             previousScreen = currentScreen;
             currentScreen = navigation.screenId;
           }
+        } else if (currentTag.format == models::TagFormat::BambuLab) {
+          const rtos::SpoolId mappedSpool = mappedBambuSpool(currentTag);
+          if (mappedSpool != 0) {
+            rtos::UiCommand result{};
+            result.type = rtos::UiCommandType::ShowScreen;
+            result.screenId = rtos::UiScreenId::TagResult;
+            result.spoolId = mappedSpool;
+            std::snprintf(result.text, sizeof(result.text),
+                          "Bambu-Tag read-only: vorhandene Zuordnung zu Spule %lu verwendet.",
+                          static_cast<unsigned long>(mappedSpool));
+            currentScreen = result.screenId;
+            sendUiCommand(ctx, result, "AppTask: Bambu mapped result overflow");
+          } else {
+            pendingBambuUidLength = currentTag.uidLength;
+            std::memcpy(pendingBambuUid.data(), currentTag.uid,
+                        currentTag.uidLength);
+            char summary[128]{};
+            std::snprintf(summary, sizeof(summary),
+                          "Hersteller: %s\nFilament: %s\nMaterial: %s\nFarbe: %s\nNenngewicht: %.0f g\nTag bleibt read-only.",
+                          currentTag.definition.vendor,
+                          currentTag.definition.filamentName,
+                          currentTag.definition.material,
+                          currentTag.definition.colorCode,
+                          static_cast<double>(currentTag.definition.nominalFilamentWeightG));
+            rtos::UiCommand definition{};
+            definition.type = rtos::UiCommandType::ShowScreen;
+            definition.screenId = rtos::UiScreenId::TagDefinitionImport;
+            definition.requestId = event.requestId;
+            std::snprintf(definition.text, sizeof(definition.text), "%s",
+                          summary);
+            if (sendUiCommand(ctx, definition,
+                              "AppTask: Bambu definition screen overflow")) {
+              previousScreen = currentScreen;
+              currentScreen = definition.screenId;
+            }
+          }
         }
       } else if (event.type == rtos::AppEventType::NfcTagRemoved) {
         tagPresent = false;
@@ -1301,6 +1497,38 @@ void appTask(void* parameter) {
         scaleCommand.calibrated = event.scaleCalibrated;
         sendScaleCommand(ctx, scaleCommand);
         sendScaleUiState(ctx, event.requestId);
+      } else if (event.type == rtos::AppEventType::StorageReadCompleted &&
+                 event.requestId == kBambuMappingLoadRequestId) {
+        bambuMappingCount = std::min<std::uint8_t>(
+            event.nfcMappingCount, bambuMappings.size());
+        for (std::uint8_t index = 0; index < bambuMappingCount; ++index)
+          bambuMappings[index] = event.nfcMappings[index];
+      } else if (pendingBambuMappingSave &&
+                 event.requestId == pendingBambuMappingRequestId &&
+                 event.type == rtos::AppEventType::StorageWriteCompleted) {
+        pendingBambuMappingSave = false;
+        rtos::UiCommand hide{};
+        hide.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, hide, "AppTask: Bambu save progress close overflow");
+        rtos::UiCommand result{};
+        result.type = rtos::UiCommandType::ShowScreen;
+        result.screenId = rtos::UiScreenId::TagResult;
+        result.spoolId = pendingBambuMappingSpoolId;
+        std::snprintf(result.text, sizeof(result.text),
+                      "Bambu-Tag read-only mit Spule %lu verkn\xC3\xBCpft. Der Tag wurde nicht ver\xC3\xA4ndert.",
+                      static_cast<unsigned long>(pendingBambuMappingSpoolId));
+        currentScreen = result.screenId;
+        sendUiCommand(ctx, result, "AppTask: Bambu mapping result overflow");
+      } else if (pendingBambuMappingSave &&
+                 event.requestId == pendingBambuMappingRequestId &&
+                 event.type == rtos::AppEventType::StorageRequestError) {
+        pendingBambuMappingSave = false;
+        bambuMappings[pendingBambuMappingIndex] = previousBambuMapping;
+        if (pendingBambuMappingWasNew) --bambuMappingCount;
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Speichern fehlgeschlagen",
+                    "Die UID-Zuordnung wurde nicht dauerhaft gespeichert.");
       }
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
@@ -1312,6 +1540,15 @@ void appTask(void* parameter) {
       if (event.type == rtos::AppEventType::SdMounted) {
         storageStartupReady = true;
         requestScaleConfiguration(ctx);
+        rtos::StorageCommand mappingLoad{};
+        mappingLoad.type = rtos::StorageCommandType::LoadJson;
+        mappingLoad.requestId = kBambuMappingLoadRequestId;
+        mappingLoad.documentType = rtos::StorageDocumentType::Nfc;
+        std::snprintf(mappingLoad.path, sizeof(mappingLoad.path),
+                      "/mappings/bambu-tags.json");
+        if (xQueueSend(ctx.storageCommandQueue, &mappingLoad,
+                       pdMS_TO_TICKS(1000)) != pdPASS)
+          rtos::logLine("AppTask: Bambu mapping load queue overflow");
         showHomeWhenStartupReady(ctx);
       }
     }

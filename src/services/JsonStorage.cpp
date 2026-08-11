@@ -262,6 +262,7 @@ JsonStorageError JsonStorage::createDefault(
       break;
     case rtos::StorageDocumentType::Nfc:
       document["tagSchemaVersion"] = 1;
+      document["mappings"].to<JsonArray>();
       break;
     case rtos::StorageDocumentType::Diagnostics:
       break;

@@ -16,6 +16,13 @@ enum class NfcTagType : std::uint8_t {
   Legacy,
 };
 
+struct NfcUidMapping {
+  std::uint8_t uid[10]{};
+  std::uint8_t uidLength = 0;
+  SpoolId spoolId = 0;
+};
+constexpr std::size_t kMaximumNfcUidMappings = 8;
+
 struct AppEvent {
   AppEventType type;
   std::uint32_t requestId;
@@ -28,6 +35,8 @@ struct AppEvent {
   std::uint8_t nfcUid[10];
   std::uint8_t nfcUidLength;
   models::TagReadResult tagReadResult;
+  NfcUidMapping nfcMappings[kMaximumNfcUidMappings];
+  std::uint8_t nfcMappingCount;
   char text[64];
   UiAction uiAction;
 };

@@ -397,7 +397,8 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
         command.overlayKind == rtos::UiOverlayKind::RestartConfirmation ||
         command.overlayKind == rtos::UiOverlayKind::WifiResetConfirmation ||
         command.overlayKind == rtos::UiOverlayKind::QuickWeightConfirmation ||
-        command.overlayKind == rtos::UiOverlayKind::AdvancedWeightConfirmation;
+        command.overlayKind == rtos::UiOverlayKind::AdvancedWeightConfirmation ||
+        command.overlayKind == rtos::UiOverlayKind::TagDefinitionImport;
     if (confirmation) {
       lv_obj_remove_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
       lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Abbrechen");
@@ -1246,7 +1247,7 @@ void createTrayDetailsDecoration() {
 }
 
 void applyApplicationFont() {
-  const std::array<lv_obj_t*, 21> screens{{
+  const std::array<lv_obj_t*, 23> screens{{
       objects.scr_boot, objects.scr_home, objects.scr_printer_select,
       objects.scr_settings_home, objects.scr_staging_details,
       objects.scr_staging_actions, objects.scr_tray_details,
@@ -1258,6 +1259,7 @@ void applyApplicationFont() {
       objects.scr_settings_firmware,
       objects.scr_tag_action_select, objects.scr_tag_review,
       objects.scr_tag_write, objects.scr_tag_result,
+      objects.scr_tag_definition_import, objects.scr_bambu_spool_type,
   }};
   for (lv_obj_t* screen : screens) {
     lv_obj_set_style_text_font(screen, &ui_font_ui_german16, LV_PART_MAIN);
@@ -1324,6 +1326,20 @@ void bindGeneratedWidgets() {
   setControlText(objects.tag_result_quick_weight, "Schnell wiegen");
   setControlText(objects.tag_result_advanced_weight, "Erweitert wiegen");
   setControlText(objects.tag_result_close, "Schlie\xC3\x9F" "en");
+  setControlText(objects.tag_definition_import_settings, "Einst.");
+  setControlText(objects.tag_definition_import_title,
+                 "Bambu-Definition erkannt");
+  setControlText(objects.tag_definition_import_select_spool,
+                 "Vorhandene Spule ausw\xC3\xA4hlen");
+  setControlText(objects.tag_definition_import_cancel, "Abbrechen");
+  setControlText(objects.bambu_spool_type_title, "Leergewicht ausw\xC3\xA4hlen");
+  setControlText(objects.bambu_spool_type_back, "Zur\xC3\xBC" "ck");
+  styleLabelButton(objects.tag_definition_import_select_spool, 0x1565C0);
+  styleLabelButton(objects.tag_definition_import_cancel, 0x455A64);
+  styleLabelButton(objects.bambu_spool_type_low, 0x1565C0);
+  styleLabelButton(objects.bambu_spool_type_high, 0x1565C0);
+  styleLabelButton(objects.bambu_spool_type_manual, 0x1565C0);
+  styleLabelButton(objects.bambu_spool_type_back, 0x455A64);
 
   bindClick(objects.tag_action_header, headerClicked);
   bindClick(objects.tag_review_header, headerClicked);
@@ -1350,6 +1366,14 @@ void bindGeneratedWidgets() {
   bindClick(objects.tag_result_advanced_weight, stagingActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::AdvancedWeight));
   bindClick(objects.tag_result_close, backClicked);
+  bindClick(objects.tag_definition_import_header, headerClicked);
+  bindClick(objects.tag_definition_import_settings, settingsClicked);
+  bindClick(objects.tag_definition_import_select_spool, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::SearchSpool));
+  bindClick(objects.tag_definition_import_cancel, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::Cancel));
+  bindClick(objects.bambu_spool_type_back, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::Cancel));
 
   bindClick(objects.home_header, headerClicked);
   bindClick(objects.home_bottom_printers, headerClicked);
@@ -2092,7 +2116,7 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
 }
 
 void setAllHeaderTexts(const char* text) {
-  const std::array<lv_obj_t*, 20> headers{{
+  const std::array<lv_obj_t*, 21> headers{{
       objects.home_header,
       objects.select_header,
       objects.settings_header,
@@ -2113,6 +2137,7 @@ void setAllHeaderTexts(const char* text) {
       objects.tag_review_header,
       objects.tag_write_header,
       objects.tag_result_header,
+      objects.tag_definition_import_header,
   }};
   for (lv_obj_t* header : headers) setControlText(header, text);
 }
@@ -2249,6 +2274,12 @@ void showScreen(rtos::UiScreenId screenId) {
     case rtos::UiScreenId::TagResult:
       loadScreen(SCREEN_ID_SCR_TAG_RESULT);
       break;
+    case rtos::UiScreenId::TagDefinitionImport:
+      loadScreen(SCREEN_ID_SCR_TAG_DEFINITION_IMPORT);
+      break;
+    case rtos::UiScreenId::BambuSpoolType:
+      loadScreen(SCREEN_ID_SCR_BAMBU_SPOOL_TYPE);
+      break;
   }
 }
 
@@ -2360,6 +2391,9 @@ void processUiCommand(const rtos::UiCommand& command) {
       } else if (command.screenId == rtos::UiScreenId::TagResult &&
                  command.text[0] != '\0') {
         lv_label_set_text(objects.tag_result_message, command.text);
+      } else if (command.screenId == rtos::UiScreenId::TagDefinitionImport &&
+                 command.text[0] != '\0') {
+        lv_label_set_text(objects.tag_definition_import_summary, command.text);
       }
       if (command.screenId == rtos::UiScreenId::TrayDetails ||
           command.screenId == rtos::UiScreenId::TrayActions) {

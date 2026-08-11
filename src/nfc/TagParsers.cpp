@@ -1,6 +1,7 @@
 #include "nfc/TagParsers.h"
 
 #include <cstdio>
+#include <cstring>
 
 #include "services/NfcPayload.h"
 
@@ -47,10 +48,57 @@ models::TagFormat BambuLabTagParser::format() const {
   return models::TagFormat::BambuLab;
 }
 bool BambuLabTagParser::canParse(const models::RawTagData& tag) const {
-  return payload(tag).type == services::NfcPayloadType::Bambu;
+  constexpr std::uint32_t kRequiredBlocks =
+      (1UL << 2) | (1UL << 4) | (1UL << 5) | (1UL << 6);
+  return payload(tag).type == services::NfcPayloadType::Bambu ||
+         (tag.technology == models::TagTechnology::MifareClassic1K &&
+          (tag.mifareBlockMask & kRequiredBlocks) == kRequiredBlocks);
 }
 TagParseResult BambuLabTagParser::parse(
     const models::RawTagData& tag, models::TagDefinition& result) const {
+  if (tag.technology == models::TagTechnology::MifareClassic1K &&
+      (tag.mifareBlockMask & ((1UL << 2) | (1UL << 4) | (1UL << 5) |
+                              (1UL << 6))) ==
+          ((1UL << 2) | (1UL << 4) | (1UL << 5) | (1UL << 6))) {
+    result = {};
+    result.format = format();
+    std::snprintf(result.vendor, sizeof(result.vendor), "Bambu Lab");
+    auto copyText = [](char* destination, std::size_t capacity,
+                       const std::uint8_t* source, std::size_t length) {
+      const std::size_t count = length < capacity - 1 ? length : capacity - 1;
+      std::memcpy(destination, source, count);
+      destination[count] = '\0';
+      while (count > 0 &&
+             (destination[std::strlen(destination) - 1] == ' ' ||
+              destination[std::strlen(destination) - 1] == '\0')) {
+        const std::size_t used = std::strlen(destination);
+        if (used == 0) break;
+        destination[used - 1] = '\0';
+      }
+    };
+    copyText(result.material, sizeof(result.material), tag.mifareBlocks[2], 16);
+    copyText(result.filamentName, sizeof(result.filamentName),
+             tag.mifareBlocks[4], 16);
+    const auto* color = tag.mifareBlocks[5];
+    std::snprintf(result.colorCode, sizeof(result.colorCode), "#%02X%02X%02X",
+                  color[0], color[1], color[2]);
+    const std::uint16_t nominalWeight =
+        color[4] | (static_cast<std::uint16_t>(color[5]) << 8);
+    if (nominalWeight <= 5000U)
+      result.nominalFilamentWeightG = static_cast<float>(nominalWeight);
+    const auto* temperatures = tag.mifareBlocks[6];
+    const std::uint16_t maximumTemperature = static_cast<std::uint16_t>(
+        temperatures[8] | (static_cast<std::uint16_t>(temperatures[9]) << 8));
+    const std::uint16_t minimumTemperature = static_cast<std::uint16_t>(
+        temperatures[10] | (static_cast<std::uint16_t>(temperatures[11]) << 8));
+    if (minimumTemperature <= maximumTemperature && maximumTemperature <= 500U) {
+      result.nozzleTempMaxC = static_cast<std::int16_t>(maximumTemperature);
+      result.nozzleTempMinC = static_cast<std::int16_t>(minimumTemperature);
+    }
+    std::snprintf(result.sourceDescription, sizeof(result.sourceDescription),
+                  "Bambu MIFARE Classic 1K public block format");
+    return TagParseResult::Parsed;
+  }
   return parseKnownPayload(tag, services::NfcPayloadType::Bambu, format(),
                            "Bambu marker in NDEF text", result);
 }

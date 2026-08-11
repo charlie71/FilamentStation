@@ -20,6 +20,10 @@ struct RawTagData {
   bool hardwareWritable = false;
   std::uint16_t ndefLength = 0;
   std::uint8_t ndef[config::kNfcMaxNdefBytes]{};
+  // Decrypted MIFARE Classic blocks used by the documented Bambu format.
+  // Bit N indicates whether block N was authenticated and read successfully.
+  std::uint32_t mifareBlockMask = 0;
+  std::uint8_t mifareBlocks[17][16]{};
 };
 
 struct TagReadResult {

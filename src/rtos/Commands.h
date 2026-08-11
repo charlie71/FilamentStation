@@ -29,6 +29,8 @@ enum class UiScreenId : std::uint8_t {
   TagReview,
   TagWrite,
   TagResult,
+  TagDefinitionImport,
+  BambuSpoolType,
 };
 
 enum class UiCommandType : std::uint8_t {
@@ -59,6 +61,7 @@ enum class UiOverlayKind : std::uint8_t {
   WeightStabilizing,
   SpoolmanRequest,
   BambuConnection,
+  BambuMappingSave,
   Confirmation,
   Error,
   Success,
@@ -74,6 +77,7 @@ enum class UiOverlayKind : std::uint8_t {
   TagWrite,
   TagResult,
   SpoolPicker,
+  TagDefinitionImport,
 };
 
 enum class UiActionType : std::uint8_t {

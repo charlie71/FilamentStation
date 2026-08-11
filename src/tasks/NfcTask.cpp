@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <driver/gpio.h>
 #include <driver/uart.h>
+#include <mbedtls/md.h>
 
 #include <algorithm>
 #include <array>
@@ -14,6 +15,7 @@
 #include "config/TaskConfig.h"
 #include "models/TagReadResult.h"
 #include "nfc/TagParserRegistry.h"
+#include "nfc/TagWritePolicy.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/NfcPayload.h"
@@ -32,6 +34,7 @@ constexpr std::uint8_t kCommandRfConfiguration = 0x32;
 constexpr std::uint8_t kCommandInDataExchange = 0x40;
 constexpr std::uint8_t kCommandInListPassiveTarget = 0x4A;
 constexpr std::uint8_t kMifareRead = 0x30;
+constexpr std::uint8_t kMifareAuthenticateKeyA = 0x60;
 constexpr std::uint8_t kMifareWrite = 0xA2;
 constexpr std::uint8_t kGetVersion = 0x60;
 std::size_t lastTransactionRxBytes = 0;
@@ -301,6 +304,87 @@ bool readPages(const TargetInfo& target, std::uint8_t firstPage,
          length >= 16;
 }
 
+bool deriveBambuKeys(const TargetInfo& target,
+                     std::array<std::uint8_t, 16 * 6>& keys) {
+  if (target.uidLength != 4) return false;
+  constexpr std::uint8_t salt[] = {0x9A, 0x75, 0x9C, 0xF2, 0xC4, 0xF7,
+                                   0xCA, 0xFF, 0x22, 0x2C, 0xB9, 0x76,
+                                   0x9B, 0x41, 0xBC, 0x96};
+  constexpr std::uint8_t info[] = {'R', 'F', 'I', 'D', '-', 'A', 0x00};
+  const mbedtls_md_info_t* sha256 =
+      mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+  if (sha256 == nullptr) return false;
+
+  // HKDF-SHA256 nach RFC 5869. Arduino-ESP32 exportiert in der verwendeten
+  // mbedTLS-Konfiguration nicht mbedtls_hkdf(), wohl aber den HMAC-Baustein.
+  std::array<std::uint8_t, 32> prk{};
+  if (mbedtls_md_hmac(sha256, salt, sizeof(salt), target.uid.data(),
+                      target.uidLength, prk.data()) != 0) {
+    return false;
+  }
+
+  std::array<std::uint8_t, 32> previous{};
+  std::array<std::uint8_t, 32 + sizeof(info) + 1> input{};
+  std::size_t generated = 0;
+  std::size_t previousLength = 0;
+  std::uint8_t counter = 1;
+  while (generated < keys.size()) {
+    std::memcpy(input.data(), previous.data(), previousLength);
+    std::memcpy(input.data() + previousLength, info, sizeof(info));
+    input[previousLength + sizeof(info)] = counter;
+    if (mbedtls_md_hmac(sha256, prk.data(), prk.size(), input.data(),
+                        previousLength + sizeof(info) + 1,
+                        previous.data()) != 0) {
+      return false;
+    }
+    const std::size_t count =
+        std::min(previous.size(), keys.size() - generated);
+    std::memcpy(keys.data() + generated, previous.data(), count);
+    generated += count;
+    previousLength = previous.size();
+    ++counter;
+  }
+  return true;
+}
+
+bool authenticateMifareBlock(const TargetInfo& target, std::uint8_t block,
+                             const std::uint8_t* key) {
+  if (target.uidLength != 4) return false;
+  std::uint8_t command[12]{kMifareAuthenticateKeyA, block};
+  std::memcpy(command + 2, key, 6);
+  std::memcpy(command + 8, target.uid.data(), 4);
+  std::uint8_t response[4]{};
+  std::size_t length = 0;
+  return exchange(target, command, sizeof(command), response,
+                  sizeof(response), length);
+}
+
+bool readMifareBlock(const TargetInfo& target, std::uint8_t block,
+                     std::uint8_t* output) {
+  const std::uint8_t command[] = {kMifareRead, block};
+  std::size_t length = 0;
+  return exchange(target, command, sizeof(command), output, 16, length) &&
+         length >= 16;
+}
+
+void readBambuBlocks(const TargetInfo& target, models::RawTagData& raw) {
+  if (raw.technology != models::TagTechnology::MifareClassic1K) return;
+  std::array<std::uint8_t, 16 * 6> keys{};
+  if (!deriveBambuKeys(target, keys)) return;
+  constexpr std::array<std::uint8_t, 7> blocks{{1, 2, 4, 5, 6, 9, 16}};
+  std::int8_t authenticatedSector = -1;
+  for (const std::uint8_t block : blocks) {
+    const std::uint8_t sector = block / 4U;
+    if (authenticatedSector != static_cast<std::int8_t>(sector)) {
+      if (!authenticateMifareBlock(target, block, keys.data() + sector * 6U))
+        continue;
+      authenticatedSector = static_cast<std::int8_t>(sector);
+    }
+    if (readMifareBlock(target, block, raw.mifareBlocks[block]))
+      raw.mifareBlockMask |= 1UL << block;
+  }
+}
+
 bool writePage(const TargetInfo& target, std::uint8_t page,
                const std::uint8_t* bytes) {
   const std::uint8_t command[] = {kMifareWrite, page, bytes[0], bytes[1],
@@ -501,6 +585,7 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
   raw.uidLength = target.uidLength;
   raw.sak = target.sak;
   std::memcpy(raw.uid, target.uid.data(), target.uidLength);
+  readBambuBlocks(target, raw);
   std::size_t ndefLength = 0;
   if (readNdef(target, raw.ndef, sizeof(raw.ndef), ndefLength)) {
     raw.ndefPresent = true;
@@ -661,6 +746,9 @@ void nfcTask(void* parameter) {
     sendEvent(ctx, event);
   }
 
+  rtos::logf("NfcTask: minimum remaining stack after initialization: %u bytes",
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+
   bool reading = true;
   bool present = false;
   TargetInfo active{};
@@ -678,7 +766,7 @@ void nfcTask(void* parameter) {
           reading = false;
           break;
         case rtos::NfcCommandType::WriteSpoolTag:
-          if (present && activeResult.writable)
+          if (present && nfc::mayWriteTag(activeResult))
             handleWrite(ctx, command, active);
           else if (present)
             sendError(ctx, command.requestId, "Tag format is read-only");
@@ -686,7 +774,7 @@ void nfcTask(void* parameter) {
             sendError(ctx, command.requestId, "No NFC tag present");
           break;
         case rtos::NfcCommandType::EraseTag:
-          if (present && activeResult.erasable)
+          if (present && nfc::mayEraseTag(activeResult))
             handleErase(ctx, command, active);
           else if (present)
             sendError(ctx, command.requestId, "Tag format cannot be erased");

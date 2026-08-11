@@ -2622,6 +2622,154 @@ void create_screen_scr_tag_result() {
 void tick_screen_scr_tag_result() {
 }
 
+void create_screen_scr_tag_definition_import() {
+    lv_obj_t *obj = lv_obj_create(0);
+    objects.scr_tag_definition_import = obj;
+    lv_obj_set_pos(obj, 0, 0);
+    lv_obj_set_size(obj, 480, 320);
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SNAPPABLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+    {
+        lv_obj_t *parent_obj = obj;
+        {
+            // tag_definition_import_header
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.tag_definition_import_header = obj;
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, 408, 40);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Verbunden | P1S Werkstatt | AMS 1");
+        }
+        {
+            // tag_definition_import_settings
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.tag_definition_import_settings = obj;
+            lv_obj_set_pos(obj, 412, 0);
+            lv_obj_set_size(obj, 68, 40);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Einst.");
+        }
+        {
+            // tag_definition_import_title
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.tag_definition_import_title = obj;
+            lv_obj_set_pos(obj, 8, 44);
+            lv_obj_set_size(obj, 464, 32);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Bambu-Definition erkannt");
+        }
+        {
+            // tag_definition_import_summary
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.tag_definition_import_summary = obj;
+            lv_obj_set_pos(obj, 12, 80);
+            lv_obj_set_size(obj, 456, 176);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Hersteller: Bambu Lab\nMaterial: PLA\nFarbcode: #FFFFFF\nOriginaltag bleibt unverändert.");
+        }
+        {
+            // tag_definition_import_select_spool
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.tag_definition_import_select_spool = obj;
+            lv_obj_set_pos(obj, 4, 264);
+            lv_obj_set_size(obj, 312, 56);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Vorhandene Spule auswählen");
+        }
+        {
+            // tag_definition_import_cancel
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.tag_definition_import_cancel = obj;
+            lv_obj_set_pos(obj, 324, 264);
+            lv_obj_set_size(obj, 152, 56);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Abbrechen");
+        }
+    }
+    
+    tick_screen_scr_tag_definition_import();
+}
+
+void tick_screen_scr_tag_definition_import() {
+}
+
+void create_screen_scr_bambu_spool_type() {
+    lv_obj_t *obj = lv_obj_create(0);
+    objects.scr_bambu_spool_type = obj;
+    lv_obj_set_pos(obj, 0, 0);
+    lv_obj_set_size(obj, 480, 320);
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SNAPPABLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+    {
+        lv_obj_t *parent_obj = obj;
+        {
+            // bambu_spool_type_header
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.bambu_spool_type_header = obj;
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, 480, 40);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Bambu-Spulentyp");
+        }
+        {
+            // bambu_spool_type_title
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.bambu_spool_type_title = obj;
+            lv_obj_set_pos(obj, 8, 52);
+            lv_obj_set_size(obj, 464, 36);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Leergewicht auswählen");
+        }
+        {
+            // bambu_spool_type_low
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.bambu_spool_type_low = obj;
+            lv_obj_set_pos(obj, 8, 96);
+            lv_obj_set_size(obj, 464, 52);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Niedrigtemperatur-Spule · etwa 250 g");
+        }
+        {
+            // bambu_spool_type_high
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.bambu_spool_type_high = obj;
+            lv_obj_set_pos(obj, 8, 156);
+            lv_obj_set_size(obj, 464, 52);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Hochtemperatur-Spule · etwa 260 g");
+        }
+        {
+            // bambu_spool_type_manual
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.bambu_spool_type_manual = obj;
+            lv_obj_set_pos(obj, 8, 216);
+            lv_obj_set_size(obj, 464, 52);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Andere Spule · Leergewicht eingeben");
+        }
+        {
+            // bambu_spool_type_back
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.bambu_spool_type_back = obj;
+            lv_obj_set_pos(obj, 324, 272);
+            lv_obj_set_size(obj, 152, 48);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Zurück");
+        }
+    }
+    
+    tick_screen_scr_bambu_spool_type();
+}
+
+void tick_screen_scr_bambu_spool_type() {
+}
+
 void create_user_widget_cmp_spool_picker(lv_obj_t *parent_obj, int startWidgetIndex) {
     (void)startWidgetIndex;
     lv_obj_t *obj = parent_obj;
@@ -3590,9 +3738,11 @@ tick_screen_func_t tick_screen_funcs[] = {
     tick_screen_scr_tag_review,
     tick_screen_scr_tag_write,
     tick_screen_scr_tag_result,
+    tick_screen_scr_tag_definition_import,
+    tick_screen_scr_bambu_spool_type,
 };
 void tick_screen(int screen_index) {
-    if (screen_index >= 0 && screen_index < 21) {
+    if (screen_index >= 0 && screen_index < 23) {
         tick_screen_funcs[screen_index]();
     }
 }
@@ -3711,4 +3861,6 @@ void create_screens() {
     create_screen_scr_tag_review();
     create_screen_scr_tag_write();
     create_screen_scr_tag_result();
+    create_screen_scr_tag_definition_import();
+    create_screen_scr_bambu_spool_type();
 }

@@ -666,30 +666,30 @@ Wichtige Regel:
 
 > Originale Bambu-Lab-Tags sind read-only aus Sicht von FilamentStation.
 
-* [ ] vorhandene Bambu-Erkennung aus 5.3 analysieren
-* [ ] Bambu-Technologie dokumentieren
-* [ ] UID sicher auslesen
-* [ ] vorhandene lesbare Definition-Daten extrahieren
-* [ ] öffentliche/technische Formatspezifikation dokumentieren
-* [ ] keine unbekannten Datenfelder erfinden
-* [ ] `BambuLabTagParser` implementieren
-* [ ] Daten in `TagDefinition` überführen
-* [ ] Hersteller abbilden
-* [ ] Material abbilden
-* [ ] Farbe abbilden
-* [ ] Farbcode abbilden
-* [ ] bekannte Temperaturinformationen abbilden
-* [ ] bekannte Gewichtsinformationen abbilden
-* [ ] lokale UID-Zuordnung prüfen
-* [ ] vorhandenes Mapping direkt verwenden
-* [ ] ohne Mapping Importworkflow starten
-* [ ] `SCR_TAG_DEFINITION_IMPORT` verwenden
-* [ ] `SCR_BAMBU_SPOOL_TYPE` verwenden, falls notwendig
-* [ ] bestehende Spoolman-Spule über `CMP_SPOOL_PICKER` auswählbar machen
-* [ ] UID-Mapping nach erfolgreicher Zuordnung speichern
-* [ ] Bambu-Tags aus sämtlichen Schreib-/Löschaktionen ausschließen
-* [ ] UI darf „Tag schreiben“ bei originalem Bambu-Tag nicht anbieten
-* [ ] automatisierter Test: Bambu-Tag erzeugt niemals Write-Command
+* [x] vorhandene Bambu-Erkennung aus 5.3 analysieren
+* [x] Bambu-Technologie dokumentieren
+* [x] UID sicher auslesen
+* [x] vorhandene lesbare Definition-Daten extrahieren
+* [x] öffentliche/technische Formatspezifikation dokumentieren
+* [x] keine unbekannten Datenfelder erfinden
+* [x] `BambuLabTagParser` implementieren
+* [x] Daten in `TagDefinition` überführen
+* [x] Hersteller abbilden
+* [x] Material abbilden
+* [x] Farbe abbilden
+* [x] Farbcode abbilden
+* [x] bekannte Temperaturinformationen abbilden
+* [x] bekannte Gewichtsinformationen abbilden
+* [x] lokale UID-Zuordnung prüfen
+* [x] vorhandenes Mapping direkt verwenden
+* [x] ohne Mapping Importworkflow starten
+* [x] `SCR_TAG_DEFINITION_IMPORT` verwenden
+* [x] `SCR_BAMBU_SPOOL_TYPE` verwenden, falls notwendig
+* [x] bestehende Spoolman-Spule über `CMP_SPOOL_PICKER` auswählbar machen
+* [x] UID-Mapping nach erfolgreicher Zuordnung speichern
+* [x] Bambu-Tags aus sämtlichen Schreib-/Löschaktionen ausschließen
+* [x] UI darf „Tag schreiben“ bei originalem Bambu-Tag nicht anbieten
+* [x] automatisierter Test: Bambu-Tag erzeugt niemals Write-Command
 
 ### Abnahmekriterien 5.6
 

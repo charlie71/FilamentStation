@@ -31,6 +31,7 @@ struct TagDefinition {
   bool hasSpoolId = false;
   std::uint32_t spoolId = 0;
   char vendor[48]{};
+  char filamentName[48]{};
   char material[32]{};
   char colorName[48]{};
   char colorCode[12]{};
