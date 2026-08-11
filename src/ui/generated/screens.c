@@ -2673,10 +2673,20 @@ void create_screen_scr_tag_definition_import() {
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.tag_definition_import_select_spool = obj;
             lv_obj_set_pos(obj, 4, 264);
-            lv_obj_set_size(obj, 312, 56);
+            lv_obj_set_size(obj, 152, 56);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Vorhandene Spule auswählen");
+            lv_label_set_text_static(obj, "Spule verbinden");
+        }
+        {
+            // tag_definition_import_spoolman
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.tag_definition_import_spoolman = obj;
+            lv_obj_set_pos(obj, 164, 264);
+            lv_obj_set_size(obj, 152, 56);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_label_set_text_static(obj, "Nach Spoolman importieren");
         }
         {
             // tag_definition_import_cancel

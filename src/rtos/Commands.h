@@ -105,6 +105,7 @@ enum class UiActionType : std::uint8_t {
   UnlinkTag,
   SearchSpool,
   SelectSpool,
+  ImportTagDefinition,
   SaveMeasurement,
   OpenWifiSettings,
   OpenSpoolmanSettings,
@@ -161,7 +162,13 @@ enum class NfcCommandType : std::uint8_t {
 };
 enum class StorageCommandType : std::uint8_t { LoadJson, SaveJson, DeleteJson, CreateBackup };
 enum class NetworkCommandType : std::uint8_t { Connect, Reconfigure, StartPortal, ClearCredentials };
-enum class SpoolmanCommandType : std::uint8_t { HealthCheck, LoadSpool, SearchSpools, UpdateWeight };
+enum class SpoolmanCommandType : std::uint8_t {
+  HealthCheck,
+  LoadSpool,
+  SearchSpools,
+  UpdateWeight,
+  ImportTagDefinition,
+};
 enum class BambuCommandType : std::uint8_t { Connect, Disconnect, RequestStatus, AssignTray };
 
 }  // namespace filament_station::rtos

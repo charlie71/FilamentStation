@@ -703,25 +703,25 @@ Wichtige Regel:
 
 ## 5.7 OpenPrintTag – Read Support
 
-* [ ] aktuelle OpenPrintTag-Spezifikation beziehungsweise Primärquelle recherchieren und dokumentieren
-* [ ] Erkennungsmerkmale dokumentieren
-* [ ] benötigte Tagtechnologien dokumentieren
-* [ ] Testdaten aus belastbarer Quelle bereitstellen
-* [ ] `OpenPrintTagParser` implementieren
-* [ ] Hersteller parsen, falls vorhanden
-* [ ] Material parsen, falls vorhanden
-* [ ] Farbe parsen, falls vorhanden
-* [ ] Gewichte parsen, falls vorhanden
-* [ ] Temperaturen parsen, falls vorhanden
-* [ ] unbekannte optionale Felder tolerieren
-* [ ] Daten in `TagDefinition` überführen
-* [ ] `SCR_TAG_DEFINITION_IMPORT` verwenden
-* [ ] vorhandene Spoolman-Spule verbinden
-* [ ] Import nach Spoolman anbieten
-* [ ] lokales Mapping nur bei Bedarf erzeugen
-* [ ] keine Schreibunterstützung implementieren
-* [ ] keine Datenfelder erfinden
-* [ ] Parser-Tests mit dokumentierten Testvektoren
+* [x] aktuelle OpenPrintTag-Spezifikation beziehungsweise Primärquelle recherchieren und dokumentieren
+* [x] Erkennungsmerkmale dokumentieren
+* [x] benötigte Tagtechnologien dokumentieren
+* [x] Testdaten aus belastbarer Quelle bereitstellen
+* [x] `OpenPrintTagParser` implementieren
+* [x] Hersteller parsen, falls vorhanden
+* [x] Material parsen, falls vorhanden
+* [x] Farbe parsen, falls vorhanden
+* [x] Gewichte parsen, falls vorhanden
+* [x] Temperaturen parsen, falls vorhanden
+* [x] unbekannte optionale Felder tolerieren
+* [x] Daten in `TagDefinition` überführen
+* [x] `SCR_TAG_DEFINITION_IMPORT` verwenden
+* [x] vorhandene Spoolman-Spule verbinden
+* [x] Import nach Spoolman anbieten
+* [x] lokales Mapping nur bei Bedarf erzeugen
+* [x] keine Schreibunterstützung implementieren
+* [x] keine Datenfelder erfinden
+* [x] Parser-Tests mit dokumentierten Testvektoren
 
 ### Abnahmekriterien 5.7
 

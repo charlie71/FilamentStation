@@ -1330,11 +1330,14 @@ void bindGeneratedWidgets() {
   setControlText(objects.tag_definition_import_title,
                  "Bambu-Definition erkannt");
   setControlText(objects.tag_definition_import_select_spool,
-                 "Vorhandene Spule ausw\xC3\xA4hlen");
+                 "Spule verbinden");
+  setControlText(objects.tag_definition_import_spoolman,
+                 "Nach Spoolman importieren");
   setControlText(objects.tag_definition_import_cancel, "Abbrechen");
   setControlText(objects.bambu_spool_type_title, "Leergewicht ausw\xC3\xA4hlen");
   setControlText(objects.bambu_spool_type_back, "Zur\xC3\xBC" "ck");
   styleLabelButton(objects.tag_definition_import_select_spool, 0x1565C0);
+  styleLabelButton(objects.tag_definition_import_spoolman, 0x1565C0);
   styleLabelButton(objects.tag_definition_import_cancel, 0x455A64);
   styleLabelButton(objects.bambu_spool_type_low, 0x1565C0);
   styleLabelButton(objects.bambu_spool_type_high, 0x1565C0);
@@ -1370,6 +1373,9 @@ void bindGeneratedWidgets() {
   bindClick(objects.tag_definition_import_settings, settingsClicked);
   bindClick(objects.tag_definition_import_select_spool, tagActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::SearchSpool));
+  bindClick(objects.tag_definition_import_spoolman, tagActionClicked,
+            static_cast<std::uintptr_t>(
+                rtos::UiActionType::ImportTagDefinition));
   bindClick(objects.tag_definition_import_cancel, tagActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::Cancel));
   bindClick(objects.bambu_spool_type_back, tagActionClicked,

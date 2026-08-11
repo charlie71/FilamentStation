@@ -7,6 +7,7 @@
 #include <cstring>
 
 #include "config/BoardConfig.h"
+#include "config/NfcConfig.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/JsonStorage.h"
@@ -31,6 +32,7 @@ constexpr InitialDocument kInitialDocuments[] = {
     {"/config/scale.json", rtos::StorageDocumentType::Scale},
     {"/config/nfc.json", rtos::StorageDocumentType::Nfc},
     {"/mappings/bambu-tags.json", rtos::StorageDocumentType::Nfc},
+    {"/mappings/nfc-spools.json", rtos::StorageDocumentType::Nfc},
 };
 
 void sendStorageEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
@@ -114,7 +116,8 @@ void processLoadCommand(rtos::RtosContext& ctx,
     return;
   }
   if (result.ok() && command.documentType == rtos::StorageDocumentType::Nfc &&
-      std::strcmp(command.path, "/mappings/bambu-tags.json") == 0) {
+      (std::strcmp(command.path, "/mappings/bambu-tags.json") == 0 ||
+       std::strcmp(command.path, "/mappings/nfc-spools.json") == 0)) {
     rtos::AppEvent event{};
     event.type = rtos::AppEventType::StorageReadCompleted;
     event.requestId = command.requestId;
@@ -123,12 +126,14 @@ void processLoadCommand(rtos::RtosContext& ctx,
       if (event.nfcMappingCount >= rtos::kMaximumNfcUidMappings) break;
       const char* uidText = mapping["uid"] | "";
       const std::size_t uidTextLength = std::strlen(uidText);
-      if (uidTextLength != 8 || !mapping["spoolId"].is<std::uint32_t>())
+      if (uidTextLength < 8 || uidTextLength > config::kNfcMaxUidLength * 2U ||
+          (uidTextLength & 1U) != 0 ||
+          !mapping["spoolId"].is<std::uint32_t>())
         continue;
       auto& destination = event.nfcMappings[event.nfcMappingCount];
-      destination.uidLength = 4;
+      destination.uidLength = static_cast<std::uint8_t>(uidTextLength / 2U);
       bool valid = true;
-      for (std::size_t index = 0; index < 4; ++index) {
+      for (std::size_t index = 0; index < destination.uidLength; ++index) {
         char byteText[3]{uidText[index * 2], uidText[index * 2 + 1], '\0'};
         char* end = nullptr;
         const unsigned long value = std::strtoul(byteText, &end, 16);
@@ -141,7 +146,7 @@ void processLoadCommand(rtos::RtosContext& ctx,
       destination.spoolId = mapping["spoolId"].as<std::uint32_t>();
       if (valid && destination.spoolId != 0) ++event.nfcMappingCount;
     }
-    std::snprintf(event.text, sizeof(event.text), "Bambu UID mappings loaded");
+    std::snprintf(event.text, sizeof(event.text), "NFC UID mappings loaded");
     if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
       rtos::logLine("StorageTask: mapping event queue overflow");
     return;

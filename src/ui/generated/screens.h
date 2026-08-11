@@ -273,6 +273,7 @@ typedef struct _objects_t {
     lv_obj_t *tag_definition_import_title;
     lv_obj_t *tag_definition_import_summary;
     lv_obj_t *tag_definition_import_select_spool;
+    lv_obj_t *tag_definition_import_spoolman;
     lv_obj_t *tag_definition_import_cancel;
     lv_obj_t *bambu_spool_type_header;
     lv_obj_t *bambu_spool_type_title;

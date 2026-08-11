@@ -78,7 +78,13 @@ struct StorageCommand {
 };
 
 struct NetworkCommand { NetworkCommandType type; std::uint32_t requestId; };
-struct SpoolmanCommand { SpoolmanCommandType type; std::uint32_t requestId; std::uint32_t spoolId; float weightGrams; };
+struct SpoolmanCommand {
+  SpoolmanCommandType type;
+  std::uint32_t requestId;
+  std::uint32_t spoolId;
+  float weightGrams;
+  models::TagDefinition tagDefinition{};
+};
 struct BambuCommand {
   BambuCommandType type;
   std::uint32_t requestId;

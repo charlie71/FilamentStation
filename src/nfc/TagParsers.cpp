@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "services/NfcPayload.h"
+#include "nfc/OpenPrintTag.h"
 
 namespace filament_station {
 namespace nfc {
@@ -106,12 +107,16 @@ TagParseResult BambuLabTagParser::parse(
 models::TagFormat OpenPrintTagParser::format() const {
   return models::TagFormat::OpenPrintTag;
 }
-bool OpenPrintTagParser::canParse(const models::RawTagData&) const {
-  return false;
+bool OpenPrintTagParser::canParse(const models::RawTagData& tag) const {
+  return tag.ndefPresent && tag.ndefReadable &&
+         containsOpenPrintTagMimeRecord(tag.ndef, tag.ndefLength);
 }
 TagParseResult OpenPrintTagParser::parse(
-    const models::RawTagData&, models::TagDefinition&) const {
-  return TagParseResult::NoMatch;
+    const models::RawTagData& tag, models::TagDefinition& result) const {
+  if (!canParse(tag)) return TagParseResult::NoMatch;
+  return parseOpenPrintTagNdef(tag.ndef, tag.ndefLength, result)
+             ? TagParseResult::Parsed
+             : TagParseResult::Invalid;
 }
 
 models::TagFormat OpenTag3DParser::format() const {

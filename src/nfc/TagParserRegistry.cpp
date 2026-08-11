@@ -34,7 +34,16 @@ models::TagReadResult TagParserRegistry::parse(
     if (parser == nullptr) continue;
     if (!parser->canParse(tag)) continue;
     models::TagDefinition definition{};
-    if (parser->parse(tag, definition) != TagParseResult::Parsed) continue;
+    const TagParseResult parseResult = parser->parse(tag, definition);
+    if (parseResult == TagParseResult::Invalid) {
+      result.format = parser->format();
+      result.knownFormat = true;
+      result.payloadValid = false;
+      result.writable = false;
+      result.erasable = false;
+      return result;
+    }
+    if (parseResult != TagParseResult::Parsed) continue;
     result.format = parser->format();
     result.knownFormat = true;
     result.definition = definition;

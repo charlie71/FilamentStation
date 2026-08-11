@@ -5,6 +5,7 @@
 
 #include "nfc/TagParserRegistry.h"
 #include "nfc/TagWritePolicy.h"
+#include "openprinttag_official_vector.h"
 #include "services/NfcPayload.h"
 #include "services/Ntag21x.h"
 
@@ -229,6 +230,77 @@ void test_original_bambu_mifare_definition_is_normalized_and_read_only() {
   TEST_ASSERT_EQUAL_INT16(230, result.definition.nozzleTempMaxC);
 }
 
+void test_official_openprinttag_vector_is_normalized_and_read_only() {
+  RawTagData raw{};
+  raw.technology = TagTechnology::OtherIso14443A;
+  raw.ndefPresent = true;
+  raw.ndefReadable = true;
+  raw.hardwareWritable = true;
+  raw.ndefLength = static_cast<std::uint16_t>(kOpenPrintTagOfficialVectorSize);
+  std::memcpy(raw.ndef, kOpenPrintTagOfficialVector,
+              kOpenPrintTagOfficialVectorSize);
+  const auto result = TagParserRegistry{}.parse(raw);
+  TEST_ASSERT_EQUAL(TagFormat::OpenPrintTag, result.format);
+  TEST_ASSERT_TRUE(result.knownFormat);
+  TEST_ASSERT_TRUE(result.payloadValid);
+  TEST_ASSERT_FALSE(result.writable);
+  TEST_ASSERT_FALSE(result.erasable);
+  TEST_ASSERT_FALSE(filament_station::nfc::mayWriteTag(result));
+  TEST_ASSERT_FALSE(filament_station::nfc::mayEraseTag(result));
+  TEST_ASSERT_EQUAL_STRING("Prusament", result.definition.vendor);
+  TEST_ASSERT_EQUAL_STRING("PLA Prusa Galaxy Black",
+                           result.definition.filamentName);
+  TEST_ASSERT_EQUAL_STRING("PLA", result.definition.material);
+  TEST_ASSERT_EQUAL_STRING("#3D3E3D", result.definition.colorCode);
+  TEST_ASSERT_FLOAT_WITHIN(0.01F, 1012.0F,
+                           result.definition.nominalFilamentWeightG);
+  TEST_ASSERT_FLOAT_WITHIN(0.01F, 280.0F,
+                           result.definition.emptySpoolWeightG);
+  TEST_ASSERT_EQUAL_INT16(205, result.definition.nozzleTempMinC);
+  TEST_ASSERT_EQUAL_INT16(225, result.definition.nozzleTempMaxC);
+}
+
+void test_openprinttag_unknown_optional_field_is_ignored() {
+  std::uint8_t vector[sizeof(kOpenPrintTagOfficialVector)]{};
+  std::memcpy(vector, kOpenPrintTagOfficialVector, sizeof(vector));
+  // Im offiziellen Vektor ist das letzte Element der indefinite Main-Map 0xFF.
+  // Davor wird ein unbekanntes Feld 1000 mit einem verschachtelten Array
+  // eingefuegt; die nachfolgenden Paddingbytes bleiben unveraendert.
+  const std::size_t mainBreak = 245;
+  vector[mainBreak + 0] = 0x19;
+  vector[mainBreak + 1] = 0x03;
+  vector[mainBreak + 2] = 0xE8;
+  vector[mainBreak + 3] = 0x82;
+  vector[mainBreak + 4] = 0x01;
+  vector[mainBreak + 5] = 0xA1;
+  vector[mainBreak + 6] = 0x01;
+  vector[mainBreak + 7] = 0x02;
+  vector[mainBreak + 8] = 0xFF;
+  RawTagData raw{};
+  raw.technology = TagTechnology::OtherIso14443A;
+  raw.ndefPresent = true;
+  raw.ndefReadable = true;
+  raw.ndefLength = sizeof(vector);
+  std::memcpy(raw.ndef, vector, sizeof(vector));
+  const auto result = TagParserRegistry{}.parse(raw);
+  TEST_ASSERT_EQUAL(TagFormat::OpenPrintTag, result.format);
+  TEST_ASSERT_TRUE(result.payloadValid);
+  TEST_ASSERT_EQUAL_STRING("Prusament", result.definition.vendor);
+}
+
+void test_foreign_mime_is_not_openprinttag() {
+  RawTagData raw{};
+  raw.technology = TagTechnology::OtherIso14443A;
+  raw.ndefPresent = true;
+  raw.ndefReadable = true;
+  raw.ndefLength = static_cast<std::uint16_t>(kOpenPrintTagOfficialVectorSize);
+  std::memcpy(raw.ndef, kOpenPrintTagOfficialVector,
+              kOpenPrintTagOfficialVectorSize);
+  raw.ndef[40] = 'x';
+  const auto result = TagParserRegistry{}.parse(raw);
+  TEST_ASSERT_NOT_EQUAL(TagFormat::OpenPrintTag, result.format);
+}
+
 void test_ntag21x_versions_and_capacities_are_identified() {
   std::uint8_t version[] = {0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03};
   std::uint8_t capability[] = {0xE1, 0x10, 0x12, 0x00};
@@ -277,6 +349,9 @@ int main(int, char**) {
   RUN_TEST(test_unknown_data_does_not_match_rejecting_parser);
   RUN_TEST(test_bambu_marker_is_always_read_only);
   RUN_TEST(test_original_bambu_mifare_definition_is_normalized_and_read_only);
+  RUN_TEST(test_official_openprinttag_vector_is_normalized_and_read_only);
+  RUN_TEST(test_openprinttag_unknown_optional_field_is_ignored);
+  RUN_TEST(test_foreign_mime_is_not_openprinttag);
   RUN_TEST(test_ntag21x_versions_and_capacities_are_identified);
   RUN_TEST(test_ntag_mismatched_or_locked_metadata_is_not_writable);
   return UNITY_END();
