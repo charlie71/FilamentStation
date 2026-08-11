@@ -5,8 +5,13 @@
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
+#include <cstddef>
 
 namespace filament_station::rtos {
+
+struct LogMessage {
+  char text[192]{};
+};
 
 struct RtosContext {
   QueueHandle_t appEventQueue = nullptr;
@@ -17,8 +22,9 @@ struct RtosContext {
   QueueHandle_t networkCommandQueue = nullptr;
   QueueHandle_t spoolmanCommandQueue = nullptr;
   QueueHandle_t bambuCommandQueue = nullptr;
+  QueueHandle_t logQueue = nullptr;
   EventGroupHandle_t systemEventGroup = nullptr;
-  SemaphoreHandle_t debugMutex = nullptr;
+  TaskHandle_t loggingTask = nullptr;
   TaskHandle_t uiTask = nullptr;
   TaskHandle_t appTask = nullptr;
   TaskHandle_t scaleTask = nullptr;
@@ -36,5 +42,6 @@ struct RtosContext {
 
 RtosContext& context();
 void logLine(const char* message);
+void logf(const char* format, ...);
 
 }  // namespace filament_station::rtos

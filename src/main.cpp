@@ -10,8 +10,12 @@
 #ifndef PIO_UNIT_TESTING
 namespace {
 void haltStartup(const char* reason) {
-  Serial.printf("FATAL: %s\n", reason);
   auto& ctx = filament_station::rtos::context();
+  if (ctx.logQueue != nullptr && ctx.loggingTask != nullptr) {
+    filament_station::rtos::logf("FATAL: %s", reason);
+  } else {
+    Serial.printf("FATAL: %s\n", reason);
+  }
   if (ctx.systemEventGroup != nullptr) {
     xEventGroupSetBits(ctx.systemEventGroup, filament_station::rtos::EVENT_FATAL_ERROR);
   }
@@ -33,15 +37,16 @@ void setup() {
 
   esp_chip_info_t chipInfo{};
   esp_chip_info(&chipInfo);
-  Serial.printf("%s %s starting\n", config::kApplicationName, config::kApplicationVersion);
-  Serial.printf("Chip: %s, revision %u, %u cores\n", ESP.getChipModel(),
-                chipInfo.revision, chipInfo.cores);
-  Serial.printf("Heap: %u bytes free\n", ESP.getFreeHeap());
-  Serial.printf("PSRAM: %u bytes total, %u bytes free\n", ESP.getPsramSize(), ESP.getFreePsram());
-  Serial.flush();
+  rtos::logf("%s %s starting", config::kApplicationName,
+             config::kApplicationVersion);
+  rtos::logf("Chip: %s, revision %u, %u cores", ESP.getChipModel(),
+             chipInfo.revision, chipInfo.cores);
+  rtos::logf("Heap: %u bytes free", ESP.getFreeHeap());
+  rtos::logf("PSRAM: %u bytes total, %u bytes free", ESP.getPsramSize(),
+             ESP.getFreePsram());
   if (!ctx.createServiceTasks()) { haltStartup("service task creation failed"); }
 
-  Serial.println("RTOS infrastructure started");
+  rtos::logLine("RTOS infrastructure started");
 }
 
 void loop() { vTaskDelay(portMAX_DELAY); }

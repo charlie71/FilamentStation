@@ -4,6 +4,14 @@ Alle Service-Tasks blockieren auf ihrer Command-Queue. AppTask blockiert auf der
 Event-Queue, UiTask auf der UI-Command-Queue. Es wird noch kein Core-Pinning
 verwendet. Taskparameter und Queue-Laengen stehen in `src/config/TaskConfig.h`.
 
+Alle Laufzeitlogs werden als feste 192-Byte-Werttypen an eine Queue mit 32
+Plaetzen gesendet. Nur der `LoggingTask` greift auf USB-CDC `Serial` zu und
+schreibt jede Zeile auch bei Teilwrites vollstaendig, bevor er die naechste
+Queue-Nachricht verarbeitet. Bei einer vollen Queue kann nur eine vollstaendige
+neue Meldung entfallen; Ausgaben verschiedener Tasks koennen nicht mehr
+ineinanderlaufen. Vor Erstellung des Logging-Tasks ist lediglich die fatale
+RTOS-Startfehlerausgabe als direkter serieller Notfallpfad zulaessig.
+
 Die `storageCommandQueue` besitzt acht FIFO-Plaetze. Jede
 `StorageCommand`-Nachricht ist ein trivial kopierbarer Werttyp mit `requestId`,
 Dokumenttyp, einem auf 96 Byte begrenzten Pfad und einem auf 768 Byte begrenzten

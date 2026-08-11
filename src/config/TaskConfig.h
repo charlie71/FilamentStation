@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <freertos/FreeRTOS.h>
 
@@ -15,6 +16,7 @@ struct TaskSettings {
 constexpr BaseType_t kNoCoreAffinity = tskNO_AFFINITY;
 
 constexpr TaskSettings kStorageTask{"StorageTask", 8192, 2, kNoCoreAffinity};
+constexpr TaskSettings kLoggingTask{"LoggingTask", 2048, 1, kNoCoreAffinity};
 constexpr TaskSettings kAppTask{"AppTask", 4096, 3, kNoCoreAffinity};
 constexpr TaskSettings kUiTask{"UiTask", 8192, 2, kNoCoreAffinity};
 constexpr TaskSettings kScaleTask{"ScaleTask", 3072, 2, kNoCoreAffinity};
@@ -29,5 +31,7 @@ constexpr UBaseType_t kAppEventQueueLength = 16;
 constexpr UBaseType_t kUiCommandQueueLength = 8;
 constexpr UBaseType_t kServiceCommandQueueLength = 8;
 constexpr UBaseType_t kStorageCommandQueueLength = 8;
+constexpr UBaseType_t kLogQueueLength = 32;
+constexpr std::size_t kLogMessageCapacity = 192;
 
 }  // namespace filament_station::config
