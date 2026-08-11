@@ -72,6 +72,33 @@ std::array<std::uint8_t, 10> pendingBambuUid{};
 std::uint8_t pendingBambuUidLength = 0;
 models::TagFormat pendingMappingFormat = models::TagFormat::Unknown;
 
+const char* tagTechnologyName(models::TagTechnology technology) {
+  switch (technology) {
+    case models::TagTechnology::Ntag213: return "NTAG213";
+    case models::TagTechnology::Ntag215: return "NTAG215";
+    case models::TagTechnology::Ntag216: return "NTAG216";
+    case models::TagTechnology::MifareClassic1K: return "MIFARE Classic 1K";
+    case models::TagTechnology::MifareClassic4K: return "MIFARE Classic 4K";
+    case models::TagTechnology::OtherIso14443A: return "ISO14443A";
+    default: return "unbekannt";
+  }
+}
+
+void formatTagUid(const models::TagReadResult& tag, char* output,
+                  std::size_t capacity) {
+  if (capacity == 0) return;
+  std::size_t used = 0;
+  output[0] = '\0';
+  for (std::uint8_t index = 0; index < tag.uidLength; ++index) {
+    const int written = std::snprintf(output + used, capacity - used,
+                                      "%s%02X", index == 0 ? "" : ":",
+                                      tag.uid[index]);
+    if (written <= 0 || static_cast<std::size_t>(written) >= capacity - used)
+      break;
+    used += static_cast<std::size_t>(written);
+  }
+}
+
 rtos::SpoolId mappedNfcSpool(const models::TagReadResult& tag) {
   for (std::uint8_t index = 0; index < bambuMappingCount; ++index) {
     const auto& mapping = bambuMappings[index];
@@ -681,7 +708,9 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         currentScreen = rtos::UiScreenId::SettingsHome;
       } else if (currentScreen == rtos::UiScreenId::TagReview ||
                  currentScreen == rtos::UiScreenId::TagWrite) {
-        command.screenId = rtos::UiScreenId::TagActionSelect;
+        command.screenId = previousScreen == rtos::UiScreenId::TagLegacy
+                               ? rtos::UiScreenId::TagLegacy
+                               : rtos::UiScreenId::TagActionSelect;
         currentScreen = command.screenId;
         pendingTagOperation = PendingTagOperation::None;
       } else if (currentScreen == rtos::UiScreenId::TagActionSelect ||
@@ -958,7 +987,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
 
     case rtos::UiActionType::ImportTagDefinition: {
       if ((currentTag.format != models::TagFormat::OpenPrintTag &&
-           currentTag.format != models::TagFormat::OpenTag3D) ||
+           currentTag.format != models::TagFormat::OpenTag3D &&
+           currentTag.format != models::TagFormat::Legacy) ||
           !currentTag.knownFormat || !currentTag.payloadValid) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, action.requestId,
@@ -985,6 +1015,30 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       return;
     }
 
+    case rtos::UiActionType::MigrateLegacyTag: {
+      if (!tagPresent || currentTag.format != models::TagFormat::Legacy ||
+          !currentTag.definition.hasSpoolId ||
+          !nfc::mayWriteTag(currentTag)) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Migration nicht m\xC3\xB6glich",
+                    "Nur ein eindeutig erkannter, beschreibbarer Legacy-NTAG kann migriert werden.");
+        return;
+      }
+      pendingTagSpoolId = currentTag.definition.spoolId;
+      pendingTagOperation = PendingTagOperation::Write;
+      command.type = rtos::UiCommandType::ShowScreen;
+      command.screenId = rtos::UiScreenId::TagReview;
+      std::snprintf(command.text, sizeof(command.text),
+                    "Legacy-Payload: spool:%lu\nNeuer Payload: spoolman:%lu\nDanach wird der Tag erneut gelesen und verifiziert.",
+                    static_cast<unsigned long>(pendingTagSpoolId),
+                    static_cast<unsigned long>(pendingTagSpoolId));
+      previousScreen = rtos::UiScreenId::TagLegacy;
+      currentScreen = command.screenId;
+      sendUiCommand(ctx, command, "AppTask: legacy migration review overflow");
+      return;
+    }
+
     case rtos::UiActionType::ClearStaging:
     case rtos::UiActionType::WriteTag:
     case rtos::UiActionType::LinkTag:
@@ -993,7 +1047,9 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::SearchSpool:
     case rtos::UiActionType::SelectSpool:
       if (action.type == rtos::UiActionType::SearchSpool &&
-          currentScreen == rtos::UiScreenId::TagDefinitionImport) {
+          (currentScreen == rtos::UiScreenId::TagDefinitionImport ||
+           currentScreen == rtos::UiScreenId::TagLegacy ||
+           currentScreen == rtos::UiScreenId::TagUnknown)) {
         pendingBambuMapping = true;
         pendingMappingFormat = currentTag.format;
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
@@ -1131,7 +1187,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
                       "Tag kann nicht gel\xC3\xB6scht werden",
-                      "Nur unterst\xC3\xBCtzte native NTAGs d\xC3\xBCrfen gel\xC3\xB6scht werden.");
+                      "Nur native oder eindeutig erkannte beschreibbare Legacy-NTAGs d\xC3\xBCrfen gel\xC3\xB6scht werden.");
           return;
         }
         pendingTagOperation = PendingTagOperation::Erase;
@@ -1139,7 +1195,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         command.type = rtos::UiCommandType::ShowScreen;
         command.screenId = rtos::UiScreenId::TagReview;
         std::snprintf(command.text, sizeof(command.text),
-                      "Tag: nativer NTAG21x\nAktion: NDEF-Zuordnung l\xC3\xB6schen\nDanach wird der leere Zustand verifiziert.");
+                      "Tag: unterst\xC3\xBCtzter NTAG21x\nAktion: NDEF-Zuordnung l\xC3\xB6schen\nDanach wird der leere Zustand verifiziert.");
         currentScreen = command.screenId;
         sendUiCommand(ctx, command, "AppTask: NFC erase review queue overflow");
         return;
@@ -1531,6 +1587,68 @@ void appTask(void* parameter) {
               currentScreen = definition.screenId;
             }
           }
+        } else if (currentTag.format == models::TagFormat::Legacy) {
+          pendingBambuUidLength = currentTag.uidLength;
+          std::memcpy(pendingBambuUid.data(), currentTag.uid,
+                      currentTag.uidLength);
+          char uid[32]{};
+          formatTagUid(currentTag, uid, sizeof(uid));
+          rtos::UiCommand legacy{};
+          legacy.type = rtos::UiCommandType::ShowScreen;
+          legacy.screenId = rtos::UiScreenId::TagLegacy;
+          legacy.requestId = event.requestId;
+          legacy.spoolId = currentTag.definition.spoolId;
+          legacy.value = nfc::mayWriteTag(currentTag) ? 1 : 0;
+          std::snprintf(
+              legacy.text, sizeof(legacy.text),
+              "Format: spool:<id>\nSpoolman-ID: %lu\nTechnologie: %s\nUID: %s\nMigration: %s",
+              static_cast<unsigned long>(currentTag.definition.spoolId),
+              tagTechnologyName(currentTag.technology), uid,
+              nfc::mayWriteTag(currentTag) ? "m\xC3\xB6glich" : "nicht m\xC3\xB6glich");
+          previousScreen = currentScreen;
+          currentScreen = legacy.screenId;
+          sendUiCommand(ctx, legacy, "AppTask: legacy screen overflow");
+        } else if (currentTag.format == models::TagFormat::Unknown) {
+          const rtos::SpoolId mappedSpool = mappedNfcSpool(currentTag);
+          if (mappedSpool != 0) {
+            rtos::UiCommand result{};
+            result.type = rtos::UiCommandType::ShowScreen;
+            result.screenId = rtos::UiScreenId::TagResult;
+            result.spoolId = mappedSpool;
+            std::snprintf(result.text, sizeof(result.text),
+                          "Unbekannter Tag ist per UID mit Spule %lu verbunden. Der Tag bleibt unver\xC3\xA4ndert.",
+                          static_cast<unsigned long>(mappedSpool));
+            previousScreen = currentScreen;
+            currentScreen = result.screenId;
+            sendUiCommand(ctx, result, "AppTask: unknown mapped result overflow");
+          } else {
+            pendingBambuUidLength = currentTag.uidLength;
+            std::memcpy(pendingBambuUid.data(), currentTag.uid,
+                        currentTag.uidLength);
+            char uid[32]{};
+            formatTagUid(currentTag, uid, sizeof(uid));
+            const char* writable = currentTag.physicalWritableKnown
+                                       ? currentTag.physicalWritable
+                                             ? "physisch beschreibbar; Aktionen gesperrt"
+                                             : "physisch gesperrt"
+                                       : "nicht sicher bestimmbar";
+            rtos::UiCommand unknown{};
+            unknown.type = rtos::UiCommandType::ShowScreen;
+            unknown.screenId = rtos::UiScreenId::TagUnknown;
+            unknown.requestId = event.requestId;
+            std::snprintf(
+                unknown.text, sizeof(unknown.text),
+                "Technologie: %s\nUID: %s\nNDEF: %s\nSchreibf\xC3\xA4higkeit: %s\nUnbekannte Daten werden nicht ver\xC3\xA4ndert.",
+                tagTechnologyName(currentTag.technology), uid,
+                currentTag.ndefPresent
+                    ? currentTag.ndefReadable ? "vorhanden, lesbar"
+                                              : "vorhanden, nicht lesbar"
+                    : "nicht vorhanden",
+                writable);
+            previousScreen = currentScreen;
+            currentScreen = unknown.screenId;
+            sendUiCommand(ctx, unknown, "AppTask: unknown screen overflow");
+          }
         }
       } else if (event.type == rtos::AppEventType::NfcTagRemoved) {
         tagPresent = false;
@@ -1636,7 +1754,11 @@ void appTask(void* parameter) {
                           ? "OpenPrintTag"
                           : pendingMappingFormat == models::TagFormat::OpenTag3D
                                 ? "OpenTag3D"
-                                : "Bambu-Tag",
+                                : pendingMappingFormat == models::TagFormat::Legacy
+                                      ? "Legacy-Tag"
+                                      : pendingMappingFormat == models::TagFormat::Unknown
+                                            ? "Unbekannter Tag"
+                                            : "Bambu-Tag",
                       static_cast<unsigned long>(pendingBambuMappingSpoolId));
         currentScreen = result.screenId;
         sendUiCommand(ctx, result, "AppTask: Bambu mapping result overflow");

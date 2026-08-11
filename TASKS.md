@@ -765,27 +765,27 @@ Wichtige Regel:
 
 ### Legacy
 
-* [ ] vorhandene Legacy-Erkennung aus 5.3 in `LegacyTagParser` migrieren
-* [ ] unterstützte Legacy-Formate explizit dokumentieren
-* [ ] verschlüsselte Security-Key-Formate nicht automatisch übernehmen
-* [ ] bekannte Daten anzeigen
-* [ ] nach Spoolman importieren
-* [ ] mit bestehender Spule verbinden
-* [ ] Migration auf natives `spoolman:<id>`-Format anbieten, wenn Tag sicher beschreibbar ist
-* [ ] Tag löschen nur bei eindeutig unterstütztem beschreibbarem Format
-* [ ] `SCR_TAG_LEGACY` verwenden
+* [x] vorhandene Legacy-Erkennung aus 5.3 in `LegacyTagParser` migrieren
+* [x] unterstützte Legacy-Formate explizit dokumentieren
+* [x] verschlüsselte Security-Key-Formate nicht automatisch übernehmen
+* [x] bekannte Daten anzeigen
+* [x] nach Spoolman importieren
+* [x] mit bestehender Spule verbinden
+* [x] Migration auf natives `spoolman:<id>`-Format anbieten, wenn Tag sicher beschreibbar ist
+* [x] Tag löschen nur bei eindeutig unterstütztem beschreibbarem Format
+* [x] `SCR_TAG_LEGACY` verwenden
 
 ### Unknown
 
-* [ ] `SCR_TAG_UNKNOWN` bereitstellen beziehungsweise anbinden
-* [ ] Tagtechnologie anzeigen
-* [ ] UID anzeigen
-* [ ] NDEF-Status anzeigen
-* [ ] Schreibfähigkeit nur anzeigen, wenn sicher bekannt
-* [ ] optional UID über `CMP_SPOOL_PICKER` einer Spoolman-Spule zuordnen
-* [ ] unbekannten Tag nicht automatisch beschreiben
-* [ ] unbekannten MIFARE-Classic-Speicher nicht verändern
-* [ ] Mapping als JSON speichern
+* [x] `SCR_TAG_UNKNOWN` bereitstellen beziehungsweise anbinden
+* [x] Tagtechnologie anzeigen
+* [x] UID anzeigen
+* [x] NDEF-Status anzeigen
+* [x] Schreibfähigkeit nur anzeigen, wenn sicher bekannt
+* [x] optional UID über `CMP_SPOOL_PICKER` einer Spoolman-Spule zuordnen
+* [x] unbekannten Tag nicht automatisch beschreiben
+* [x] unbekannten MIFARE-Classic-Speicher nicht verändern
+* [x] Mapping als JSON speichern
 
 ### Abnahmekriterien 5.9
 

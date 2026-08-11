@@ -30,6 +30,8 @@ enum class UiScreenId : std::uint8_t {
   TagWrite,
   TagResult,
   TagDefinitionImport,
+  TagLegacy,
+  TagUnknown,
   BambuSpoolType,
 };
 
@@ -106,6 +108,7 @@ enum class UiActionType : std::uint8_t {
   SearchSpool,
   SelectSpool,
   ImportTagDefinition,
+  MigrateLegacyTag,
   SaveMeasurement,
   OpenWifiSettings,
   OpenSpoolmanSettings,

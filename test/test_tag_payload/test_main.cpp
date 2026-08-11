@@ -116,7 +116,7 @@ void test_malformed_payload_is_rejected() {
 RawTagData rawNdef(const std::uint8_t* bytes, std::size_t size,
                    bool writable = true) {
   RawTagData tag{};
-  tag.technology = filament_station::models::TagTechnology::OtherIso14443A;
+  tag.technology = filament_station::models::TagTechnology::Ntag215;
   tag.uid[0] = 0x04;
   tag.uid[1] = 0xA2;
   tag.uidLength = 2;
@@ -192,6 +192,9 @@ void test_unknown_tag_has_no_definition_or_write_capability() {
   TEST_ASSERT_FALSE(result.definition.hasSpoolId);
   TEST_ASSERT_FALSE(result.writable);
   TEST_ASSERT_FALSE(result.erasable);
+  TEST_ASSERT_TRUE(result.physicalWritableKnown);
+  TEST_ASSERT_TRUE(result.physicalWritable);
+  TEST_ASSERT_FALSE(filament_station::nfc::mayWriteTag(result));
 }
 
 class MatchingParser final : public ITagParser {
@@ -385,6 +388,28 @@ void test_opentag3d_new_major_version_is_rejected_without_crash() {
   TEST_ASSERT_TRUE(result.knownFormat);
   TEST_ASSERT_FALSE(result.payloadValid);
   TEST_ASSERT_FALSE(result.writable);
+  TEST_ASSERT_TRUE(result.physicalWritableKnown);
+  TEST_ASSERT_TRUE(result.physicalWritable);
+  TEST_ASSERT_FALSE(filament_station::nfc::mayWriteTag(result));
+}
+
+void test_documented_legacy_spool_reference_can_be_safely_migrated() {
+  const auto result = TagParserRegistry{}.parse(textNdef("spool:42"));
+  TEST_ASSERT_EQUAL(TagFormat::Legacy, result.format);
+  TEST_ASSERT_TRUE(result.knownFormat);
+  TEST_ASSERT_TRUE(result.definition.hasSpoolId);
+  TEST_ASSERT_EQUAL_UINT32(42, result.definition.spoolId);
+  TEST_ASSERT_TRUE(result.writable);
+  TEST_ASSERT_TRUE(result.erasable);
+  TEST_ASSERT_TRUE(filament_station::nfc::mayWriteTag(result));
+  TEST_ASSERT_TRUE(filament_station::nfc::mayEraseTag(result));
+}
+
+void test_invalid_legacy_spool_zero_is_not_migratable() {
+  const auto result = TagParserRegistry{}.parse(textNdef("spool:0"));
+  TEST_ASSERT_EQUAL(TagFormat::Unknown, result.format);
+  TEST_ASSERT_FALSE(result.writable);
+  TEST_ASSERT_FALSE(filament_station::nfc::mayWriteTag(result));
 }
 
 void test_foreign_mime_is_not_opentag3d() {
@@ -438,6 +463,8 @@ int main(int, char**) {
   RUN_TEST(test_invalid_spoolman_id_is_not_accepted);
   RUN_TEST(test_empty_ndef_is_recognized);
   RUN_TEST(test_unknown_tag_has_no_definition_or_write_capability);
+  RUN_TEST(test_documented_legacy_spool_reference_can_be_safely_migrated);
+  RUN_TEST(test_invalid_legacy_spool_zero_is_not_migratable);
   RUN_TEST(test_parser_order_uses_first_successful_parser);
   RUN_TEST(test_unknown_data_does_not_match_rejecting_parser);
   RUN_TEST(test_bambu_marker_is_always_read_only);

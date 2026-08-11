@@ -52,7 +52,8 @@ NfcPayloadInfo classifyText(const char* text, std::size_t length) {
   }
   if (length > sizeof(kLegacyPrefix) - 1 &&
       std::memcmp(text, kLegacyPrefix, sizeof(kLegacyPrefix) - 1) == 0 &&
-      parseUnsigned(text + sizeof(kLegacyPrefix) - 1, text + length, spoolId)) {
+      parseUnsigned(text + sizeof(kLegacyPrefix) - 1, text + length, spoolId) &&
+      spoolId != 0) {
     return {NfcPayloadType::Legacy, spoolId};
   }
   if (containsIgnoreCase(text, length, "bambu")) {

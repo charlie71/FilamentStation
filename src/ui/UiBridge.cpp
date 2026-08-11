@@ -1247,7 +1247,7 @@ void createTrayDetailsDecoration() {
 }
 
 void applyApplicationFont() {
-  const std::array<lv_obj_t*, 23> screens{{
+  const std::array<lv_obj_t*, 25> screens{{
       objects.scr_boot, objects.scr_home, objects.scr_printer_select,
       objects.scr_settings_home, objects.scr_staging_details,
       objects.scr_staging_actions, objects.scr_tray_details,
@@ -1260,6 +1260,7 @@ void applyApplicationFont() {
       objects.scr_tag_action_select, objects.scr_tag_review,
       objects.scr_tag_write, objects.scr_tag_result,
       objects.scr_tag_definition_import, objects.scr_bambu_spool_type,
+      objects.scr_tag_legacy, objects.scr_tag_unknown,
   }};
   for (lv_obj_t* screen : screens) {
     lv_obj_set_style_text_font(screen, &ui_font_ui_german16, LV_PART_MAIN);
@@ -1300,9 +1301,10 @@ void bindGeneratedWidgets() {
   }};
   for (lv_obj_t* control : settingsControls) setControlText(control, "Einst.");
 
-  const std::array<lv_obj_t*, 4> tagSettings{{
+  const std::array<lv_obj_t*, 6> tagSettings{{
       objects.tag_action_settings, objects.tag_review_settings,
       objects.tag_write_settings, objects.tag_result_settings,
+      objects.tag_legacy_settings, objects.tag_unknown_settings,
   }};
   for (lv_obj_t* control : tagSettings) setControlText(control, "Einst.");
   setControlText(objects.tag_action_title, "NFC-Tag-Aktionen");
@@ -1334,11 +1336,28 @@ void bindGeneratedWidgets() {
   setControlText(objects.tag_definition_import_spoolman,
                  "Nach Spoolman importieren");
   setControlText(objects.tag_definition_import_cancel, "Abbrechen");
+  setControlText(objects.tag_legacy_title, "Legacy-Tag erkannt");
+  setControlText(objects.tag_legacy_select_spool, "Spule verbinden");
+  setControlText(objects.tag_legacy_import, "Nach Spoolman importieren");
+  setControlText(objects.tag_legacy_migrate, "Nativ migrieren");
+  setControlText(objects.tag_legacy_erase, "Tag l\xC3\xB6schen");
+  setControlText(objects.tag_legacy_close, "Schlie\xC3\x9F" "en");
+  setControlText(objects.tag_unknown_title, "Unbekannter NFC-Tag");
+  setControlText(objects.tag_unknown_select_spool,
+                 "UID mit Spule verbinden");
+  setControlText(objects.tag_unknown_close, "Schlie\xC3\x9F" "en");
   setControlText(objects.bambu_spool_type_title, "Leergewicht ausw\xC3\xA4hlen");
   setControlText(objects.bambu_spool_type_back, "Zur\xC3\xBC" "ck");
   styleLabelButton(objects.tag_definition_import_select_spool, 0x1565C0);
   styleLabelButton(objects.tag_definition_import_spoolman, 0x1565C0);
   styleLabelButton(objects.tag_definition_import_cancel, 0x455A64);
+  styleLabelButton(objects.tag_legacy_select_spool, 0x1565C0);
+  styleLabelButton(objects.tag_legacy_import, 0x1565C0);
+  styleLabelButton(objects.tag_legacy_migrate, 0x1565C0);
+  styleLabelButton(objects.tag_legacy_erase, 0xC62828);
+  styleLabelButton(objects.tag_legacy_close, 0x455A64);
+  styleLabelButton(objects.tag_unknown_select_spool, 0x1565C0);
+  styleLabelButton(objects.tag_unknown_close, 0x455A64);
   styleLabelButton(objects.bambu_spool_type_low, 0x1565C0);
   styleLabelButton(objects.bambu_spool_type_high, 0x1565C0);
   styleLabelButton(objects.bambu_spool_type_manual, 0x1565C0);
@@ -1378,6 +1397,20 @@ void bindGeneratedWidgets() {
                 rtos::UiActionType::ImportTagDefinition));
   bindClick(objects.tag_definition_import_cancel, tagActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::Cancel));
+  bindClick(objects.tag_legacy_header, headerClicked);
+  bindClick(objects.tag_legacy_select_spool, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::SearchSpool));
+  bindClick(objects.tag_legacy_import, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::ImportTagDefinition));
+  bindClick(objects.tag_legacy_migrate, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::MigrateLegacyTag));
+  bindClick(objects.tag_legacy_erase, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::EraseTag));
+  bindClick(objects.tag_legacy_close, backClicked);
+  bindClick(objects.tag_unknown_header, headerClicked);
+  bindClick(objects.tag_unknown_select_spool, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::SearchSpool));
+  bindClick(objects.tag_unknown_close, backClicked);
   bindClick(objects.bambu_spool_type_back, tagActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::Cancel));
 
@@ -2122,7 +2155,7 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
 }
 
 void setAllHeaderTexts(const char* text) {
-  const std::array<lv_obj_t*, 21> headers{{
+  const std::array<lv_obj_t*, 23> headers{{
       objects.home_header,
       objects.select_header,
       objects.settings_header,
@@ -2144,6 +2177,8 @@ void setAllHeaderTexts(const char* text) {
       objects.tag_write_header,
       objects.tag_result_header,
       objects.tag_definition_import_header,
+      objects.tag_legacy_header,
+      objects.tag_unknown_header,
   }};
   for (lv_obj_t* header : headers) setControlText(header, text);
 }
@@ -2283,6 +2318,12 @@ void showScreen(rtos::UiScreenId screenId) {
     case rtos::UiScreenId::TagDefinitionImport:
       loadScreen(SCREEN_ID_SCR_TAG_DEFINITION_IMPORT);
       break;
+    case rtos::UiScreenId::TagLegacy:
+      loadScreen(SCREEN_ID_SCR_TAG_LEGACY);
+      break;
+    case rtos::UiScreenId::TagUnknown:
+      loadScreen(SCREEN_ID_SCR_TAG_UNKNOWN);
+      break;
     case rtos::UiScreenId::BambuSpoolType:
       loadScreen(SCREEN_ID_SCR_BAMBU_SPOOL_TYPE);
       break;
@@ -2400,6 +2441,23 @@ void processUiCommand(const rtos::UiCommand& command) {
       } else if (command.screenId == rtos::UiScreenId::TagDefinitionImport &&
                  command.text[0] != '\0') {
         lv_label_set_text(objects.tag_definition_import_summary, command.text);
+      } else if (command.screenId == rtos::UiScreenId::TagLegacy &&
+                 command.text[0] != '\0') {
+        lv_label_set_text(objects.tag_legacy_summary, command.text);
+        const bool writable = command.value != 0;
+        lv_obj_set_flag(objects.tag_legacy_migrate, LV_OBJ_FLAG_CLICKABLE,
+                        writable);
+        lv_obj_set_flag(objects.tag_legacy_erase, LV_OBJ_FLAG_CLICKABLE,
+                        writable);
+        lv_obj_set_style_bg_color(objects.tag_legacy_migrate,
+                                  lv_color_hex(writable ? 0x1565C0 : 0x616161),
+                                  LV_PART_MAIN);
+        lv_obj_set_style_bg_color(objects.tag_legacy_erase,
+                                  lv_color_hex(writable ? 0xC62828 : 0x616161),
+                                  LV_PART_MAIN);
+      } else if (command.screenId == rtos::UiScreenId::TagUnknown &&
+                 command.text[0] != '\0') {
+        lv_label_set_text(objects.tag_unknown_summary, command.text);
       }
       if (command.screenId == rtos::UiScreenId::TrayDetails ||
           command.screenId == rtos::UiScreenId::TrayActions) {

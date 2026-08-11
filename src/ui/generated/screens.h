@@ -33,8 +33,10 @@ enum ScreensEnum {
     SCREEN_ID_SCR_TAG_WRITE = 20,
     SCREEN_ID_SCR_TAG_RESULT = 21,
     SCREEN_ID_SCR_TAG_DEFINITION_IMPORT = 22,
-    SCREEN_ID_SCR_BAMBU_SPOOL_TYPE = 23,
-    _SCREEN_ID_LAST = 23
+    SCREEN_ID_SCR_TAG_LEGACY = 23,
+    SCREEN_ID_SCR_TAG_UNKNOWN = 24,
+    SCREEN_ID_SCR_BAMBU_SPOOL_TYPE = 25,
+    _SCREEN_ID_LAST = 25
 };
 
 typedef struct _objects_t {
@@ -60,6 +62,8 @@ typedef struct _objects_t {
     lv_obj_t *scr_tag_write;
     lv_obj_t *scr_tag_result;
     lv_obj_t *scr_tag_definition_import;
+    lv_obj_t *scr_tag_legacy;
+    lv_obj_t *scr_tag_unknown;
     lv_obj_t *scr_bambu_spool_type;
     lv_obj_t *boot_title;
     lv_obj_t *boot_version;
@@ -275,6 +279,21 @@ typedef struct _objects_t {
     lv_obj_t *tag_definition_import_select_spool;
     lv_obj_t *tag_definition_import_spoolman;
     lv_obj_t *tag_definition_import_cancel;
+    lv_obj_t *tag_legacy_header;
+    lv_obj_t *tag_legacy_settings;
+    lv_obj_t *tag_legacy_title;
+    lv_obj_t *tag_legacy_summary;
+    lv_obj_t *tag_legacy_select_spool;
+    lv_obj_t *tag_legacy_import;
+    lv_obj_t *tag_legacy_migrate;
+    lv_obj_t *tag_legacy_erase;
+    lv_obj_t *tag_legacy_close;
+    lv_obj_t *tag_unknown_header;
+    lv_obj_t *tag_unknown_settings;
+    lv_obj_t *tag_unknown_title;
+    lv_obj_t *tag_unknown_summary;
+    lv_obj_t *tag_unknown_select_spool;
+    lv_obj_t *tag_unknown_close;
     lv_obj_t *bambu_spool_type_header;
     lv_obj_t *bambu_spool_type_title;
     lv_obj_t *bambu_spool_type_low;
@@ -350,6 +369,12 @@ void tick_screen_scr_tag_result();
 
 void create_screen_scr_tag_definition_import();
 void tick_screen_scr_tag_definition_import();
+
+void create_screen_scr_tag_legacy();
+void tick_screen_scr_tag_legacy();
+
+void create_screen_scr_tag_unknown();
+void tick_screen_scr_tag_unknown();
 
 void create_screen_scr_bambu_spool_type();
 void tick_screen_scr_bambu_spool_type();

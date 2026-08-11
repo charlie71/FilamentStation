@@ -28,6 +28,12 @@ models::TagReadResult TagParserRegistry::parse(
   std::memcpy(result.uid, tag.uid, tag.uidLength);
   result.ndefPresent = tag.ndefPresent;
   result.ndefReadable = tag.ndefReadable;
+  result.physicalWritableKnown =
+      tag.technology == models::TagTechnology::Ntag213 ||
+      tag.technology == models::TagTechnology::Ntag215 ||
+      tag.technology == models::TagTechnology::Ntag216;
+  result.physicalWritable =
+      result.physicalWritableKnown && tag.hardwareWritable;
 
   for (std::size_t index = 0; index < parserCount_; ++index) {
     const ITagParser* parser = parsers_[index];
@@ -49,8 +55,10 @@ models::TagReadResult TagParserRegistry::parse(
     result.definition = definition;
     // Only native FilamentStation data may inherit the physical tag's write
     // capability. Every foreign format is read-only in version 1.
-    result.writable = result.format == models::TagFormat::FilamentStation &&
-                      tag.hardwareWritable;
+    result.writable =
+        (result.format == models::TagFormat::FilamentStation ||
+         result.format == models::TagFormat::Legacy) &&
+        result.physicalWritable;
     result.erasable = result.writable;
     return result;
   }
