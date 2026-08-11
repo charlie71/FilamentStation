@@ -18,7 +18,7 @@ constexpr TaskSettings kStorageTask{"StorageTask", 8192, 2, kNoCoreAffinity};
 constexpr TaskSettings kAppTask{"AppTask", 4096, 3, kNoCoreAffinity};
 constexpr TaskSettings kUiTask{"UiTask", 8192, 2, kNoCoreAffinity};
 constexpr TaskSettings kScaleTask{"ScaleTask", 3072, 2, kNoCoreAffinity};
-constexpr TaskSettings kNfcTask{"NfcTask", 3072, 2, kNoCoreAffinity};
+constexpr TaskSettings kNfcTask{"NfcTask", 4096, 2, kNoCoreAffinity};
 constexpr TaskSettings kNetworkTask{"NetworkTask", 4096, 1, kNoCoreAffinity};
 constexpr TaskSettings kSpoolmanTask{"SpoolmanTask", 4096, 1, kNoCoreAffinity};
 constexpr TaskSettings kBambuTask{"BambuTask", 4096, 1, kNoCoreAffinity};

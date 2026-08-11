@@ -127,6 +127,14 @@ angebunden. Die Verbindung verwendet zwei weitere dokumentierte EXT-Leitungen:
 | ESP32 -> PN532 | EXT_IO3 | 12 | RX |
 | PN532 -> ESP32 | EXT_IO4 | 13 | TX |
 
+Beim Elechouse PN532 NFC RFID Module V3 sind dieselben Headerpins auf der
+Vorderseite als I2C und auf der Rueckseite als HSU beschriftet. Im HSU-Modus
+gilt daher konkret: `SCL/RXD` ist der Eingang des PN532 und muss mit ESP32-TX
+GPIO12 verbunden werden; `SDA/TXD` ist der Ausgang des PN532 und muss mit
+ESP32-RX GPIO13 verbunden werden. Die beiden Modusschalter stehen fuer HSU auf
+Kanal 1 `OFF` und Kanal 2 `OFF`. Eine Aenderung der Schalterstellung wird erst
+nach einem vollstaendigen Neustart des Moduls wirksam.
+
 GPIO12 und GPIO13 sind normale Ein-/Ausgaenge des ESP32-S3. Sie sind am
 WT32-SC01-Plus herausgefuehrt und kollidieren nicht mit Display, Touch, SD,
 USB oder den HX711-Leitungen GPIO10/GPIO11.
@@ -135,14 +143,19 @@ Ein zusaetzlicher externer PN532-IRQ wird im HSU-Betrieb nicht verwendet. Der
 P70/IRQ-Pin des PN532 ist waehrend des Resets zugleich an der Modusauswahl
 beteiligt und wird von Breakout-Modulen nicht einheitlich herausgefuehrt. Im
 UART-Betrieb signalisiert der PN532 seine Antwort ohnehin ueber RX-Daten. Der
-ESP32-UART-Treiber empfaengt diese interruptgesteuert und stellt dem NfcTask
-ein Queue-Ereignis bereit. Die Anwendungssoftware besitzt deshalb keine eigene
+ESP32-UART-Treiber empfaengt diese interruptgesteuert und weckt den darin
+blockierenden NfcTask. Die Anwendungssoftware besitzt deshalb keine eigene
 NFC-ISR und fuehrt insbesondere keine PN532-Protokollkommunikation in einer ISR
 aus.
 
-Der NfcTask blockiert gemeinsam auf seiner Command-Queue und der UART-
-Event-Queue. Phase 5.1 initialisiert nur den Transport; der PN532 wird noch
-nicht abgefragt und NFC-Daten werden erst in Phase 5.3 verarbeitet.
+Der NfcTask wartet 250 ms blockierend auf seiner Command-Queue. Nach einem
+Timeout fuehrt er genau eine begrenzte ISO14443A-Suche aus; beim Warten auf die
+Antwort blockiert er im interruptgesteuerten UART-Treiber. Damit gibt es weder
+Busy Waiting noch eine schnelle Polling-Schleife. Phase 5.3 liest Type-2-NDEF,
+schreibt und verifiziert `spoolman:<id>` und kann den NDEF-Inhalt loeschen.
+MIFARE-Classic-Tags werden anhand ihres SAK nur als Bambu-kompatible Kandidaten
+erkannt. Eine proprietaere Bambu-Dekodierung oder Verschluesselung findet nicht
+statt und bleibt dem spaeteren Bambu-Workflow vorbehalten.
 
 Quellen:
 

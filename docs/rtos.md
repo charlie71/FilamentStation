@@ -62,9 +62,11 @@ Touch-I2C- oder HX711-Pins durch den PN532-UART.
 
 Da keine gemeinsame Bussperre existiert, betraegt deren maximale Haltezeit
 null und es gibt keine Lock-Reihenfolge zwischen UiTask und NfcTask. Der
-NfcTask wartet blockierend auf einem Queue Set aus Command-Queue und UART-
-Event-Queue. Er haelt dabei keinen Mutex. Damit kann zwischen Touch- und
-NFC-Verarbeitung kein Bus-Mutex-Deadlock entstehen.
+NfcTask wartet blockierend mit einem 250-ms-Timeout auf seiner Command-Queue.
+Nur nach dem Timeout startet er eine einzelne NFC-Suche; auf PN532-Antworten
+wartet er blockierend im interruptgesteuerten UART-Treiber. Er haelt dabei
+keinen Mutex. Damit kann zwischen Touch- und NFC-Verarbeitung kein
+Bus-Mutex-Deadlock entstehen.
 
 Falls der PN532 spaeter von UART auf I2C umgestellt wird, ist diese Entscheidung
 ungueltig: Dann muessen Busbesitz, maximale Haltezeit und Lock-Reihenfolge vor

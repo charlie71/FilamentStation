@@ -576,15 +576,15 @@ Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
 
 ## 5.3 NFC lesen und schreiben
 
-* [ ] UID lesen
-* [ ] NDEF lesen
-* [ ] `spoolman:<id>` parsen
-* [ ] Bambu-Tag erkennen
-* [ ] Legacy-Tag erkennen
-* [ ] Tag schreiben
-* [ ] Tag löschen
-* [ ] Tag verifizieren
-* [ ] Entprellung
+* [x] UID lesen
+* [x] NDEF lesen
+* [x] `spoolman:<id>` parsen
+* [x] Bambu-Tag erkennen
+* [x] Legacy-Tag erkennen
+* [x] Tag schreiben
+* [x] Tag löschen
+* [x] Tag verifizieren
+* [x] Entprellung
 
 ## 5.4 Neuer einfacher Tag
 

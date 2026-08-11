@@ -140,7 +140,12 @@ enum class ScaleCommandType : std::uint8_t {
   RequestMeasurement,
   ApplyCalibration,
 };
-enum class NfcCommandType : std::uint8_t { StartReading, StopReading, WriteSpoolTag };
+enum class NfcCommandType : std::uint8_t {
+  StartReading,
+  StopReading,
+  WriteSpoolTag,
+  EraseTag,
+};
 enum class StorageCommandType : std::uint8_t { LoadJson, SaveJson, DeleteJson, CreateBackup };
 enum class NetworkCommandType : std::uint8_t { Connect, Reconfigure, StartPortal, ClearCredentials };
 enum class SpoolmanCommandType : std::uint8_t { HealthCheck, LoadSpool, SearchSpools, UpdateWeight };

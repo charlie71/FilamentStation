@@ -1023,6 +1023,20 @@ void appTask(void* parameter) {
                     rtos::UiOverlayKind::Error, event.requestId,
                     "Waagenaktion fehlgeschlagen", event.text);
       }
+    } else if (event.type == rtos::AppEventType::NfcInitialized ||
+               event.type == rtos::AppEventType::NfcTagDetected ||
+               event.type == rtos::AppEventType::NfcTagRemoved ||
+               event.type == rtos::AppEventType::NfcTagRead ||
+               event.type == rtos::AppEventType::NfcTagWritten ||
+               event.type == rtos::AppEventType::NfcTagErased ||
+               event.type == rtos::AppEventType::NfcError) {
+      rtos::UiCommand status{};
+      status.type = rtos::UiCommandType::ShowStatus;
+      status.requestId = event.requestId;
+      status.spoolId = event.spoolId;
+      std::snprintf(status.title, sizeof(status.title), "NFC");
+      std::snprintf(status.text, sizeof(status.text), "%s", event.text);
+      sendUiCommand(ctx, status, "AppTask: NFC status UI queue overflow");
     } else if (event.type == rtos::AppEventType::UiCommunicationTest) {
       uiStartupReady = true;
       rtos::UiCommand response{};

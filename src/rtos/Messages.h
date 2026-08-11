@@ -8,6 +8,13 @@
 
 namespace filament_station::rtos {
 
+enum class NfcTagType : std::uint8_t {
+  Unknown,
+  Spoolman,
+  Bambu,
+  Legacy,
+};
+
 struct AppEvent {
   AppEventType type;
   std::uint32_t requestId;
@@ -15,6 +22,10 @@ struct AppEvent {
   std::int32_t scaleOffsetCounts;
   float scaleFactorCountsPerGram;
   bool scaleCalibrated;
+  SpoolId spoolId;
+  NfcTagType nfcTagType;
+  std::uint8_t nfcUid[10];
+  std::uint8_t nfcUidLength;
   char text[64];
   UiAction uiAction;
 };
