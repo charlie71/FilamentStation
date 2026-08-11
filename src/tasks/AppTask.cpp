@@ -14,6 +14,7 @@ namespace {
 
 rtos::UiScreenId currentScreen = rtos::UiScreenId::Boot;
 rtos::UiScreenId previousScreen = rtos::UiScreenId::Home;
+rtos::UiScreenId printerSettingsReturnScreen = rtos::UiScreenId::SettingsHome;
 bool uiStartupReady = false;
 bool storageStartupReady = false;
 bool startupNavigationSent = false;
@@ -669,8 +670,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         command.screenId = rtos::UiScreenId::SettingsPrinters;
         currentScreen = rtos::UiScreenId::SettingsPrinters;
       } else if (currentScreen == rtos::UiScreenId::SettingsPrinters) {
-        command.screenId = rtos::UiScreenId::SettingsHome;
-        currentScreen = rtos::UiScreenId::SettingsHome;
+        command.screenId = printerSettingsReturnScreen;
+        currentScreen = printerSettingsReturnScreen;
       } else if (currentScreen == rtos::UiScreenId::SettingsWifi ||
                  currentScreen == rtos::UiScreenId::SettingsScale ||
                  currentScreen == rtos::UiScreenId::SettingsDevice ||
@@ -782,7 +783,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     }
 
     case rtos::UiActionType::OpenPrinterSettings:
-      previousScreen = currentScreen;
+      printerSettingsReturnScreen = currentScreen;
       currentScreen = rtos::UiScreenId::SettingsPrinters;
       command.type = rtos::UiCommandType::ShowScreen;
       command.screenId = currentScreen;
