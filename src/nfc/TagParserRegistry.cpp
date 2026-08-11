@@ -57,6 +57,12 @@ models::TagReadResult TagParserRegistry::parse(
     return result;
   }
 
+  if (tag.ndefPresent && tag.ndefReadable &&
+      services::parseType2Ndef(tag.ndef, tag.ndefLength).type ==
+          services::NfcPayloadType::Invalid) {
+    result.payloadValid = false;
+  }
+
   // Unknown data never inherits a physical write capability.
   result.format = models::TagFormat::Unknown;
   result.writable = false;

@@ -17,6 +17,7 @@
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/NfcPayload.h"
+#include "services/Ntag21x.h"
 
 namespace filament_station::tasks {
 namespace {
@@ -32,6 +33,7 @@ constexpr std::uint8_t kCommandInDataExchange = 0x40;
 constexpr std::uint8_t kCommandInListPassiveTarget = 0x4A;
 constexpr std::uint8_t kMifareRead = 0x30;
 constexpr std::uint8_t kMifareWrite = 0xA2;
+constexpr std::uint8_t kGetVersion = 0x60;
 std::size_t lastTransactionRxBytes = 0;
 
 struct TargetInfo {
@@ -352,10 +354,59 @@ models::TagTechnology technologyFor(const TargetInfo& target) {
   return models::TagTechnology::OtherIso14443A;
 }
 
-bool type2Writable(const TargetInfo& target) {
+models::TagTechnology detectNtagTechnology(const TargetInfo& target) {
+  const std::uint8_t command[] = {kGetVersion};
+  std::uint8_t version[8]{};
+  std::size_t versionLength = 0;
+  if (!exchange(target, command, sizeof(command), version, sizeof(version),
+                versionLength)) {
+    return technologyFor(target);
+  }
+
   std::uint8_t capability[16]{};
-  return readPages(target, 3, capability) && capability[0] == 0xE1 &&
-         (capability[3] & 0x0FU) != 0x0FU;
+  if (!readPages(target, 3, capability) || capability[0] != 0xE1) {
+    return models::TagTechnology::OtherIso14443A;
+  }
+  return services::identifyNtag21x(version, versionLength, capability);
+}
+
+std::uint8_t dynamicLockPage(models::TagTechnology technology) {
+  switch (technology) {
+    case models::TagTechnology::Ntag213:
+      return 0x28;
+    case models::TagTechnology::Ntag215:
+      return 0x82;
+    case models::TagTechnology::Ntag216:
+      return 0xE2;
+    default:
+      return 0;
+  }
+}
+
+std::uint8_t configurationPage(models::TagTechnology technology) {
+  const std::uint8_t lockPage = dynamicLockPage(technology);
+  return lockPage == 0 ? 0 : static_cast<std::uint8_t>(lockPage + 1U);
+}
+
+bool ntagWritableForPages(const TargetInfo& target,
+                          models::TagTechnology technology,
+                          std::uint8_t lastPage) {
+  if (dynamicLockPage(technology) == 0) return false;
+  std::uint8_t capability[16]{};
+  std::uint8_t manufacturerAndLocks[16]{};
+  std::uint8_t dynamicLocks[16]{};
+  std::uint8_t configuration[16]{};
+  if (!readPages(target, 3, capability) ||
+      !readPages(target, 0, manufacturerAndLocks) ||
+      !readPages(target, dynamicLockPage(technology), dynamicLocks) ||
+      !readPages(target, configurationPage(technology), configuration)) {
+    return false;
+  }
+  const std::uint8_t staticLocks[] = {manufacturerAndLocks[10],
+                                      manufacturerAndLocks[11]};
+  return services::ntag21xRangeWritable(technology, lastPage, capability,
+                                        staticLocks, dynamicLocks,
+                                        configuration[3]);
 }
 
 rtos::NfcTagType legacyType(models::TagFormat format) {
@@ -386,6 +437,26 @@ const char* formatDescription(models::TagFormat format) {
     case models::TagFormat::Legacy:
       return "Legacy";
     case models::TagFormat::Unknown:
+    default:
+      return "unbekannt";
+  }
+}
+
+const char* technologyDescription(models::TagTechnology technology) {
+  switch (technology) {
+    case models::TagTechnology::Ntag213:
+      return "NTAG213";
+    case models::TagTechnology::Ntag215:
+      return "NTAG215";
+    case models::TagTechnology::Ntag216:
+      return "NTAG216";
+    case models::TagTechnology::MifareClassic1K:
+      return "MIFARE Classic 1K";
+    case models::TagTechnology::MifareClassic4K:
+      return "MIFARE Classic 4K";
+    case models::TagTechnology::OtherIso14443A:
+      return "ISO14443A";
+    case models::TagTechnology::Unknown:
     default:
       return "unbekannt";
   }
@@ -426,7 +497,7 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
   sendEvent(ctx, detected);
 
   models::RawTagData raw{};
-  raw.technology = technologyFor(target);
+  raw.technology = detectNtagTechnology(target);
   raw.uidLength = target.uidLength;
   raw.sak = target.sak;
   std::memcpy(raw.uid, target.uid.data(), target.uidLength);
@@ -434,11 +505,16 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
   if (readNdef(target, raw.ndef, sizeof(raw.ndef), ndefLength)) {
     raw.ndefPresent = true;
     raw.ndefReadable = true;
-    raw.hardwareWritable = type2Writable(target);
+    // The spoolman payload currently occupies at most pages 4 through 14.
+    // The exact range is checked again using the built payload before writing.
+    raw.hardwareWritable = ntagWritableForPages(target, raw.technology, 14);
     raw.ndefLength = static_cast<std::uint16_t>(ndefLength);
   }
   static const nfc::TagParserRegistry registry{};
   const models::TagReadResult result = registry.parse(raw);
+  rtos::logf("NfcTask: technology=%s, format=%s, writable=%s",
+             technologyDescription(result.technology),
+             formatDescription(result.format), result.writable ? "yes" : "no");
 
   rtos::AppEvent read{};
   read.type = rtos::AppEventType::NfcTagRead;
@@ -453,6 +529,9 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
   } else if (!result.ndefReadable) {
     std::snprintf(read.text, sizeof(read.text),
                   "UID=%s: kein lesbares Type-2-NDEF", uid);
+  } else if (!result.payloadValid) {
+    std::snprintf(read.text, sizeof(read.text),
+                  "UID=%s: ungueltige FilamentStation-Payload", uid);
   } else if (result.definition.hasSpoolId) {
     std::snprintf(read.text, sizeof(read.text), "UID=%s: %s, ID=%lu", uid,
                   formatDescription(result.format),
@@ -477,17 +556,23 @@ void handleWrite(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
   std::size_t length = 0;
   if (!services::buildSpoolmanType2Ndef(command.spoolId, bytes.data(),
                                         bytes.size(), length) ||
+      !ntagWritableForPages(
+          target, detectNtagTechnology(target),
+          static_cast<std::uint8_t>(3U + length / 4U)) ||
       !writeNdef(target, bytes.data(), length)) {
     sendError(ctx, command.requestId, "NFC tag write failed");
     return;
   }
   static std::array<std::uint8_t, config::kNfcMaxNdefBytes> verify{};
   std::size_t verifyLength = 0;
-  const auto result =
-      readNdef(target, verify.data(), verify.size(), verifyLength)
-          ? services::parseType2Ndef(verify.data(), verifyLength)
-          : services::NfcPayloadInfo{};
-  if (result.type != services::NfcPayloadType::Spoolman ||
+  TargetInfo verifiedTarget{};
+  const bool sameTag = scanTarget(verifiedTarget) && sameUid(target, verifiedTarget);
+  const auto result = sameTag &&
+                              readNdef(verifiedTarget, verify.data(),
+                                       verify.size(), verifyLength)
+                          ? services::parseType2Ndef(verify.data(), verifyLength)
+                          : services::NfcPayloadInfo{};
+  if (!sameTag || result.type != services::NfcPayloadType::Spoolman ||
       result.spoolId != command.spoolId) {
     sendError(ctx, command.requestId, "NFC tag verification failed");
     return;
@@ -514,8 +599,10 @@ void handleErase(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
   const std::uint8_t empty[] = {0x03, 0x00, 0xFE, 0x00};
   static std::array<std::uint8_t, config::kNfcMaxNdefBytes> verify{};
   std::size_t length = 0;
+  TargetInfo verifiedTarget{};
   if (!writeNdef(target, empty, sizeof(empty)) ||
-      !readNdef(target, verify.data(), verify.size(), length) ||
+      !scanTarget(verifiedTarget) || !sameUid(target, verifiedTarget) ||
+      !readNdef(verifiedTarget, verify.data(), verify.size(), length) ||
       services::parseType2Ndef(verify.data(), length).type !=
           services::NfcPayloadType::Empty) {
     sendError(ctx, command.requestId, "NFC tag erase verification failed");

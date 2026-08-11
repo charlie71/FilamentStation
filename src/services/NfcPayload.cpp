@@ -43,10 +43,12 @@ NfcPayloadInfo classifyText(const char* text, std::size_t length) {
   constexpr char kLegacyPrefix[] = "spool:";
   std::uint32_t spoolId = 0;
   if (length > sizeof(kSpoolmanPrefix) - 1 &&
-      std::memcmp(text, kSpoolmanPrefix, sizeof(kSpoolmanPrefix) - 1) == 0 &&
-      parseUnsigned(text + sizeof(kSpoolmanPrefix) - 1, text + length,
-                    spoolId)) {
-    return {NfcPayloadType::Spoolman, spoolId};
+      std::memcmp(text, kSpoolmanPrefix, sizeof(kSpoolmanPrefix) - 1) == 0) {
+    if (parseUnsigned(text + sizeof(kSpoolmanPrefix) - 1, text + length,
+                      spoolId) && spoolId != 0) {
+      return {NfcPayloadType::Spoolman, spoolId};
+    }
+    return {NfcPayloadType::Invalid, 0};
   }
   if (length > sizeof(kLegacyPrefix) - 1 &&
       std::memcmp(text, kLegacyPrefix, sizeof(kLegacyPrefix) - 1) == 0 &&

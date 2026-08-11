@@ -628,28 +628,28 @@ Unterstützte Chips:
 
 NTAG215 ist der bevorzugte Standard.
 
-* [ ] NTAG213 erkennen
-* [ ] NTAG215 erkennen
-* [ ] NTAG216 erkennen
-* [ ] NDEF-Payload `spoolman:<id>` lesen
-* [ ] Spool-ID validieren
-* [ ] ungültige Payload klar ablehnen
-* [ ] leeren NDEF-Tag erkennen
-* [ ] native Tags schreiben
-* [ ] geschriebenen Tag erneut lesen
-* [ ] UID prüfen
-* [ ] Payload prüfen
-* [ ] Verifikation erst danach erfolgreich melden
-* [ ] native Tags löschen
-* [ ] Schreibfähigkeit vor Schreibvorgang prüfen
-* [ ] `SCR_TAG_ACTION_SELECT` mit realer Tagklassifikation verbinden
-* [ ] `SCR_TAG_REVIEW` verwenden
-* [ ] `SCR_TAG_WRITE` verwenden
-* [ ] `SCR_TAG_RESULT` verwenden
-* [ ] vorhandene Spule über `CMP_SPOOL_PICKER` auswählen
-* [ ] zuletzt verwendete Spule unterstützen
-* [ ] optional Quick/Advanced Weight danach anbieten
-* [ ] automatisierte Parser-Tests
+* [x] NTAG213 erkennen
+* [x] NTAG215 erkennen
+* [x] NTAG216 erkennen
+* [x] NDEF-Payload `spoolman:<id>` lesen
+* [x] Spool-ID validieren
+* [x] ungültige Payload klar ablehnen
+* [x] leeren NDEF-Tag erkennen
+* [x] native Tags schreiben
+* [x] geschriebenen Tag erneut lesen
+* [x] UID prüfen
+* [x] Payload prüfen
+* [x] Verifikation erst danach erfolgreich melden
+* [x] native Tags löschen
+* [x] Schreibfähigkeit vor Schreibvorgang prüfen
+* [x] `SCR_TAG_ACTION_SELECT` mit realer Tagklassifikation verbinden
+* [x] `SCR_TAG_REVIEW` verwenden
+* [x] `SCR_TAG_WRITE` verwenden
+* [x] `SCR_TAG_RESULT` verwenden
+* [x] vorhandene Spule über `CMP_SPOOL_PICKER` auswählen
+* [x] zuletzt verwendete Spule unterstützen
+* [x] optional Quick/Advanced Weight danach anbieten
+* [x] automatisierte Parser-Tests
 
 ### Abnahmekriterien 5.5
 

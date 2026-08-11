@@ -28,7 +28,11 @@ enum ScreensEnum {
     SCREEN_ID_SCR_SETTINGS_DEVICE = 15,
     SCREEN_ID_SCR_SETTINGS_DIAGNOSTICS = 16,
     SCREEN_ID_SCR_SETTINGS_FIRMWARE = 17,
-    _SCREEN_ID_LAST = 17
+    SCREEN_ID_SCR_TAG_ACTION_SELECT = 18,
+    SCREEN_ID_SCR_TAG_REVIEW = 19,
+    SCREEN_ID_SCR_TAG_WRITE = 20,
+    SCREEN_ID_SCR_TAG_RESULT = 21,
+    _SCREEN_ID_LAST = 21
 };
 
 typedef struct _objects_t {
@@ -49,6 +53,10 @@ typedef struct _objects_t {
     lv_obj_t *scr_settings_device;
     lv_obj_t *scr_settings_diagnostics;
     lv_obj_t *scr_settings_firmware;
+    lv_obj_t *scr_tag_action_select;
+    lv_obj_t *scr_tag_review;
+    lv_obj_t *scr_tag_write;
+    lv_obj_t *scr_tag_result;
     lv_obj_t *boot_title;
     lv_obj_t *boot_version;
     lv_obj_t *boot_status;
@@ -225,6 +233,37 @@ typedef struct _objects_t {
     lv_obj_t *firmware_settings_status;
     lv_obj_t *firmware_settings_check;
     lv_obj_t *firmware_settings_back;
+    lv_obj_t *tag_action_header;
+    lv_obj_t *tag_action_settings;
+    lv_obj_t *tag_action_title;
+    lv_obj_t *tag_action_info;
+    lv_obj_t *tag_action_select_spool;
+    lv_obj_t *tag_action_use_last_spool;
+    lv_obj_t *tag_action_write;
+    lv_obj_t *tag_action_erase;
+    lv_obj_t *tag_action_back;
+    lv_obj_t *tag_review_header;
+    lv_obj_t *tag_review_settings;
+    lv_obj_t *tag_review_title;
+    lv_obj_t *tag_review_summary;
+    lv_obj_t *tag_review_back;
+    lv_obj_t *tag_review_cancel;
+    lv_obj_t *tag_review_confirm;
+    lv_obj_t *tag_write_header;
+    lv_obj_t *tag_write_settings;
+    lv_obj_t *tag_write_title;
+    lv_obj_t *tag_write_detected;
+    lv_obj_t *tag_write_memory;
+    lv_obj_t *tag_write_data;
+    lv_obj_t *tag_write_verify;
+    lv_obj_t *tag_write_cancel;
+    lv_obj_t *tag_result_header;
+    lv_obj_t *tag_result_settings;
+    lv_obj_t *tag_result_title;
+    lv_obj_t *tag_result_message;
+    lv_obj_t *tag_result_quick_weight;
+    lv_obj_t *tag_result_advanced_weight;
+    lv_obj_t *tag_result_close;
 } objects_t;
 
 extern objects_t objects;
@@ -279,6 +318,21 @@ void tick_screen_scr_settings_diagnostics();
 
 void create_screen_scr_settings_firmware();
 void tick_screen_scr_settings_firmware();
+
+void create_screen_scr_tag_action_select();
+void tick_screen_scr_tag_action_select();
+
+void create_screen_scr_tag_review();
+void tick_screen_scr_tag_review();
+
+void create_screen_scr_tag_write();
+void tick_screen_scr_tag_write();
+
+void create_screen_scr_tag_result();
+void tick_screen_scr_tag_result();
+
+void create_user_widget_cmp_spool_picker(lv_obj_t *parent_obj, int startWidgetIndex);
+void tick_user_widget_cmp_spool_picker(int startWidgetIndex);
 
 void create_user_widget_cmp_top_printer_bar(lv_obj_t *parent_obj, int startWidgetIndex);
 void tick_user_widget_cmp_top_printer_bar(int startWidgetIndex);

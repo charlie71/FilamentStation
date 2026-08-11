@@ -48,6 +48,12 @@ struct AdvancedWeightState {
   char spoolName[32]{};
 };
 AdvancedWeightState advancedWeight{};
+enum class PendingTagOperation : std::uint8_t { None, Write, Erase };
+PendingTagOperation pendingTagOperation = PendingTagOperation::None;
+models::TagReadResult currentTag{};
+bool tagPresent = false;
+rtos::SpoolId pendingTagSpoolId = 0;
+rtos::SpoolId lastUsedTagSpoolId = 0;
 
 float scaleWeightGrams() {
   if (!scaleCalibrated || scaleFactorCountsPerGram == 0.0F) return 0.0F;
@@ -331,18 +337,86 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
 
   switch (action.type) {
     case rtos::UiActionType::Cancel:
+      if (currentScreen == rtos::UiScreenId::TagReview ||
+          currentScreen == rtos::UiScreenId::TagWrite) {
+        pendingTagOperation = PendingTagOperation::None;
+        command.type = rtos::UiCommandType::ShowScreen;
+        command.screenId = rtos::UiScreenId::TagActionSelect;
+        currentScreen = command.screenId;
+        sendUiCommand(ctx, command, "AppTask: NFC cancel navigation overflow");
+        return;
+      }
       command.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, command, "AppTask: hide overlay queue overflow");
       pendingOverlay = rtos::UiOverlayKind::None;
       quickWeight.pending = false;
       advancedWeight.pending = false;
+      pendingTagOperation = PendingTagOperation::None;
       return;
 
     case rtos::UiActionType::Confirm: {
+      if (currentScreen == rtos::UiScreenId::TagReview) {
+        if (!tagPresent || pendingTagOperation == PendingTagOperation::None) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "NFC-Tag fehlt", "Der Tag wurde vor dem Start entfernt.");
+          return;
+        }
+        rtos::NfcCommand nfcCommand{};
+        nfcCommand.requestId = action.requestId;
+        nfcCommand.spoolId = pendingTagSpoolId;
+        nfcCommand.type = pendingTagOperation == PendingTagOperation::Write
+                              ? rtos::NfcCommandType::WriteSpoolTag
+                              : rtos::NfcCommandType::EraseTag;
+        if (xQueueSend(ctx.nfcCommandQueue, &nfcCommand,
+                       pdMS_TO_TICKS(50)) != pdPASS) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "NFC-Auftrag fehlgeschlagen",
+                      "Die NFC-Command-Queue ist voll.");
+          return;
+        }
+        command.type = rtos::UiCommandType::ShowScreen;
+        command.screenId = rtos::UiScreenId::TagWrite;
+        currentScreen = command.screenId;
+        sendUiCommand(ctx, command, "AppTask: NFC write screen queue overflow");
+        return;
+      }
       const auto confirmedOverlay = pendingOverlay;
       command.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, command, "AppTask: hide confirmed overlay queue overflow");
       pendingOverlay = rtos::UiOverlayKind::None;
+      if (confirmedOverlay == rtos::UiOverlayKind::TagReview) {
+        if (!tagPresent || pendingTagOperation == PendingTagOperation::None) {
+          pendingTagOperation = PendingTagOperation::None;
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "NFC-Tag fehlt", "Der Tag wurde vor dem Start entfernt.");
+          return;
+        }
+        rtos::NfcCommand nfcCommand{};
+        nfcCommand.requestId = action.requestId;
+        nfcCommand.spoolId = pendingTagSpoolId;
+        nfcCommand.type = pendingTagOperation == PendingTagOperation::Write
+                              ? rtos::NfcCommandType::WriteSpoolTag
+                              : rtos::NfcCommandType::EraseTag;
+        if (xQueueSend(ctx.nfcCommandQueue, &nfcCommand,
+                       pdMS_TO_TICKS(50)) != pdPASS) {
+          pendingTagOperation = PendingTagOperation::None;
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "NFC-Auftrag fehlgeschlagen",
+                      "Die NFC-Command-Queue ist voll.");
+          return;
+        }
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::TagWrite, action.requestId,
+                    pendingTagOperation == PendingTagOperation::Write
+                        ? "Tag wird geschrieben"
+                        : "Tag wird gel\xC3\xB6scht",
+                    "Tag am Leser belassen. Lesen, Schreiben und Verifikation laufen.");
+        return;
+      }
       if (confirmedOverlay == rtos::UiOverlayKind::QuickWeightConfirmation) {
         if (!quickWeight.pending) return;
         if (scaleError || !scaleStable) {
@@ -470,6 +544,15 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                  currentScreen == rtos::UiScreenId::SettingsFirmware) {
         command.screenId = rtos::UiScreenId::SettingsHome;
         currentScreen = rtos::UiScreenId::SettingsHome;
+      } else if (currentScreen == rtos::UiScreenId::TagReview ||
+                 currentScreen == rtos::UiScreenId::TagWrite) {
+        command.screenId = rtos::UiScreenId::TagActionSelect;
+        currentScreen = command.screenId;
+        pendingTagOperation = PendingTagOperation::None;
+      } else if (currentScreen == rtos::UiScreenId::TagActionSelect ||
+                 currentScreen == rtos::UiScreenId::TagResult) {
+        command.screenId = rtos::UiScreenId::StagingActions;
+        currentScreen = command.screenId;
       } else {
         command.screenId = previousScreen;
         currentScreen = previousScreen;
@@ -745,6 +828,36 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::EraseTag:
     case rtos::UiActionType::SearchSpool:
     case rtos::UiActionType::SelectSpool:
+      if (action.type == rtos::UiActionType::SearchSpool &&
+          currentScreen == rtos::UiScreenId::TagActionSelect) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::SpoolPicker, action.requestId,
+                    "Spoolman-Spule ausw\xC3\xA4hlen", "");
+        return;
+      }
+      if (currentScreen == rtos::UiScreenId::TagActionSelect) {
+        pendingTagSpoolId = action.spoolId != 0 ? action.spoolId
+                                                : lastUsedTagSpoolId;
+        if (pendingTagSpoolId == 0) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Keine Spule ausgew\xC3\xA4hlt",
+                      "Es ist noch keine zuletzt verwendete Spule vorhanden.");
+          return;
+        }
+        pendingTagOperation = PendingTagOperation::Write;
+        command.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, command, "AppTask: spool picker close queue overflow");
+        command.type = rtos::UiCommandType::ShowScreen;
+        command.screenId = rtos::UiScreenId::TagReview;
+        std::snprintf(command.text, sizeof(command.text),
+                      "Tag: nativer NTAG21x\nSpoolman-ID: %lu\nPayload: spoolman:%lu\nAktion: schreiben und verifizieren",
+                      static_cast<unsigned long>(pendingTagSpoolId),
+                      static_cast<unsigned long>(pendingTagSpoolId));
+        currentScreen = command.screenId;
+        sendUiCommand(ctx, command, "AppTask: NFC review screen queue overflow");
+        return;
+      }
       if (action.type == rtos::UiActionType::LinkTag) {
         sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                     rtos::UiOverlayKind::NfcRead, action.requestId,
@@ -752,14 +865,60 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       if (action.type == rtos::UiActionType::WriteTag) {
-        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                    rtos::UiOverlayKind::NfcWrite, action.requestId,
-                    "NFC-Tag schreiben",
-                    "Tag wird geschrieben und anschlie\xC3\x9F" "end verifiziert (Mock)." );
+        if (!tagPresent) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Kein NFC-Tag", "Bitte einen nativen NTAG auflegen.");
+          return;
+        }
+        if (!currentTag.writable) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Tag ist schreibgesch\xC3\xBCtzt",
+                      "Nur leere oder native beschreibbare NTAGs sind zul\xC3\xA4ssig.");
+          return;
+        }
+        pendingTagSpoolId = action.spoolId != 0 ? action.spoolId
+                                                 : lastUsedTagSpoolId;
+        if (pendingTagSpoolId == 0) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Keine Spule ausgew\xC3\xA4hlt",
+                      "Vor dem Schreiben muss eine Spoolman-Spule gew\xC3\xA4hlt werden.");
+          return;
+        }
+        pendingTagOperation = PendingTagOperation::Write;
+        char review[120]{};
+        std::snprintf(review, sizeof(review),
+                      "Spoolman-ID: %lu\nPayload: spoolman:%lu\nDer Tag wird danach erneut gelesen.",
+                      static_cast<unsigned long>(pendingTagSpoolId),
+                      static_cast<unsigned long>(pendingTagSpoolId));
+        command.type = rtos::UiCommandType::ShowScreen;
+        command.screenId = rtos::UiScreenId::TagReview;
+        std::snprintf(command.text, sizeof(command.text), "%s", review);
+        currentScreen = command.screenId;
+        sendUiCommand(ctx, command, "AppTask: NFC review screen queue overflow");
+        return;
+      }
+      if (action.type == rtos::UiActionType::EraseTag) {
+        if (!tagPresent || !currentTag.erasable) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Tag kann nicht gel\xC3\xB6scht werden",
+                      "Nur unterst\xC3\xBCtzte native NTAGs d\xC3\xBCrfen gel\xC3\xB6scht werden.");
+          return;
+        }
+        pendingTagOperation = PendingTagOperation::Erase;
+        pendingTagSpoolId = 0;
+        command.type = rtos::UiCommandType::ShowScreen;
+        command.screenId = rtos::UiScreenId::TagReview;
+        std::snprintf(command.text, sizeof(command.text),
+                      "Tag: nativer NTAG21x\nAktion: NDEF-Zuordnung l\xC3\xB6schen\nDanach wird der leere Zustand verifiziert.");
+        currentScreen = command.screenId;
+        sendUiCommand(ctx, command, "AppTask: NFC erase review queue overflow");
         return;
       }
       if (action.type == rtos::UiActionType::ClearStaging ||
-          action.type == rtos::UiActionType::EraseTag ||
           action.type == rtos::UiActionType::UnlinkTag) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Confirmation, action.requestId,
@@ -1030,6 +1189,75 @@ void appTask(void* parameter) {
                event.type == rtos::AppEventType::NfcTagWritten ||
                event.type == rtos::AppEventType::NfcTagErased ||
                event.type == rtos::AppEventType::NfcError) {
+      if (event.type == rtos::AppEventType::NfcTagRead) {
+        currentTag = event.tagReadResult;
+        tagPresent = true;
+        const bool nativeTechnology =
+            currentTag.technology == models::TagTechnology::Ntag213 ||
+            currentTag.technology == models::TagTechnology::Ntag215 ||
+            currentTag.technology == models::TagTechnology::Ntag216;
+        const bool nativeFormat =
+            currentTag.format == models::TagFormat::EmptyNdef ||
+            currentTag.format == models::TagFormat::FilamentStation;
+        if (nativeTechnology && nativeFormat) {
+          const char* chip =
+              currentTag.technology == models::TagTechnology::Ntag213
+                  ? "NTAG213"
+                  : (currentTag.technology == models::TagTechnology::Ntag215
+                         ? "NTAG215"
+                         : "NTAG216");
+          if (currentTag.definition.hasSpoolId)
+            pendingTagSpoolId = currentTag.definition.spoolId;
+          rtos::UiCommand navigation{};
+          navigation.type = rtos::UiCommandType::ShowScreen;
+          navigation.screenId = rtos::UiScreenId::TagActionSelect;
+          navigation.spoolId = pendingTagSpoolId;
+          std::snprintf(navigation.text, sizeof(navigation.text),
+                        "%s | %s | %s", chip,
+                        currentTag.format == models::TagFormat::FilamentStation
+                            ? "FilamentStation"
+                            : "leer",
+                        currentTag.writable ? "beschreibbar"
+                                            : "schreibgesch\xC3\xBCtzt");
+          if (sendUiCommand(ctx, navigation,
+                            "AppTask: NFC action screen queue overflow")) {
+            previousScreen = currentScreen;
+            currentScreen = navigation.screenId;
+          }
+        }
+      } else if (event.type == rtos::AppEventType::NfcTagRemoved) {
+        tagPresent = false;
+        currentTag = {};
+      } else if (event.type == rtos::AppEventType::NfcTagWritten) {
+        lastUsedTagSpoolId = event.spoolId;
+        pendingTagOperation = PendingTagOperation::None;
+        rtos::UiCommand result{};
+        result.type = rtos::UiCommandType::ShowScreen;
+        result.screenId = rtos::UiScreenId::TagResult;
+        result.requestId = event.requestId;
+        result.spoolId = event.spoolId;
+        std::snprintf(result.text, sizeof(result.text),
+                      "Tag erfolgreich mit Spule %lu verbunden. UID und Payload wurden verifiziert.",
+                      static_cast<unsigned long>(event.spoolId));
+        currentScreen = result.screenId;
+        sendUiCommand(ctx, result, "AppTask: NFC result screen queue overflow");
+      } else if (event.type == rtos::AppEventType::NfcTagErased) {
+        pendingTagOperation = PendingTagOperation::None;
+        rtos::UiCommand result{};
+        result.type = rtos::UiCommandType::ShowScreen;
+        result.screenId = rtos::UiScreenId::TagResult;
+        result.requestId = event.requestId;
+        std::snprintf(result.text, sizeof(result.text),
+                      "NFC-Tag gel\xC3\xB6scht. Der leere NDEF-Zustand wurde verifiziert.");
+        currentScreen = result.screenId;
+        sendUiCommand(ctx, result, "AppTask: NFC erase result queue overflow");
+      } else if (event.type == rtos::AppEventType::NfcError &&
+                 pendingTagOperation != PendingTagOperation::None) {
+        pendingTagOperation = PendingTagOperation::None;
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "NFC-Vorgang fehlgeschlagen", event.text);
+      }
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
       status.requestId = event.requestId;

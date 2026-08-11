@@ -29,6 +29,7 @@ struct TagReadResult {
   std::uint8_t uidLength = 0;
   bool ndefPresent = false;
   bool ndefReadable = false;
+  bool payloadValid = true;
   bool writable = false;
   bool erasable = false;
   bool knownFormat = false;

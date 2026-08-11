@@ -5,6 +5,7 @@
 
 #include "nfc/TagParserRegistry.h"
 #include "services/NfcPayload.h"
+#include "services/Ntag21x.h"
 
 using filament_station::models::RawTagData;
 using filament_station::models::TagDefinition;
@@ -186,6 +187,39 @@ void test_bambu_marker_is_always_read_only() {
   TEST_ASSERT_FALSE(result.erasable);
 }
 
+void test_ntag21x_versions_and_capacities_are_identified() {
+  std::uint8_t version[] = {0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03};
+  std::uint8_t capability[] = {0xE1, 0x10, 0x12, 0x00};
+  TEST_ASSERT_EQUAL(filament_station::models::TagTechnology::Ntag213,
+                    filament_station::services::identifyNtag21x(
+                        version, sizeof(version), capability));
+  version[6] = 0x11;
+  capability[2] = 0x3E;
+  TEST_ASSERT_EQUAL(filament_station::models::TagTechnology::Ntag215,
+                    filament_station::services::identifyNtag21x(
+                        version, sizeof(version), capability));
+  version[6] = 0x13;
+  capability[2] = 0x6D;
+  TEST_ASSERT_EQUAL(filament_station::models::TagTechnology::Ntag216,
+                    filament_station::services::identifyNtag21x(
+                        version, sizeof(version), capability));
+}
+
+void test_ntag_mismatched_or_locked_metadata_is_not_writable() {
+  const std::uint8_t capability[] = {0xE1, 0x10, 0x3E, 0x00};
+  const std::uint8_t unlocked[] = {0x00, 0x00, 0x00};
+  TEST_ASSERT_TRUE(filament_station::services::ntag21xRangeWritable(
+      filament_station::models::TagTechnology::Ntag215, 14, capability,
+      unlocked, unlocked, 0xFF));
+  const std::uint8_t locked[] = {0x01, 0x00, 0x00};
+  TEST_ASSERT_FALSE(filament_station::services::ntag21xRangeWritable(
+      filament_station::models::TagTechnology::Ntag215, 14, capability,
+      locked, unlocked, 0xFF));
+  TEST_ASSERT_FALSE(filament_station::services::ntag21xRangeWritable(
+      filament_station::models::TagTechnology::Ntag215, 14, capability,
+      unlocked, unlocked, 4));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_spoolman_payload_round_trip);
@@ -200,5 +234,7 @@ int main(int, char**) {
   RUN_TEST(test_parser_order_uses_first_successful_parser);
   RUN_TEST(test_unknown_data_does_not_match_rejecting_parser);
   RUN_TEST(test_bambu_marker_is_always_read_only);
+  RUN_TEST(test_ntag21x_versions_and_capacities_are_identified);
+  RUN_TEST(test_ntag_mismatched_or_locked_metadata_is_not_writable);
   return UNITY_END();
 }

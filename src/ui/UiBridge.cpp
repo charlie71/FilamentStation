@@ -109,6 +109,7 @@ lv_obj_t* overlayProgress = nullptr;
 lv_obj_t* overlayCancel = nullptr;
 lv_obj_t* overlayConfirm = nullptr;
 std::array<lv_obj_t*, 4> advancedModeButtons{};
+std::array<lv_obj_t*, 4> spoolPickerButtons{};
 lv_obj_t* advancedInput = nullptr;
 lv_obj_t* advancedKeyboard = nullptr;
 std::int32_t advancedInputMode = 0;
@@ -129,6 +130,35 @@ void advancedModeClicked(lv_event_t* event) {
   const auto mode = static_cast<std::int32_t>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   sendAction(rtos::UiActionType::AdvancedWeight, currentPrinterId, 0, 0, mode);
+}
+
+void spoolPickerItemClicked(lv_event_t* event) {
+  const auto spoolId = static_cast<rtos::SpoolId>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  sendAction(rtos::UiActionType::SelectSpool, currentPrinterId, 0, 0, 0,
+             spoolId);
+}
+
+lv_obj_t* createSpoolPickerButton(const char* text, std::int32_t y,
+                                  rtos::SpoolId spoolId) {
+  lv_obj_t* button = lv_button_create(overlayPanel);
+  lv_obj_set_pos(button, 16, y);
+  lv_obj_set_size(button, 388, 40);
+  lv_obj_set_style_bg_color(button, lv_color_hex(0x1565C0), LV_PART_MAIN);
+  lv_obj_set_style_radius(button, 8, LV_PART_MAIN);
+  lv_obj_t* label = lv_label_create(button);
+  lv_obj_set_width(label, 372);
+  lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+  lv_label_set_text(label, text);
+  lv_obj_set_style_text_font(label, &ui_font_ui_german16, LV_PART_MAIN);
+  lv_obj_center(label);
+  lv_obj_remove_flag(label, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_remove_flag(label, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_event_cb(
+      button, spoolPickerItemClicked, LV_EVENT_CLICKED,
+      reinterpret_cast<void*>(static_cast<std::uintptr_t>(spoolId)));
+  lv_obj_add_flag(button, LV_OBJ_FLAG_HIDDEN);
+  return button;
 }
 
 void advancedKeyboardEvent(lv_event_t* event) {
@@ -247,6 +277,12 @@ void ensureOverlay() {
       createAdvancedModeButton("Leergewicht", 16, 104, 3),
       createAdvancedModeButton("Ausgangsgewicht", 218, 104, 4),
   }};
+  spoolPickerButtons = {{
+      createSpoolPickerButton("#42 | PLA | 642 g Rest", 44, 42),
+      createSpoolPickerButton("#51 | PETG | 811 g Rest", 88, 51),
+      createSpoolPickerButton("#67 | PLA Multicolor | 504 g Rest", 132, 67),
+      createSpoolPickerButton("#91 | PLA Basic | 997 g Rest", 176, 91),
+  }};
   advancedInput = lv_textarea_create(overlayPanel);
   lv_obj_set_pos(advancedInput, 16, 44);
   lv_obj_set_size(advancedInput, 388, 38);
@@ -280,8 +316,10 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
   lv_obj_center(overlayPanel);
   lv_obj_set_pos(overlayText, 16, 52);
   lv_obj_set_size(overlayText, 388, 100);
-  lv_obj_set_y(overlayCancel, 158);
-  lv_obj_set_y(overlayConfirm, 158);
+  lv_obj_set_pos(overlayCancel, 16, 158);
+  lv_obj_set_size(overlayCancel, 170, 50);
+  lv_obj_set_pos(overlayConfirm, 218, 158);
+  lv_obj_set_size(overlayConfirm, 170, 50);
   if (command.overlayKind == rtos::UiOverlayKind::AdvancedWeightConfirmation ||
       command.overlayKind == rtos::UiOverlayKind::AdvancedWeightResult) {
     // Six separate summary lines need more vertical room than ordinary
@@ -300,6 +338,8 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
   lv_obj_remove_flag(overlayBackdrop, LV_OBJ_FLAG_HIDDEN);
   lv_obj_remove_flag(overlayText, LV_OBJ_FLAG_HIDDEN);
   for (lv_obj_t* button : advancedModeButtons)
+    lv_obj_add_flag(button, LV_OBJ_FLAG_HIDDEN);
+  for (lv_obj_t* button : spoolPickerButtons)
     lv_obj_add_flag(button, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(advancedInput, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(advancedKeyboard, LV_OBJ_FLAG_HIDDEN);
@@ -323,6 +363,22 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
     lv_textarea_set_text(advancedInput, command.text);
     lv_obj_remove_flag(advancedInput, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(advancedKeyboard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(overlayBackdrop);
+    return;
+  }
+  if (command.overlayKind == rtos::UiOverlayKind::SpoolPicker) {
+    lv_obj_set_size(overlayPanel, 420, 286);
+    lv_obj_center(overlayPanel);
+    lv_obj_add_flag(overlayText, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(overlayProgress, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(overlayCancel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_y(overlayCancel, 220);
+    lv_obj_set_size(overlayCancel, 388, 50);
+    lv_obj_set_x(overlayCancel, 16);
+    lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Abbrechen");
+    for (lv_obj_t* button : spoolPickerButtons)
+      lv_obj_remove_flag(button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(overlayBackdrop);
     return;
   }
@@ -1005,6 +1061,21 @@ void trayTargetClicked(lv_event_t* event) {
              2, models::mock::staging().spoolId);
 }
 
+void tagActionClicked(lv_event_t* event) {
+  const auto type = static_cast<rtos::UiActionType>(
+      reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  const rtos::SpoolId spoolId =
+      (type == rtos::UiActionType::SelectSpool ||
+       type == rtos::UiActionType::WriteTag)
+          ? models::mock::staging().spoolId
+          : 0;
+  sendAction(type, currentPrinterId, 0, 0, 0, spoolId);
+}
+
+void lastTagSpoolClicked(lv_event_t*) {
+  sendAction(rtos::UiActionType::SelectSpool, currentPrinterId);
+}
+
 void makeDescendantsTouchTransparent(lv_obj_t* object) {
   const std::uint32_t childCount = lv_obj_get_child_count(object);
   for (std::uint32_t index = 0; index < childCount; ++index) {
@@ -1175,7 +1246,7 @@ void createTrayDetailsDecoration() {
 }
 
 void applyApplicationFont() {
-  const std::array<lv_obj_t*, 17> screens{{
+  const std::array<lv_obj_t*, 21> screens{{
       objects.scr_boot, objects.scr_home, objects.scr_printer_select,
       objects.scr_settings_home, objects.scr_staging_details,
       objects.scr_staging_actions, objects.scr_tray_details,
@@ -1185,6 +1256,8 @@ void applyApplicationFont() {
       objects.scr_settings_wifi, objects.scr_settings_scale,
       objects.scr_settings_device, objects.scr_settings_diagnostics,
       objects.scr_settings_firmware,
+      objects.scr_tag_action_select, objects.scr_tag_review,
+      objects.scr_tag_write, objects.scr_tag_result,
   }};
   for (lv_obj_t* screen : screens) {
     lv_obj_set_style_text_font(screen, &ui_font_ui_german16, LV_PART_MAIN);
@@ -1224,6 +1297,59 @@ void bindGeneratedWidgets() {
       objects.firmware_settings_settings,
   }};
   for (lv_obj_t* control : settingsControls) setControlText(control, "Einst.");
+
+  const std::array<lv_obj_t*, 4> tagSettings{{
+      objects.tag_action_settings, objects.tag_review_settings,
+      objects.tag_write_settings, objects.tag_result_settings,
+  }};
+  for (lv_obj_t* control : tagSettings) setControlText(control, "Einst.");
+  setControlText(objects.tag_action_title, "NFC-Tag-Aktionen");
+  setControlText(objects.tag_action_select_spool, "Spule ausw\xC3\xA4hlen");
+  setControlText(objects.tag_action_use_last_spool,
+                 "Zuletzt verwendete Spule");
+  setControlText(objects.tag_action_write, "Tag schreiben");
+  setControlText(objects.tag_action_erase, "Tag l\xC3\xB6schen");
+  setControlText(objects.tag_action_back, "Zur\xC3\xBC" "ck");
+  setControlText(objects.tag_review_title, "Tag pr\xC3\xBC" "fen");
+  setControlText(objects.tag_review_back, "Zur\xC3\xBC" "ck");
+  setControlText(objects.tag_review_cancel, "Abbrechen");
+  setControlText(objects.tag_review_confirm, "Best\xC3\xA4tigen");
+  setControlText(objects.tag_write_title, "Tag wird geschrieben");
+  setControlText(objects.tag_write_detected, "Tag erkannt");
+  setControlText(objects.tag_write_memory, "Speicher gepr\xC3\xBC" "ft");
+  setControlText(objects.tag_write_data, "Daten werden geschrieben");
+  setControlText(objects.tag_write_verify, "Daten werden verifiziert");
+  setControlText(objects.tag_write_cancel, "Abbrechen");
+  setControlText(objects.tag_result_title, "NFC-Ergebnis");
+  setControlText(objects.tag_result_quick_weight, "Schnell wiegen");
+  setControlText(objects.tag_result_advanced_weight, "Erweitert wiegen");
+  setControlText(objects.tag_result_close, "Schlie\xC3\x9F" "en");
+
+  bindClick(objects.tag_action_header, headerClicked);
+  bindClick(objects.tag_review_header, headerClicked);
+  bindClick(objects.tag_write_header, headerClicked);
+  bindClick(objects.tag_result_header, headerClicked);
+  for (lv_obj_t* control : tagSettings) bindClick(control, settingsClicked);
+  bindClick(objects.tag_action_select_spool, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::SearchSpool));
+  bindClick(objects.tag_action_use_last_spool, lastTagSpoolClicked);
+  bindClick(objects.tag_action_write, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::WriteTag));
+  bindClick(objects.tag_action_erase, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::EraseTag));
+  bindClick(objects.tag_action_back, backClicked);
+  bindClick(objects.tag_review_back, backClicked);
+  bindClick(objects.tag_review_cancel, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::Cancel));
+  bindClick(objects.tag_review_confirm, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::Confirm));
+  bindClick(objects.tag_write_cancel, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::Cancel));
+  bindClick(objects.tag_result_quick_weight, stagingActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::QuickWeight));
+  bindClick(objects.tag_result_advanced_weight, stagingActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::AdvancedWeight));
+  bindClick(objects.tag_result_close, backClicked);
 
   bindClick(objects.home_header, headerClicked);
   bindClick(objects.home_bottom_printers, headerClicked);
@@ -1505,6 +1631,17 @@ void bindGeneratedWidgets() {
   styleLabelButton(objects.tray_select_cancel, 0x455A64);
   styleLabelButton(objects.home_active_ams, 0x455A64);
   styleLabelButton(objects.home_ams_4, 0x455A64);
+  const std::array<lv_obj_t*, 9> tagButtons{{
+      objects.tag_action_select_spool, objects.tag_action_use_last_spool,
+      objects.tag_action_write, objects.tag_review_confirm,
+      objects.tag_result_quick_weight, objects.tag_result_advanced_weight,
+      objects.tag_action_back, objects.tag_review_back,
+      objects.tag_result_close,
+  }};
+  for (lv_obj_t* button : tagButtons) styleLabelButton(button);
+  styleLabelButton(objects.tag_action_erase, 0xC62828);
+  styleLabelButton(objects.tag_review_cancel, 0x455A64);
+  styleLabelButton(objects.tag_write_cancel, 0x455A64);
   const lv_font_t* amsFont =
       lv_obj_get_style_text_font(buttonLabel(objects.home_ams_1), LV_PART_MAIN);
   for (lv_obj_t* amsLabel :
@@ -1955,7 +2092,7 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
 }
 
 void setAllHeaderTexts(const char* text) {
-  const std::array<lv_obj_t*, 16> headers{{
+  const std::array<lv_obj_t*, 20> headers{{
       objects.home_header,
       objects.select_header,
       objects.settings_header,
@@ -1972,6 +2109,10 @@ void setAllHeaderTexts(const char* text) {
       objects.device_settings_header,
       objects.diagnostics_settings_header,
       objects.firmware_settings_header,
+      objects.tag_action_header,
+      objects.tag_review_header,
+      objects.tag_write_header,
+      objects.tag_result_header,
   }};
   for (lv_obj_t* header : headers) setControlText(header, text);
 }
@@ -2096,6 +2237,18 @@ void showScreen(rtos::UiScreenId screenId) {
     case rtos::UiScreenId::SettingsFirmware:
       loadScreen(SCREEN_ID_SCR_SETTINGS_FIRMWARE);
       break;
+    case rtos::UiScreenId::TagActionSelect:
+      loadScreen(SCREEN_ID_SCR_TAG_ACTION_SELECT);
+      break;
+    case rtos::UiScreenId::TagReview:
+      loadScreen(SCREEN_ID_SCR_TAG_REVIEW);
+      break;
+    case rtos::UiScreenId::TagWrite:
+      loadScreen(SCREEN_ID_SCR_TAG_WRITE);
+      break;
+    case rtos::UiScreenId::TagResult:
+      loadScreen(SCREEN_ID_SCR_TAG_RESULT);
+      break;
   }
 }
 
@@ -2165,6 +2318,12 @@ bool initializeLvgl(UiRuntimeInfo& runtimeInfo, rtos::RtosContext& context) {
   vTaskDelay(pdMS_TO_TICKS(250));
   updateHeaders(currentPrinterId);
   rtos::logLine("UiTask: initial UI model applied");
+  lv_mem_monitor_t memoryMonitor{};
+  lv_mem_monitor(&memoryMonitor);
+  rtos::logf("UiTask: LVGL memory free=%lu bytes, largest=%lu bytes, fragmentation=%u%%",
+             static_cast<unsigned long>(memoryMonitor.free_size),
+             static_cast<unsigned long>(memoryMonitor.free_biggest_size),
+             static_cast<unsigned>(memoryMonitor.frag_pct));
   vTaskDelay(pdMS_TO_TICKS(250));
   loadScreen(SCREEN_ID_SCR_BOOT);
 
@@ -2192,6 +2351,16 @@ void processUiCommand(const rtos::UiCommand& command) {
       hideOverlay();
       break;
     case rtos::UiCommandType::ShowScreen:
+      if (command.screenId == rtos::UiScreenId::TagActionSelect &&
+          command.text[0] != '\0') {
+        lv_label_set_text(objects.tag_action_info, command.text);
+      } else if (command.screenId == rtos::UiScreenId::TagReview &&
+                 command.text[0] != '\0') {
+        lv_label_set_text(objects.tag_review_summary, command.text);
+      } else if (command.screenId == rtos::UiScreenId::TagResult &&
+                 command.text[0] != '\0') {
+        lv_label_set_text(objects.tag_result_message, command.text);
+      }
       if (command.screenId == rtos::UiScreenId::TrayDetails ||
           command.screenId == rtos::UiScreenId::TrayActions) {
         currentPrinterId = command.printerId;

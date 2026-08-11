@@ -25,6 +25,10 @@ enum class UiScreenId : std::uint8_t {
   SettingsDevice,
   SettingsDiagnostics,
   SettingsFirmware,
+  TagActionSelect,
+  TagReview,
+  TagWrite,
+  TagResult,
 };
 
 enum class UiCommandType : std::uint8_t {
@@ -65,6 +69,11 @@ enum class UiOverlayKind : std::uint8_t {
   AdvancedWeightInput,
   AdvancedWeightConfirmation,
   AdvancedWeightResult,
+  TagActionSelect,
+  TagReview,
+  TagWrite,
+  TagResult,
+  SpoolPicker,
 };
 
 enum class UiActionType : std::uint8_t {
