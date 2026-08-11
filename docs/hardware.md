@@ -153,9 +153,11 @@ Timeout fuehrt er genau eine begrenzte ISO14443A-Suche aus; beim Warten auf die
 Antwort blockiert er im interruptgesteuerten UART-Treiber. Damit gibt es weder
 Busy Waiting noch eine schnelle Polling-Schleife. Phase 5.3 liest Type-2-NDEF,
 schreibt und verifiziert `spoolman:<id>` und kann den NDEF-Inhalt loeschen.
-MIFARE-Classic-Tags werden anhand ihres SAK nur als Bambu-kompatible Kandidaten
-erkannt. Eine proprietaere Bambu-Dekodierung oder Verschluesselung findet nicht
-statt und bleibt dem spaeteren Bambu-Workflow vorbehalten.
+Der SAK wird nur zur Erkennung der Kartentechnologie verwendet. Ein generischer
+MIFARE-Classic-Tag wird nicht allein aufgrund seines SAK als Bambu-Tag
+klassifiziert. Eine belastbare Bambu-Erkennung erfordert die Auswertung des
+Tag-Inhalts und bleibt dem spaeteren Bambu-Workflow vorbehalten. Eine
+proprietaere Bambu-Dekodierung oder Verschluesselung findet derzeit nicht statt.
 
 Quellen:
 

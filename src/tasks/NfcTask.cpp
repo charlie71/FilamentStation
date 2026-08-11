@@ -362,20 +362,61 @@ void fillTarget(rtos::AppEvent& event, const TargetInfo& target) {
   std::memcpy(event.nfcUid, target.uid.data(), target.uidLength);
 }
 
+void formatUid(const TargetInfo& target, char* output, std::size_t capacity) {
+  if (capacity == 0) return;
+  output[0] = '\0';
+  std::size_t used = 0;
+  for (std::uint8_t index = 0; index < target.uidLength; ++index) {
+    const int written = std::snprintf(output + used, capacity - used, "%s%02X",
+                                      index == 0 ? "" : ":",
+                                      target.uid[index]);
+    if (written < 0 || static_cast<std::size_t>(written) >= capacity - used) {
+      output[capacity - 1] = '\0';
+      return;
+    }
+    used += static_cast<std::size_t>(written);
+  }
+}
+
+const char* payloadDescription(services::NfcPayloadType type) {
+  switch (type) {
+    case services::NfcPayloadType::Empty:
+      return "Type-2-NDEF leer";
+    case services::NfcPayloadType::Spoolman:
+      return "Spoolman-NDEF";
+    case services::NfcPayloadType::Bambu:
+      return "Bambu-NDEF";
+    case services::NfcPayloadType::Legacy:
+      return "Legacy-NDEF";
+    case services::NfcPayloadType::Unknown:
+      return "NDEF unbekannt";
+    case services::NfcPayloadType::Invalid:
+    default:
+      return "NDEF ungueltig";
+  }
+}
+
 void reportTag(rtos::RtosContext& ctx, const TargetInfo& target) {
+  char uid[config::kNfcMaxUidLength * 3]{};
+  formatUid(target, uid, sizeof(uid));
+
   rtos::AppEvent detected{};
   detected.type = rtos::AppEventType::NfcTagDetected;
   fillTarget(detected, target);
+  std::snprintf(detected.text, sizeof(detected.text),
+                "Tag erkannt: UID=%s, %u Byte, SAK=%02X", uid,
+                target.uidLength, target.sak);
   sendEvent(ctx, detected);
 
   rtos::AppEvent read{};
   read.type = rtos::AppEventType::NfcTagRead;
   fillTarget(read, target);
-  // MIFARE Classic SAK values are treated as a Bambu candidate. Actual Bambu
-  // block decoding belongs to phase 5.5 and is intentionally not attempted.
+  // SAK identifies the card technology, not its application payload. A blank
+  // MIFARE Classic card must therefore never be reported as a Bambu tag.
   if (target.sak == 0x08 || target.sak == 0x18) {
-    read.nfcTagType = rtos::NfcTagType::Bambu;
-    std::snprintf(read.text, sizeof(read.text), "Bambu-compatible tag detected");
+    read.nfcTagType = rtos::NfcTagType::Unknown;
+    std::snprintf(read.text, sizeof(read.text),
+                  "UID=%s: MIFARE Classic, Inhalt nicht gelesen", uid);
     sendEvent(ctx, read);
     return;
   }
@@ -383,12 +424,22 @@ void reportTag(rtos::RtosContext& ctx, const TargetInfo& target) {
   std::size_t length = 0;
   if (!readNdef(target, ndef.data(), ndef.size(), length)) {
     read.nfcTagType = rtos::NfcTagType::Unknown;
-    std::snprintf(read.text, sizeof(read.text), "Tag has no readable Type-2 NDEF");
+    std::snprintf(read.text, sizeof(read.text),
+                  "UID=%s: kein lesbares Type-2-NDEF", uid);
   } else {
     const auto info = services::parseType2Ndef(ndef.data(), length);
     read.nfcTagType = convertType(info.type);
     read.spoolId = info.spoolId;
-    std::snprintf(read.text, sizeof(read.text), "NFC tag read");
+    if (info.type == services::NfcPayloadType::Spoolman ||
+        info.type == services::NfcPayloadType::Legacy) {
+      std::snprintf(read.text, sizeof(read.text), "UID=%s: %s, ID=%lu",
+                    uid, payloadDescription(info.type),
+                    static_cast<unsigned long>(info.spoolId));
+    } else {
+      std::snprintf(read.text, sizeof(read.text), "UID=%s: %s (%u Byte)",
+                    uid, payloadDescription(info.type),
+                    static_cast<unsigned>(length));
+    }
   }
   sendEvent(ctx, read);
 }
@@ -537,7 +588,9 @@ void nfcTask(void* parameter) {
       rtos::AppEvent event{};
       event.type = rtos::AppEventType::NfcTagRemoved;
       fillTarget(event, active);
-      std::snprintf(event.text, sizeof(event.text), "NFC tag removed");
+      char uid[config::kNfcMaxUidLength * 3]{};
+      formatUid(active, uid, sizeof(uid));
+      std::snprintf(event.text, sizeof(event.text), "Tag entfernt: UID=%s", uid);
       sendEvent(ctx, event);
       present = false;
       active = {};
