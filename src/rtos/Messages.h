@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include "models/TagReadResult.h"
 #include "rtos/Commands.h"
 #include "rtos/Events.h"
 
@@ -26,6 +27,7 @@ struct AppEvent {
   NfcTagType nfcTagType;
   std::uint8_t nfcUid[10];
   std::uint8_t nfcUidLength;
+  models::TagReadResult tagReadResult;
   char text[64];
   UiAction uiAction;
 };

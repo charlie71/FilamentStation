@@ -12,6 +12,8 @@
 #include "config/BoardConfig.h"
 #include "config/NfcConfig.h"
 #include "config/TaskConfig.h"
+#include "models/TagReadResult.h"
+#include "nfc/TagParserRegistry.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/NfcPayload.h"
@@ -344,16 +346,48 @@ bool writeNdef(const TargetInfo& target, const std::uint8_t* bytes,
   return true;
 }
 
-rtos::NfcTagType convertType(services::NfcPayloadType type) {
-  switch (type) {
-    case services::NfcPayloadType::Spoolman:
+models::TagTechnology technologyFor(const TargetInfo& target) {
+  if (target.sak == 0x08) return models::TagTechnology::MifareClassic1K;
+  if (target.sak == 0x18) return models::TagTechnology::MifareClassic4K;
+  return models::TagTechnology::OtherIso14443A;
+}
+
+bool type2Writable(const TargetInfo& target) {
+  std::uint8_t capability[16]{};
+  return readPages(target, 3, capability) && capability[0] == 0xE1 &&
+         (capability[3] & 0x0FU) != 0x0FU;
+}
+
+rtos::NfcTagType legacyType(models::TagFormat format) {
+  switch (format) {
+    case models::TagFormat::FilamentStation:
       return rtos::NfcTagType::Spoolman;
-    case services::NfcPayloadType::Bambu:
+    case models::TagFormat::BambuLab:
       return rtos::NfcTagType::Bambu;
-    case services::NfcPayloadType::Legacy:
+    case models::TagFormat::Legacy:
       return rtos::NfcTagType::Legacy;
     default:
       return rtos::NfcTagType::Unknown;
+  }
+}
+
+const char* formatDescription(models::TagFormat format) {
+  switch (format) {
+    case models::TagFormat::EmptyNdef:
+      return "leeres NDEF";
+    case models::TagFormat::FilamentStation:
+      return "FilamentStation";
+    case models::TagFormat::BambuLab:
+      return "BambuLab";
+    case models::TagFormat::OpenPrintTag:
+      return "OpenPrintTag";
+    case models::TagFormat::OpenTag3D:
+      return "OpenTag3D";
+    case models::TagFormat::Legacy:
+      return "Legacy";
+    case models::TagFormat::Unknown:
+    default:
+      return "unbekannt";
   }
 }
 
@@ -378,25 +412,8 @@ void formatUid(const TargetInfo& target, char* output, std::size_t capacity) {
   }
 }
 
-const char* payloadDescription(services::NfcPayloadType type) {
-  switch (type) {
-    case services::NfcPayloadType::Empty:
-      return "Type-2-NDEF leer";
-    case services::NfcPayloadType::Spoolman:
-      return "Spoolman-NDEF";
-    case services::NfcPayloadType::Bambu:
-      return "Bambu-NDEF";
-    case services::NfcPayloadType::Legacy:
-      return "Legacy-NDEF";
-    case services::NfcPayloadType::Unknown:
-      return "NDEF unbekannt";
-    case services::NfcPayloadType::Invalid:
-    default:
-      return "NDEF ungueltig";
-  }
-}
-
-void reportTag(rtos::RtosContext& ctx, const TargetInfo& target) {
+models::TagReadResult reportTag(rtos::RtosContext& ctx,
+                                const TargetInfo& target) {
   char uid[config::kNfcMaxUidLength * 3]{};
   formatUid(target, uid, sizeof(uid));
 
@@ -408,40 +425,45 @@ void reportTag(rtos::RtosContext& ctx, const TargetInfo& target) {
                 target.uidLength, target.sak);
   sendEvent(ctx, detected);
 
+  models::RawTagData raw{};
+  raw.technology = technologyFor(target);
+  raw.uidLength = target.uidLength;
+  raw.sak = target.sak;
+  std::memcpy(raw.uid, target.uid.data(), target.uidLength);
+  std::size_t ndefLength = 0;
+  if (readNdef(target, raw.ndef, sizeof(raw.ndef), ndefLength)) {
+    raw.ndefPresent = true;
+    raw.ndefReadable = true;
+    raw.hardwareWritable = type2Writable(target);
+    raw.ndefLength = static_cast<std::uint16_t>(ndefLength);
+  }
+  static const nfc::TagParserRegistry registry{};
+  const models::TagReadResult result = registry.parse(raw);
+
   rtos::AppEvent read{};
   read.type = rtos::AppEventType::NfcTagRead;
   fillTarget(read, target);
-  // SAK identifies the card technology, not its application payload. A blank
-  // MIFARE Classic card must therefore never be reported as a Bambu tag.
-  if (target.sak == 0x08 || target.sak == 0x18) {
-    read.nfcTagType = rtos::NfcTagType::Unknown;
+  read.tagReadResult = result;
+  read.nfcTagType = legacyType(result.format);
+  read.spoolId = result.definition.hasSpoolId ? result.definition.spoolId : 0;
+  if (result.technology == models::TagTechnology::MifareClassic1K ||
+      result.technology == models::TagTechnology::MifareClassic4K) {
     std::snprintf(read.text, sizeof(read.text),
                   "UID=%s: MIFARE Classic, Inhalt nicht gelesen", uid);
-    sendEvent(ctx, read);
-    return;
-  }
-  static std::array<std::uint8_t, config::kNfcMaxNdefBytes> ndef{};
-  std::size_t length = 0;
-  if (!readNdef(target, ndef.data(), ndef.size(), length)) {
-    read.nfcTagType = rtos::NfcTagType::Unknown;
+  } else if (!result.ndefReadable) {
     std::snprintf(read.text, sizeof(read.text),
                   "UID=%s: kein lesbares Type-2-NDEF", uid);
+  } else if (result.definition.hasSpoolId) {
+    std::snprintf(read.text, sizeof(read.text), "UID=%s: %s, ID=%lu", uid,
+                  formatDescription(result.format),
+                  static_cast<unsigned long>(result.definition.spoolId));
   } else {
-    const auto info = services::parseType2Ndef(ndef.data(), length);
-    read.nfcTagType = convertType(info.type);
-    read.spoolId = info.spoolId;
-    if (info.type == services::NfcPayloadType::Spoolman ||
-        info.type == services::NfcPayloadType::Legacy) {
-      std::snprintf(read.text, sizeof(read.text), "UID=%s: %s, ID=%lu",
-                    uid, payloadDescription(info.type),
-                    static_cast<unsigned long>(info.spoolId));
-    } else {
-      std::snprintf(read.text, sizeof(read.text), "UID=%s: %s (%u Byte)",
-                    uid, payloadDescription(info.type),
-                    static_cast<unsigned>(length));
-    }
+    std::snprintf(read.text, sizeof(read.text), "UID=%s: %s (%u Byte)", uid,
+                  formatDescription(result.format),
+                  static_cast<unsigned>(raw.ndefLength));
   }
   sendEvent(ctx, read);
+  return result;
 }
 
 bool sameUid(const TargetInfo& left, const TargetInfo& right) {
@@ -475,6 +497,13 @@ void handleWrite(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
   event.requestId = command.requestId;
   event.spoolId = command.spoolId;
   event.nfcTagType = rtos::NfcTagType::Spoolman;
+  event.tagReadResult.format = models::TagFormat::FilamentStation;
+  event.tagReadResult.knownFormat = true;
+  event.tagReadResult.writable = true;
+  event.tagReadResult.erasable = true;
+  event.tagReadResult.definition.format = models::TagFormat::FilamentStation;
+  event.tagReadResult.definition.hasSpoolId = true;
+  event.tagReadResult.definition.spoolId = command.spoolId;
   fillTarget(event, target);
   std::snprintf(event.text, sizeof(event.text), "NFC tag written and verified");
   sendEvent(ctx, event);
@@ -548,6 +577,7 @@ void nfcTask(void* parameter) {
   bool reading = true;
   bool present = false;
   TargetInfo active{};
+  models::TagReadResult activeResult{};
   std::uint32_t lastSeenMs = 0;
   rtos::NfcCommand command{};
   for (;;) {
@@ -561,14 +591,18 @@ void nfcTask(void* parameter) {
           reading = false;
           break;
         case rtos::NfcCommandType::WriteSpoolTag:
-          if (present)
+          if (present && activeResult.writable)
             handleWrite(ctx, command, active);
+          else if (present)
+            sendError(ctx, command.requestId, "Tag format is read-only");
           else
             sendError(ctx, command.requestId, "No NFC tag present");
           break;
         case rtos::NfcCommandType::EraseTag:
-          if (present)
+          if (present && activeResult.erasable)
             handleErase(ctx, command, active);
+          else if (present)
+            sendError(ctx, command.requestId, "Tag format cannot be erased");
           else
             sendError(ctx, command.requestId, "No NFC tag present");
           break;
@@ -582,7 +616,7 @@ void nfcTask(void* parameter) {
       if (!present || !sameUid(active, found)) {
         active = found;
         present = true;
-        reportTag(ctx, active);
+        activeResult = reportTag(ctx, active);
       }
     } else if (present && millis() - lastSeenMs >= config::kNfcTagRemovalDelayMs) {
       rtos::AppEvent event{};
@@ -594,6 +628,7 @@ void nfcTask(void* parameter) {
       sendEvent(ctx, event);
       present = false;
       active = {};
+      activeResult = {};
     }
   }
 }

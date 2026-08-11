@@ -1,0 +1,68 @@
+#include "nfc/TagParserRegistry.h"
+
+#include <cstring>
+
+#include "services/NfcPayload.h"
+
+namespace filament_station {
+namespace nfc {
+
+TagParserRegistry::TagParserRegistry()
+    : parsers_{{&filamentStation_, &bambuLab_, &openPrintTag_, &openTag3D_,
+                &legacy_}},
+      parserCount_(5) {}
+
+TagParserRegistry::TagParserRegistry(const ITagParser* const* parsers,
+                                     std::size_t count)
+    : parserCount_(count > kMaximumParsers ? kMaximumParsers : count) {
+  for (std::size_t index = 0; index < parserCount_; ++index) {
+    parsers_[index] = parsers[index];
+  }
+}
+
+models::TagReadResult TagParserRegistry::parse(
+    const models::RawTagData& tag) const {
+  models::TagReadResult result{};
+  result.technology = tag.technology;
+  result.uidLength = tag.uidLength;
+  std::memcpy(result.uid, tag.uid, tag.uidLength);
+  result.ndefPresent = tag.ndefPresent;
+  result.ndefReadable = tag.ndefReadable;
+
+  for (std::size_t index = 0; index < parserCount_; ++index) {
+    const ITagParser* parser = parsers_[index];
+    if (parser == nullptr) continue;
+    if (!parser->canParse(tag)) continue;
+    models::TagDefinition definition{};
+    if (parser->parse(tag, definition) != TagParseResult::Parsed) continue;
+    result.format = parser->format();
+    result.knownFormat = true;
+    result.definition = definition;
+    // Only native FilamentStation data may inherit the physical tag's write
+    // capability. Every foreign format is read-only in version 1.
+    result.writable = result.format == models::TagFormat::FilamentStation &&
+                      tag.hardwareWritable;
+    result.erasable = result.writable;
+    return result;
+  }
+
+  if (tag.ndefPresent && tag.ndefReadable &&
+      services::parseType2Ndef(tag.ndef, tag.ndefLength).type ==
+          services::NfcPayloadType::Empty) {
+    result.format = models::TagFormat::EmptyNdef;
+    result.knownFormat = true;
+    result.writable = tag.hardwareWritable;
+    result.erasable = tag.hardwareWritable;
+    result.definition.format = models::TagFormat::EmptyNdef;
+    return result;
+  }
+
+  // Unknown data never inherits a physical write capability.
+  result.format = models::TagFormat::Unknown;
+  result.writable = false;
+  result.erasable = false;
+  return result;
+}
+
+}  // namespace nfc
+}  // namespace filament_station
