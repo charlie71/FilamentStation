@@ -7,6 +7,11 @@ namespace filament_station::rtos {
 using PrinterId = std::uint16_t;
 using SpoolId = std::uint32_t;
 
+constexpr std::int32_t UI_TAG_CAP_WRITE = 1 << 0;
+constexpr std::int32_t UI_TAG_CAP_LINK = 1 << 1;
+constexpr std::int32_t UI_TAG_CAP_UNLINK = 1 << 2;
+constexpr std::int32_t UI_TAG_CAP_ERASE = 1 << 3;
+
 enum class UiScreenId : std::uint8_t {
   Boot,
   Home,

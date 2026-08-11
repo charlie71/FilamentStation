@@ -183,6 +183,8 @@ void test_empty_ndef_is_recognized() {
   TEST_ASSERT_TRUE(result.knownFormat);
   TEST_ASSERT_TRUE(result.writable);
   TEST_ASSERT_TRUE(result.erasable);
+  TEST_ASSERT_TRUE(filament_station::nfc::mayWriteTag(result));
+  TEST_ASSERT_TRUE(filament_station::nfc::mayEraseTag(result));
 }
 
 void test_unknown_tag_has_no_definition_or_write_capability() {
@@ -195,6 +197,7 @@ void test_unknown_tag_has_no_definition_or_write_capability() {
   TEST_ASSERT_TRUE(result.physicalWritableKnown);
   TEST_ASSERT_TRUE(result.physicalWritable);
   TEST_ASSERT_FALSE(filament_station::nfc::mayWriteTag(result));
+  TEST_ASSERT_FALSE(filament_station::nfc::mayEraseTag(result));
 }
 
 class MatchingParser final : public ITagParser {
@@ -366,6 +369,7 @@ void test_documented_opentag3d_vector_is_normalized_and_read_only() {
   TEST_ASSERT_FALSE(result.writable);
   TEST_ASSERT_FALSE(result.erasable);
   TEST_ASSERT_FALSE(filament_station::nfc::mayWriteTag(result));
+  TEST_ASSERT_FALSE(filament_station::nfc::mayEraseTag(result));
   TEST_ASSERT_EQUAL_STRING("Polar Filament", result.definition.vendor);
   TEST_ASSERT_EQUAL_STRING("PETG", result.definition.material);
   TEST_ASSERT_EQUAL_STRING("PETG HF", result.definition.filamentName);

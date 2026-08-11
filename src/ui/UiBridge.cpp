@@ -1132,6 +1132,20 @@ void styleLabelButton(lv_obj_t* object, std::uint32_t color = 0x1565C0) {
   centerButtonLabel(object);
 }
 
+void setLabelButtonAvailable(lv_obj_t* object, bool available,
+                             std::uint32_t activeColor) {
+  lv_obj_set_flag(object, LV_OBJ_FLAG_CLICKABLE, available);
+  lv_obj_set_style_bg_color(
+      object, lv_color_hex(available ? activeColor : 0x616161), LV_PART_MAIN);
+  lv_obj_set_style_text_color(
+      object, lv_color_hex(available ? 0xFFFFFF : 0xD7DCE0), LV_PART_MAIN);
+  if (lv_obj_get_child_count(object) > 0) {
+    lv_obj_t* caption = lv_obj_get_child(object, 0);
+    lv_obj_set_style_text_color(
+        caption, lv_color_hex(available ? 0xFFFFFF : 0xD7DCE0), LV_PART_MAIN);
+  }
+}
+
 void createHomeColorStrips() {
   const std::array<lv_obj_t*, kHomeColorStripGroups> parents{{
       objects.home_tray_1, objects.home_tray_2, objects.home_tray_3,
@@ -2429,6 +2443,20 @@ void processUiCommand(const rtos::UiCommand& command) {
       hideOverlay();
       break;
     case rtos::UiCommandType::ShowScreen:
+      if (command.screenId == rtos::UiScreenId::StagingActions) {
+        setLabelButtonAvailable(
+            objects.staging_action_write_tag,
+            (command.value & rtos::UI_TAG_CAP_WRITE) != 0, 0x1565C0);
+        setLabelButtonAvailable(
+            objects.staging_action_link_tag,
+            (command.value & rtos::UI_TAG_CAP_LINK) != 0, 0x1565C0);
+        setLabelButtonAvailable(
+            objects.staging_action_unlink_tag,
+            (command.value & rtos::UI_TAG_CAP_UNLINK) != 0, 0x1565C0);
+        setLabelButtonAvailable(
+            objects.staging_action_erase_tag,
+            (command.value & rtos::UI_TAG_CAP_ERASE) != 0, 0xC62828);
+      }
       if (command.screenId == rtos::UiScreenId::TagActionSelect &&
           command.text[0] != '\0') {
         lv_label_set_text(objects.tag_action_info, command.text);

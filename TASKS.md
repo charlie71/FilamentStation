@@ -800,20 +800,20 @@ Wichtige Regel:
 
 Abhängig vom Tagtyp und den Fähigkeiten müssen Aktionen dynamisch freigegeben werden.
 
-* [ ] Tag schreiben für nativen beschreibbaren NTAG
-* [ ] Tag neu verknüpfen
-* [ ] Tag trennen
-* [ ] Tag löschen, wenn sicher unterstützt
-* [ ] Bambu-Tag: Schreiben deaktiviert
-* [ ] Bambu-Tag: Löschen deaktiviert
-* [ ] OpenPrintTag: Schreiben deaktiviert
-* [ ] OpenTag3D: Schreiben deaktiviert
-* [ ] Unknown: Schreiben standardmäßig deaktiviert
-* [ ] Fortschritt anzeigen
-* [ ] Verifikation durchführen
-* [ ] destruktive Aktionen bestätigen
-* [ ] Tagentfernung während Operation behandeln
-* [ ] Fehlerstatus sauber an AppTask melden
+  * [x] Tag schreiben für nativen beschreibbaren NTAG
+  * [x] Tag neu verknüpfen
+  * [x] Tag trennen
+  * [x] Tag löschen, wenn sicher unterstützt
+  * [x] Bambu-Tag: Schreiben deaktiviert
+  * [x] Bambu-Tag: Löschen deaktiviert
+  * [x] OpenPrintTag: Schreiben deaktiviert
+  * [x] OpenTag3D: Schreiben deaktiviert
+  * [x] Unknown: Schreiben standardmäßig deaktiviert
+  * [x] Fortschritt anzeigen
+  * [x] Verifikation durchführen
+  * [x] destruktive Aktionen bestätigen
+  * [x] Tagentfernung während Operation behandeln
+  * [x] Fehlerstatus sauber an AppTask melden
 
 ---
 

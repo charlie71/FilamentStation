@@ -63,6 +63,8 @@ std::array<rtos::NfcUidMapping, rtos::kMaximumNfcUidMappings> bambuMappings{};
 std::uint8_t bambuMappingCount = 0;
 bool pendingBambuMapping = false;
 bool pendingBambuMappingSave = false;
+bool pendingMappingRemoval = false;
+bool pendingUnlinkConfirmation = false;
 bool pendingBambuMappingWasNew = false;
 std::uint8_t pendingBambuMappingIndex = 0;
 std::uint32_t pendingBambuMappingRequestId = 0;
@@ -71,6 +73,9 @@ rtos::NfcUidMapping previousBambuMapping{};
 std::array<std::uint8_t, 10> pendingBambuUid{};
 std::uint8_t pendingBambuUidLength = 0;
 models::TagFormat pendingMappingFormat = models::TagFormat::Unknown;
+std::array<rtos::NfcUidMapping, rtos::kMaximumNfcUidMappings>
+    mappingRemovalBackup{};
+std::uint8_t mappingRemovalBackupCount = 0;
 
 const char* tagTechnologyName(models::TagTechnology technology) {
   switch (technology) {
@@ -107,6 +112,15 @@ rtos::SpoolId mappedNfcSpool(const models::TagReadResult& tag) {
       return mapping.spoolId;
   }
   return 0;
+}
+
+std::int32_t stagingTagCapabilities() {
+  if (!tagPresent) return 0;
+  std::int32_t capabilities = rtos::UI_TAG_CAP_LINK;
+  if (nfc::mayWriteTag(currentTag)) capabilities |= rtos::UI_TAG_CAP_WRITE;
+  if (nfc::mayEraseTag(currentTag)) capabilities |= rtos::UI_TAG_CAP_ERASE;
+  if (mappedNfcSpool(currentTag) != 0) capabilities |= rtos::UI_TAG_CAP_UNLINK;
+  return capabilities;
 }
 
 void mergeNfcMappings(const rtos::AppEvent& event) {
@@ -457,6 +471,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
   switch (action.type) {
     case rtos::UiActionType::Cancel:
       pendingBambuMapping = false;
+      pendingUnlinkConfirmation = false;
       if (currentScreen == rtos::UiScreenId::TagDefinitionImport ||
           currentScreen == rtos::UiScreenId::BambuSpoolType) {
         command.type = rtos::UiCommandType::ShowScreen;
@@ -520,6 +535,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         }
         if (xQueueSend(ctx.nfcCommandQueue, &nfcCommand,
                        pdMS_TO_TICKS(50)) != pdPASS) {
+          pendingTagOperation = PendingTagOperation::None;
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
                       "NFC-Auftrag fehlgeschlagen",
@@ -536,6 +552,48 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       command.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, command, "AppTask: hide confirmed overlay queue overflow");
       pendingOverlay = rtos::UiOverlayKind::None;
+      if (confirmedOverlay == rtos::UiOverlayKind::Confirmation &&
+          pendingUnlinkConfirmation) {
+        pendingUnlinkConfirmation = false;
+        std::uint8_t index = 0;
+        for (; index < bambuMappingCount; ++index) {
+          if (bambuMappings[index].uidLength == currentTag.uidLength &&
+              std::memcmp(bambuMappings[index].uid, currentTag.uid,
+                          currentTag.uidLength) == 0)
+            break;
+        }
+        if (!tagPresent || index == bambuMappingCount) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Trennen nicht m\xC3\xB6glich",
+                      "F\xC3\xBCr den aktuellen Tag besteht keine lokale Zuordnung.");
+          return;
+        }
+        mappingRemovalBackup = bambuMappings;
+        mappingRemovalBackupCount = bambuMappingCount;
+        pendingMappingFormat = currentTag.format;
+        for (std::uint8_t move = index; move + 1U < bambuMappingCount; ++move)
+          bambuMappings[move] = bambuMappings[move + 1U];
+        --bambuMappingCount;
+        if (!persistNfcMappings(ctx, action.requestId)) {
+          bambuMappings = mappingRemovalBackup;
+          bambuMappingCount = mappingRemovalBackupCount;
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Trennen fehlgeschlagen",
+                      "Die ge\xC3\xA4nderte Zuordnung konnte nicht an StorageTask gesendet werden.");
+          return;
+        }
+        pendingMappingRemoval = true;
+        pendingBambuMappingSave = true;
+        pendingBambuMappingRequestId = action.requestId;
+        pendingBambuMappingSpoolId = 0;
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::BambuMappingSave, action.requestId,
+                    "Zuordnung trennen",
+                    "Die lokale UID-Zuordnung wird entfernt.");
+        return;
+      }
       if (confirmedOverlay == rtos::UiOverlayKind::TagReview) {
         if (!tagPresent || pendingTagOperation == PendingTagOperation::None) {
           pendingTagOperation = PendingTagOperation::None;
@@ -981,6 +1039,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                                         : rtos::UiScreenId::StagingDetails;
       command.type = rtos::UiCommandType::ShowScreen;
       command.screenId = currentScreen;
+      if (currentScreen == rtos::UiScreenId::StagingActions)
+        command.value = stagingTagCapabilities();
       sendUiCommand(ctx, command,
                     "AppTask: staging screen command queue overflow");
       return;
@@ -1141,9 +1201,27 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       if (action.type == rtos::UiActionType::LinkTag) {
-        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                    rtos::UiOverlayKind::NfcRead, action.requestId,
-                    "NFC-Tag lesen", "Tag bitte am Leser belassen (Mock)." );
+        if (!tagPresent || currentTag.uidLength == 0 || action.spoolId == 0) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Verkn\xC3\xBCpfen nicht m\xC3\xB6glich",
+                      "Tag und Staging-Spule m\xC3\xBCssen vorhanden sein.");
+          return;
+        }
+        if (nfc::mayWriteTag(currentTag)) {
+          rtos::UiAction write = action;
+          write.type = rtos::UiActionType::WriteTag;
+          handleUiAction(ctx, write);
+          return;
+        }
+        pendingBambuUidLength = currentTag.uidLength;
+        std::memcpy(pendingBambuUid.data(), currentTag.uid,
+                    currentTag.uidLength);
+        pendingMappingFormat = currentTag.format;
+        pendingBambuMapping = true;
+        rtos::UiAction selection = action;
+        selection.type = rtos::UiActionType::SelectSpool;
+        handleUiAction(ctx, selection);
         return;
       }
       if (action.type == rtos::UiActionType::WriteTag) {
@@ -1153,7 +1231,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                       "Kein NFC-Tag", "Bitte einen nativen NTAG auflegen.");
           return;
         }
-        if (!currentTag.writable) {
+        if (!nfc::mayWriteTag(currentTag)) {
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
                       "Tag ist schreibgesch\xC3\xBCtzt",
@@ -1183,7 +1261,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       if (action.type == rtos::UiActionType::EraseTag) {
-        if (!tagPresent || !currentTag.erasable) {
+        if (!tagPresent || !nfc::mayEraseTag(currentTag)) {
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
                       "Tag kann nicht gel\xC3\xB6scht werden",
@@ -1200,8 +1278,22 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         sendUiCommand(ctx, command, "AppTask: NFC erase review queue overflow");
         return;
       }
-      if (action.type == rtos::UiActionType::ClearStaging ||
-          action.type == rtos::UiActionType::UnlinkTag) {
+      if (action.type == rtos::UiActionType::UnlinkTag) {
+        if (!tagPresent || mappedNfcSpool(currentTag) == 0) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Trennen nicht m\xC3\xB6glich",
+                      "F\xC3\xBCr den aktuellen Tag besteht keine lokale UID-Zuordnung.");
+          return;
+        }
+        pendingUnlinkConfirmation = true;
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Confirmation, action.requestId,
+                    "Tag-Zuordnung trennen",
+                    "Die lokale UID-Zuordnung wird entfernt. Der Tag selbst bleibt unver\xC3\xA4ndert.");
+        return;
+      }
+      if (action.type == rtos::UiActionType::ClearStaging) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Confirmation, action.requestId,
                     "Aktion best\xC3\xA4tigen",
@@ -1651,11 +1743,27 @@ void appTask(void* parameter) {
           }
         }
       } else if (event.type == rtos::AppEventType::NfcTagRemoved) {
+        const bool operationWasPending =
+            pendingTagOperation != PendingTagOperation::None;
         tagPresent = false;
         currentTag = {};
+        pendingTagOperation = PendingTagOperation::None;
+        pendingUnlinkConfirmation = false;
+        if (operationWasPending) {
+          rtos::UiCommand hide{};
+          hide.type = rtos::UiCommandType::HideProgress;
+          sendUiCommand(ctx, hide, "AppTask: removed-tag progress close overflow");
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, event.requestId,
+                      "NFC-Vorgang abgebrochen",
+                      "Der Tag wurde w\xC3\xA4hrend des Vorgangs entfernt.");
+        }
       } else if (event.type == rtos::AppEventType::NfcTagWritten) {
         lastUsedTagSpoolId = event.spoolId;
         pendingTagOperation = PendingTagOperation::None;
+        rtos::UiCommand hide{};
+        hide.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, hide, "AppTask: NFC write progress close overflow");
         rtos::UiCommand result{};
         result.type = rtos::UiCommandType::ShowScreen;
         result.screenId = rtos::UiScreenId::TagResult;
@@ -1668,6 +1776,9 @@ void appTask(void* parameter) {
         sendUiCommand(ctx, result, "AppTask: NFC result screen queue overflow");
       } else if (event.type == rtos::AppEventType::NfcTagErased) {
         pendingTagOperation = PendingTagOperation::None;
+        rtos::UiCommand hide{};
+        hide.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, hide, "AppTask: NFC erase progress close overflow");
         rtos::UiCommand result{};
         result.type = rtos::UiCommandType::ShowScreen;
         result.screenId = rtos::UiScreenId::TagResult;
@@ -1679,6 +1790,9 @@ void appTask(void* parameter) {
       } else if (event.type == rtos::AppEventType::NfcError &&
                  pendingTagOperation != PendingTagOperation::None) {
         pendingTagOperation = PendingTagOperation::None;
+        rtos::UiCommand hide{};
+        hide.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, hide, "AppTask: NFC error progress close overflow");
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, event.requestId,
                     "NFC-Vorgang fehlgeschlagen", event.text);
@@ -1748,26 +1862,38 @@ void appTask(void* parameter) {
         result.type = rtos::UiCommandType::ShowScreen;
         result.screenId = rtos::UiScreenId::TagResult;
         result.spoolId = pendingBambuMappingSpoolId;
-        std::snprintf(result.text, sizeof(result.text),
-                      "%s read-only mit Spule %lu verkn\xC3\xBCpft. Der Tag wurde nicht ver\xC3\xA4ndert.",
-                      pendingMappingFormat == models::TagFormat::OpenPrintTag
-                          ? "OpenPrintTag"
-                          : pendingMappingFormat == models::TagFormat::OpenTag3D
-                                ? "OpenTag3D"
-                                : pendingMappingFormat == models::TagFormat::Legacy
-                                      ? "Legacy-Tag"
-                                      : pendingMappingFormat == models::TagFormat::Unknown
-                                            ? "Unbekannter Tag"
-                                            : "Bambu-Tag",
-                      static_cast<unsigned long>(pendingBambuMappingSpoolId));
+        if (pendingMappingRemoval) {
+          std::snprintf(result.text, sizeof(result.text),
+                        "Lokale UID-Zuordnung getrennt. Der Tag wurde nicht ver\xC3\xA4ndert.");
+          pendingMappingRemoval = false;
+        } else {
+          std::snprintf(result.text, sizeof(result.text),
+                        "%s lokal mit Spule %lu verkn\xC3\xBCpft. Der Tag wurde nicht ver\xC3\xA4ndert.",
+                        pendingMappingFormat == models::TagFormat::OpenPrintTag
+                            ? "OpenPrintTag"
+                            : pendingMappingFormat == models::TagFormat::OpenTag3D
+                                  ? "OpenTag3D"
+                                  : pendingMappingFormat == models::TagFormat::Legacy
+                                        ? "Legacy-Tag"
+                                        : pendingMappingFormat == models::TagFormat::Unknown
+                                              ? "Unbekannter Tag"
+                                              : "Bambu-Tag",
+                        static_cast<unsigned long>(pendingBambuMappingSpoolId));
+        }
         currentScreen = result.screenId;
         sendUiCommand(ctx, result, "AppTask: Bambu mapping result overflow");
       } else if (pendingBambuMappingSave &&
                  event.requestId == pendingBambuMappingRequestId &&
                  event.type == rtos::AppEventType::StorageRequestError) {
         pendingBambuMappingSave = false;
-        bambuMappings[pendingBambuMappingIndex] = previousBambuMapping;
-        if (pendingBambuMappingWasNew) --bambuMappingCount;
+        if (pendingMappingRemoval) {
+          bambuMappings = mappingRemovalBackup;
+          bambuMappingCount = mappingRemovalBackupCount;
+          pendingMappingRemoval = false;
+        } else {
+          bambuMappings[pendingBambuMappingIndex] = previousBambuMapping;
+          if (pendingBambuMappingWasNew) --bambuMappingCount;
+        }
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, event.requestId,
                     "Speichern fehlgeschlagen",
