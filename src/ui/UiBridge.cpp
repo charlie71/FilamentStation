@@ -1328,7 +1328,7 @@ void bindGeneratedWidgets() {
   setControlText(objects.tag_result_close, "Schlie\xC3\x9F" "en");
   setControlText(objects.tag_definition_import_settings, "Einst.");
   setControlText(objects.tag_definition_import_title,
-                 "Bambu-Definition erkannt");
+                 "Tagdefinition erkannt");
   setControlText(objects.tag_definition_import_select_spool,
                  "Spule verbinden");
   setControlText(objects.tag_definition_import_spoolman,

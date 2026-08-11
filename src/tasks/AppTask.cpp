@@ -957,12 +957,13 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       return;
 
     case rtos::UiActionType::ImportTagDefinition: {
-      if (currentTag.format != models::TagFormat::OpenPrintTag ||
+      if ((currentTag.format != models::TagFormat::OpenPrintTag &&
+           currentTag.format != models::TagFormat::OpenTag3D) ||
           !currentTag.knownFormat || !currentTag.payloadValid) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, action.requestId,
                     "Import nicht m\xC3\xB6glich",
-                    "Es liegt keine g\xC3\xBCltige OpenPrintTag-Definition vor.");
+                    "Es liegt keine g\xC3\xBCltige offene Tagdefinition vor.");
         return;
       }
       rtos::SpoolmanCommand spoolman{};
@@ -1485,7 +1486,12 @@ void appTask(void* parameter) {
               currentScreen = definition.screenId;
             }
           }
-        } else if (currentTag.format == models::TagFormat::OpenPrintTag) {
+        } else if (currentTag.format == models::TagFormat::OpenPrintTag ||
+                   currentTag.format == models::TagFormat::OpenTag3D) {
+          const char* formatName =
+              currentTag.format == models::TagFormat::OpenPrintTag
+                  ? "OpenPrintTag"
+                  : "OpenTag3D";
           const rtos::SpoolId mappedSpool = mappedNfcSpool(currentTag);
           if (mappedSpool != 0) {
             rtos::UiCommand result{};
@@ -1493,18 +1499,20 @@ void appTask(void* parameter) {
             result.screenId = rtos::UiScreenId::TagResult;
             result.spoolId = mappedSpool;
             std::snprintf(result.text, sizeof(result.text),
-                          "OpenPrintTag read-only: Zuordnung zu Spule %lu verwendet.",
+                          "%s read-only: Zuordnung zu Spule %lu verwendet.",
+                          formatName,
                           static_cast<unsigned long>(mappedSpool));
             currentScreen = result.screenId;
             sendUiCommand(ctx, result,
-                          "AppTask: OpenPrintTag mapped result overflow");
+                          "AppTask: open tag mapped result overflow");
           } else {
             pendingBambuUidLength = currentTag.uidLength;
             std::memcpy(pendingBambuUid.data(), currentTag.uid,
                         currentTag.uidLength);
             char summary[128]{};
             std::snprintf(summary, sizeof(summary),
-                          "OpenPrintTag\nHersteller: %s\nFilament: %s\nMaterial: %s\nFarbe: %s\nGewicht: %.0f g / Leer: %.0f g",
+                          "%s\nHersteller: %s\nFilament: %s\nMaterial: %s\nFarbe: %s\nGewicht: %.0f g / Leer: %.0f g",
+                          formatName,
                           currentTag.definition.vendor,
                           currentTag.definition.filamentName,
                           currentTag.definition.material,
@@ -1518,7 +1526,7 @@ void appTask(void* parameter) {
             std::snprintf(definition.text, sizeof(definition.text), "%s",
                           summary);
             if (sendUiCommand(ctx, definition,
-                              "AppTask: OpenPrintTag definition overflow")) {
+                              "AppTask: open tag definition overflow")) {
               previousScreen = currentScreen;
               currentScreen = definition.screenId;
             }
@@ -1626,7 +1634,9 @@ void appTask(void* parameter) {
                       "%s read-only mit Spule %lu verkn\xC3\xBCpft. Der Tag wurde nicht ver\xC3\xA4ndert.",
                       pendingMappingFormat == models::TagFormat::OpenPrintTag
                           ? "OpenPrintTag"
-                          : "Bambu-Tag",
+                          : pendingMappingFormat == models::TagFormat::OpenTag3D
+                                ? "OpenTag3D"
+                                : "Bambu-Tag",
                       static_cast<unsigned long>(pendingBambuMappingSpoolId));
         currentScreen = result.screenId;
         sendUiCommand(ctx, result, "AppTask: Bambu mapping result overflow");

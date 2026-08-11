@@ -734,23 +734,23 @@ Wichtige Regel:
 
 ## 5.8 OpenTag3D – Read Support
 
-* [ ] aktuelle OpenTag3D-Spezifikation beziehungsweise Primärquelle recherchieren und dokumentieren
-* [ ] Erkennungsmerkmale dokumentieren
-* [ ] benötigte Tagtechnologien dokumentieren
-* [ ] Testdaten bereitstellen
-* [ ] `OpenTag3DParser` implementieren
-* [ ] Hersteller parsen
-* [ ] Material parsen
-* [ ] Farbe parsen
-* [ ] Gewichte parsen
-* [ ] Temperaturen parsen
-* [ ] vorhandene optionale Felder abbilden
-* [ ] Daten in `TagDefinition` überführen
-* [ ] `SCR_TAG_DEFINITION_IMPORT` verwenden
-* [ ] vorhandene Spoolman-Spule verbinden
-* [ ] Import nach Spoolman anbieten
-* [ ] keine Schreibunterstützung implementieren
-* [ ] Parser-Tests mit dokumentierten Testvektoren
+* [x] aktuelle OpenTag3D-Spezifikation beziehungsweise Primärquelle recherchieren und dokumentieren
+* [x] Erkennungsmerkmale dokumentieren
+* [x] benötigte Tagtechnologien dokumentieren
+* [x] Testdaten bereitstellen
+* [x] `OpenTag3DParser` implementieren
+* [x] Hersteller parsen
+* [x] Material parsen
+* [x] Farbe parsen
+* [x] Gewichte parsen
+* [x] Temperaturen parsen
+* [x] vorhandene optionale Felder abbilden
+* [x] Daten in `TagDefinition` überführen
+* [x] `SCR_TAG_DEFINITION_IMPORT` verwenden
+* [x] vorhandene Spoolman-Spule verbinden
+* [x] Import nach Spoolman anbieten
+* [x] keine Schreibunterstützung implementieren
+* [x] Parser-Tests mit dokumentierten Testvektoren
 
 ### Abnahmekriterien 5.8
 

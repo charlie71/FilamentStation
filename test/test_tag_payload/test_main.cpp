@@ -21,6 +21,59 @@ using filament_station::services::NfcPayloadType;
 void setUp() {}
 void tearDown() {}
 
+RawTagData makeOpenTag3DVector() {
+  RawTagData raw{};
+  raw.technology = TagTechnology::Ntag215;
+  raw.ndefPresent = true;
+  raw.ndefReadable = true;
+  raw.hardwareWritable = true;
+  constexpr char mime[] = "application/opentag3d";
+  constexpr std::size_t payloadSize = 0xBB;
+  constexpr std::size_t recordSize = 3 + sizeof(mime) - 1 + payloadSize;
+  std::size_t position = 0;
+  raw.ndef[position++] = 0xE1;
+  raw.ndef[position++] = 0x10;
+  raw.ndef[position++] = 0x3E;
+  raw.ndef[position++] = 0x00;
+  raw.ndef[position++] = 0x03;
+  raw.ndef[position++] = static_cast<std::uint8_t>(recordSize);
+  raw.ndef[position++] = 0xD2;  // MB, ME, SR, MIME
+  raw.ndef[position++] = static_cast<std::uint8_t>(sizeof(mime) - 1);
+  raw.ndef[position++] = static_cast<std::uint8_t>(payloadSize);
+  std::memcpy(raw.ndef + position, mime, sizeof(mime) - 1);
+  position += sizeof(mime) - 1;
+  std::uint8_t* payload = raw.ndef + position;
+  payload[0x00] = 0x03;  // Version 1.001, big endian
+  payload[0x01] = 0xE9;
+  std::memcpy(payload + 0x02, "PETG", 4);
+  std::memcpy(payload + 0x07, "HF", 2);
+  std::memcpy(payload + 0x1B, "Polar Filament", 14);
+  std::memcpy(payload + 0x2B, "Electric Blue", 13);
+  payload[0x4B] = 0x12;
+  payload[0x4C] = 0x57;
+  payload[0x4D] = 0xC4;
+  payload[0x4E] = 0xFF;
+  payload[0x5C] = 0x06;  // 1.750 mm
+  payload[0x5D] = 0xD6;
+  payload[0x5E] = 0x03;  // 1000 g
+  payload[0x5F] = 0xE8;
+  payload[0x60] = 48;    // 240 C
+  payload[0x61] = 16;    // 80 C
+  payload[0x62] = 0x04;  // 1.270 g/cm3
+  payload[0x63] = 0xF6;
+  payload[0xAC] = 0x00;  // 245 g empty spool
+  payload[0xAD] = 0xF5;
+  payload[0xAE] = 0x03;  // optional measured weight: 1002 g
+  payload[0xAF] = 0xEA;
+  payload[0xB4] = 46;    // 230 C minimum
+  payload[0xB5] = 50;    // 250 C maximum
+  payload[0xA6] = 0x7B;  // unrelated optional/reserved data is ignored
+  position += payloadSize;
+  raw.ndef[position++] = 0xFE;
+  raw.ndefLength = static_cast<std::uint16_t>(position);
+  return raw;
+}
+
 void test_spoolman_payload_round_trip() {
   std::uint8_t bytes[64]{};
   std::size_t size = 0;
@@ -301,6 +354,46 @@ void test_foreign_mime_is_not_openprinttag() {
   TEST_ASSERT_NOT_EQUAL(TagFormat::OpenPrintTag, result.format);
 }
 
+void test_documented_opentag3d_vector_is_normalized_and_read_only() {
+  const auto raw = makeOpenTag3DVector();
+  const auto result = TagParserRegistry{}.parse(raw);
+  TEST_ASSERT_EQUAL(TagFormat::OpenTag3D, result.format);
+  TEST_ASSERT_TRUE(result.knownFormat);
+  TEST_ASSERT_TRUE(result.payloadValid);
+  TEST_ASSERT_FALSE(result.writable);
+  TEST_ASSERT_FALSE(result.erasable);
+  TEST_ASSERT_FALSE(filament_station::nfc::mayWriteTag(result));
+  TEST_ASSERT_EQUAL_STRING("Polar Filament", result.definition.vendor);
+  TEST_ASSERT_EQUAL_STRING("PETG", result.definition.material);
+  TEST_ASSERT_EQUAL_STRING("PETG HF", result.definition.filamentName);
+  TEST_ASSERT_EQUAL_STRING("Electric Blue", result.definition.colorName);
+  TEST_ASSERT_EQUAL_STRING("#1257C4", result.definition.colorCode);
+  TEST_ASSERT_EQUAL_FLOAT(1000.0F,
+                          result.definition.nominalFilamentWeightG);
+  TEST_ASSERT_EQUAL_FLOAT(245.0F, result.definition.emptySpoolWeightG);
+  TEST_ASSERT_EQUAL_INT16(230, result.definition.nozzleTempMinC);
+  TEST_ASSERT_EQUAL_INT16(250, result.definition.nozzleTempMaxC);
+}
+
+void test_opentag3d_new_major_version_is_rejected_without_crash() {
+  auto raw = makeOpenTag3DVector();
+  constexpr std::size_t payloadOffset = 4 + 2 + 3 + 21;
+  raw.ndef[payloadOffset] = 0x07;
+  raw.ndef[payloadOffset + 1] = 0xD0;  // 2.000
+  const auto result = TagParserRegistry{}.parse(raw);
+  TEST_ASSERT_EQUAL(TagFormat::OpenTag3D, result.format);
+  TEST_ASSERT_TRUE(result.knownFormat);
+  TEST_ASSERT_FALSE(result.payloadValid);
+  TEST_ASSERT_FALSE(result.writable);
+}
+
+void test_foreign_mime_is_not_opentag3d() {
+  auto raw = makeOpenTag3DVector();
+  raw.ndef[9] = 'x';
+  const auto result = TagParserRegistry{}.parse(raw);
+  TEST_ASSERT_NOT_EQUAL(TagFormat::OpenTag3D, result.format);
+}
+
 void test_ntag21x_versions_and_capacities_are_identified() {
   std::uint8_t version[] = {0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03};
   std::uint8_t capability[] = {0xE1, 0x10, 0x12, 0x00};
@@ -352,6 +445,9 @@ int main(int, char**) {
   RUN_TEST(test_official_openprinttag_vector_is_normalized_and_read_only);
   RUN_TEST(test_openprinttag_unknown_optional_field_is_ignored);
   RUN_TEST(test_foreign_mime_is_not_openprinttag);
+  RUN_TEST(test_documented_opentag3d_vector_is_normalized_and_read_only);
+  RUN_TEST(test_opentag3d_new_major_version_is_rejected_without_crash);
+  RUN_TEST(test_foreign_mime_is_not_opentag3d);
   RUN_TEST(test_ntag21x_versions_and_capacities_are_identified);
   RUN_TEST(test_ntag_mismatched_or_locked_metadata_is_not_writable);
   return UNITY_END();

@@ -5,6 +5,7 @@
 
 #include "services/NfcPayload.h"
 #include "nfc/OpenPrintTag.h"
+#include "nfc/OpenTag3D.h"
 
 namespace filament_station {
 namespace nfc {
@@ -122,12 +123,16 @@ TagParseResult OpenPrintTagParser::parse(
 models::TagFormat OpenTag3DParser::format() const {
   return models::TagFormat::OpenTag3D;
 }
-bool OpenTag3DParser::canParse(const models::RawTagData&) const {
-  return false;
+bool OpenTag3DParser::canParse(const models::RawTagData& tag) const {
+  return tag.ndefPresent && tag.ndefReadable &&
+         containsOpenTag3DMimeRecord(tag.ndef, tag.ndefLength);
 }
-TagParseResult OpenTag3DParser::parse(const models::RawTagData&,
-                                      models::TagDefinition&) const {
-  return TagParseResult::NoMatch;
+TagParseResult OpenTag3DParser::parse(const models::RawTagData& tag,
+                                      models::TagDefinition& result) const {
+  if (!canParse(tag)) return TagParseResult::NoMatch;
+  return parseOpenTag3DNdef(tag.ndef, tag.ndefLength, result)
+             ? TagParseResult::Parsed
+             : TagParseResult::Invalid;
 }
 
 models::TagFormat LegacyTagParser::format() const {
