@@ -1719,6 +1719,26 @@ void bindGeneratedWidgets() {
   styleLabelButton(objects.tag_action_erase, 0xC62828);
   styleLabelButton(objects.tag_review_cancel, 0x455A64);
   styleLabelButton(objects.tag_write_cancel, 0x455A64);
+
+  // Every enabled navigation button labelled "Zurück" uses the primary blue
+  // action style.  Cancel/close buttons intentionally keep their secondary
+  // grey style, but must not determine the appearance of actual back buttons.
+  const std::array<lv_obj_t*, 13> activeBackButtons{{
+      objects.select_back,
+      objects.settings_back,
+      objects.staging_actions_back,
+      objects.tray_actions_back,
+      objects.printer_settings_back,
+      objects.wifi_settings_back,
+      objects.scale_settings_back,
+      objects.device_settings_back,
+      objects.diagnostics_settings_back,
+      objects.firmware_settings_back,
+      objects.tag_action_back,
+      objects.tag_review_back,
+      objects.bambu_spool_type_back,
+  }};
+  for (lv_obj_t* button : activeBackButtons) styleLabelButton(button);
   const lv_font_t* amsFont =
       lv_obj_get_style_text_font(buttonLabel(objects.home_ams_1), LV_PART_MAIN);
   for (lv_obj_t* amsLabel :

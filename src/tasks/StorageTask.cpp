@@ -33,7 +33,34 @@ constexpr InitialDocument kInitialDocuments[] = {
     {"/config/nfc.json", rtos::StorageDocumentType::Nfc},
     {"/mappings/bambu-tags.json", rtos::StorageDocumentType::Nfc},
     {"/mappings/nfc-spools.json", rtos::StorageDocumentType::Nfc},
+    {"/mappings/open-tags.json", rtos::StorageDocumentType::Nfc},
 };
+
+bool isMappingPath(const char* path) {
+  return std::strcmp(path, "/mappings/bambu-tags.json") == 0 ||
+         std::strcmp(path, "/mappings/nfc-spools.json") == 0 ||
+         std::strcmp(path, "/mappings/open-tags.json") == 0;
+}
+
+bool parseMappingFormat(const char* text, models::TagFormat& format) {
+  if (std::strcmp(text, "bambuLab") == 0) format = models::TagFormat::BambuLab;
+  else if (std::strcmp(text, "openPrintTag") == 0) format = models::TagFormat::OpenPrintTag;
+  else if (std::strcmp(text, "openTag3D") == 0) format = models::TagFormat::OpenTag3D;
+  else if (std::strcmp(text, "legacy") == 0) format = models::TagFormat::Legacy;
+  else if (std::strcmp(text, "unknown") == 0) format = models::TagFormat::Unknown;
+  else return false;
+  return true;
+}
+
+bool formatAllowedForPath(models::TagFormat format, const char* path) {
+  if (std::strcmp(path, "/mappings/bambu-tags.json") == 0)
+    return format == models::TagFormat::BambuLab;
+  if (std::strcmp(path, "/mappings/open-tags.json") == 0)
+    return format == models::TagFormat::OpenPrintTag ||
+           format == models::TagFormat::OpenTag3D;
+  return format == models::TagFormat::Unknown ||
+         format == models::TagFormat::Legacy;
+}
 
 void sendStorageEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
                       const char* text, std::uint32_t requestId = 0,
@@ -116,21 +143,52 @@ void processLoadCommand(rtos::RtosContext& ctx,
     return;
   }
   if (result.ok() && command.documentType == rtos::StorageDocumentType::Nfc &&
-      (std::strcmp(command.path, "/mappings/bambu-tags.json") == 0 ||
-       std::strcmp(command.path, "/mappings/nfc-spools.json") == 0)) {
+      isMappingPath(command.path)) {
+    if (!document["mappings"].is<JsonArrayConst>()) {
+      sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                       "NFC mapping array is missing", command.requestId);
+      return;
+    }
     rtos::AppEvent event{};
     event.type = rtos::AppEventType::StorageReadCompleted;
     event.requestId = command.requestId;
     const JsonArrayConst mappings = document["mappings"].as<JsonArrayConst>();
     for (const JsonObjectConst mapping : mappings) {
-      if (event.nfcMappingCount >= rtos::kMaximumNfcUidMappings) break;
+      if (event.nfcMappingCount >= rtos::kMaximumNfcUidMappings) {
+        sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                         "Mapping file contains too many entries",
+                         command.requestId);
+        return;
+      }
       const char* uidText = mapping["uid"] | "";
+      const char* formatText = mapping["format"] | "";
       const std::size_t uidTextLength = std::strlen(uidText);
       if (uidTextLength < 8 || uidTextLength > config::kNfcMaxUidLength * 2U ||
           (uidTextLength & 1U) != 0 ||
-          !mapping["spoolId"].is<std::uint32_t>())
-        continue;
+          !mapping["spoolId"].is<std::uint32_t>()) {
+        sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                         "Damaged NFC mapping entry", command.requestId);
+        return;
+      }
       auto& destination = event.nfcMappings[event.nfcMappingCount];
+      if (formatText[0] == '\0') {
+        // Backward-compatible migration of phase-5.9 files.  The next save
+        // writes the explicit format field required by schema version 1.
+        destination.tagFormat =
+            std::strcmp(command.path, "/mappings/bambu-tags.json") == 0
+                ? models::TagFormat::BambuLab
+                : models::TagFormat::Unknown;
+      } else if (!parseMappingFormat(formatText, destination.tagFormat)) {
+        sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                         "Invalid NFC mapping format", command.requestId);
+        return;
+      }
+      if (
+          !formatAllowedForPath(destination.tagFormat, command.path)) {
+        sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                         "Invalid NFC mapping format", command.requestId);
+        return;
+      }
       destination.uidLength = static_cast<std::uint8_t>(uidTextLength / 2U);
       bool valid = true;
       for (std::size_t index = 0; index < destination.uidLength; ++index) {
@@ -144,12 +202,31 @@ void processLoadCommand(rtos::RtosContext& ctx,
         destination.uid[index] = static_cast<std::uint8_t>(value);
       }
       destination.spoolId = mapping["spoolId"].as<std::uint32_t>();
-      if (valid && destination.spoolId != 0) ++event.nfcMappingCount;
+      if (!valid || destination.spoolId == 0) {
+        sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                         "Invalid NFC mapping UID or spool ID",
+                         command.requestId);
+        return;
+      }
+      for (std::uint8_t existing = 0; existing < event.nfcMappingCount;
+           ++existing) {
+        if (event.nfcMappings[existing].uidLength == destination.uidLength &&
+            std::memcmp(event.nfcMappings[existing].uid, destination.uid,
+                        destination.uidLength) == 0) {
+          sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                           "Duplicate UID in NFC mapping file",
+                           command.requestId);
+          return;
+        }
+      }
+      ++event.nfcMappingCount;
     }
     std::snprintf(event.text, sizeof(event.text), "%s UID mappings loaded",
                   std::strcmp(command.path, "/mappings/bambu-tags.json") == 0
-                      ? "Legacy Bambu"
-                      : "NFC");
+                      ? "Bambu"
+                      : std::strcmp(command.path, "/mappings/open-tags.json") == 0
+                            ? "Open tag"
+                            : "NFC");
     if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
       rtos::logLine("StorageTask: mapping event queue overflow");
     return;
@@ -272,6 +349,10 @@ bool ensureInitialDocument(const InitialDocument& definition) {
                   "StorageTask: recovery failed for %s: %s", definition.path,
                   services::JsonStorage::errorName(recovery.error));
     rtos::logLine(line);
+    // A damaged mapping file must not make the complete SD/configuration
+    // subsystem unavailable.  Keep it untouched for diagnosis; its explicit
+    // load will report a StorageRequestError and no mappings will be applied.
+    if (isMappingPath(definition.path)) return true;
     return false;
   }
 

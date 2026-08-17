@@ -819,21 +819,21 @@ Abhängig vom Tagtyp und den Fähigkeiten müssen Aktionen dynamisch freigegeben
 
 ## 5.11 Tag-Mappings
 
-* [ ] `/mappings/nfc-spools.json`
-* [ ] `/mappings/bambu-tags.json`
-* [ ] `/mappings/open-tags.json`
-* [ ] Mapping-Schema definieren
-* [ ] UID normalisiert speichern
-* [ ] Tagformat mitspeichern
-* [ ] Spool-ID speichern
-* [ ] Laden nur über StorageTask
-* [ ] Speichern nur über StorageTask
-* [ ] Mapping-Konflikte erkennen
-* [ ] doppelte UID erkennen
-* [ ] ungültige Spool-ID erkennen
-* [ ] Mapping entfernen
-* [ ] Mapping ersetzen nur nach Bestätigung
-* [ ] beschädigte Mapping-Datei behandeln
+* [x] `/mappings/nfc-spools.json`
+* [x] `/mappings/bambu-tags.json`
+* [x] `/mappings/open-tags.json`
+* [x] Mapping-Schema definieren
+* [x] UID normalisiert speichern
+* [x] Tagformat mitspeichern
+* [x] Spool-ID speichern
+* [x] Laden nur über StorageTask
+* [x] Speichern nur über StorageTask
+* [x] Mapping-Konflikte erkennen
+* [x] doppelte UID erkennen
+* [x] ungültige Spool-ID erkennen
+* [x] Mapping entfernen
+* [x] Mapping ersetzen nur nach Bestätigung
+* [x] beschädigte Mapping-Datei behandeln
 
 ### Abnahmekriterien Phase 5
 

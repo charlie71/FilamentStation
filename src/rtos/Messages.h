@@ -20,6 +20,7 @@ struct NfcUidMapping {
   std::uint8_t uid[10]{};
   std::uint8_t uidLength = 0;
   SpoolId spoolId = 0;
+  models::TagFormat tagFormat = models::TagFormat::Unknown;
 };
 constexpr std::size_t kMaximumNfcUidMappings = 8;
 

@@ -22,6 +22,7 @@ rtos::UiOverlayKind pendingOverlay = rtos::UiOverlayKind::None;
 constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;
 constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;
 constexpr std::uint32_t kNfcMappingLoadRequestId = 0x4E464302U;
+constexpr std::uint32_t kOpenMappingLoadRequestId = 0x4E464303U;
 std::int32_t scaleCounts = 0;
 std::int32_t scaleOffsetCounts = 0;
 float scaleFactorCountsPerGram = 1.0F;
@@ -65,6 +66,9 @@ bool pendingBambuMapping = false;
 bool pendingBambuMappingSave = false;
 bool pendingMappingRemoval = false;
 bool pendingUnlinkConfirmation = false;
+bool pendingMappingReplacementConfirmation = false;
+bool pendingMappingReplacementApproved = false;
+rtos::SpoolId pendingReplacementSpoolId = 0;
 bool pendingBambuMappingWasNew = false;
 std::uint8_t pendingBambuMappingIndex = 0;
 std::uint32_t pendingBambuMappingRequestId = 0;
@@ -119,8 +123,34 @@ std::int32_t stagingTagCapabilities() {
   std::int32_t capabilities = rtos::UI_TAG_CAP_LINK;
   if (nfc::mayWriteTag(currentTag)) capabilities |= rtos::UI_TAG_CAP_WRITE;
   if (nfc::mayEraseTag(currentTag)) capabilities |= rtos::UI_TAG_CAP_ERASE;
-  if (mappedNfcSpool(currentTag) != 0) capabilities |= rtos::UI_TAG_CAP_UNLINK;
+  if (mappedNfcSpool(currentTag) != 0 ||
+      currentTag.definition.hasSpoolId)
+    capabilities |= rtos::UI_TAG_CAP_UNLINK;
   return capabilities;
+}
+
+const char* mappingFormatName(models::TagFormat format) {
+  switch (format) {
+    case models::TagFormat::BambuLab: return "bambuLab";
+    case models::TagFormat::OpenPrintTag: return "openPrintTag";
+    case models::TagFormat::OpenTag3D: return "openTag3D";
+    case models::TagFormat::Legacy: return "legacy";
+    case models::TagFormat::Unknown: return "unknown";
+    default: return nullptr;
+  }
+}
+
+const char* mappingPath(models::TagFormat format) {
+  if (format == models::TagFormat::BambuLab)
+    return "/mappings/bambu-tags.json";
+  if (format == models::TagFormat::OpenPrintTag ||
+      format == models::TagFormat::OpenTag3D)
+    return "/mappings/open-tags.json";
+  return "/mappings/nfc-spools.json";
+}
+
+bool sameMappingFile(models::TagFormat left, models::TagFormat right) {
+  return std::strcmp(mappingPath(left), mappingPath(right)) == 0;
 }
 
 void mergeNfcMappings(const rtos::AppEvent& event) {
@@ -136,27 +166,37 @@ void mergeNfcMappings(const rtos::AppEvent& event) {
     if (destination == bambuMappingCount) {
       if (bambuMappingCount >= bambuMappings.size()) break;
       ++bambuMappingCount;
+    } else if (bambuMappings[destination].spoolId != candidate.spoolId ||
+               bambuMappings[destination].tagFormat != candidate.tagFormat) {
+      rtos::logLine("AppTask: conflicting duplicate NFC mapping ignored");
+      continue;
     }
     bambuMappings[destination] = candidate;
   }
 }
 
-bool persistNfcMappings(rtos::RtosContext& ctx, std::uint32_t requestId) {
+bool persistNfcMappings(rtos::RtosContext& ctx, std::uint32_t requestId,
+                        models::TagFormat changedFormat) {
   rtos::StorageCommand storage{};
   storage.type = rtos::StorageCommandType::SaveJson;
   storage.requestId = requestId;
   storage.documentType = rtos::StorageDocumentType::Nfc;
-  std::snprintf(storage.path, sizeof(storage.path),
-                "/mappings/nfc-spools.json");
+  std::snprintf(storage.path, sizeof(storage.path), "%s",
+                mappingPath(changedFormat));
   std::size_t used = static_cast<std::size_t>(std::snprintf(
       storage.json, sizeof(storage.json),
       "{\"schemaVersion\":1,\"updatedAt\":\"1970-01-01T00:00:00Z\","
       "\"documentType\":\"nfc\",\"tagSchemaVersion\":1,\"mappings\":["));
+  bool first = true;
   for (std::uint8_t index = 0; index < bambuMappingCount; ++index) {
     const auto& mapping = bambuMappings[index];
+    if (!sameMappingFile(mapping.tagFormat, changedFormat)) continue;
+    const char* format = mappingFormatName(mapping.tagFormat);
+    if (format == nullptr || mapping.spoolId == 0 || mapping.uidLength == 0)
+      return false;
     int written = std::snprintf(storage.json + used,
                                 sizeof(storage.json) - used,
-                                "%s{\"uid\":\"", index == 0 ? "" : ",");
+                                "%s{\"uid\":\"", first ? "" : ",");
     if (written <= 0 || static_cast<std::size_t>(written) >=
                             sizeof(storage.json) - used)
       return false;
@@ -172,12 +212,13 @@ bool persistNfcMappings(rtos::RtosContext& ctx, std::uint32_t requestId) {
     }
     written = std::snprintf(storage.json + used,
                             sizeof(storage.json) - used,
-                            "\",\"spoolId\":%lu}",
-                            static_cast<unsigned long>(mapping.spoolId));
+                            "\",\"format\":\"%s\",\"spoolId\":%lu}",
+                            format, static_cast<unsigned long>(mapping.spoolId));
     if (written <= 0 || static_cast<std::size_t>(written) >=
                             sizeof(storage.json) - used)
       return false;
     used += static_cast<std::size_t>(written);
+    first = false;
   }
   if (used + 3 > sizeof(storage.json)) return false;
   storage.json[used++] = ']';
@@ -472,6 +513,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::Cancel:
       pendingBambuMapping = false;
       pendingUnlinkConfirmation = false;
+      pendingMappingReplacementConfirmation = false;
+      pendingMappingReplacementApproved = false;
       if (currentScreen == rtos::UiScreenId::TagDefinitionImport ||
           currentScreen == rtos::UiScreenId::BambuSpoolType) {
         command.type = rtos::UiCommandType::ShowScreen;
@@ -484,8 +527,14 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
           currentScreen == rtos::UiScreenId::TagWrite) {
         pendingTagOperation = PendingTagOperation::None;
         command.type = rtos::UiCommandType::ShowScreen;
-        command.screenId = rtos::UiScreenId::TagActionSelect;
+        command.screenId =
+            previousScreen == rtos::UiScreenId::StagingActions ||
+                    previousScreen == rtos::UiScreenId::TagLegacy
+                ? previousScreen
+                : rtos::UiScreenId::TagActionSelect;
         currentScreen = command.screenId;
+        if (command.screenId == rtos::UiScreenId::StagingActions)
+          command.value = stagingTagCapabilities();
         sendUiCommand(ctx, command, "AppTask: NFC cancel navigation overflow");
         return;
       }
@@ -553,6 +602,16 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       sendUiCommand(ctx, command, "AppTask: hide confirmed overlay queue overflow");
       pendingOverlay = rtos::UiOverlayKind::None;
       if (confirmedOverlay == rtos::UiOverlayKind::Confirmation &&
+          pendingMappingReplacementConfirmation) {
+        pendingMappingReplacementConfirmation = false;
+        pendingMappingReplacementApproved = true;
+        rtos::UiAction replacement = action;
+        replacement.type = rtos::UiActionType::SelectSpool;
+        replacement.spoolId = pendingReplacementSpoolId;
+        handleUiAction(ctx, replacement);
+        return;
+      }
+      if (confirmedOverlay == rtos::UiOverlayKind::Confirmation &&
           pendingUnlinkConfirmation) {
         pendingUnlinkConfirmation = false;
         std::uint8_t index = 0;
@@ -575,7 +634,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         for (std::uint8_t move = index; move + 1U < bambuMappingCount; ++move)
           bambuMappings[move] = bambuMappings[move + 1U];
         --bambuMappingCount;
-        if (!persistNfcMappings(ctx, action.requestId)) {
+        if (!persistNfcMappings(ctx, action.requestId, pendingMappingFormat)) {
           bambuMappings = mappingRemovalBackup;
           bambuMappingCount = mappingRemovalBackupCount;
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
@@ -766,9 +825,11 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         currentScreen = rtos::UiScreenId::SettingsHome;
       } else if (currentScreen == rtos::UiScreenId::TagReview ||
                  currentScreen == rtos::UiScreenId::TagWrite) {
-        command.screenId = previousScreen == rtos::UiScreenId::TagLegacy
-                               ? rtos::UiScreenId::TagLegacy
-                               : rtos::UiScreenId::TagActionSelect;
+        command.screenId =
+            previousScreen == rtos::UiScreenId::StagingActions ||
+                    previousScreen == rtos::UiScreenId::TagLegacy
+                ? previousScreen
+                : rtos::UiScreenId::TagActionSelect;
         currentScreen = command.screenId;
         pendingTagOperation = PendingTagOperation::None;
       } else if (currentScreen == rtos::UiScreenId::TagActionSelect ||
@@ -783,6 +844,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         command.screenId = previousScreen;
         currentScreen = previousScreen;
       }
+      if (command.screenId == rtos::UiScreenId::StagingActions)
+        command.value = stagingTagCapabilities();
       sendUiCommand(ctx, command, "AppTask: back command queue overflow");
       return;
 
@@ -1144,7 +1207,27 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
             return;
           }
           ++bambuMappingCount;
+        } else if (bambuMappings[index].tagFormat != pendingMappingFormat) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Mapping-Konflikt",
+                      "Die UID ist bereits mit einem anderen Tagformat gespeichert. Bestehende Zuordnung zuerst trennen.");
+          return;
+        } else if (bambuMappings[index].spoolId != action.spoolId &&
+                   !pendingMappingReplacementApproved) {
+          pendingReplacementSpoolId = action.spoolId;
+          pendingMappingReplacementConfirmation = true;
+          char question[160]{};
+          std::snprintf(question, sizeof(question),
+                        "Diese UID ist bereits mit Spule %lu verbunden. Durch Spule %lu ersetzen?",
+                        static_cast<unsigned long>(bambuMappings[index].spoolId),
+                        static_cast<unsigned long>(action.spoolId));
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Confirmation, action.requestId,
+                      "Zuordnung ersetzen", question);
+          return;
         }
+        pendingMappingReplacementApproved = false;
         auto& mapping = bambuMappings[index];
         previousBambuMapping = mapping;
         pendingBambuMappingWasNew = index + 1U == bambuMappingCount &&
@@ -1153,10 +1236,11 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         mapping.uidLength = pendingBambuUidLength;
         std::memcpy(mapping.uid, pendingBambuUid.data(), pendingBambuUidLength);
         mapping.spoolId = action.spoolId;
+        mapping.tagFormat = pendingMappingFormat;
         pendingBambuMapping = false;
         command.type = rtos::UiCommandType::HideProgress;
         sendUiCommand(ctx, command, "AppTask: Bambu picker close overflow");
-        if (!persistNfcMappings(ctx, action.requestId)) {
+        if (!persistNfcMappings(ctx, action.requestId, pendingMappingFormat)) {
           mapping = previousBambuMapping;
           if (pendingBambuMappingWasNew) --bambuMappingCount;
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
@@ -1181,7 +1265,11 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Spoolman-Spule ausw\xC3\xA4hlen", "");
         return;
       }
-      if (currentScreen == rtos::UiScreenId::TagActionSelect) {
+      // Only a spool selected in the picker starts the write review here.
+      // EraseTag is also available on this screen and must reach its dedicated
+      // branch below instead of being converted into a write operation.
+      if (action.type == rtos::UiActionType::SelectSpool &&
+          currentScreen == rtos::UiScreenId::TagActionSelect) {
         pendingTagSpoolId = action.spoolId != 0 ? action.spoolId
                                                 : lastUsedTagSpoolId;
         if (pendingTagSpoolId == 0) {
@@ -1200,6 +1288,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                       "Tag: nativer NTAG21x\nSpoolman-ID: %lu\nPayload: spoolman:%lu\nAktion: schreiben und verifizieren",
                       static_cast<unsigned long>(pendingTagSpoolId),
                       static_cast<unsigned long>(pendingTagSpoolId));
+        previousScreen = currentScreen;
         currentScreen = command.screenId;
         sendUiCommand(ctx, command, "AppTask: NFC review screen queue overflow");
         return;
@@ -1260,6 +1349,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         command.type = rtos::UiCommandType::ShowScreen;
         command.screenId = rtos::UiScreenId::TagReview;
         std::snprintf(command.text, sizeof(command.text), "%s", review);
+        previousScreen = currentScreen;
         currentScreen = command.screenId;
         sendUiCommand(ctx, command, "AppTask: NFC review screen queue overflow");
         return;
@@ -1278,6 +1368,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         command.screenId = rtos::UiScreenId::TagReview;
         std::snprintf(command.text, sizeof(command.text),
                       "Tag: unterst\xC3\xBCtzter NTAG21x\nAktion: NDEF-Zuordnung l\xC3\xB6schen\nDanach wird der leere Zustand verifiziert.");
+        previousScreen = currentScreen;
         currentScreen = command.screenId;
         sendUiCommand(ctx, command, "AppTask: NFC erase review queue overflow");
         return;
@@ -1776,6 +1867,17 @@ void appTask(void* parameter) {
         }
       } else if (event.type == rtos::AppEventType::NfcTagWritten) {
         lastUsedTagSpoolId = event.spoolId;
+        const models::TagReadResult previousTag = currentTag;
+        currentTag = event.tagReadResult;
+        currentTag.technology = previousTag.technology;
+        currentTag.ndefPresent = true;
+        currentTag.ndefReadable = true;
+        currentTag.physicalWritableKnown =
+            previousTag.physicalWritableKnown;
+        currentTag.physicalWritable = previousTag.physicalWritable;
+        currentTag.uidLength = event.nfcUidLength;
+        std::memcpy(currentTag.uid, event.nfcUid, event.nfcUidLength);
+        tagPresent = true;
         pendingTagOperation = PendingTagOperation::None;
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
@@ -1791,6 +1893,13 @@ void appTask(void* parameter) {
         currentScreen = result.screenId;
         sendUiCommand(ctx, result, "AppTask: NFC result screen queue overflow");
       } else if (event.type == rtos::AppEventType::NfcTagErased) {
+        currentTag.format = models::TagFormat::EmptyNdef;
+        currentTag.knownFormat = true;
+        currentTag.payloadValid = true;
+        currentTag.writable = currentTag.physicalWritable;
+        currentTag.erasable = currentTag.physicalWritable;
+        currentTag.definition = {};
+        currentTag.definition.format = models::TagFormat::EmptyNdef;
         pendingTagOperation = PendingTagOperation::None;
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
@@ -1865,7 +1974,8 @@ void appTask(void* parameter) {
         sendScaleUiState(ctx, event.requestId);
       } else if (event.type == rtos::AppEventType::StorageReadCompleted &&
                  (event.requestId == kBambuMappingLoadRequestId ||
-                  event.requestId == kNfcMappingLoadRequestId)) {
+                  event.requestId == kNfcMappingLoadRequestId ||
+                  event.requestId == kOpenMappingLoadRequestId)) {
         mergeNfcMappings(event);
       } else if (pendingBambuMappingSave &&
                  event.requestId == pendingBambuMappingRequestId &&
@@ -1940,6 +2050,12 @@ void appTask(void* parameter) {
         if (xQueueSend(ctx.storageCommandQueue, &mappingLoad,
                        pdMS_TO_TICKS(1000)) != pdPASS)
           rtos::logLine("AppTask: NFC mapping load queue overflow");
+        mappingLoad.requestId = kOpenMappingLoadRequestId;
+        std::snprintf(mappingLoad.path, sizeof(mappingLoad.path),
+                      "/mappings/open-tags.json");
+        if (xQueueSend(ctx.storageCommandQueue, &mappingLoad,
+                       pdMS_TO_TICKS(1000)) != pdPASS)
+          rtos::logLine("AppTask: open-tag mapping load queue overflow");
         showHomeWhenStartupReady(ctx);
       }
     }

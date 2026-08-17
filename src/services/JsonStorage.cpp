@@ -52,6 +52,27 @@ bool removeIfPresent(fs::FS& filesystem, const char* path) {
   return !filesystem.exists(path) || filesystem.remove(path);
 }
 
+bool validMappingFormat(const char* format) {
+  return format != nullptr &&
+         (std::strcmp(format, "bambuLab") == 0 ||
+          std::strcmp(format, "openPrintTag") == 0 ||
+          std::strcmp(format, "openTag3D") == 0 ||
+          std::strcmp(format, "legacy") == 0 ||
+          std::strcmp(format, "unknown") == 0);
+}
+
+bool validNormalizedUid(const char* uid) {
+  if (uid == nullptr) return false;
+  const std::size_t length = std::strlen(uid);
+  if (length < 8 || length > 20 || (length & 1U) != 0) return false;
+  for (std::size_t index = 0; index < length; ++index) {
+    if (!std::isdigit(static_cast<unsigned char>(uid[index])) &&
+        (uid[index] < 'A' || uid[index] > 'F'))
+      return false;
+  }
+  return true;
+}
+
 bool isValidDocumentFile(fs::FS& filesystem, const char* path,
                          rtos::StorageDocumentType documentType) {
   File file = filesystem.open(path, FILE_READ);
@@ -318,10 +339,36 @@ JsonStorageError JsonStorage::validate(
       }
       return JsonStorageError::Ok;
     case rtos::StorageDocumentType::Nfc:
-      return document["tagSchemaVersion"].is<std::uint32_t>() &&
-                     document["tagSchemaVersion"].as<std::uint32_t>() == 1U
-                 ? JsonStorageError::Ok
-                 : JsonStorageError::InvalidDocumentField;
+      if (!document["tagSchemaVersion"].is<std::uint32_t>() ||
+          document["tagSchemaVersion"].as<std::uint32_t>() != 1U)
+        return JsonStorageError::InvalidDocumentField;
+      // /config/nfc.json and the mapping files intentionally share the NFC
+      // document type.  Only mapping documents contain this array; their
+      // path-specific mandatory validation is performed by StorageTask.
+      if (document["mappings"].isNull()) return JsonStorageError::Ok;
+      if (!document["mappings"].is<JsonArrayConst>())
+        return JsonStorageError::InvalidDocumentField;
+      {
+        const JsonArrayConst mappings = document["mappings"].as<JsonArrayConst>();
+        for (std::size_t index = 0; index < mappings.size(); ++index) {
+          const JsonObjectConst mapping = mappings[index].as<JsonObjectConst>();
+          const char* uid = mapping["uid"] | static_cast<const char*>(nullptr);
+          const char* format =
+              mapping["format"] | static_cast<const char*>(nullptr);
+          if (!validNormalizedUid(uid) ||
+              !mapping["spoolId"].is<std::uint32_t>() ||
+              mapping["spoolId"].as<std::uint32_t>() == 0 ||
+              (format != nullptr && !validMappingFormat(format)))
+            return JsonStorageError::InvalidDocumentField;
+          for (std::size_t other = 0; other < index; ++other) {
+            const char* otherUid =
+                mappings[other]["uid"] | static_cast<const char*>(nullptr);
+            if (otherUid != nullptr && std::strcmp(uid, otherUid) == 0)
+              return JsonStorageError::InvalidDocumentField;
+          }
+        }
+      }
+      return JsonStorageError::Ok;
     case rtos::StorageDocumentType::Bambu:
       return document["selectedPrinterId"].is<std::uint16_t>() &&
                      document["defaultPrinterId"].is<std::uint16_t>() &&
