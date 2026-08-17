@@ -510,6 +510,34 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
   command.value = action.value;
 
   switch (action.type) {
+    case rtos::UiActionType::AssignTag: {
+      // Temporary adapter for 5.12.2: the UI exposes one semantic action,
+      // while the proven write/mapping implementations remain untouched.
+      // Their ordered orchestration is implemented in 5.12.3.
+      rtos::UiAction compatibilityAction = action;
+      if (currentScreen == rtos::UiScreenId::TagLegacy &&
+          currentTag.definition.hasSpoolId) {
+        compatibilityAction.type = rtos::UiActionType::MigrateLegacyTag;
+      } else if (currentScreen == rtos::UiScreenId::StagingActions) {
+        compatibilityAction.type = rtos::UiActionType::LinkTag;
+      } else {
+        compatibilityAction.type = rtos::UiActionType::WriteTag;
+      }
+      handleUiAction(ctx, compatibilityAction);
+      return;
+    }
+
+    case rtos::UiActionType::RemoveTagAssignment: {
+      // Temporary adapter for 5.12.2. The combined mapping/payload removal
+      // sequence follows in 5.12.5.
+      rtos::UiAction compatibilityAction = action;
+      compatibilityAction.type = mappedNfcSpool(currentTag) != 0
+                                     ? rtos::UiActionType::UnlinkTag
+                                     : rtos::UiActionType::EraseTag;
+      handleUiAction(ctx, compatibilityAction);
+      return;
+    }
+
     case rtos::UiActionType::Cancel:
       pendingBambuMapping = false;
       pendingUnlinkConfirmation = false;

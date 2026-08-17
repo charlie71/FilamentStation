@@ -1067,7 +1067,7 @@ void tagActionClicked(lv_event_t* event) {
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   const rtos::SpoolId spoolId =
       (type == rtos::UiActionType::SelectSpool ||
-       type == rtos::UiActionType::WriteTag)
+       type == rtos::UiActionType::AssignTag)
           ? models::mock::staging().spoolId
           : 0;
   sendAction(type, currentPrinterId, 0, 0, 0, spoolId);
@@ -1386,9 +1386,10 @@ void bindGeneratedWidgets() {
             static_cast<std::uintptr_t>(rtos::UiActionType::SearchSpool));
   bindClick(objects.tag_action_use_last_spool, lastTagSpoolClicked);
   bindClick(objects.tag_action_write, tagActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::WriteTag));
+            static_cast<std::uintptr_t>(rtos::UiActionType::AssignTag));
   bindClick(objects.tag_action_erase, tagActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::EraseTag));
+            static_cast<std::uintptr_t>(
+                rtos::UiActionType::RemoveTagAssignment));
   bindClick(objects.tag_action_back, backClicked);
   bindClick(objects.tag_review_back, backClicked);
   bindClick(objects.tag_review_cancel, tagActionClicked,
@@ -1417,9 +1418,10 @@ void bindGeneratedWidgets() {
   bindClick(objects.tag_legacy_import, tagActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::ImportTagDefinition));
   bindClick(objects.tag_legacy_migrate, tagActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::MigrateLegacyTag));
+            static_cast<std::uintptr_t>(rtos::UiActionType::AssignTag));
   bindClick(objects.tag_legacy_erase, tagActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::EraseTag));
+            static_cast<std::uintptr_t>(
+                rtos::UiActionType::RemoveTagAssignment));
   bindClick(objects.tag_legacy_close, backClicked);
   bindClick(objects.tag_unknown_header, headerClicked);
   bindClick(objects.tag_unknown_select_spool, tagActionClicked,
@@ -1457,13 +1459,15 @@ void bindGeneratedWidgets() {
   bindClick(objects.staging_action_clear, stagingActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::ClearStaging));
   bindClick(objects.staging_action_write_tag, stagingActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::WriteTag));
+            static_cast<std::uintptr_t>(rtos::UiActionType::AssignTag));
   bindClick(objects.staging_action_link_tag, stagingActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::LinkTag));
+            static_cast<std::uintptr_t>(rtos::UiActionType::AssignTag));
   bindClick(objects.staging_action_unlink_tag, stagingActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::UnlinkTag));
+            static_cast<std::uintptr_t>(
+                rtos::UiActionType::RemoveTagAssignment));
   bindClick(objects.staging_action_erase_tag, stagingActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::EraseTag));
+            static_cast<std::uintptr_t>(
+                rtos::UiActionType::RemoveTagAssignment));
 
   bindClick(objects.tray_details_header, headerClicked);
   bindClick(objects.tray_actions_header, headerClicked);

@@ -433,15 +433,15 @@ RemoveTagAssignment
 
 Aufgaben:
 
-* [ ] bestehende Verwendungen aller alten Actions suchen
-* [ ] `AssignTag` ergänzen
-* [ ] `RemoveTagAssignment` ergänzen
-* [ ] alte Actions aus Benutzeroberfläche entfernen
-* [ ] alte Actions intern nur vorübergehend als Kompatibilitätsadapter zulassen
-* [ ] UiBridge migrieren
-* [ ] AppTask migrieren
-* [ ] EEZ-Actions migrieren
-* [ ] Tests anpassen
+* [x] bestehende Verwendungen aller alten Actions suchen
+* [x] `AssignTag` ergänzen
+* [x] `RemoveTagAssignment` ergänzen
+* [x] alte Actions aus Benutzeroberfläche entfernen
+* [x] alte Actions intern nur vorübergehend als Kompatibilitätsadapter zulassen
+* [x] UiBridge migrieren
+* [x] AppTask migrieren
+* [x] EEZ-Actions migrieren
+* [x] Tests anpassen
 
 ## 5.12.3 AssignTag-Workflow
 
