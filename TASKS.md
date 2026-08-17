@@ -482,18 +482,18 @@ Die Zuordnung konnte jedoch nicht auf dem Tag gespeichert werden.
 
 ## 5.12.5 RemoveTagAssignment-Workflow
 
-* [ ] Benutzer wählt nur „Tag-Zuordnung entfernen“
-* [ ] Bestätigungsdialog
-* [ ] lokales Mapping entfernen
-* [ ] Capability prüfen
-* [ ] nativen FilamentStation-Payload wenn sicher möglich entfernen
-* [ ] Löschung verifizieren
-* [ ] Bambu-Inhalt unverändert
-* [ ] OpenPrintTag unverändert
-* [ ] OpenTag3D unverändert
-* [ ] Unknown unverändert
-* [ ] Legacy nur verändern, wenn explizit sicher
-* [ ] Ergebnisstatus differenzieren
+* [x] Benutzer wählt nur „Tag-Zuordnung entfernen“
+* [x] Bestätigungsdialog
+* [x] lokales Mapping entfernen
+* [x] Capability prüfen
+* [x] nativen FilamentStation-Payload wenn sicher möglich entfernen
+* [x] Löschung verifizieren
+* [x] Bambu-Inhalt unverändert
+* [x] OpenPrintTag unverändert
+* [x] OpenTag3D unverändert
+* [x] Unknown unverändert
+* [x] Legacy nur verändern, wenn explizit sicher
+* [x] Ergebnisstatus differenzieren
 
 ## 5.12.6 GUI migrieren
 

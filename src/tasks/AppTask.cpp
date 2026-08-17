@@ -82,7 +82,6 @@ std::array<rtos::NfcUidMapping, rtos::kMaximumNfcUidMappings> bambuMappings{};
 std::uint8_t bambuMappingCount = 0;
 bool pendingBambuMapping = false;
 bool pendingBambuMappingSave = false;
-bool pendingMappingRemoval = false;
 bool pendingUnlinkConfirmation = false;
 bool pendingMappingReplacementConfirmation = false;
 bool pendingMappingReplacementApproved = false;
@@ -98,6 +97,22 @@ models::TagFormat pendingMappingFormat = models::TagFormat::Unknown;
 std::array<rtos::NfcUidMapping, rtos::kMaximumNfcUidMappings>
     mappingRemovalBackup{};
 std::uint8_t mappingRemovalBackupCount = 0;
+enum class TagRemovalStage : std::uint8_t {
+  None,
+  AwaitingConfirmation,
+  SavingMapping,
+  ClearingPayload,
+};
+struct PendingTagRemoval {
+  TagRemovalStage stage = TagRemovalStage::None;
+  std::uint32_t requestId = 0;
+  rtos::SpoolId spoolId = 0;
+  models::TagFormat mappingFormat = models::TagFormat::Unknown;
+  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};
+  std::uint8_t uidLength = 0;
+  bool clearPayload = false;
+};
+PendingTagRemoval pendingTagRemoval{};
 
 const char* tagTechnologyName(models::TagTechnology technology) {
   switch (technology) {
@@ -141,6 +156,13 @@ bool assignmentTagMatches(const models::TagReadResult& tag) {
          tag.uidLength == pendingTagAssignment.uidLength &&
          std::memcmp(tag.uid, pendingTagAssignment.uid.data(),
                      pendingTagAssignment.uidLength) == 0;
+}
+
+bool removalTagMatches(const models::TagReadResult& tag) {
+  return pendingTagRemoval.uidLength > 0 &&
+         tag.uidLength == pendingTagRemoval.uidLength &&
+         std::memcmp(tag.uid, pendingTagRemoval.uid.data(),
+                     pendingTagRemoval.uidLength) == 0;
 }
 
 models::TagFormat assignmentMappingFormat(const models::TagReadResult& tag) {
@@ -617,13 +639,44 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     }
 
     case rtos::UiActionType::RemoveTagAssignment: {
-      // Temporary adapter for 5.12.2. The combined mapping/payload removal
-      // sequence follows in 5.12.5.
-      rtos::UiAction compatibilityAction = action;
-      compatibilityAction.type = mappedNfcSpool(currentTag) != 0
-                                     ? rtos::UiActionType::UnlinkTag
-                                     : rtos::UiActionType::EraseTag;
-      handleUiAction(ctx, compatibilityAction);
+      const rtos::SpoolId mappedSpoolId = mappedNfcSpool(currentTag);
+      if (!tagPresent || currentTag.uidLength == 0 || mappedSpoolId == 0) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Entfernen nicht m\xC3\xB6glich",
+                    "F\xC3\xBCr den aktuellen Tag besteht keine lokale Zuordnung.");
+        return;
+      }
+      if (pendingTagRemoval.stage != TagRemovalStage::None) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Entfernen l\xC3\xA4uft bereits",
+                    "Bitte den laufenden NFC-Vorgang abschlie\xC3\x9F" "en.");
+        return;
+      }
+
+      pendingTagRemoval = {};
+      pendingTagRemoval.stage = TagRemovalStage::AwaitingConfirmation;
+      pendingTagRemoval.requestId = action.requestId;
+      pendingTagRemoval.spoolId = mappedSpoolId;
+      pendingTagRemoval.mappingFormat = assignmentMappingFormat(currentTag);
+      pendingTagRemoval.uidLength = currentTag.uidLength;
+      std::memcpy(pendingTagRemoval.uid.data(), currentTag.uid,
+                  currentTag.uidLength);
+      pendingTagRemoval.clearPayload =
+          currentTag.capabilities.canClearFilamentStationPayload;
+      pendingUnlinkConfirmation = true;
+
+      char confirmation[192]{};
+      std::snprintf(
+          confirmation, sizeof(confirmation),
+          pendingTagRemoval.clearPayload
+              ? "Die Verbindung zu Spule #%lu wird entfernt.\nDie FilamentStation-Daten werden auch vom Tag entfernt."
+              : "Die Verbindung zu Spule #%lu wird entfernt.\nDer originale Taginhalt wird nicht ver\xC3\xA4ndert.",
+          static_cast<unsigned long>(mappedSpoolId));
+      sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                  rtos::UiOverlayKind::Confirmation, action.requestId,
+                  "Tag-Zuordnung entfernen?", confirmation);
       return;
     }
 
@@ -633,6 +686,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         pendingTagAssignment = {};
       pendingBambuMapping = false;
       pendingUnlinkConfirmation = false;
+      if (pendingTagRemoval.stage == TagRemovalStage::AwaitingConfirmation)
+        pendingTagRemoval = {};
       pendingMappingReplacementConfirmation = false;
       pendingMappingReplacementApproved = false;
       if (currentScreen == rtos::UiScreenId::TagDefinitionImport ||
@@ -734,42 +789,55 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       if (confirmedOverlay == rtos::UiOverlayKind::Confirmation &&
           pendingUnlinkConfirmation) {
         pendingUnlinkConfirmation = false;
-        std::uint8_t index = 0;
-        for (; index < bambuMappingCount; ++index) {
-          if (bambuMappings[index].uidLength == currentTag.uidLength &&
-              std::memcmp(bambuMappings[index].uid, currentTag.uid,
-                          currentTag.uidLength) == 0)
-            break;
-        }
-        if (!tagPresent || index == bambuMappingCount) {
+        if (pendingTagRemoval.stage !=
+            TagRemovalStage::AwaitingConfirmation) {
+          pendingTagRemoval = {};
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
-                      "Trennen nicht m\xC3\xB6glich",
-                      "F\xC3\xBCr den aktuellen Tag besteht keine lokale Zuordnung.");
+                      "Entfernen abgebrochen",
+                      "Der Zuordnungsauftrag ist nicht mehr aktuell.");
+          return;
+        }
+        std::uint8_t index = 0;
+        for (; index < bambuMappingCount; ++index) {
+          if (bambuMappings[index].uidLength == pendingTagRemoval.uidLength &&
+              std::memcmp(bambuMappings[index].uid,
+                          pendingTagRemoval.uid.data(),
+                          pendingTagRemoval.uidLength) == 0)
+            break;
+        }
+        if (!tagPresent || !removalTagMatches(currentTag) ||
+            index == bambuMappingCount) {
+          pendingTagRemoval = {};
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Entfernen nicht m\xC3\xB6glich",
+                      "Der Tag wurde entfernt oder ausgetauscht.");
           return;
         }
         mappingRemovalBackup = bambuMappings;
         mappingRemovalBackupCount = bambuMappingCount;
-        pendingMappingFormat = currentTag.format;
+        pendingMappingFormat = pendingTagRemoval.mappingFormat;
         for (std::uint8_t move = index; move + 1U < bambuMappingCount; ++move)
           bambuMappings[move] = bambuMappings[move + 1U];
         --bambuMappingCount;
         if (!persistNfcMappings(ctx, action.requestId, pendingMappingFormat)) {
           bambuMappings = mappingRemovalBackup;
           bambuMappingCount = mappingRemovalBackupCount;
+          pendingTagRemoval = {};
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
-                      "Trennen fehlgeschlagen",
+                      "Entfernen fehlgeschlagen",
                       "Die ge\xC3\xA4nderte Zuordnung konnte nicht an StorageTask gesendet werden.");
           return;
         }
-        pendingMappingRemoval = true;
+        pendingTagRemoval.stage = TagRemovalStage::SavingMapping;
         pendingBambuMappingSave = true;
         pendingBambuMappingRequestId = action.requestId;
         pendingBambuMappingSpoolId = 0;
         sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                     rtos::UiOverlayKind::BambuMappingSave, action.requestId,
-                    "Zuordnung trennen",
+                    "Tag-Zuordnung wird entfernt",
                     "Die lokale UID-Zuordnung wird entfernt.");
         return;
       }
@@ -1503,18 +1571,9 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       if (action.type == rtos::UiActionType::UnlinkTag) {
-        if (!tagPresent || mappedNfcSpool(currentTag) == 0) {
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, action.requestId,
-                      "Trennen nicht m\xC3\xB6glich",
-                      "F\xC3\xBCr den aktuellen Tag besteht keine lokale UID-Zuordnung.");
-          return;
-        }
-        pendingUnlinkConfirmation = true;
-        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Confirmation, action.requestId,
-                    "Tag-Zuordnung trennen",
-                    "Die lokale UID-Zuordnung wird entfernt. Der Tag selbst bleibt unver\xC3\xA4ndert.");
+        rtos::UiAction compatibilityAction = action;
+        compatibilityAction.type = rtos::UiActionType::RemoveTagAssignment;
+        handleUiAction(ctx, compatibilityAction);
         return;
       }
       if (action.type == rtos::UiActionType::ClearStaging) {
@@ -1985,6 +2044,11 @@ void appTask(void* parameter) {
         const bool assignmentWriteWasPending =
             pendingTagAssignment.stage ==
             TagAssignmentStage::WritingPayload;
+        const bool removalPayloadWasPending =
+            pendingTagRemoval.stage == TagRemovalStage::ClearingPayload;
+        const bool removalConfirmationWasPending =
+            pendingTagRemoval.stage ==
+            TagRemovalStage::AwaitingConfirmation;
         if (pendingTagAssignment.stage ==
             TagAssignmentStage::SavingMapping) {
           pendingTagAssignment.stage =
@@ -1998,10 +2062,24 @@ void appTask(void* parameter) {
         currentTag = {};
         pendingTagOperation = PendingTagOperation::None;
         pendingUnlinkConfirmation = false;
+        if (removalConfirmationWasPending) pendingTagRemoval = {};
         if (assignmentWriteWasPending) {
           reportAssignmentWriteFailure(
               ctx, event.requestId,
               "AppTask: AssignTag payload write failed because tag was removed; mapping retained");
+        } else if (removalPayloadWasPending) {
+          pendingTagRemoval = {};
+          rtos::logLine(
+              "AppTask: RemoveTagAssignment payload clear failed because tag was removed; mapping remains removed");
+          rtos::UiCommand hide{};
+          hide.type = rtos::UiCommandType::HideProgress;
+          sendUiCommand(ctx, hide,
+                        "AppTask: removal progress close overflow");
+          sendOverlay(
+              ctx, rtos::UiCommandType::ShowDialog,
+              rtos::UiOverlayKind::Error, event.requestId,
+              "Zuordnung teilweise entfernt",
+              "Die Tag-Zuordnung wurde entfernt.\nDie FilamentStation-Daten konnten nicht vom Tag entfernt werden.");
         } else if (operationWasPending) {
           rtos::UiCommand hide{};
           hide.type = rtos::UiCommandType::HideProgress;
@@ -2060,6 +2138,23 @@ void appTask(void* parameter) {
         currentScreen = result.screenId;
         sendUiCommand(ctx, result, "AppTask: NFC result screen queue overflow");
       } else if (event.type == rtos::AppEventType::NfcTagErased) {
+        const bool assignmentRemoval =
+            pendingTagRemoval.stage == TagRemovalStage::ClearingPayload;
+        if (assignmentRemoval &&
+            (event.nfcUidLength != pendingTagRemoval.uidLength ||
+             std::memcmp(event.nfcUid, pendingTagRemoval.uid.data(),
+                         pendingTagRemoval.uidLength) != 0)) {
+          pendingTagOperation = PendingTagOperation::None;
+          pendingTagRemoval = {};
+          rtos::logLine(
+              "AppTask: RemoveTagAssignment UID verification failed; mapping remains removed");
+          sendOverlay(
+              ctx, rtos::UiCommandType::ShowDialog,
+              rtos::UiOverlayKind::Error, event.requestId,
+              "Zuordnung teilweise entfernt",
+              "Die Tag-Zuordnung wurde entfernt.\nDie UID bei der L\xC3\xB6schverifikation stimmt nicht \xC3\xBC" "berein.");
+          continue;
+        }
         currentTag.format = models::TagFormat::EmptyNdef;
         currentTag.knownFormat = true;
         currentTag.payloadValid = true;
@@ -2076,8 +2171,15 @@ void appTask(void* parameter) {
         result.type = rtos::UiCommandType::ShowScreen;
         result.screenId = rtos::UiScreenId::TagResult;
         result.requestId = event.requestId;
-        std::snprintf(result.text, sizeof(result.text),
-                      "NFC-Tag gel\xC3\xB6scht. Der leere NDEF-Zustand wurde verifiziert.");
+        std::snprintf(
+            result.text, sizeof(result.text),
+            assignmentRemoval
+                ? "Tag-Zuordnung entfernt.\nFilamentStation-Daten wurden ebenfalls vom Tag entfernt und die L\xC3\xB6schung wurde verifiziert."
+                : "NFC-Tag gel\xC3\xB6scht. Der leere NDEF-Zustand wurde verifiziert.");
+        if (assignmentRemoval) pendingTagRemoval = {};
+        if (assignmentRemoval)
+          rtos::logLine(
+              "AppTask: RemoveTagAssignment mapping and payload removed; erase verified");
         currentScreen = result.screenId;
         sendUiCommand(ctx, result, "AppTask: NFC erase result queue overflow");
       } else if (event.type == rtos::AppEventType::NfcError &&
@@ -2087,6 +2189,22 @@ void appTask(void* parameter) {
           reportAssignmentWriteFailure(
               ctx, event.requestId,
               "AppTask: AssignTag payload write or verification failed; mapping retained");
+          continue;
+        }
+        if (pendingTagRemoval.stage == TagRemovalStage::ClearingPayload) {
+          pendingTagOperation = PendingTagOperation::None;
+          pendingTagRemoval = {};
+          rtos::logLine(
+              "AppTask: RemoveTagAssignment payload clear or verification failed; mapping remains removed");
+          rtos::UiCommand hide{};
+          hide.type = rtos::UiCommandType::HideProgress;
+          sendUiCommand(ctx, hide,
+                        "AppTask: removal error progress close overflow");
+          sendOverlay(
+              ctx, rtos::UiCommandType::ShowDialog,
+              rtos::UiOverlayKind::Error, event.requestId,
+              "Zuordnung teilweise entfernt",
+              "Die Tag-Zuordnung wurde entfernt.\nDie FilamentStation-Daten konnten nicht vom Tag entfernt werden.");
           continue;
         }
         pendingTagOperation = PendingTagOperation::None;
@@ -2222,6 +2340,65 @@ void appTask(void* parameter) {
                         "AppTask: mapping-only assignment result overflow");
           continue;
         }
+        if (pendingTagRemoval.stage == TagRemovalStage::SavingMapping) {
+          rtos::UiCommand hide{};
+          hide.type = rtos::UiCommandType::HideProgress;
+          sendUiCommand(ctx, hide,
+                        "AppTask: removal mapping progress close overflow");
+
+          if (pendingTagRemoval.clearPayload) {
+            if (!tagPresent || !removalTagMatches(currentTag) ||
+                !currentTag.capabilities.canClearFilamentStationPayload) {
+              pendingTagRemoval = {};
+              rtos::logLine(
+                  "AppTask: RemoveTagAssignment cleanup unavailable after mapping removal");
+              sendOverlay(
+                  ctx, rtos::UiCommandType::ShowDialog,
+                  rtos::UiOverlayKind::Error, event.requestId,
+                  "Zuordnung teilweise entfernt",
+                  "Die Tag-Zuordnung wurde entfernt.\nDie FilamentStation-Daten konnten nicht vom Tag entfernt werden.");
+              continue;
+            }
+            rtos::NfcCommand nfcCommand{};
+            nfcCommand.type = rtos::NfcCommandType::EraseTag;
+            nfcCommand.requestId = pendingTagRemoval.requestId;
+            if (xQueueSend(ctx.nfcCommandQueue, &nfcCommand,
+                           pdMS_TO_TICKS(50)) != pdPASS) {
+              pendingTagRemoval = {};
+              rtos::logLine(
+                  "AppTask: RemoveTagAssignment NFC command queue full; mapping remains removed");
+              sendOverlay(
+                  ctx, rtos::UiCommandType::ShowDialog,
+                  rtos::UiOverlayKind::Error, event.requestId,
+                  "Zuordnung teilweise entfernt",
+                  "Die Tag-Zuordnung wurde entfernt.\nDer Auftrag zum Entfernen der FilamentStation-Daten konnte nicht gestartet werden.");
+              continue;
+            }
+            pendingTagOperation = PendingTagOperation::Erase;
+            pendingTagRemoval.stage = TagRemovalStage::ClearingPayload;
+            sendOverlay(
+                ctx, rtos::UiCommandType::ShowProgress,
+                rtos::UiOverlayKind::TagWrite, event.requestId,
+                "Tag-Zuordnung wird entfernt",
+                "Zuordnung entfernt. FilamentStation-Daten werden vom Tag entfernt und die L\xC3\xB6schung wird verifiziert.");
+            continue;
+          }
+
+          rtos::UiCommand result{};
+          result.type = rtos::UiCommandType::ShowScreen;
+          result.screenId = rtos::UiScreenId::TagResult;
+          result.requestId = pendingTagRemoval.requestId;
+          std::snprintf(
+              result.text, sizeof(result.text),
+              "Tag-Zuordnung erfolgreich entfernt.\nOriginaler Taginhalt blieb unver\xC3\xA4ndert.");
+          rtos::logLine(
+              "AppTask: RemoveTagAssignment mapping removed; original content preserved");
+          pendingTagRemoval = {};
+          currentScreen = result.screenId;
+          sendUiCommand(ctx, result,
+                        "AppTask: mapping-only removal result overflow");
+          continue;
+        }
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
         sendUiCommand(ctx, hide, "AppTask: Bambu save progress close overflow");
@@ -2229,24 +2406,18 @@ void appTask(void* parameter) {
         result.type = rtos::UiCommandType::ShowScreen;
         result.screenId = rtos::UiScreenId::TagResult;
         result.spoolId = pendingBambuMappingSpoolId;
-        if (pendingMappingRemoval) {
-          std::snprintf(result.text, sizeof(result.text),
-                        "Lokale UID-Zuordnung getrennt. Der Tag wurde nicht ver\xC3\xA4ndert.");
-          pendingMappingRemoval = false;
-        } else {
-          std::snprintf(result.text, sizeof(result.text),
-                        "%s lokal mit Spule %lu verkn\xC3\xBCpft. Der Tag wurde nicht ver\xC3\xA4ndert.",
-                        pendingMappingFormat == models::TagFormat::OpenPrintTag
-                            ? "OpenPrintTag"
-                            : pendingMappingFormat == models::TagFormat::OpenTag3D
-                                  ? "OpenTag3D"
-                                  : pendingMappingFormat == models::TagFormat::Legacy
-                                        ? "Legacy-Tag"
-                                        : pendingMappingFormat == models::TagFormat::Unknown
-                                              ? "Unbekannter Tag"
-                                              : "Bambu-Tag",
-                        static_cast<unsigned long>(pendingBambuMappingSpoolId));
-        }
+        std::snprintf(result.text, sizeof(result.text),
+                      "%s lokal mit Spule %lu verkn\xC3\xBCpft. Der Tag wurde nicht ver\xC3\xA4ndert.",
+                      pendingMappingFormat == models::TagFormat::OpenPrintTag
+                          ? "OpenPrintTag"
+                          : pendingMappingFormat == models::TagFormat::OpenTag3D
+                                ? "OpenTag3D"
+                                : pendingMappingFormat == models::TagFormat::Legacy
+                                      ? "Legacy-Tag"
+                                      : pendingMappingFormat == models::TagFormat::Unknown
+                                            ? "Unbekannter Tag"
+                                            : "Bambu-Tag",
+                      static_cast<unsigned long>(pendingBambuMappingSpoolId));
         currentScreen = result.screenId;
         sendUiCommand(ctx, result, "AppTask: Bambu mapping result overflow");
       } else if (pendingBambuMappingSave &&
@@ -2257,10 +2428,10 @@ void appTask(void* parameter) {
             pendingTagAssignment.stage ==
                 TagAssignmentStage::AbortedAwaitingStorage)
           pendingTagAssignment = {};
-        if (pendingMappingRemoval) {
+        if (pendingTagRemoval.stage == TagRemovalStage::SavingMapping) {
           bambuMappings = mappingRemovalBackup;
           bambuMappingCount = mappingRemovalBackupCount;
-          pendingMappingRemoval = false;
+          pendingTagRemoval = {};
         } else {
           bambuMappings[pendingBambuMappingIndex] = previousBambuMapping;
           if (pendingBambuMappingWasNew) --bambuMappingCount;
