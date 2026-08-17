@@ -22,7 +22,7 @@ bool createTask(TaskFunction_t function, const config::TaskSettings& settings,
 
 void loggingTaskMain(void* parameter) {
   auto& ctx = *static_cast<RtosContext*>(parameter);
-  LogMessage message{};
+  static LogMessage message{};
   static constexpr std::uint8_t newline[] = {'\r', '\n'};
   for (;;) {
     if (xQueueReceive(ctx.logQueue, &message, portMAX_DELAY) != pdPASS) continue;
@@ -48,6 +48,7 @@ void loggingTaskMain(void* parameter) {
         written += count;
       }
     }
+    Serial.flush();
   }
 }
 }  // namespace

@@ -26,6 +26,7 @@ RawTagData makeOpenTag3DVector() {
   raw.technology = TagTechnology::Ntag215;
   raw.ndefPresent = true;
   raw.ndefReadable = true;
+  raw.hardwareWritableKnown = true;
   raw.hardwareWritable = true;
   constexpr char mime[] = "application/opentag3d";
   constexpr std::size_t payloadSize = 0xBB;
@@ -122,6 +123,7 @@ RawTagData rawNdef(const std::uint8_t* bytes, std::size_t size,
   tag.uidLength = 2;
   tag.ndefPresent = true;
   tag.ndefReadable = true;
+  tag.hardwareWritableKnown = true;
   tag.hardwareWritable = writable;
   tag.ndefLength = static_cast<std::uint16_t>(size);
   std::memcpy(tag.ndef, bytes, size);
@@ -185,6 +187,20 @@ void test_empty_ndef_is_recognized() {
   TEST_ASSERT_TRUE(result.erasable);
   TEST_ASSERT_TRUE(filament_station::nfc::mayWriteTag(result));
   TEST_ASSERT_TRUE(filament_station::nfc::mayEraseTag(result));
+}
+
+void test_tnf_empty_ndef_record_is_recognized() {
+  const std::uint8_t empty[] = {0x03, 0x03, 0xD0, 0x00, 0x00, 0xFE};
+  const auto payload =
+      filament_station::services::parseType2Ndef(empty, sizeof(empty));
+  TEST_ASSERT_EQUAL(NfcPayloadType::Empty, payload.type);
+
+  const auto result = TagParserRegistry{}.parse(rawNdef(empty, sizeof(empty)));
+  TEST_ASSERT_EQUAL(TagFormat::EmptyNdef, result.format);
+  TEST_ASSERT_TRUE(result.knownFormat);
+  TEST_ASSERT_TRUE(result.writable);
+  TEST_ASSERT_TRUE(result.erasable);
+  TEST_ASSERT_TRUE(filament_station::nfc::mayWriteTag(result));
 }
 
 void test_unknown_tag_has_no_definition_or_write_capability() {
@@ -439,6 +455,26 @@ void test_ntag21x_versions_and_capacities_are_identified() {
   TEST_ASSERT_EQUAL(filament_station::models::TagTechnology::Ntag216,
                     filament_station::services::identifyNtag21x(
                         version, sizeof(version), capability));
+  std::memset(capability, 0, sizeof(capability));
+  TEST_ASSERT_EQUAL(filament_station::models::TagTechnology::Ntag216,
+                    filament_station::services::identifyNtag21x(
+                        version, sizeof(version), capability));
+}
+
+void test_unformatted_unlocked_native_ntag_is_writable_empty_ndef() {
+  const std::uint8_t unformatted[] = {0x00, 0x00, 0x00, 0x00};
+  const std::uint8_t unlocked[] = {0x00, 0x00, 0x00};
+  TEST_ASSERT_TRUE(filament_station::services::ntag21xRangeWritable(
+      filament_station::models::TagTechnology::Ntag215, 14, unformatted,
+      unlocked, unlocked, 0xFF));
+  RawTagData raw{};
+  raw.technology = filament_station::models::TagTechnology::Ntag215;
+  raw.hardwareWritableKnown = true;
+  raw.hardwareWritable = true;
+  const auto result = TagParserRegistry{}.parse(raw);
+  TEST_ASSERT_EQUAL(TagFormat::EmptyNdef, result.format);
+  TEST_ASSERT_TRUE(filament_station::nfc::mayWriteTag(result));
+  TEST_ASSERT_TRUE(filament_station::nfc::mayEraseTag(result));
 }
 
 void test_ntag_mismatched_or_locked_metadata_is_not_writable() {
@@ -466,6 +502,7 @@ int main(int, char**) {
   RUN_TEST(test_empty_spoolman_id_is_not_accepted);
   RUN_TEST(test_invalid_spoolman_id_is_not_accepted);
   RUN_TEST(test_empty_ndef_is_recognized);
+  RUN_TEST(test_tnf_empty_ndef_record_is_recognized);
   RUN_TEST(test_unknown_tag_has_no_definition_or_write_capability);
   RUN_TEST(test_documented_legacy_spool_reference_can_be_safely_migrated);
   RUN_TEST(test_invalid_legacy_spool_zero_is_not_migratable);
@@ -480,6 +517,7 @@ int main(int, char**) {
   RUN_TEST(test_opentag3d_new_major_version_is_rejected_without_crash);
   RUN_TEST(test_foreign_mime_is_not_opentag3d);
   RUN_TEST(test_ntag21x_versions_and_capacities_are_identified);
+  RUN_TEST(test_unformatted_unlocked_native_ntag_is_writable_empty_ndef);
   RUN_TEST(test_ntag_mismatched_or_locked_metadata_is_not_writable);
   return UNITY_END();
 }

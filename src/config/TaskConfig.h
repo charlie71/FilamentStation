@@ -17,7 +17,9 @@ constexpr BaseType_t kNoCoreAffinity = tskNO_AFFINITY;
 
 constexpr TaskSettings kStorageTask{"StorageTask", 8192, 2, kNoCoreAffinity};
 constexpr TaskSettings kLoggingTask{"LoggingTask", 2048, 1, kNoCoreAffinity};
-constexpr TaskSettings kAppTask{"AppTask", 4096, 3, kNoCoreAffinity};
+// AppEvent contains NFC parsing results and persisted UID mappings by value;
+// UI workflows additionally create fixed-size UiCommand objects.
+constexpr TaskSettings kAppTask{"AppTask", 8192, 3, kNoCoreAffinity};
 constexpr TaskSettings kUiTask{"UiTask", 8192, 2, kNoCoreAffinity};
 constexpr TaskSettings kScaleTask{"ScaleTask", 3072, 2, kNoCoreAffinity};
 // PN532-Frames, wertbasierte TagReadResult/AppEvent-Nachrichten und die
@@ -34,6 +36,6 @@ constexpr UBaseType_t kUiCommandQueueLength = 8;
 constexpr UBaseType_t kServiceCommandQueueLength = 8;
 constexpr UBaseType_t kStorageCommandQueueLength = 8;
 constexpr UBaseType_t kLogQueueLength = 32;
-constexpr std::size_t kLogMessageCapacity = 192;
+constexpr std::size_t kLogMessageCapacity = 256;
 
 }  // namespace filament_station::config

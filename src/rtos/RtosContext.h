@@ -6,11 +6,12 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 #include <cstddef>
+#include "config/TaskConfig.h"
 
 namespace filament_station::rtos {
 
 struct LogMessage {
-  char text[192]{};
+  char text[config::kLogMessageCapacity]{};
 };
 
 struct RtosContext {

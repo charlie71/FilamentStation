@@ -37,7 +37,10 @@ struct AppEvent {
   models::TagReadResult tagReadResult;
   NfcUidMapping nfcMappings[kMaximumNfcUidMappings];
   std::uint8_t nfcMappingCount;
-  char text[64];
+  // NFC diagnostics and multi-line UI status messages must remain complete.
+  // Keep this fixed-size and value based; no pointers or Arduino Strings cross
+  // task boundaries.
+  char text[192];
   UiAction uiAction;
 };
 
@@ -53,7 +56,7 @@ struct UiCommand {
   std::int32_t value;
   float weightGrams;
   char title[48];
-  char text[128];
+  char text[192];
 };
 
 struct ScaleCommand {

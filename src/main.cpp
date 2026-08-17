@@ -25,6 +25,9 @@ void haltStartup(const char* reason) {
 
 void setup() {
   using namespace filament_station;
+  // Buffer complete log bursts in USB-CDC. This must be configured before
+  // begin(); otherwise long NFC diagnostics can be split or lost by HWCDC.
+  Serial.setTxBufferSize(4096);
   Serial.begin(config::kSerialBaudRate);
   Serial.setTxTimeoutMs(config::kUsbCdcTransmitTimeoutMs);
   auto& ctx = rtos::context();

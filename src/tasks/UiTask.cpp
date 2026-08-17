@@ -5,6 +5,7 @@
 #include <limits>
 #include "config/AppConfig.h"
 #include "config/BoardConfig.h"
+#include "config/TaskConfig.h"
 #include "drivers/DisplayDriver.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
@@ -74,7 +75,7 @@ void uiTask(void* parameter) {
         // Continuous weight updates are expected and would otherwise flood
         // USB-CDC. User-visible responses and explicit errors remain logged.
         if (command.type != rtos::UiCommandType::UpdateWeight) {
-          char line[128];
+          char line[config::kLogMessageCapacity];
           std::snprintf(
               line, sizeof(line),
               "UiTask: response received (requestId=%lu): %s",

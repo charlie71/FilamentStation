@@ -17,6 +17,7 @@ struct RawTagData {
   std::uint8_t sak = 0;
   bool ndefPresent = false;
   bool ndefReadable = false;
+  bool hardwareWritableKnown = false;
   bool hardwareWritable = false;
   std::uint16_t ndefLength = 0;
   std::uint8_t ndef[config::kNfcMaxNdefBytes]{};

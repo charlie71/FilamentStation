@@ -28,12 +28,18 @@ models::TagReadResult TagParserRegistry::parse(
   std::memcpy(result.uid, tag.uid, tag.uidLength);
   result.ndefPresent = tag.ndefPresent;
   result.ndefReadable = tag.ndefReadable;
-  result.physicalWritableKnown =
-      tag.technology == models::TagTechnology::Ntag213 ||
-      tag.technology == models::TagTechnology::Ntag215 ||
-      tag.technology == models::TagTechnology::Ntag216;
+  result.physicalWritableKnown = tag.hardwareWritableKnown;
   result.physicalWritable =
       result.physicalWritableKnown && tag.hardwareWritable;
+
+  if (!tag.ndefPresent && result.physicalWritable) {
+    result.format = models::TagFormat::EmptyNdef;
+    result.knownFormat = true;
+    result.writable = true;
+    result.erasable = true;
+    result.definition.format = models::TagFormat::EmptyNdef;
+    return result;
+  }
 
   for (std::size_t index = 0; index < parserCount_; ++index) {
     const ITagParser* parser = parsers_[index];

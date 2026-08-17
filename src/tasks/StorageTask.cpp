@@ -146,7 +146,10 @@ void processLoadCommand(rtos::RtosContext& ctx,
       destination.spoolId = mapping["spoolId"].as<std::uint32_t>();
       if (valid && destination.spoolId != 0) ++event.nfcMappingCount;
     }
-    std::snprintf(event.text, sizeof(event.text), "NFC UID mappings loaded");
+    std::snprintf(event.text, sizeof(event.text), "%s UID mappings loaded",
+                  std::strcmp(command.path, "/mappings/bambu-tags.json") == 0
+                      ? "Legacy Bambu"
+                      : "NFC");
     if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
       rtos::logLine("StorageTask: mapping event queue overflow");
     return;

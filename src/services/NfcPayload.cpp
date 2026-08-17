@@ -86,6 +86,14 @@ NfcPayloadInfo parseType2Ndef(const std::uint8_t* data, std::size_t size) {
     }
     if (length == 0) return {NfcPayloadType::Empty, 0};
     const std::uint8_t* record = data + position;
+    // A standards-compliant empty NDEF message is commonly encoded as one
+    // short record with MB=1, ME=1, SR=1, TNF=Empty, zero type length and
+    // zero payload length: D0 00 00. NFC utility apps use this representation
+    // when formatting an otherwise empty tag.
+    if (length == 3 && record[0] == 0xD0 && record[1] == 0x00 &&
+        record[2] == 0x00) {
+      return {NfcPayloadType::Empty, 0};
+    }
     if (length < 5 || (record[0] & 0x10U) == 0 || record[1] != 1 ||
         record[3] != 'T') {
       return {NfcPayloadType::Unknown, 0};

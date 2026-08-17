@@ -32,7 +32,9 @@ constexpr std::uint8_t kCommandGetFirmwareVersion = 0x02;
 constexpr std::uint8_t kCommandSamConfiguration = 0x14;
 constexpr std::uint8_t kCommandRfConfiguration = 0x32;
 constexpr std::uint8_t kCommandInDataExchange = 0x40;
+constexpr std::uint8_t kCommandInCommunicateThru = 0x42;
 constexpr std::uint8_t kCommandInListPassiveTarget = 0x4A;
+constexpr std::uint8_t kCommandInRelease = 0x52;
 constexpr std::uint8_t kMifareRead = 0x30;
 constexpr std::uint8_t kMifareAuthenticateKeyA = 0x60;
 constexpr std::uint8_t kMifareWrite = 0xA2;
@@ -44,6 +46,12 @@ struct TargetInfo {
   std::uint8_t uidLength = 0;
   std::uint8_t targetNumber = 0;
   std::uint8_t sak = 0;
+};
+
+enum class ScanResult : std::uint8_t {
+  Found,
+  NoTarget,
+  CommunicationError,
 };
 
 enum class Pn532InitializationResult : std::uint8_t {
@@ -134,9 +142,8 @@ bool findFrameStart(std::uint32_t timeoutMs) {
   std::uint8_t state = 0;
   while (static_cast<std::int32_t>(deadline - xTaskGetTickCount()) > 0) {
     std::uint8_t byte = 0;
-    if (!readExact(&byte, 1, pdTICKS_TO_MS(deadline - xTaskGetTickCount()))) {
+    if (!readExact(&byte, 1, pdTICKS_TO_MS(deadline - xTaskGetTickCount())))
       return false;
-    }
     if ((state == 0 && byte == 0x00) || (state == 1 && byte == 0x00)) {
       ++state;
     } else if (state == 2 && byte == 0xFF) {
@@ -159,32 +166,23 @@ bool receiveFrame(std::uint8_t* output, std::size_t capacity,
     std::uint8_t postamble = 0;
     if (!readExact(&postamble, 1, timeout) || postamble != 0x00 ||
         !findFrameStart(timeout) ||
-        !readExact(header, sizeof(header), timeout)) {
+        !readExact(header, sizeof(header), timeout))
       return false;
-    }
   }
   const std::uint8_t length = header[0];
   if (static_cast<std::uint8_t>(length + header[1]) != 0 || length < 2 ||
-      length > capacity + 1) {
+      length > capacity + 1)
     return false;
-  }
   std::array<std::uint8_t, 258> frame{};
-  if (!readExact(frame.data(), static_cast<std::size_t>(length) + 2U,
-                 timeout)) {
+  if (!readExact(frame.data(), static_cast<std::size_t>(length) + 2U, timeout))
     return false;
-  }
   std::uint8_t checksum = 0;
-  for (std::size_t i = 0; i < length; ++i) checksum += frame[i];
-  // PN532-DCS ist eine 8-Bit-Zweierkomplement-Pruefsumme. Durch die uebliche
-  // Integer-Promotion muss die Addition explizit wieder auf 8 Bit begrenzt
-  // werden; eine gueltige Summe ergibt als int sonst 256 statt 0.
+  for (std::size_t index = 0; index < length; ++index) checksum += frame[index];
   if (static_cast<std::uint8_t>(checksum + frame[length]) != 0 ||
-      frame[length + 1] != 0x00 ||
-      frame[0] != kPn532DeviceToHost) {
+      frame[length + 1U] != 0x00 || frame[0] != kPn532DeviceToHost)
     return false;
-  }
   outputLength = length - 1U;
-  std::memcpy(output, frame.data() + 1, outputLength);
+  std::memcpy(output, frame.data() + 1U, outputLength);
   return true;
 }
 
@@ -195,23 +193,24 @@ bool transceive(std::uint8_t command, const std::uint8_t* data,
   lastTransactionRxBytes = 0;
   std::array<std::uint8_t, 264> frame{};
   const std::uint8_t length = static_cast<std::uint8_t>(dataLength + 2U);
-  std::size_t p = 0;
-  frame[p++] = 0x00;
-  frame[p++] = 0x00;
-  frame[p++] = 0xFF;
-  frame[p++] = length;
-  frame[p++] = static_cast<std::uint8_t>(0U - length);
-  frame[p++] = kPn532HostToDevice;
-  frame[p++] = command;
-  std::uint8_t checksum = kPn532HostToDevice + command;
-  for (std::size_t i = 0; i < dataLength; ++i) {
-    frame[p++] = data[i];
-    checksum += data[i];
+  std::size_t position = 0;
+  frame[position++] = 0x00;
+  frame[position++] = 0x00;
+  frame[position++] = 0xFF;
+  frame[position++] = length;
+  frame[position++] = static_cast<std::uint8_t>(0U - length);
+  frame[position++] = kPn532HostToDevice;
+  frame[position++] = command;
+  std::uint8_t checksum = static_cast<std::uint8_t>(kPn532HostToDevice + command);
+  for (std::size_t index = 0; index < dataLength; ++index) {
+    frame[position++] = data[index];
+    checksum = static_cast<std::uint8_t>(checksum + data[index]);
   }
-  frame[p++] = static_cast<std::uint8_t>(0U - checksum);
-  frame[p++] = 0x00;
+  frame[position++] = static_cast<std::uint8_t>(0U - checksum);
+  frame[position++] = 0x00;
   uart_flush_input(kUart);
-  if (uart_write_bytes(kUart, frame.data(), p) != static_cast<int>(p) ||
+  if (uart_write_bytes(kUart, frame.data(), position) !=
+          static_cast<int>(position) ||
       uart_wait_tx_done(kUart, pdMS_TO_TICKS(100)) != ESP_OK ||
       !receiveFrame(response, responseCapacity, responseLength)) {
     return false;
@@ -254,27 +253,50 @@ Pn532InitializationResult initializePn532() {
   return Pn532InitializationResult::Ready;
 }
 
-bool scanTarget(TargetInfo& target) {
+ScanResult scanTarget(TargetInfo& target) {
+  // Activate at most one passive ISO14443A target at 106 kbit/s.
   const std::uint8_t params[] = {0x01, 0x00};
   std::uint8_t response[32]{};
   std::size_t length = 0;
   if (!transceive(kCommandInListPassiveTarget, params, sizeof(params), response,
-                  sizeof(response), length) ||
-      length < 2 || response[1] == 0) {
-    return false;
+                  sizeof(response), length) || length < 2) {
+    return ScanResult::CommunicationError;
   }
-  if (length < 7) return false;
+  if (response[1] == 0) return ScanResult::NoTarget;
+  // D5 4B NbTg Tg SENS_RES[2] SEL_RES UIDLen UID...
+  if (length < 7) return ScanResult::CommunicationError;
   const std::uint8_t uidLength = response[6];
   if (uidLength == 0 || uidLength > target.uid.size() ||
       7U + uidLength > length) {
-    return false;
+    return ScanResult::CommunicationError;
   }
   target = {};
   target.targetNumber = response[2];
   target.sak = response[5];
   target.uidLength = uidLength;
   std::memcpy(target.uid.data(), response + 7, uidLength);
-  return true;
+  return ScanResult::Found;
+}
+
+bool setRfField(bool enabled) {
+  const std::uint8_t params[] = {0x01,
+                                 static_cast<std::uint8_t>(enabled ? 0x01 : 0x00)};
+  std::uint8_t response[4]{};
+  std::size_t length = 0;
+  return transceive(kCommandRfConfiguration, params, sizeof(params), response,
+                    sizeof(response), length);
+}
+
+void resetRfField() {
+  const std::uint8_t releaseAll[] = {0x00};
+  std::uint8_t response[4]{};
+  std::size_t responseLength = 0;
+  transceive(kCommandInRelease, releaseAll, sizeof(releaseAll), response,
+             sizeof(response), responseLength);
+  setRfField(false);
+  vTaskDelay(pdMS_TO_TICKS(20));
+  setRfField(true);
+  vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 bool exchange(const TargetInfo& target, const std::uint8_t* command,
@@ -296,12 +318,33 @@ bool exchange(const TargetInfo& target, const std::uint8_t* command,
   return true;
 }
 
+bool communicateThru(const std::uint8_t* command, std::size_t commandLength,
+                     std::uint8_t* response, std::size_t capacity,
+                     std::size_t& length) {
+  std::array<std::uint8_t, 32> raw{};
+  std::size_t rawLength = 0;
+  if (!transceive(kCommandInCommunicateThru, command, commandLength,
+                  raw.data(), raw.size(), rawLength) ||
+      rawLength < 2 || (raw[1] & 0x3FU) != 0 ||
+      rawLength - 2U > capacity) {
+    return false;
+  }
+  length = rawLength - 2U;
+  std::memcpy(response, raw.data() + 2, length);
+  return true;
+}
+
 bool readPages(const TargetInfo& target, std::uint8_t firstPage,
                std::uint8_t* output) {
   const std::uint8_t command[] = {kMifareRead, firstPage};
-  std::size_t length = 0;
-  return exchange(target, command, sizeof(command), output, 16, length) &&
-         length >= 16;
+  for (std::uint8_t attempt = 0; attempt < 3; ++attempt) {
+    std::size_t length = 0;
+    if (exchange(target, command, sizeof(command), output, 16, length) &&
+        length >= 16)
+      return true;
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
+  return false;
 }
 
 bool deriveBambuKeys(const TargetInfo& target,
@@ -400,29 +443,86 @@ bool readNdef(const TargetInfo& target, std::uint8_t* output,
   std::uint8_t first[16]{};
   if (!readPages(target, 3, first) || first[0] != 0xE1) return false;
   const std::size_t tagCapacity = static_cast<std::size_t>(first[2]) * 8U;
-  length = std::min(tagCapacity, capacity);
+  const std::size_t maximumLength = std::min(tagCapacity, capacity);
+  length = 0;
   std::size_t copied = 0;
   std::uint8_t page = 4;
-  while (copied < length) {
+  while (copied < maximumLength) {
     std::uint8_t block[16]{};
     if (!readPages(target, page, block)) return false;
-    const std::size_t count = std::min<std::size_t>(16, length - copied);
+    const std::size_t count =
+        std::min<std::size_t>(16, maximumLength - copied);
     std::memcpy(output + copied, block, count);
     copied += count;
+    if (copied == count) {
+      bool allZero = true;
+      for (std::size_t index = 0; index < copied; ++index) {
+        if (output[index] != 0) {
+          allZero = false;
+          break;
+        }
+      }
+      if (allZero) {
+        length = 1;
+        return true;
+      }
+    }
+    // Stop as soon as a complete NDEF TLV is available. This avoids reading
+    // hundreds of unused bytes from an empty or short NTAG215/216.
+    std::size_t cursor = 0;
+    while (cursor < copied && output[cursor] == 0x00) ++cursor;
+    if (cursor < copied && output[cursor] == 0xFE) {
+      length = cursor + 1U;
+      return true;
+    }
+    if (cursor < copied && output[cursor] == 0x03) {
+      ++cursor;
+      if (cursor >= copied) {
+        page = static_cast<std::uint8_t>(page + 4U);
+        continue;
+      }
+      std::size_t payloadLength = output[cursor++];
+      if (payloadLength == 0xFF) {
+        if (cursor + 2U > copied) {
+          page = static_cast<std::uint8_t>(page + 4U);
+          continue;
+        }
+        payloadLength =
+            (static_cast<std::size_t>(output[cursor]) << 8U) |
+            output[cursor + 1U];
+        cursor += 2U;
+      }
+      if (cursor + payloadLength <= copied) {
+        length = cursor + payloadLength;
+        if (length < copied && output[length] == 0xFE) ++length;
+        return true;
+      }
+    }
     page = static_cast<std::uint8_t>(page + 4U);
   }
+  length = copied;
   return true;
 }
 
-bool writeNdef(const TargetInfo& target, const std::uint8_t* bytes,
-               std::size_t length) {
+bool writeNdef(const TargetInfo& target, models::TagTechnology technology,
+               const std::uint8_t* bytes, std::size_t length) {
   if (length == 0 || (length % 4) != 0) return false;
   std::uint8_t capability[16]{};
-  if (!readPages(target, 3, capability) || capability[0] != 0xE1 ||
-      (capability[3] & 0x0FU) == 0x0FU ||
-      length > static_cast<std::size_t>(capability[2]) * 8U) {
-    return false;
+  if (!readPages(target, 3, capability)) return false;
+  if (capability[0] == 0 && capability[1] == 0 && capability[2] == 0 &&
+      capability[3] == 0) {
+    std::uint8_t size = 0;
+    if (technology == models::TagTechnology::Ntag213) size = 0x12;
+    if (technology == models::TagTechnology::Ntag215) size = 0x3E;
+    if (technology == models::TagTechnology::Ntag216) size = 0x6D;
+    if (size == 0) return false;
+    const std::uint8_t formatted[] = {0xE1, 0x10, size, 0x00};
+    if (!writePage(target, 3, formatted)) return false;
+    std::memcpy(capability, formatted, sizeof(formatted));
   }
+  if (capability[0] != 0xE1 || (capability[3] & 0x0FU) == 0x0FU ||
+      length > static_cast<std::size_t>(capability[2]) * 8U)
+    return false;
   for (std::size_t offset = 0; offset < length; offset += 4) {
     if (!writePage(target, static_cast<std::uint8_t>(4U + offset / 4U),
                    bytes + offset)) {
@@ -438,20 +538,65 @@ models::TagTechnology technologyFor(const TargetInfo& target) {
   return models::TagTechnology::OtherIso14443A;
 }
 
-models::TagTechnology detectNtagTechnology(const TargetInfo& target) {
+models::TagTechnology technologyFromCapability(const std::uint8_t* capability) {
+  if (capability[0] != 0xE1) return models::TagTechnology::OtherIso14443A;
+  if (capability[2] == 0x12) return models::TagTechnology::Ntag213;
+  if (capability[2] == 0x3E) return models::TagTechnology::Ntag215;
+  if (capability[2] == 0x6D) return models::TagTechnology::Ntag216;
+  return models::TagTechnology::OtherIso14443A;
+}
+
+models::TagTechnology detectNtagTechnology(TargetInfo& target,
+                                           bool diagnostics = false) {
+  std::uint8_t capability[16]{};
+  if (!readPages(target, 3, capability)) {
+    if (diagnostics)
+      rtos::logLine("NfcTask: Type-2 capability page read failed");
+    return technologyFor(target);
+  }
+  const models::TagTechnology capabilityTechnology =
+      technologyFromCapability(capability);
+  if (capabilityTechnology != models::TagTechnology::OtherIso14443A) {
+    if (diagnostics)
+      rtos::logf("NfcTask: NTAG identified by CC=%02X %02X %02X %02X",
+                 capability[0], capability[1], capability[2], capability[3]);
+    return capabilityTechnology;
+  }
+
+  // Only an unformatted tag needs the raw GET_VERSION command. Mixing
+  // InCommunicateThru and InDataExchange on every normal read invalidated the
+  // selected target intermittently on the PN532 HSU interface.
+  const bool unformatted = capability[0] == 0 && capability[1] == 0 &&
+                           capability[2] == 0 && capability[3] == 0;
+  if (!unformatted) return technologyFor(target);
   const std::uint8_t command[] = {kGetVersion};
   std::uint8_t version[8]{};
   std::size_t versionLength = 0;
-  if (!exchange(target, command, sizeof(command), version, sizeof(version),
-                versionLength)) {
+  if (!communicateThru(command, sizeof(command), version, sizeof(version),
+                       versionLength)) {
+    if (diagnostics) rtos::logLine("NfcTask: NTAG GET_VERSION failed");
     return technologyFor(target);
   }
-
-  std::uint8_t capability[16]{};
-  if (!readPages(target, 3, capability) || capability[0] != 0xE1) {
+  const models::TagTechnology technology =
+      services::identifyNtag21x(version, versionLength, capability);
+  if (diagnostics) {
+    rtos::logf(
+        "NfcTask: unformatted GET_VERSION=%02X %02X %02X %02X %02X %02X %02X %02X",
+        version[0], version[1], version[2], version[3], version[4], version[5],
+        version[6], version[7]);
+  }
+  // Raw communication does not preserve the target handle reliably. Select
+  // the same physical tag again before any page operation follows.
+  resetRfField();
+  TargetInfo reacquired{};
+  if (scanTarget(reacquired) != ScanResult::Found ||
+      target.uidLength != reacquired.uidLength ||
+      std::memcmp(target.uid.data(), reacquired.uid.data(), target.uidLength) !=
+          0) {
     return models::TagTechnology::OtherIso14443A;
   }
-  return services::identifyNtag21x(version, versionLength, capability);
+  target = reacquired;
+  return technology;
 }
 
 std::uint8_t dynamicLockPage(models::TagTechnology technology) {
@@ -467,30 +612,42 @@ std::uint8_t dynamicLockPage(models::TagTechnology technology) {
   }
 }
 
-std::uint8_t configurationPage(models::TagTechnology technology) {
-  const std::uint8_t lockPage = dynamicLockPage(technology);
-  return lockPage == 0 ? 0 : static_cast<std::uint8_t>(lockPage + 1U);
-}
-
 bool ntagWritableForPages(const TargetInfo& target,
                           models::TagTechnology technology,
-                          std::uint8_t lastPage) {
+                          std::uint8_t lastPage, bool diagnostics = false,
+                          bool* resultKnown = nullptr) {
+  if (resultKnown != nullptr) *resultKnown = false;
   if (dynamicLockPage(technology) == 0) return false;
   std::uint8_t capability[16]{};
   std::uint8_t manufacturerAndLocks[16]{};
   std::uint8_t dynamicLocks[16]{};
-  std::uint8_t configuration[16]{};
-  if (!readPages(target, 3, capability) ||
-      !readPages(target, 0, manufacturerAndLocks) ||
-      !readPages(target, dynamicLockPage(technology), dynamicLocks) ||
-      !readPages(target, configurationPage(technology), configuration)) {
+  const bool capabilityRead = readPages(target, 3, capability);
+  const bool staticLocksRead = readPages(target, 0, manufacturerAndLocks);
+  const bool dynamicLocksRead =
+      readPages(target, dynamicLockPage(technology), dynamicLocks);
+  if (!capabilityRead || !staticLocksRead || !dynamicLocksRead) {
+    if (diagnostics)
+      rtos::logf(
+          "NfcTask: writable metadata reads: CC=%s static=%s dynamic=%s",
+          capabilityRead ? "ok" : "failed",
+          staticLocksRead ? "ok" : "failed",
+          dynamicLocksRead ? "ok" : "failed");
     return false;
   }
   const std::uint8_t staticLocks[] = {manufacturerAndLocks[10],
                                       manufacturerAndLocks[11]};
-  return services::ntag21xRangeWritable(technology, lastPage, capability,
-                                        staticLocks, dynamicLocks,
-                                        configuration[3]);
+  const bool writable = services::ntag21xRangeWritable(
+      technology, lastPage, capability, staticLocks, dynamicLocks,
+      // READ(dynamic-lock-page) returns dynamic locks followed by CFG0.
+      // AUTH0 is byte 3 of CFG0, therefore offset 4 + 3 in this block.
+      dynamicLocks[7]);
+  if (resultKnown != nullptr) *resultKnown = true;
+  if (diagnostics)
+    rtos::logf(
+        "NfcTask: locks static=%02X %02X dynamic=%02X %02X %02X AUTH0=%02X -> %s",
+        staticLocks[0], staticLocks[1], dynamicLocks[0], dynamicLocks[1],
+        dynamicLocks[2], dynamicLocks[7], writable ? "writable" : "locked");
+  return writable;
 }
 
 rtos::NfcTagType legacyType(models::TagFormat format) {
@@ -568,7 +725,7 @@ void formatUid(const TargetInfo& target, char* output, std::size_t capacity) {
 }
 
 models::TagReadResult reportTag(rtos::RtosContext& ctx,
-                                const TargetInfo& target) {
+                                TargetInfo& target) {
   char uid[config::kNfcMaxUidLength * 3]{};
   formatUid(target, uid, sizeof(uid));
 
@@ -581,19 +738,44 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
   sendEvent(ctx, detected);
 
   models::RawTagData raw{};
-  raw.technology = detectNtagTechnology(target);
+  raw.technology = technologyFor(target);
+  if (raw.technology == models::TagTechnology::OtherIso14443A &&
+      target.sak == 0x00) {
+    raw.technology = detectNtagTechnology(target, true);
+  }
+  if (raw.technology == models::TagTechnology::OtherIso14443A &&
+      target.sak == 0x00) {
+    TargetInfo reacquired{};
+    if (scanTarget(reacquired) == ScanResult::Found &&
+        reacquired.uidLength == target.uidLength &&
+        std::memcmp(reacquired.uid.data(), target.uid.data(),
+                    target.uidLength) == 0) {
+      target = reacquired;
+      rtos::logLine("NfcTask: target reacquired after GET_VERSION failure");
+    }
+  }
   raw.uidLength = target.uidLength;
   raw.sak = target.sak;
   std::memcpy(raw.uid, target.uid.data(), target.uidLength);
   readBambuBlocks(target, raw);
-  std::size_t ndefLength = 0;
-  if (readNdef(target, raw.ndef, sizeof(raw.ndef), ndefLength)) {
-    raw.ndefPresent = true;
-    raw.ndefReadable = true;
-    // The spoolman payload currently occupies at most pages 4 through 14.
-    // The exact range is checked again using the built payload before writing.
-    raw.hardwareWritable = ntagWritableForPages(target, raw.technology, 14);
-    raw.ndefLength = static_cast<std::uint16_t>(ndefLength);
+  const bool nativeNtag =
+      raw.technology == models::TagTechnology::Ntag213 ||
+      raw.technology == models::TagTechnology::Ntag215 ||
+      raw.technology == models::TagTechnology::Ntag216;
+  if (nativeNtag) {
+    // Read and classify the payload before optional high-page lock metadata.
+    // A failure at a distant dynamic-lock page must not invalidate an
+    // otherwise readable native NDEF payload.
+    std::size_t ndefLength = 0;
+    if (readNdef(target, raw.ndef, sizeof(raw.ndef), ndefLength)) {
+      raw.ndefPresent = true;
+      raw.ndefReadable = true;
+      raw.ndefLength = static_cast<std::uint16_t>(ndefLength);
+    }
+    // A factory-empty native NTAG has no NDEF container yet. Determine its
+    // physical capability without formatting or changing it here.
+    raw.hardwareWritable = ntagWritableForPages(
+        target, raw.technology, 14, true, &raw.hardwareWritableKnown);
   }
   static const nfc::TagParserRegistry registry{};
   const models::TagReadResult result = registry.parse(raw);
@@ -639,19 +821,22 @@ void handleWrite(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
                  const TargetInfo& target) {
   static std::array<std::uint8_t, config::kNfcMaxNdefBytes> bytes{};
   std::size_t length = 0;
+  TargetInfo writeTarget = target;
+  const models::TagTechnology technology = detectNtagTechnology(writeTarget);
   if (!services::buildSpoolmanType2Ndef(command.spoolId, bytes.data(),
                                         bytes.size(), length) ||
       !ntagWritableForPages(
-          target, detectNtagTechnology(target),
+          writeTarget, technology,
           static_cast<std::uint8_t>(3U + length / 4U)) ||
-      !writeNdef(target, bytes.data(), length)) {
+      !writeNdef(writeTarget, technology, bytes.data(), length)) {
     sendError(ctx, command.requestId, "NFC tag write failed");
     return;
   }
   static std::array<std::uint8_t, config::kNfcMaxNdefBytes> verify{};
   std::size_t verifyLength = 0;
   TargetInfo verifiedTarget{};
-  const bool sameTag = scanTarget(verifiedTarget) && sameUid(target, verifiedTarget);
+  const bool sameTag = scanTarget(verifiedTarget) == ScanResult::Found &&
+                       sameUid(writeTarget, verifiedTarget);
   const auto result = sameTag &&
                               readNdef(verifiedTarget, verify.data(),
                                        verify.size(), verifyLength)
@@ -685,8 +870,11 @@ void handleErase(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
   static std::array<std::uint8_t, config::kNfcMaxNdefBytes> verify{};
   std::size_t length = 0;
   TargetInfo verifiedTarget{};
-  if (!writeNdef(target, empty, sizeof(empty)) ||
-      !scanTarget(verifiedTarget) || !sameUid(target, verifiedTarget) ||
+  TargetInfo eraseTarget = target;
+  if (!writeNdef(eraseTarget, detectNtagTechnology(eraseTarget), empty,
+                 sizeof(empty)) ||
+      scanTarget(verifiedTarget) != ScanResult::Found ||
+      !sameUid(target, verifiedTarget) ||
       !readNdef(verifiedTarget, verify.data(), verify.size(), length) ||
       services::parseType2Ndef(verify.data(), length).type !=
           services::NfcPayloadType::Empty) {
@@ -754,6 +942,9 @@ void nfcTask(void* parameter) {
   TargetInfo active{};
   models::TagReadResult activeResult{};
   std::uint32_t lastSeenMs = 0;
+  std::uint8_t consecutiveScanErrors = 0;
+  std::uint8_t confirmedAbsenceScans = 0;
+  std::uint8_t confirmedFreshAbsenceScans = 0;
   rtos::NfcCommand command{};
   for (;;) {
     if (xQueueReceive(ctx.nfcCommandQueue, &command,
@@ -785,25 +976,102 @@ void nfcTask(void* parameter) {
       continue;
     }
     if (!reading) continue;
-    TargetInfo found{};
-    if (scanTarget(found)) {
-      lastSeenMs = millis();
-      if (!present || !sameUid(active, found)) {
-        active = found;
-        present = true;
-        activeResult = reportTag(ctx, active);
+
+    if (present) {
+      // InAutoPoll is a discovery/activation command. A tag which is already
+      // selected must be checked through its current logical target instead;
+      // repeatedly polling it can legitimately yield no new target.
+      std::uint8_t capability[16]{};
+      if (readPages(active, 3, capability)) {
+        lastSeenMs = millis();
+        confirmedAbsenceScans = 0;
+        confirmedFreshAbsenceScans = 0;
+        consecutiveScanErrors = 0;
+        continue;
       }
-    } else if (present && millis() - lastSeenMs >= config::kNfcTagRemovalDelayMs) {
+
+      ++confirmedAbsenceScans;
+      if (millis() - lastSeenMs < config::kNfcTagRemovalDelayMs ||
+          confirmedAbsenceScans < config::kNfcRemovalConfirmationScans) {
+        continue;
+      }
+
+      // Before emitting removal, perform one fresh RF activation. This
+      // distinguishes a physically removed tag from a lost PN532 target
+      // handle after a failed data exchange.
+      const TargetInfo removalCandidate = active;
+      resetRfField();
+      TargetInfo reacquired{};
+      const ScanResult reacquireResult = scanTarget(reacquired);
+      if (reacquireResult == ScanResult::Found &&
+          sameUid(removalCandidate, reacquired)) {
+        active = reacquired;
+        lastSeenMs = millis();
+        confirmedAbsenceScans = 0;
+        confirmedFreshAbsenceScans = 0;
+        consecutiveScanErrors = 0;
+        continue;
+      }
+      if (reacquireResult == ScanResult::CommunicationError) {
+        // Transport/PN532 errors do not prove that the RF tag disappeared.
+        confirmedFreshAbsenceScans = 0;
+        ++consecutiveScanErrors;
+        continue;
+      }
+
+      if (reacquireResult == ScanResult::NoTarget &&
+          ++confirmedFreshAbsenceScans <
+              config::kNfcFreshAbsenceConfirmationScans) {
+        continue;
+      }
+
       rtos::AppEvent event{};
       event.type = rtos::AppEventType::NfcTagRemoved;
-      fillTarget(event, active);
+      fillTarget(event, removalCandidate);
       char uid[config::kNfcMaxUidLength * 3]{};
-      formatUid(active, uid, sizeof(uid));
+      formatUid(removalCandidate, uid, sizeof(uid));
       std::snprintf(event.text, sizeof(event.text), "Tag entfernt: UID=%s", uid);
       sendEvent(ctx, event);
       present = false;
       active = {};
       activeResult = {};
+      confirmedAbsenceScans = 0;
+      confirmedFreshAbsenceScans = 0;
+      consecutiveScanErrors = 0;
+      // If another tag was already found during removal confirmation, keep
+      // its target information for the next iteration instead of losing it.
+      if (reacquireResult == ScanResult::Found) {
+        active = reacquired;
+        present = true;
+        activeResult = reportTag(ctx, active);
+        lastSeenMs = millis();
+        confirmedFreshAbsenceScans = 0;
+      }
+      continue;
+    }
+
+    TargetInfo found{};
+    const ScanResult scanResult = scanTarget(found);
+    if (scanResult == ScanResult::Found) {
+      active = found;
+      present = true;
+      activeResult = reportTag(ctx, active);
+      // Start removal timing only after the potentially lengthy initial tag
+      // analysis has finished.
+      lastSeenMs = millis();
+      consecutiveScanErrors = 0;
+      confirmedAbsenceScans = 0;
+      confirmedFreshAbsenceScans = 0;
+    } else if (scanResult == ScanResult::CommunicationError) {
+      // A malformed or timed-out UART transaction is not evidence that the
+      // tag was removed. Recover the PN532 transport, but preserve presence.
+      if (++consecutiveScanErrors >= 2) {
+        rtos::logLine("NfcTask: PN532 scan communication recovery");
+        resetRfField();
+        consecutiveScanErrors = 0;
+      }
+    } else {
+      consecutiveScanErrors = 0;
     }
   }
 }

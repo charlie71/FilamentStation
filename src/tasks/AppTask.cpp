@@ -775,6 +775,10 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                  currentScreen == rtos::UiScreenId::TagResult) {
         command.screenId = rtos::UiScreenId::StagingActions;
         currentScreen = command.screenId;
+      } else if (currentScreen == rtos::UiScreenId::TagUnknown) {
+        command.screenId = rtos::UiScreenId::Home;
+        currentScreen = command.screenId;
+        previousScreen = command.screenId;
       } else {
         command.screenId = previousScreen;
         currentScreen = previousScreen;
@@ -1490,7 +1494,11 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
 
 void appTask(void* parameter) {
   auto& ctx = *static_cast<rtos::RtosContext*>(parameter);
-  rtos::AppEvent event{};
+  // One receiver owns this buffer for the complete task lifetime. Keeping the
+  // comparatively large value message in static storage avoids consuming the
+  // task stack before event-specific handlers run.
+  static rtos::AppEvent event{};
+  UBaseType_t reportedMinimumStack = static_cast<UBaseType_t>(~0U);
   for (;;) {
     if (xQueueReceive(ctx.appEventQueue, &event, portMAX_DELAY) != pdTRUE) {
       continue;
@@ -1743,6 +1751,14 @@ void appTask(void* parameter) {
           }
         }
       } else if (event.type == rtos::AppEventType::NfcTagRemoved) {
+        const bool removalMatchesCurrentTag =
+            tagPresent && currentTag.uidLength == event.nfcUidLength &&
+            std::memcmp(currentTag.uid, event.nfcUid,
+                        event.nfcUidLength) == 0;
+        if (!removalMatchesCurrentTag) {
+          rtos::logLine("AppTask: stale NFC removal ignored");
+          continue;
+        }
         const bool operationWasPending =
             pendingTagOperation != PendingTagOperation::None;
         tagPresent = false;
@@ -1926,6 +1942,14 @@ void appTask(void* parameter) {
           rtos::logLine("AppTask: NFC mapping load queue overflow");
         showHomeWhenStartupReady(ctx);
       }
+    }
+
+    const UBaseType_t minimumStack = uxTaskGetStackHighWaterMark(nullptr);
+    if (reportedMinimumStack == static_cast<UBaseType_t>(~0U) ||
+        minimumStack + 256U < reportedMinimumStack) {
+      reportedMinimumStack = minimumStack;
+      rtos::logf("AppTask: minimum remaining stack: %u bytes",
+                 static_cast<unsigned>(minimumStack));
     }
   }
 }
