@@ -27,6 +27,13 @@ struct RawTagData {
   std::uint8_t mifareBlocks[17][16]{};
 };
 
+struct TagCapabilities {
+  bool canAssociateByUid = false;
+  bool canWriteFilamentStationPayload = false;
+  bool canClearFilamentStationPayload = false;
+  bool preserveOriginalContent = true;
+};
+
 struct TagReadResult {
   TagTechnology technology = TagTechnology::Unknown;
   TagFormat format = TagFormat::Unknown;
@@ -40,10 +47,13 @@ struct TagReadResult {
   bool writable = false;
   bool erasable = false;
   bool knownFormat = false;
+  TagCapabilities capabilities{};
   TagDefinition definition{};
 };
 
 static_assert(std::is_trivially_copyable<RawTagData>::value, "RawTagData must be trivially copyable");
+static_assert(std::is_trivially_copyable<TagCapabilities>::value,
+              "TagCapabilities must be trivially copyable");
 static_assert(std::is_trivially_copyable<TagReadResult>::value, "TagReadResult must be trivially copyable");
 
 }  // namespace models

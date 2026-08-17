@@ -72,13 +72,15 @@ Lokal gespeichert werden ausschließlich:
 * optional Hardwaretaste
 * optional SD-Card-Detect-Eingang
 
-## 2.3 Unterstützte NFC/RFID-Tags
+---
+
+# 2.3 Unterstützte NFC/RFID-Tags
 
 Die NFC/RFID-Unterstützung wird nicht auf ein einzelnes Tagformat fest verdrahtet.
 
 Hardware-Technologie und logisches Datenformat sind getrennt zu behandeln.
 
-### 2.3.1 Native FilamentStation-Tags
+## 2.3.1 Native FilamentStation-Tags
 
 Unterstützte Chips:
 
@@ -88,11 +90,10 @@ Unterstützte Chips:
 
 Verwendung:
 
-* NDEF
-* lesen
-* schreiben
-* löschen
-* verifizieren
+* NDEF lesen
+* NDEF schreiben
+* FilamentStation-Payload löschen
+* Verifikation nach Schreiboperation
 
 Standard-Payload:
 
@@ -123,7 +124,7 @@ NTAG215 ist der bevorzugte Standard für neu gekaufte FilamentStation-Tags.
 
 NTAG213 und NTAG216 müssen ebenfalls unterstützt werden.
 
-### 2.3.2 Originale Bambu-Lab-RFID-Tags
+## 2.3.2 Originale Bambu-Lab-RFID-Tags
 
 Originale Bambu-Lab-Tags müssen unterstützt werden.
 
@@ -131,7 +132,7 @@ Ziele:
 
 * Tagtyp erkennen,
 * UID lesen,
-* vorhandene Filamentinformationen auslesen, sofern technisch und rechtlich möglich,
+* vorhandene Filamentinformationen auslesen,
 * Definition-Daten in ein neutrales `TagDefinition`-Modell umwandeln,
 * Daten mit Spoolman abgleichen,
 * vorhandene Spule zuordnen,
@@ -141,9 +142,7 @@ Wichtige Regel:
 
 > Originale Bambu-Lab-Tags werden niemals beschrieben oder verändert.
 
-Die originale Bambu-RFID-Struktur darf nicht durch FilamentStation überschrieben werden.
-
-Die Verbindung zwischen einem originalen Bambu-Tag und einer Spoolman-Spule wird lokal gespeichert:
+Die Verbindung zwischen Bambu-Tag und Spoolman-Spule wird lokal gespeichert:
 
 ```text
 /mappings/bambu-tags.json
@@ -163,94 +162,282 @@ Beispiel:
 }
 ```
 
-Wenn bereits eine bekannte UID-Zuordnung existiert, darf diese direkt zur Spoolman-Spule führen.
+## 2.3.3 OpenPrintTag
 
-### 2.3.3 OpenPrintTag
-
-OpenPrintTag soll lesend unterstützt werden.
+OpenPrintTag wird lesend unterstützt.
 
 Ziele:
 
-* Format sicher erkennen,
-* vorhandene standardisierte Felder auslesen,
+* Format erkennen,
+* standardisierte Felder auslesen,
 * Daten in `TagDefinition` umwandeln,
 * passende Spoolman-Daten suchen,
-* Import nach Spoolman anbieten.
+* Zuordnung beziehungsweise Import nach Spoolman ermöglichen.
 
-Schreibunterstützung gehört nicht zur ersten Version.
+In Version 1 wird OpenPrintTag nicht verändert.
 
-Codex darf Feldnamen, Datenlayout oder Tagstruktur nicht erfinden.
+## 2.3.4 OpenTag3D
 
-Vor Implementierung muss die tatsächlich verwendete öffentliche Spezifikation beziehungsweise eine belastbare Primärquelle geprüft und in der Projektdokumentation referenziert werden.
-
-### 2.3.4 OpenTag3D
-
-OpenTag3D soll lesend unterstützt werden.
+OpenTag3D wird lesend unterstützt.
 
 Ziele:
 
-* Format sicher erkennen,
+* Format erkennen,
 * Daten parsen,
-* in `TagDefinition` umwandeln,
-* passenden Spoolman-Datensatz finden,
-* Import nach Spoolman ermöglichen.
+* `TagDefinition` erzeugen,
+* passenden Spoolman-Datensatz suchen,
+* Zuordnung beziehungsweise Import ermöglichen.
 
-Schreibunterstützung gehört nicht zur ersten Version.
+In Version 1 wird OpenTag3D nicht verändert.
 
-Auch hier gilt:
+## 2.3.5 Legacy-Tags
 
-Keine Formatdetails erfinden.
+Bekannte Legacy-Formate können über eigene Parser unterstützt werden.
 
-Die Implementierung muss sich auf die tatsächlich geprüfte Spezifikation stützen.
-
-### 2.3.5 Legacy-Tags
-
-Unterstützte ältere, bekannte Formate können über eigene Parser migriert werden.
-
-Mögliche Aktionen:
+Mögliche Funktionen:
 
 * Daten anzeigen,
-* mit vorhandener Spoolman-Spule verbinden,
-* Daten nach Spoolman importieren,
-* auf einen neuen FilamentStation-NTAG migrieren,
-* beschreibbaren Legacy-Tag in FilamentStation-NDEF-Format umschreiben.
+* Spoolman-Spule zuordnen,
+* nach Spoolman importieren,
+* einen sicheren beschreibbaren Tag auf FilamentStation-Format migrieren.
 
-Es wird kein Security-Key-System aus SpoolEase übernommen.
+Es gibt kein Security-Key-System.
 
-Verschlüsselte Legacy-Formate, die einen solchen Security Key voraussetzen, sind nicht automatisch Teil des Projektumfangs.
+## 2.3.6 Unbekannte Tags
 
-Sie dürfen nur implementiert werden, wenn dies ausdrücklich später beschlossen wird.
+Unbekannte Tags dürfen niemals automatisch verändert werden.
 
-### 2.3.6 Unbekannte Tags
+Angezeigt werden mindestens:
 
-Ein unbekannter Tag darf niemals automatisch verändert werden.
-
-FilamentStation soll mindestens anzeigen:
-
-* erkannte Tagtechnologie,
+* Tagtechnologie,
 * UID,
 * NDEF vorhanden/nicht vorhanden,
 * lesbar/nicht lesbar,
-* beschreibbar/nicht beschreibbar, falls sicher ermittelbar.
+* beschreibbar/nicht beschreibbar, falls sicher bestimmbar.
 
-Optional kann die UID manuell mit einer vorhandenen Spoolman-Spule verbunden werden.
+Eine UID kann einer Spoolman-Spule zugeordnet werden.
 
-Diese Zuordnung wird lokal gespeichert.
+## 2.3.7 Generische MIFARE-Classic-Tags
 
-### 2.3.7 Generische MIFARE-Classic-Tags
-
-Bei unbekannten MIFARE-Classic-Tags gilt zunächst:
+Bei unbekannten MIFARE-Classic-Tags:
 
 * UID lesen,
 * Technologie anzeigen,
-* keine unbekannten Speicherblöcke verändern,
-* optional UID-basierte Spoolman-Zuordnung.
-
-Nur ein explizit implementierter und verifizierter Parser darf zusätzliche Daten interpretieren.
+* unbekannte Speicherblöcke nicht verändern,
+* UID-basierte Spoolman-Zuordnung erlauben.
 
 ---
 
-# 3. GPIO-Regel
+# 3. Benutzerkonzept für NFC/RFID-Zuordnungen
+
+## 3.1 Grundprinzip
+
+Die Benutzeroberfläche unterscheidet **nicht** zwischen:
+
+* Tag schreiben,
+* Tag verknüpfen,
+* Tag löschen,
+* Tag trennen.
+
+Diese Begriffe beschreiben technische Implementierungsdetails und sind für den Benutzer unnötig kompliziert.
+
+Es gibt nur zwei Benutzerfunktionen:
+
+```text
+Tag zuordnen
+Tag-Zuordnung entfernen
+```
+
+---
+
+# 3.2 Tag zuordnen
+
+Die Funktion **„Tag zuordnen“** verbindet den aktuell erkannten NFC/RFID-Tag mit einer Spoolman-Spule.
+
+Dabei gilt immer:
+
+1. UID des Tags wird ermittelt.
+2. Spoolman-Spule wird ausgewählt oder aus dem Tag ermittelt.
+3. lokales UID-zu-Spoolman-Mapping wird angelegt.
+4. falls der Tag sicher mit dem FilamentStation-Payload beschrieben werden darf:
+
+   * `spoolman:<id>` schreiben,
+   * erneut lesen,
+   * Payload verifizieren.
+5. Ergebnis anzeigen.
+
+Der Benutzer entscheidet **nicht**, ob nur ein Mapping oder zusätzlich ein Schreibvorgang durchgeführt wird.
+
+Das System entscheidet dies anhand der Tag-Fähigkeiten.
+
+---
+
+# 3.3 Tag-Zuordnung entfernen
+
+Die Funktion **„Tag-Zuordnung entfernen“** entfernt die Verbindung zwischen Tag und Spoolman-Spule.
+
+Dabei gilt:
+
+1. lokales UID-Mapping entfernen.
+2. prüfen, ob ein von FilamentStation verwalteter Payload sicher entfernt werden darf.
+3. wenn ja:
+
+   * eigenen FilamentStation-Payload löschen,
+   * Tag erneut lesen,
+   * Löschung verifizieren.
+4. fremde oder originale Taginformationen niemals verändern.
+5. Ergebnis anzeigen.
+
+Der Benutzer entscheidet **nicht** zwischen:
+
+* „trennen“
+* „löschen“.
+
+---
+
+# 3.4 Capability-gesteuertes Verhalten
+
+Technisch besitzt jeder erkannte Tag Fähigkeiten.
+
+Beispiel:
+
+```cpp
+struct TagCapabilities {
+    bool canAssociateByUid;
+    bool canWriteFilamentStationPayload;
+    bool canClearFilamentStationPayload;
+    bool preserveOriginalContent;
+};
+```
+
+Alternativ darf eine enum-basierte Policy verwendet werden.
+
+Wichtig ist die semantische Trennung.
+
+## Native FilamentStation NTAG213/215/216
+
+Zuordnen:
+
+```text
+UID-Mapping
++
+spoolman:<id> schreiben
++
+verifizieren
+```
+
+Zuordnung entfernen:
+
+```text
+UID-Mapping entfernen
++
+eigenen FilamentStation-Payload löschen
++
+verifizieren
+```
+
+## Originaler Bambu-Tag
+
+Zuordnen:
+
+```text
+UID-Mapping
+```
+
+Originalinhalt bleibt unverändert.
+
+Zuordnung entfernen:
+
+```text
+UID-Mapping entfernen
+```
+
+Originalinhalt bleibt unverändert.
+
+## OpenPrintTag
+
+Zuordnen:
+
+```text
+UID-Mapping
+```
+
+Originalinhalt bleibt unverändert.
+
+Zuordnung entfernen:
+
+```text
+UID-Mapping entfernen
+```
+
+Originalinhalt bleibt unverändert.
+
+## OpenTag3D
+
+Gleich wie OpenPrintTag.
+
+## Unknown
+
+Zuordnen:
+
+```text
+UID-Mapping
+```
+
+Keine automatische Änderung am Tag.
+
+Zuordnung entfernen:
+
+```text
+UID-Mapping entfernen
+```
+
+## Legacy
+
+Ein Legacy-Parser darf nur dann zusätzlich schreiben oder löschen, wenn er ausdrücklich bestätigt:
+
+```text
+safeToRewriteAsFilamentStation = true
+```
+
+Andernfalls nur UID-Mapping.
+
+---
+
+# 3.5 Ergebnisanzeige
+
+Der Benutzer soll sehen, **was tatsächlich passiert ist**, aber nicht vorher technische Details auswählen müssen.
+
+Beispiele:
+
+```text
+Tag erfolgreich zugeordnet und beschrieben.
+```
+
+oder:
+
+```text
+Tag erfolgreich zugeordnet.
+Originaler Taginhalt wurde nicht verändert.
+```
+
+Beim Entfernen:
+
+```text
+Tag-Zuordnung entfernt.
+Taginhalt wurde ebenfalls entfernt.
+```
+
+oder:
+
+```text
+Tag-Zuordnung entfernt.
+Originaler Taginhalt blieb unverändert.
+```
+
+---
+
+# 4. GPIO-Regel
 
 Keine GPIO-Belegung erfinden.
 
@@ -270,25 +457,23 @@ Vor der Festlegung von Pins müssen geprüft werden:
 * USB-Pins,
 * Boot-Strapping-Pins,
 * verfügbare externe GPIOs,
-* Interruptfähigkeit der vorgesehenen Eingänge.
-
-Display-, Touch-, SD-, USB- und Boot-Pins dürfen nicht versehentlich für HX711 oder PN532 verwendet werden.
+* Interruptfähigkeit.
 
 ---
 
-# 4. Software-Stack
+# 5. Software-Stack
 
-## 4.1 Entwicklungsumgebung
+## 5.1 Entwicklungsumgebung
 
 * Visual Studio Code
 * PlatformIO
 * Arduino Framework für ESP32
-* FreeRTOS aus dem Arduino-ESP32-/ESP-IDF-Unterbau
+* FreeRTOS aus Arduino-ESP32/ESP-IDF
 * C++17
 * Git
-* Codex in Visual Studio Code
+* Codex
 
-## 4.2 Benutzeroberfläche
+## 5.2 Benutzeroberfläche
 
 * LVGL 9.x
 * LovyanGFX
@@ -296,53 +481,25 @@ Display-, Touch-, SD-, USB- und Boot-Pins dürfen nicht versehentlich für HX711
 * EEZ Studio ohne EEZ Flow
 * Anwendungslogik in C++
 
-## 4.3 Weitere Bibliotheken
+## 5.3 Weitere Bibliotheken
 
-Voraussichtlich erforderlich:
+Voraussichtlich:
 
 * ArduinoJson 7
 * WiFiManager
-* HX711-Bibliothek oder eigener kleiner HX711-Treiber
-* PN532-Bibliothek
-* HTTPClient oder vergleichbarer ESP32-HTTP-Client
-* MQTT-Client mit TLS-Unterstützung
+* HX711
+* PN532
+* HTTPClient
+* MQTT-Client mit TLS
 * SD oder SD_MMC
-* Preferences nur für systembedingte Daten, die nicht sinnvoll auf SD liegen
 
-Alle Bibliotheken müssen in `platformio.ini` mit festen, geprüften Versionen eingetragen werden.
-
-Keine unnötigen Bibliotheken hinzufügen.
+Alle Bibliotheksversionen werden festgelegt.
 
 ---
 
-# 5. Bedeutung von „Prozess“
+# 6. FreeRTOS-Task-Architektur
 
-FreeRTOS verwendet Tasks und keine voneinander isolierten Betriebssystemprozesse.
-
-In diesem Projekt bezeichnet „Prozess“ daher einen eigenständigen FreeRTOS-Task mit:
-
-* eigener Task-Funktion,
-* eigenem Stack,
-* definierter Priorität,
-* klarer Verantwortung,
-* definierter Kommunikation,
-* möglichst keinem gemeinsam veränderbaren Zustand.
-
-Tasks kommunizieren über:
-
-* Queues,
-* Task Notifications,
-* Event Groups,
-* Mutexes,
-* Semaphoren.
-
-Lang laufende Tätigkeiten dürfen nicht durch direkte synchrone Aufrufe zwischen Tasks gekoppelt werden.
-
----
-
-# 6. Vorgeschriebene Task-Architektur
-
-Mindestens folgende Tasks sind vorzusehen:
+Mindestens:
 
 ```text
 UiTask
@@ -359,158 +516,100 @@ BambuTask
 
 Verantwortlich für:
 
-* LVGL initialisieren,
-* EEZ-generierte Oberfläche betreiben,
-* Touch-Eingaben verarbeiten,
-* UI-Kommandos empfangen,
-* UI-Aktionen an den AppTask senden,
-* `lv_timer_handler()` aufrufen,
-* Screens wechseln,
-* Dialoge öffnen,
-* UI-Modelle aktualisieren.
+* LVGL,
+* EEZ-GUI,
+* Touch,
+* UI-Kommandos,
+* UI-Aktionen,
+* Screens,
+* Dialoge.
 
-Nur der UiTask darf LVGL-Funktionen aufrufen.
-
-Andere Tasks dürfen keine LVGL-Objekte direkt verändern.
+Nur UiTask darf LVGL verwenden.
 
 ## 6.2 AppTask
 
 Verantwortlich für:
 
-* zentralen Anwendungszustand,
-* fachlichen Zustandsautomaten,
-* Koordination aller Tasks,
-* Verarbeitung fachlicher Ereignisse,
-* Erzeugen von Kommandos für andere Tasks,
-* Prüfung von `requestId`,
-* Prüfung von `printerId`,
-* Fehlerbehandlung,
-* Entscheidung über Navigation und Workflows.
+* Zustandsautomat,
+* Workflows,
+* Task-Koordination,
+* `requestId`,
+* `printerId`,
+* Tag-Zuordnungsworkflow,
+* Fehlerbehandlung.
 
-Der AppTask führt keine direkten Hardwarezugriffe aus.
+Keine direkten Hardwarezugriffe.
 
 ## 6.3 ScaleTask
 
 Verantwortlich für:
 
-* HX711 initialisieren,
-* Messwerte lesen,
-* tarieren,
-* kalibrieren,
-* Messwerte filtern,
-* Ausreißer erkennen,
-* stabile Messwerte erkennen,
-* Waagenstatus melden,
-* Kalibrierdaten über den StorageTask laden und speichern.
+* HX711,
+* Messwerte,
+* Tarierung,
+* Kalibrierung,
+* Filter,
+* Stabilität.
 
-Der HX711-DOUT-Pin soll nach Möglichkeit als Interruptquelle verwendet werden.
-
-Die ISR liest den HX711 nicht aus.
-
-Die ISR weckt ausschließlich den ScaleTask über eine Task Notification.
+HX711-DOUT soll wenn möglich per Interrupt den Task wecken.
 
 ## 6.4 NfcTask
 
 Verantwortlich für:
 
-* PN532 initialisieren,
-* Tags erkennen,
-* Tagtechnologie bestimmen,
-* UID lesen,
-* NDEF lesen,
-* native FilamentStation-Tags schreiben,
-* beschreibbare Tags löschen,
-* geschriebene Daten verifizieren,
-* Tagformat klassifizieren,
-* Parser auswählen,
-* Bambu-Tags erkennen,
-* OpenPrintTag erkennen,
-* OpenTag3D erkennen,
-* Legacy-Tags erkennen,
-* unbekannte Tags melden,
-* normalisierte Tagdaten an den AppTask senden.
+* PN532,
+* UID,
+* NDEF,
+* Tagtechnologie,
+* Parser,
+* Tagklassifikation,
+* technische Schreib-/Löschoperationen,
+* Verifikation.
 
-Der PN532-IRQ-Pin soll verwendet werden, sofern Hardware und Schnittstelle dies unterstützen.
+Wichtig:
 
-Die ISR führt keine I²C-, SPI- oder NFC-Kommunikation aus.
+Der NfcTask kennt technische Kommandos wie:
+
+```text
+ReadTag
+WriteFilamentStationPayload
+ClearFilamentStationPayload
+VerifyTag
+```
+
+Diese technischen Operationen sind **keine Benutzeraktionen**.
 
 ## 6.5 StorageTask
 
+Nur StorageTask greift auf SD zu.
+
 Verantwortlich für:
 
-* SD-Karte initialisieren,
-* Verzeichnisstruktur anlegen,
-* JSON-Dateien lesen,
-* JSON-Dateien validieren,
-* JSON-Dateien atomar speichern,
-* Backups verwalten,
-* Cache verwalten,
-* ausstehende Messungen speichern,
-* Tag-Mappings speichern,
-* Diagnoseinformationen speichern.
-
-Nur der StorageTask darf direkt auf die SD-Karte zugreifen.
+* Konfiguration,
+* JSON,
+* Cache,
+* Tag-Mappings,
+* Backups,
+* Pending Actions,
+* Diagnose.
 
 ## 6.6 NetworkTask
 
-Verantwortlich für:
-
-* WiFiManager,
-* WLAN-Erstkonfiguration,
-* Captive Portal,
-* WLAN-Wiederverbindung,
-* WiFi-Events,
-* Netzwerkstatus,
-* erneute WLAN-Konfiguration.
-
-Der NetworkTask führt keine Spoolman- oder Bambu-Fachlogik aus.
+Verantwortlich für WiFiManager und WLAN.
 
 ## 6.7 SpoolmanTask
 
-Verantwortlich für:
-
-* Spoolman-Health-Check,
-* Spulen laden,
-* Spulen suchen,
-* Hersteller suchen,
-* Filamente suchen,
-* Hersteller anlegen,
-* Filamente anlegen,
-* Spulen anlegen,
-* Gewicht aktualisieren,
-* normalisierte `TagDefinition`-Daten auf Spoolman-Datenmodelle abbilden,
-* Antworten parsen,
-* Timeouts und HTTP-Fehler behandeln.
-
-HTTP-Aufrufe dürfen UiTask und AppTask nicht blockieren.
+Verantwortlich für Spoolman-REST-Kommunikation.
 
 ## 6.8 BambuTask
 
-Verantwortlich für:
-
-* mehrere Bambu-Drucker verwalten,
-* Druckerverbindungen aufbauen,
-* MQTT-Verbindungen verwalten,
-* Druckerstatus lesen,
-* AMS-Einheiten lesen,
-* Slots lesen,
-* externen Spulenhalter lesen,
-* Slotdaten schreiben,
-* Slotdaten zurücksetzen,
-* Wiederverbindung,
-* Druckerwechsel.
-
-Die gesamte Architektur muss mehrere Drucker unterstützen.
+Verantwortlich für mehrere Bambu-Drucker und AMS.
 
 ---
 
-# 7. NFC/RFID-Abstraktionsschicht
+# 7. NFC/RFID-Abstraktion
 
-## 7.1 Trennung von Technologie und Format
-
-Die physische Tagtechnologie und das Datenformat müssen getrennt modelliert werden.
-
-Beispiel:
+## 7.1 TagTechnology
 
 ```cpp
 enum class TagTechnology {
@@ -524,6 +623,8 @@ enum class TagTechnology {
 };
 ```
 
+## 7.2 TagFormat
+
 ```cpp
 enum class TagFormat {
     Unknown,
@@ -536,11 +637,32 @@ enum class TagFormat {
 };
 ```
 
-## 7.2 Normalisiertes Ergebnis
+## 7.3 TagCapabilities
 
-Alle Parser liefern ein gemeinsames Modell.
+Jeder TagReadResult muss eine Capability-Information bereitstellen.
 
 Beispiel:
+
+```cpp
+struct TagCapabilities {
+    bool canAssociateByUid;
+    bool canWriteFilamentStationPayload;
+    bool canClearFilamentStationPayload;
+    bool preserveOriginalContent;
+};
+```
+
+`writable` alleine reicht nicht aus.
+
+Ein physisch beschreibbarer Tag darf nicht automatisch überschrieben werden.
+
+Entscheidend ist:
+
+```text
+Darf FilamentStation diesen Tag sicher verändern?
+```
+
+## 7.4 TagDefinition
 
 ```cpp
 struct TagDefinition {
@@ -564,13 +686,7 @@ struct TagDefinition {
 };
 ```
 
-Nur tatsächlich bekannte Werte werden gesetzt.
-
-Nicht vorhandene Informationen dürfen nicht erfunden werden.
-
-## 7.3 TagReadResult
-
-Beispiel:
+## 7.5 TagReadResult
 
 ```cpp
 struct TagReadResult {
@@ -581,34 +697,16 @@ struct TagReadResult {
     uint8_t uidLength;
 
     bool ndefPresent;
-    bool writable;
     bool knownFormat;
 
+    TagCapabilities capabilities;
     TagDefinition definition;
 };
 ```
 
-## 7.4 Parser-Interface
+---
 
-Tagformate werden über austauschbare Parser umgesetzt.
-
-Beispiel:
-
-```cpp
-class ITagParser {
-public:
-    virtual ~ITagParser() = default;
-
-    virtual TagFormat format() const = 0;
-    virtual bool canParse(const RawTagData& tag) const = 0;
-    virtual TagParseResult parse(
-        const RawTagData& tag,
-        TagDefinition& result
-    ) const = 0;
-};
-```
-
-Vorgesehene Parser:
+# 8. Parser-Architektur
 
 ```text
 FilamentStationTagParser
@@ -618,127 +716,29 @@ OpenTag3DParser
 LegacyTagParser
 ```
 
-Der unbekannte Tagfall ist kein Parser, der Fantasiedaten erzeugt.
+Parser:
 
-## 7.5 Parser-Reihenfolge
+* kennen keine GUI,
+* kennen kein Spoolman,
+* greifen nicht auf SD zu,
+* führen keine Schreiboperationen aus,
+* interpretieren nur Rohdaten.
 
-Die Erkennung muss deterministisch sein.
+Parser-Reihenfolge deterministisch.
 
-Eine mögliche Reihenfolge:
-
-1. bekannte native FilamentStation-NDEF-Payload,
-2. eindeutig erkannter Bambu-Lab-Tag,
-3. OpenPrintTag,
-4. OpenTag3D,
-5. bekannte Legacy-Formate,
-6. leerer NDEF-Tag,
-7. unbekannter Tag.
-
-Die tatsächliche Erkennungslogik muss pro Format dokumentiert werden.
-
-Keine heuristische Erkennung verwenden, die fremde Tags fälschlich als bekanntes Format behandeln könnte.
-
-## 7.6 Schreibrechte
-
-Schreiboperationen werden separat vom Parser behandelt.
-
-Native FilamentStation-Tags:
-
-* lesen: ja,
-* schreiben: ja,
-* löschen: ja.
-
-Originale Bambu-Tags:
-
-* lesen: ja,
-* schreiben: nein,
-* löschen: nein.
-
-OpenPrintTag:
-
-* lesen: ja,
-* schreiben: vorerst nein.
-
-OpenTag3D:
-
-* lesen: ja,
-* schreiben: vorerst nein.
-
-Legacy:
-
-* abhängig vom konkreten Format,
-* nur schreiben, wenn sicher dokumentiert und ausdrücklich unterstützt.
-
-Unbekannt:
-
-* keine automatische Schreiboperation.
+Keine unbekannten Daten erfinden.
 
 ---
 
-# 8. FreeRTOS-Kommunikation
+# 9. FreeRTOS-Kommunikation
 
-## 8.1 Zentrale App-Event-Queue
-
-Alle fachlichen Ereignisse werden an den AppTask gesendet:
+Zentrale App-Queue:
 
 ```cpp
 QueueHandle_t appEventQueue;
 ```
 
-Beispiel:
-
-```cpp
-enum class AppEventType {
-    UiAction,
-
-    ScaleInitialized,
-    ScaleMeasurement,
-    ScaleStable,
-    ScaleUnstable,
-    ScaleTared,
-    ScaleCalibrated,
-    ScaleError,
-
-    NfcInitialized,
-    NfcTagDetected,
-    NfcTagRemoved,
-    NfcTagRead,
-    NfcTagClassified,
-    NfcTagWritten,
-    NfcTagErased,
-    NfcTagVerified,
-    NfcError,
-
-    StorageReady,
-    StorageResponse,
-    StorageError,
-
-    WifiConnecting,
-    WifiConnected,
-    WifiDisconnected,
-    WifiGotIp,
-    WifiConfigPortalStarted,
-    WifiConfigPortalStopped,
-    WifiError,
-
-    SpoolmanConnected,
-    SpoolmanResponse,
-    SpoolmanError,
-
-    BambuPrinterConnecting,
-    BambuPrinterConnected,
-    BambuPrinterDisconnected,
-    BambuPrinterUpdated,
-    BambuAmsUpdated,
-    BambuTrayUpdated,
-    BambuError,
-
-    TimerExpired,
-    FatalError
-};
-```
-
-## 8.2 Command-Queues
+Command-Queues:
 
 ```cpp
 QueueHandle_t uiCommandQueue;
@@ -750,586 +750,46 @@ QueueHandle_t spoolmanCommandQueue;
 QueueHandle_t bambuCommandQueue;
 ```
 
-## 8.3 Event Group
+Event Group für globale Zustände.
 
-```cpp
-EventGroupHandle_t systemEventGroup;
-```
+Task Notifications bevorzugt für:
 
-Vorgesehene Bits:
-
-```cpp
-constexpr EventBits_t EVENT_UI_READY         = BIT0;
-constexpr EventBits_t EVENT_SD_READY         = BIT1;
-constexpr EventBits_t EVENT_SCALE_READY      = BIT2;
-constexpr EventBits_t EVENT_NFC_READY        = BIT3;
-constexpr EventBits_t EVENT_WIFI_CONNECTED   = BIT4;
-constexpr EventBits_t EVENT_SPOOLMAN_READY   = BIT5;
-constexpr EventBits_t EVENT_BAMBU_READY      = BIT6;
-constexpr EventBits_t EVENT_FATAL_ERROR      = BIT7;
-```
-
-Event Groups übertragen nur Zustände.
-
-## 8.4 Task Notifications
-
-Vorgesehene Anwendungen:
-
-* HX711-DOUT-ISR → ScaleTask
-* PN532-IRQ-ISR → NfcTask
-* Touch-IRQ → UiTask, falls sinnvoll
-* SD-Card-Detect-ISR → StorageTask
-* Hardwaretaste → zuständiger Task
-
-## 8.5 Mutexes
-
-Mögliche gemeinsame Ressourcen:
-
-* gemeinsamer I²C-Bus,
-* gemeinsamer SPI-Bus,
-* zentrale Logging-Ausgabe.
-
-Da nur StorageTask auf SD zugreift, ist dort normalerweise kein zusätzlicher Dateisystem-Mutex notwendig.
-
-## 8.6 Nachrichtenregeln
-
-* Keine Zeiger auf lokale Stackvariablen über Queues.
-* Kleine Strukturen als Wert übertragen.
-* Keine großen Arduino-`String`-Objekte in Queues.
-* Begrenzte Zeichenfelder verwenden.
-* Jede asynchrone Anfrage erhält `requestId`.
-* Antworten enthalten dieselbe `requestId`.
-* Druckerbezogene Nachrichten enthalten `printerId`.
-* Slotbezogene Nachrichten enthalten Drucker, AMS und Slot.
-* Queue-Überläufe erkennen und protokollieren.
-* ISR-Code ausschließlich mit `FromISR`-Funktionen.
-
----
-
-# 9. Polling vermeiden
-
-Nicht erlaubt:
-
-```cpp
-while (true) {
-    if (flag) {
-        // ...
-    }
-
-    delay(10);
-}
-```
-
-Tasks sollen blockieren:
-
-```cpp
-xQueueReceive(queue, &message, portMAX_DELAY);
-```
-
-oder:
-
-```cpp
-ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-```
-
-oder:
-
-```cpp
-xEventGroupWaitBits(...);
-```
-
-Zeitgesteuerte Abläufe:
-
-* FreeRTOS-Software-Timer,
-* `vTaskDelayUntil()`,
-* LVGL-Timer,
-* WiFi-Callbacks,
-* MQTT-Callbacks,
-* Hardwareinterrupts.
-
-Zulässige periodische Funktionen:
-
-* `lv_timer_handler()`,
-* langsame Health-Checks,
-* Watchdog,
-* Diagnose,
-* notwendige Hardware-Fallbacks.
-
-Busy Waiting ist verboten.
-
----
-
-# 10. Interrupt-Regeln
-
-Bevorzugte Interruptquellen:
-
-* HX711 DOUT,
+* HX711 IRQ,
 * PN532 IRQ,
 * Touch IRQ,
-* SD Card Detect,
-* Hardwaretaste.
-
-Eine ISR darf nur:
-
-* Interruptquelle quittieren,
-* kleinen atomaren Zustand setzen,
-* Task Notification senden,
-* Queue-Nachricht über `FromISR` senden,
-* Taskwechsel anfordern.
-
-Eine ISR darf nicht:
-
-* JSON verarbeiten,
-* SD verwenden,
-* I²C/SPI-Transaktionen durchführen,
-* HTTP/MQTT aufrufen,
-* LVGL aufrufen,
-* NFC-Daten parsen,
-* dynamischen Speicher anfordern,
-* lange rechnen,
-* umfangreich loggen.
+* SD Detect.
 
 ---
 
-# 11. Task-Konfiguration
+# 10. UI-Aktionen
 
-Tasknamen, Stackgrößen, Prioritäten und Core-Affinitäten ausschließlich in:
+Die Benutzeraktionen müssen semantisch und nicht technisch benannt werden.
 
-```text
-src/config/TaskConfig.h
-```
-
-Beispiel:
+## 10.1 Erlaubte Tag-Aktionen
 
 ```cpp
-struct TaskSettings {
-    const char* name;
-    uint32_t stackSize;
-    UBaseType_t priority;
-    BaseType_t core;
-};
+AssignTag
+RemoveTagAssignment
 ```
 
-Core-Pinning nur mit dokumentierter Begründung.
+## 10.2 Nicht mehr als Benutzeraktion verwenden
 
-Zu dokumentieren:
-
-* Stack High Water Mark,
-* Tasklaufzeiten,
-* Queue-Auslastung,
-* Heap,
-* PSRAM,
-* Prioritätsprobleme.
-
----
-
-# 12. Startablauf
-
-`setup()`:
-
-1. serielle Schnittstelle starten,
-2. Chipinformationen ausgeben,
-3. RTOS-Objekte erzeugen,
-4. Queues erzeugen,
-5. Event Group erzeugen,
-6. Mutexes erzeugen,
-7. Tasks starten,
-8. Startstatus prüfen.
-
-Die Arduino-`loop()`-Funktion enthält keine Anwendungslogik.
-
-StorageTask wird früh gestartet.
-
-AppTask wartet auf notwendige Ready-Events.
-
----
-
-# 13. WiFiManager
-
-WLAN wird über WiFiManager eingerichtet.
-
-## 13.1 Erstinbetriebnahme
-Wenn keine gültige WLAN-Konfiguration vorhanden ist:
-
-1. NetworkTask startet WiFiManager.
-2. Access Point wird erstellt.
-3. Benutzer verbindet sich.
-4. Captive Portal öffnet sich.
-5. WLAN und Passwort wählen.
-6. Gerät verbindet sich.
-7. AppTask erhält Status.
-
-## 13.2 Erneute Konfiguration
-
-GUI:
-
-* Captive Portal starten,
-* WLAN neu konfigurieren,
-* WLAN-Zugangsdaten löschen,
-* Hostname ändern,
-* DHCP/statische IP.
-
-## 13.3 Task-Verhalten
-
-WiFiManager darf im NetworkTask blockierend laufen.
-
-Andere Tasks müssen weiter funktionieren.
-
-Kein dauerhaftes `WiFiManager::process()` in `loop()`.
-
-## 13.4 WiFi-Callbacks
-
-Callbacks dürfen nur:
-
-* kurze Events erzeugen,
-* Event Bits ändern,
-* Nachrichten senden.
-
-Keine direkten GUI-, SD-, Spoolman- oder Bambu-Aufrufe.
-
----
-
-# 14. SD-Karte und JSON
-
-## 14.1 Grundregel
-
-Alle persistenten Anwendungsdateien sind gültige JSON-Dateien auf SD.
-
-Ausnahme:
-
-SSID und WLAN-Passwort werden durch WiFiManager/ESP32 intern verwaltet.
-
-## 14.2 Verzeichnisstruktur
-
-```text
-/config/device.json
-/config/network.json
-/config/spoolman.json
-/config/bambu.json
-/config/ui.json
-/config/scale.json
-/config/nfc.json
-
-/cache/spools.json
-/cache/filaments.json
-/cache/vendors.json
-/cache/printers.json
-/cache/ams-slots.json
-
-/queue/pending-measurements.json
-/queue/pending-actions.json
-
-/mappings/nfc-spools.json
-/mappings/bambu-tags.json
-/mappings/open-tags.json
-/mappings/printer-slots.json
-
-/diagnostics/system.json
-/diagnostics/last-error.json
-/diagnostics/task-stats.json
-
-/logs/events.json
-```
-
-## 14.3 JSON-Grundstruktur
-
-```json
-{
-  "schemaVersion": 1,
-  "updatedAt": "2026-08-05T10:00:00Z"
-}
-```
-
-Jede Datei besitzt:
-
-* Schema-Version,
-* Pflichtfelder,
-* Standardwerte,
-* maximale Dateigröße,
-* Validierung,
-* Migrationsstrategie.
-
-## 14.4 Atomisches Speichern
-
-1. `.tmp.json` schreiben,
-2. flushen,
-3. schließen,
-4. erneut validieren,
-5. bestehende Datei nach `.bak.json`,
-6. temporäre Datei umbenennen,
-7. Backup entfernen.
-
-## 14.5 Verhalten ohne SD
-
-* Fehler anzeigen,
-* Speichern nicht vortäuschen,
-* keine Messung als dauerhaft gespeichert melden,
-* eingeschränkten Diagnosebetrieb ermöglichen,
-* keinen stillen Datenbank-Fallback verwenden.
-
----
-
-# 15. Spoolman-Anbindung
-
-Spoolman ist führende Datenbank.
-Die Oberfläche verwendet Spoolman-Begriffe wie:
-* Spulen-ID,
-* Hersteller,
-* Filament,
-* Material,
-* Farbe,
-* Leergewicht,
-* Anfangsgewicht,
-* verbleibendes Gewicht,
-* Standort,
-* Kommentar.
-Benötigte Funktionen mindestens:
-
-```text
-GET  /health
-GET  /spool
-GET  /spool/{id}
-POST /spool
-PUT  /spool/{id}
-PUT  /spool/{id}/measure
-
-GET  /filament
-POST /filament
-
-GET  /vendor
-POST /vendor
-```
-
-Die tatsächliche API-Version muss geprüft werden.
-
-Keine Endpunkte erfinden.
-
-## 15.1 TagDefinition → Spoolman
-
-Importierte Tagdaten werden zunächst in `TagDefinition` normalisiert.
-
-Danach übernimmt ausschließlich die Spoolman-Schicht die Zuordnung zu:
-
-* Vendor,
-* Filament,
-* Spool.
-
-Der NFC-Parser darf keine HTTP-Anfragen durchführen.
-
-## 15.2 Importstrategie
-
-Bei importierten Definitionen:
-
-1. Hersteller suchen.
-2. Filament suchen.
-3. vorhandene passende Daten anzeigen.
-4. Benutzerentscheidung ermöglichen, wenn mehrere Treffer existieren.
-5. fehlenden Hersteller nur bei Bedarf anlegen.
-6. fehlendes Filament nur bei Bedarf anlegen.
-7. Spule anlegen oder bestehende Spule auswählen.
-8. Tag-Mapping speichern.
-
-Keine unkontrollierten Dubletten erzeugen.
-
----
-
-# 16. Mehrere Bambu-Drucker
-
-Jeder Drucker besitzt:
+Folgende alten `UiActionType`-Werte sollen entfernt oder intern migriert werden:
 
 ```cpp
-using PrinterId = uint16_t;
+LinkTag
+WriteTag
+EraseTag
+UnlinkTag
+AssignUnknownTag
+RewriteLegacyTag
 ```
 
-Konfiguration:
+Technische NfcCommands dürfen weiterhin existieren.
 
-```json
-{
-  "schemaVersion": 1,
-  "selectedPrinterId": 1,
-  "defaultPrinterId": 1,
-  "printers": [
-    {
-      "id": 1,
-      "name": "P1S Werkstatt",
-      "host": "192.168.1.50",
-      "serialNumber": "01P...",
-      "accessCode": "12345678",
-      "enabled": true
-    }
-  ]
-}
-```
+## 10.3 UiActionType
 
-Kein zusätzlicher Security Key.
-
-Druckerwechsel benötigt keinen Neustart.
-
-Alle Druckerkommandos und -events enthalten `printerId`.
-
----
-
-# 17. GUI-Grundlage
-
-Bedienoberfläche und Workflows orientieren sich funktional an SpoolEase.
-
-Zu übernehmen:
-
-* AMS-/External-Übersicht,
-* Staging,
-* Druckerauswahl,
-* Slotdetails,
-* Staging-Operationen,
-* Slotoperationen,
-* Quick Weight,
-* Advanced Weight,
-* Tag verknüpfen,
-* Tag schreiben,
-* Tag löschen,
-* Tag trennen,
-* Definition-Tag-Import,
-* Bambu-Spulentyp-Auswahl,
-* Legacy-Workflow,
-* Status- und Fortschrittsdialoge.
-
-Zusätzlich:
-
-* OpenPrintTag-Import,
-* OpenTag3D-Import,
-* unbekannter-Tag-Workflow.
-
-Keine Slint-Dateien oder SpoolEase-Assets kopieren.
-
----
-
-# 18. Keine separaten Spool-Screens
-
-Separate Hauptscreens `SCR_SPOOL_SEARCH` und `SCR_SPOOL_DETAILS` sind nicht erforderlich.
-
-Spulenauswahl wird als wiederverwendbare Workflow-Komponente umgesetzt:
-
-```text
-CMP_SPOOL_PICKER
-CMP_SPOOL_INFO
-```
-
-`CMP_SPOOL_PICKER` kann verwendet werden in:
-
-* Tag verknüpfen,
-* unbekannten Tag zuordnen,
-* Slot manuell konfigurieren,
-* importierten Tag mit bestehender Spule verbinden.
-
-Der Picker darf als:
-
-* Overlay,
-* Dialog,
-* eingebettete Liste,
-* Wizard-Schritt
-
-umgesetzt werden.
-
-Er ist kein eigener Hauptnavigationsscreen.
-
----
-
-# 19. Integrierte Waage
-
-Nicht übernehmen:
-
-* externe Netzwerkwaage,
-* Waagensuche,
-* mehrere Netzwerkwaagen.
-
-Stattdessen:
-
-* lokale HX711-Waage,
-* aktuelles Gewicht,
-* Stabilität,
-* Tarieren,
-* Kalibrieren,
-* Diagnose.
-
----
-
-# 20. Permanente Druckeranzeige
-
-Auf normalen Haupt- und Workflow-Screens:
-
-```text
-● P1S Werkstatt          AMS 1      ⚙
-```
-
-Offline:
-
-```text
-○ P1S Werkstatt          offline    ⚙
-```
-
-Kein Drucker:
-
-```text
-○ Kein Drucker ausgewählt           ⚙
-```
-
-Kopfzeile antippbar → Druckerauswahl.
-
----
-
-# 21. EEZ-Studio-Regeln
-
-EEZ-Projekt:
-
-```text
-ui-project/FilamentStation.eez-project
-```
-
-Generierter Code:
-
-```text
-src/ui/generated/
-```
-
-Generierte Dateien nicht manuell ändern.
-
-Eigene Actions:
-
-```text
-src/ui/actions/
-src/ui/UiBridge.cpp
-src/ui/UiBridge.h
-```
-
-Kein EEZ Flow.
-
-Kein zweites paralleles EEZ-Projekt.
-
----
-
-# 22. UI-Kommunikation
-
-## 22.1 UiCommand
-
-```cpp
-enum class UiCommandType {
-    ShowScreen,
-    ShowDialog,
-    ShowProgress,
-    HideProgress,
-    UpdateHeader,
-    UpdatePrinterList,
-    UpdateAmsOverview,
-    UpdateStaging,
-    UpdateTrayDetails,
-    UpdateWeight,
-    UpdateTagInfo,
-    UpdateSettings,
-    UpdateBootStatus,
-    ShowToast
-};
-```
-
-## 22.2 UiAction
+Zielstruktur:
 
 ```cpp
 enum class UiActionType {
@@ -1354,18 +814,14 @@ enum class UiActionType {
     ReapplySlot,
     RefreshSlot,
 
-    LinkTag,
-    WriteTag,
-    EraseTag,
-    UnlinkTag,
-    AssignUnknownTag,
+    AssignTag,
+    RemoveTagAssignment,
 
     SelectSpool,
     SaveMeasurement,
 
     ImportTagDefinition,
     IgnoreTagDefinition,
-    RewriteLegacyTag,
 
     OpenWifiSettings,
     OpenSpoolmanSettings,
@@ -1393,45 +849,241 @@ enum class UiActionType {
 };
 ```
 
-Druckerbezogene Aktionen enthalten `printerId`.
+---
 
-Slotaktionen enthalten:
+# 11. Interner TagAssignment-Workflow
 
-* `printerId`,
-* `amsId`,
-* `trayId`.
+Der AppTask orchestriert die Zuordnung.
+
+Pseudologik:
+
+```text
+AssignTag(spoolId)
+    ↓
+TagReadResult prüfen
+    ↓
+UID-Mapping über StorageTask speichern
+    ↓
+capabilities.canWriteFilamentStationPayload ?
+    ├─ nein → Erfolg: MappingOnly
+    └─ ja
+         ↓
+         NfcTask: WriteFilamentStationPayload
+         ↓
+         NfcTask: VerifyTag
+         ↓
+         Erfolg: MappingAndTagWritten
+```
+
+Fehler beim Schreiben:
+
+* Mapping darf nicht unbemerkt verloren gehen.
+* Benutzer erhält klare Meldung.
+
+Beispiel:
+
+```text
+Spule wurde zugeordnet.
+Tag konnte jedoch nicht beschrieben werden.
+```
+
+Optional darf der AppTask bei fehlgeschlagenem Schreiben das Mapping zurückrollen, wenn dies als definierte Policy festgelegt wird.
+
+Die gewählte Policy muss dokumentiert werden.
+
+Empfehlung:
+
+> Mapping bleibt bestehen, wenn das Schreiben fehlschlägt.
 
 ---
 
-# 23. Standardlayout
+# 12. Interner RemoveTagAssignment-Workflow
 
 ```text
-480 × 320 Pixel
+RemoveTagAssignment
+    ↓
+TagReadResult prüfen
+    ↓
+UID-Mapping entfernen
+    ↓
+capabilities.canClearFilamentStationPayload ?
+    ├─ nein → Erfolg: MappingRemoved
+    └─ ja
+         ↓
+         NfcTask: ClearFilamentStationPayload
+         ↓
+         VerifyTag
+         ↓
+         Erfolg: MappingAndPayloadRemoved
 ```
 
-Standard:
-
-```text
-TopPrinterBar:    40 px
-Content:         224 px
-BottomActionBar:  56 px
-```
-
-Touchflächen:
-
-* mindestens 48 px,
-* bevorzugt 52–56 px.
-
-Typografie:
-
-* Titel 22–24 px,
-* Text 18–20 px,
-* Status 15–17 px,
-* Gewicht 30–40 px.
+Originale Inhalte fremder Tags dürfen nie gelöscht werden.
 
 ---
 
-# 24. Wiederverwendbare Komponenten
+# 13. Polling und Interrupts
+
+Keine Busy-Wait-Schleifen.
+
+Tasks warten auf:
+
+* Queue,
+* Notification,
+* Event Group,
+* Timer.
+
+ISRs dürfen keine:
+
+* I²C-Kommunikation,
+* SPI-Kommunikation,
+* JSON-Verarbeitung,
+* LVGL-Aufrufe,
+* HTTP-/MQTT-Aufrufe
+
+durchführen.
+
+---
+
+# 14. WiFiManager
+
+WLAN über WiFiManager.
+
+Captive Portal im NetworkTask.
+
+Andere Tasks bleiben aktiv.
+
+SSID und WLAN-Passwort werden nicht zusätzlich auf SD gespeichert.
+
+---
+
+# 15. SD und JSON
+
+Persistente Anwendungsdaten als JSON auf SD.
+
+Verzeichnisse:
+
+```text
+/config/
+/cache/
+/queue/
+/mappings/
+/diagnostics/
+/logs/
+```
+
+Tag-Mappings:
+
+```text
+/mappings/nfc-spools.json
+/mappings/bambu-tags.json
+/mappings/open-tags.json
+/mappings/printer-slots.json
+```
+
+Alle Mapping-Dateien werden ausschließlich durch StorageTask gelesen und geschrieben.
+
+---
+
+# 16. Spoolman
+
+Spoolman bleibt führende Datenbank.
+
+Importierte Tagdaten werden über `TagDefinition` normalisiert.
+
+Parser führen keine HTTP-Kommunikation aus.
+
+SpoolmanTask übernimmt:
+
+* Vendor-Matching,
+* Filament-Matching,
+* Spool-Matching,
+* Import,
+* Gewichtsupdate.
+
+---
+
+# 17. Mehrere Bambu-Drucker
+
+Jeder Druckerbefehl enthält `printerId`.
+
+Druckerwechsel ohne Neustart.
+
+Aktiver Drucker permanent in GUI sichtbar.
+
+Kein Security Key.
+
+Originale Bambu-RFID-Tags bleiben read-only.
+
+---
+
+# 18. GUI-Grundlage
+
+GUI orientiert sich funktional an SpoolEase.
+
+Übernommen werden:
+
+* AMS-/External-Übersicht,
+* Staging,
+* Druckerauswahl,
+* Slotdetails,
+* Quick Weight,
+* Advanced Weight,
+* Definition-Tag-Import,
+* Bambu-Spulentyp,
+* Legacy-Workflow,
+* Fortschrittsdialoge.
+
+Nicht übernehmen:
+
+* getrennte Benutzerfunktionen für Tag schreiben/verknüpfen,
+* getrennte Benutzerfunktionen für Tag löschen/trennen,
+* Security Key,
+* externe Waagenverwaltung.
+
+---
+
+# 19. Keine separaten Spool-Screens
+
+Spulenauswahl über:
+
+```text
+CMP_SPOOL_PICKER
+CMP_SPOOL_INFO
+```
+
+Kein eigener Hauptscreen erforderlich.
+
+---
+
+# 20. Permanente Druckeranzeige
+
+Beispiel:
+
+```text
+● P1S Werkstatt          AMS 1      ⚙
+```
+
+---
+
+# 21. EEZ-Studio-Regeln
+
+Bestehendes Projekt weiterverwenden:
+
+```text
+ui-project/FilamentStation.eez-project
+```
+
+Generierter Code:
+
+```text
+src/ui/generated/
+```
+
+Nicht manuell ändern.
+
+---
+
+# 22. Wiederverwendbare Komponenten
 
 Mindestens:
 
@@ -1459,7 +1111,7 @@ CMP_SETTINGS_BUTTON
 
 ---
 
-# 25. Screenliste
+# 23. Screenliste
 
 ```cpp
 enum class UiScreenId {
@@ -1479,11 +1131,11 @@ enum class UiScreenId {
     WeightSummary,
 
     TagDetected,
-    TagActionSelect,
+    TagAssign,
     TagDefinitionImport,
     BambuSpoolType,
     TagReview,
-    TagWrite,
+    TagOperation,
     TagLegacy,
     TagUnknown,
     TagResult,
@@ -1504,36 +1156,19 @@ enum class UiScreenId {
 };
 ```
 
+Alte Screens wie `TagWrite` dürfen beim Migrieren intern vorübergehend weiterverwendet werden, sollen jedoch nicht mehr als „Tag schreiben“ in der Benutzeroberfläche erscheinen.
+
 ---
 
-# 26. Screen-Beschreibungen
+# 24. Screen-Beschreibungen
 
-## 26.1 SCR_BOOT
-
-Systeminitialisierung.
-
-Anzeige:
-
-```text
-FilamentStation
-Version 0.x.x
-
-✓ SD-Karte
-✓ Display
-✓ Waage
-✓ NFC
-◐ WLAN
-○ Spoolman
-○ Bambu
-```
-
-## 26.2 SCR_HOME
+## SCR_HOME
 
 Enthält:
 
-* Drucker-Kopfzeile,
-* AMS-Auswahl,
-* vier AMS-Slots,
+* Drucker,
+* AMS,
+* Slots,
 * External,
 * Staging,
 * Gewicht,
@@ -1541,345 +1176,357 @@ Enthält:
 * Spoolman,
 * WLAN.
 
-## 26.3 SCR_PRINTER_SELECT
-
-Liste:
-
-* Name,
-* Status,
-* Standardmarkierung,
-* aktuelle Auswahl,
-* AMS-Anzahl.
-
-## 26.4 SCR_STAGING_DETAILS
+## SCR_STAGING_DETAILS
 
 Zeigt:
 
 * Spoolman-ID,
 * Hersteller,
-* Filament,
 * Material,
 * Farbe,
-* Leergewicht,
-* Bruttogewicht,
-* Restgewicht,
-* NFC/RFID-Tagtyp,
-* UID.
-
-Aktionen:
-
-* Quick Weight,
-* Mehr,
-* Schließen.
-
-## 26.5 SCR_STAGING_ACTIONS
-
-Aktionen:
-
-* Slot konfigurieren,
-* Advanced Weight,
-* Staging leeren,
-* Tag schreiben,
-* Tag verknüpfen,
-* Tag trennen,
-* Tag löschen,
-* Spule auswählen.
-
-## 26.6 SCR_TRAY_DETAILS
-
-Tabs:
-
-* Slotinformationen,
-* Spuleninformationen.
-
-Spuleninformationen werden über `CMP_SPOOL_INFO` dargestellt.
-
-## 26.7 SCR_TRAY_ACTIONS
-
-* aus Staging konfigurieren,
-* Spule manuell auswählen,
-* Zuordnung entfernen,
-* Slot zurücksetzen,
-* erneut anwenden,
-* aktualisieren.
-
-## 26.8 SCR_TRAY_SELECT
-
-Home-ähnliche Zielslot-Auswahl.
-
-Drucker und AMS dürfen gewechselt werden.
-
-## 26.9 SCR_QUICK_WEIGHT
-
-* aktuelle Spule,
 * Gewicht,
-* Stabilität,
-* Restgewicht,
-* letzte Messung.
-
-## 26.10 SCR_ADVANCED_WEIGHT
-
-* gebrauchte Spule,
-* volle/neue Spule,
-* Leergewicht korrigieren,
-* Ausgangsgewicht korrigieren.
-
-## 26.11 SCR_WEIGHT_SUMMARY
-
-Zusammenfassung vor Schreiben nach Spoolman.
-
-## 26.12 SCR_TAG_DETECTED
-
-Zeigt:
-
+* NFC/RFID-Typ,
 * UID,
-* Technologie,
-* erkanntes Format.
-
-Danach automatische Navigation.
-
-## 26.13 SCR_TAG_ACTION_SELECT
-
-Für leere oder neue native Tags.
+* Zuordnungsstatus.
 
 Aktionen:
 
-* mit vorhandener Spule verbinden,
-* zuletzt verwendete Spule,
-* Spule über Picker auswählen,
-* Tag löschen,
-* abbrechen.
+```text
+Quick Weight
+Mehr …
+Schließen
+```
 
-## 26.14 SCR_TAG_DEFINITION_IMPORT
+## SCR_STAGING_ACTIONS
 
-Wird verwendet für:
+Benutzeraktionen:
 
-* Bambu Lab,
-* OpenPrintTag,
-* OpenTag3D,
-* andere unterstützte Definition-Tags.
+```text
+Slot konfigurieren
+Advanced Weight
+Staging leeren
+Tag zuordnen
+Tag-Zuordnung entfernen
+Spule auswählen
+```
 
-Zeigt:
+Nicht anzeigen:
 
-* Format,
-* Hersteller,
-* Material,
-* Farbe,
-* Farbcode,
-* Temperaturen,
-* Gewichte,
-* UID,
-* erkannte Felder.
+```text
+Tag schreiben
+Tag verknüpfen
+Tag trennen
+Tag löschen
+```
 
-Aktionen:
+## SCR_TAG_ASSIGN
 
-* ignorieren,
-* mit bestehender Spule verbinden,
-* nach Spoolman importieren.
+Zweck:
 
-## 26.15 SCR_BAMBU_SPOOL_TYPE
-
-Nur wenn für Bambu-Import notwendig.
-
-Auswahl:
-
-* Low Temperature,
-* High Temperature,
-* Other.
-
-Gewichtsvorschläge sind editierbar.
-
-## 26.16 SCR_TAG_REVIEW
+Tag einer Spoolman-Spule zuordnen.
 
 Zeigt:
 
-* Tagformat,
+* Tagtyp,
 * UID,
-* Spoolman-Zielspule,
+* vorhandene Zuordnung,
+* gewählte Spule,
+* Tag-Fähigkeiten in verständlicher Form.
+
+Nicht technische Optionen anbieten.
+
+Beispiel:
+
+```text
+NFC-Tag zuordnen
+
+Tag: NTAG215
+UID: 04:A2:...
+
+Spule:
+#42 Bambu PLA Basic – Jade White
+
+[Abbrechen] [Zuordnen]
+```
+
+Bei Bambu:
+
+```text
+Der originale Bambu-Tag bleibt unverändert.
+```
+
+Bei NTAG:
+
+```text
+Die Zuordnung wird zusätzlich auf dem Tag gespeichert.
+```
+
+Der Benutzer muss dies nicht auswählen.
+
+## SCR_TAG_REVIEW
+
+Zeigt vor der Zuordnung:
+
+* Tag,
+* UID,
+* Spule,
+* Spoolman-ID,
 * erkannte Definition,
-* Mapping,
-* vorgesehene Aktion.
+* erwartetes Verhalten.
 
-## 26.17 SCR_TAG_WRITE
-
-Nur für beschreibbare, unterstützte Tags.
-
-Native FilamentStation-Tags:
+Beispiel NTAG:
 
 ```text
-spoolman:<id>
+Zuordnung wird lokal gespeichert.
+Der Tag wird zusätzlich beschrieben.
 ```
 
-Originale Bambu-Tags dürfen diesen Screen nicht zum Schreiben verwenden.
-
-## 26.18 SCR_TAG_LEGACY
-
-Zeigt erkanntes Legacy-Format.
-
-Aktionen abhängig von Fähigkeiten:
-
-* importieren,
-* verbinden,
-* auf natives Format migrieren,
-* löschen,
-* abbrechen.
-
-Keine Security-Key-Funktion.
-
-## 26.19 SCR_TAG_UNKNOWN
-
-Zeigt:
+Beispiel Bambu:
 
 ```text
-Unbekannter NFC/RFID-Tag
-
-Technologie: MIFARE Classic 1K
-UID: A1:B2:C3:D4
-NDEF: nein
+Zuordnung wird lokal gespeichert.
+Der originale Bambu-Tag bleibt unverändert.
 ```
+
+## SCR_TAG_OPERATION
+
+Generischer Progress-Screen.
+
+Nicht:
+
+```text
+Tag wird geschrieben
+```
+
+als generischer Workflowname.
+
+Stattdessen:
+
+```text
+Tag wird zugeordnet …
+```
+
+Interne Schritte dürfen angezeigt werden:
+
+```text
+✓ Tag erkannt
+✓ Zuordnung gespeichert
+◐ Tag wird aktualisiert
+○ Verifikation
+```
+
+Bei Mapping-only:
+
+```text
+✓ Tag erkannt
+✓ Zuordnung gespeichert
+✓ Originalinhalt unverändert
+```
+
+Beim Entfernen:
+
+```text
+Tag-Zuordnung wird entfernt …
+```
+
+## SCR_TAG_RESULT
+
+Beispiele:
+
+```text
+Tag erfolgreich zugeordnet und beschrieben.
+```
+
+```text
+Tag erfolgreich zugeordnet.
+Originalinhalt wurde nicht verändert.
+```
+
+```text
+Tag-Zuordnung erfolgreich entfernt.
+```
+
+```text
+Tag-Zuordnung entfernt.
+FilamentStation-Daten wurden ebenfalls vom Tag entfernt.
+```
+
+## SCR_TAG_UNKNOWN
 
 Aktionen:
 
-* UID einer Spoolman-Spule zuordnen,
-* erneut lesen,
-* ignorieren,
-* schließen.
-
-Keine automatische Schreiboperation.
-
-## 26.20 SCR_TAG_RESULT
-
-Zeigt Erfolg oder Fehler einer Tagoperation.
-
-## 26.21 Settings
-
-Kategorien:
-
 ```text
-WLAN
-Spoolman
-Waage
-Bambu-Drucker
-Gerät
-Diagnose
-Firmware
+Tag zuordnen
+Erneut lesen
+Schließen
 ```
 
-Kein Security Key.
+Nicht:
+
+```text
+Tag schreiben
+```
+
+## SCR_TAG_LEGACY
+
+Aktionen:
+
+* Definition importieren,
+* Tag zuordnen,
+* Tag-Zuordnung entfernen, falls vorhanden,
+* Abbrechen.
+
+Eine Migration auf FilamentStation-Payload kann intern Teil von „Tag zuordnen“ sein, wenn der Parser dies sicher erlaubt.
 
 ---
 
-# 27. Verbindliche Tag-Workflows
+# 25. Zuordnungsstatus
 
-## 27.1 Native FilamentStation-Spule
+Die GUI soll einen klaren Zustand anzeigen.
+
+Beispiele:
+
+```text
+Nicht zugeordnet
+```
+
+```text
+Zugeordnet zu Spule #42
+```
+
+Optional:
+
+```text
+Zugeordnet + auf Tag gespeichert
+```
+
+oder:
+
+```text
+Zugeordnet · Originaltag unverändert
+```
+
+---
+
+# 26. Verbindliche NFC/RFID-Workflows
+
+## 26.1 Native FilamentStation-Spule lesen
 
 ```text
 NTAG
-  ↓
+ ↓
 spoolman:<id>
-  ↓
+ ↓
 Spoolman laden
-  ↓
+ ↓
 Staging
-  ↓
-Wiegen
-  ↓
-optional AMS-Zuordnung
 ```
 
-## 27.2 Neuer leerer NTAG
+## 26.2 Leeren NTAG zuordnen
 
 ```text
 Tag erkannt
-  ↓
-leer/unzugeordnet
-  ↓
-Spoolman-Spule über CMP_SPOOL_PICKER auswählen
-  ↓
-Review
-  ↓
+ ↓
+Tag zuordnen
+ ↓
+Spoolman-Spule auswählen
+ ↓
+UID-Mapping speichern
+ ↓
 spoolman:<id> schreiben
-  ↓
-erneut lesen
-  ↓
+ ↓
 verifizieren
-  ↓
-Staging
+ ↓
+Erfolg
 ```
 
-## 27.3 Originaler Bambu-Tag
+Der Benutzer klickt nur:
 
 ```text
-Bambu Tag
-  ↓
-UID + Definition lesen
-  ↓
-bambu-tags.json prüfen
-  ├─ Mapping vorhanden → Spoolman laden
-  └─ kein Mapping
-       ↓
-       Definition anzeigen
-       ↓
-       vorhandene Spule auswählen
-       ODER
-       nach Spoolman importieren
-       ↓
-       UID-Mapping speichern
-  ↓
-Staging
-  ↓
-Wiegen
-  ↓
-optional AMS-Zuordnung
+Tag zuordnen
 ```
 
-Der Bambu-Tag wird niemals verändert.
-
-## 27.4 OpenPrintTag
+## 26.3 Bambu-Tag zuordnen
 
 ```text
-OpenPrintTag
-  ↓
-Format parsen
-  ↓
-TagDefinition
-  ↓
-Spoolman-Match suchen
-  ├─ passende Spule → verbinden
-  └─ kein Treffer → Import anbieten
-  ↓
-lokales Mapping falls erforderlich
-  ↓
-Staging
+Bambu-Tag
+ ↓
+UID + Definition
+ ↓
+bestehendes Mapping?
+ ├─ ja → Spule laden
+ └─ nein
+      ↓
+      Definition importieren oder bestehende Spule auswählen
+      ↓
+      Tag zuordnen
+      ↓
+      UID-Mapping speichern
+      ↓
+      Originaltag unverändert
 ```
 
-## 27.5 OpenTag3D
+## 26.4 OpenPrintTag/OpenTag3D
 
-Gleicher Grundablauf wie OpenPrintTag.
+Zuordnung erfolgt per UID-Mapping.
 
-## 27.6 Legacy-Tag
+Originalinhalt bleibt unverändert.
+
+## 26.5 Unknown
 
 ```text
-Legacy
-  ↓
-bekanntes Format parsen
-  ↓
-Daten anzeigen
-  ↓
-importieren / verbinden / migrieren / löschen
+UID
+ ↓
+Tag zuordnen
+ ↓
+Spule auswählen
+ ↓
+UID-Mapping speichern
 ```
 
-## 27.7 Unbekannter Tag
+Keine Änderung am Tag.
+
+## 26.6 Tag-Zuordnung entfernen
 
 ```text
-Unknown
-  ↓
-UID + Technologie anzeigen
-  ↓
-optional UID mit Spoolman-Spule verbinden
+Tag erkannt
+ ↓
+Tag-Zuordnung entfernen
+ ↓
+Bestätigen
+ ↓
+Mapping löschen
+ ↓
+darf eigener Payload sicher gelöscht werden?
+ ├─ nein → fertig
+ └─ ja → Payload entfernen + verifizieren
 ```
 
-Keine Datenblöcke verändern.
+---
+
+# 27. Bestätigungsdialog beim Entfernen
+
+Beispiel nativer NTAG:
+
+```text
+Tag-Zuordnung entfernen?
+
+Die Verbindung zu Spule #42 wird entfernt.
+Die FilamentStation-Daten werden auch vom Tag gelöscht.
+
+[Abbrechen] [Entfernen]
+```
+
+Bambu:
+
+```text
+Tag-Zuordnung entfernen?
+
+Die Verbindung zu Spule #42 wird entfernt.
+Der originale Bambu-Tag wird nicht verändert.
+
+[Abbrechen] [Entfernen]
+```
 
 ---
 
@@ -1903,13 +1550,6 @@ FilamentStation/
 │   ├── spoolman-api.md
 │   └── decisions/
 ├── test/
-│   ├── test_weight_filter/
-│   ├── test_tag_payload/
-│   ├── test_tag_parsers/
-│   ├── test_json_storage/
-│   ├── test_spoolman_models/
-│   ├── test_app_state/
-│   └── test_ui_models/
 ├── ui-project/
 │   └── FilamentStation.eez-project
 └── src/
@@ -1921,174 +1561,160 @@ FilamentStation/
     ├── drivers/
     ├── services/
     ├── models/
-    │   ├── Printer.h
-    │   ├── Ams.h
-    │   ├── AmsTray.h
-    │   ├── Spool.h
-    │   ├── Filament.h
-    │   ├── Vendor.h
-    │   ├── ScaleMeasurement.h
-    │   ├── NfcTag.h
-    │   ├── TagDefinition.h
-    │   ├── TagReadResult.h
-    │   └── UiModels.h
     ├── nfc/
-    │   ├── ITagParser.h
-    │   ├── TagParserRegistry.cpp
-    │   ├── TagParserRegistry.h
-    │   ├── FilamentStationTagParser.cpp
-    │   ├── BambuLabTagParser.cpp
-    │   ├── OpenPrintTagParser.cpp
-    │   ├── OpenTag3DParser.cpp
-    │   └── LegacyTagParser.cpp
     └── ui/
-        ├── UiBridge.cpp
-        ├── UiBridge.h
-        ├── actions/
-        └── generated/
 ```
 
 ---
 
-# 29. Fehlerbehandlung
+# 29. Logging
 
-Jeder Fehler besitzt:
-
-* Quelle,
-* Fehlercode,
-* Schweregrad,
-* `requestId`,
-* optional `printerId`,
-* verständliche Meldung.
-
-Normale Hardware- oder Kommunikationsfehler führen nicht automatisch zum Neustart.
-
----
-
-# 30. Logging
-
-Stufen:
+Interne Logs dürfen technische Details enthalten:
 
 ```text
-ERROR
-WARN
-INFO
-DEBUG
-TRACE
+[AppTask] AssignTag started
+[StorageTask] UID mapping stored
+[NfcTask] Writing FilamentStation payload
+[NfcTask] Payload verified
 ```
 
-Beispiele:
-
-```text
-[NfcTask] Technology: NTAG215
-[NfcTask] Tag format: FilamentStation
-[NfcTask] Tag format: BambuLab
-[NfcTask] Unknown tag UID detected
-[SpoolmanTask] Loading spool 42
-```
+Die GUI verwendet dagegen benutzerfreundliche Begriffe.
 
 Nicht loggen:
 
 * WLAN-Passwort,
-* vollständigen Bambu-Zugangscode,
-* Tokens,
-* Schlüssel.
+* Bambu-Zugangscode,
+* Token,
+* geheime Schlüssel.
 
 ---
 
-# 31. Tests
+# 30. Tests für Zuordnungslogik
 
-Zusätzlich zu bestehenden Tests:
+Mindestens testen:
 
-* FilamentStation-Payload gültig,
-* ungültige native Payload,
-* ungültige Spool-ID,
-* Tagformat-Erkennung,
-* Parser-Reihenfolge,
-* unbekannter Tag,
-* leerer NDEF-Tag,
-* Bambu-Parser-Testdaten,
-* OpenPrintTag-Testdaten,
-* OpenTag3D-Testdaten,
-* Legacy-Parser,
-* Parser darf unbekannte Felder nicht erfinden,
-* originaler Bambu-Tag darf nie einen Schreibbefehl auslösen,
-* UID-Mapping,
-* Mapping-Konflikt,
-* doppeltes Mapping.
+## AssignTag
 
-Testvektoren für externe Formate müssen aus dokumentierten Quellen oder realen, anonymisierten Testtags stammen.
+Native NTAG:
 
-Keine erfundenen Testdaten als Beweis für Formatkompatibilität verwenden.
+* Mapping wird angelegt.
+* Payload wird geschrieben.
+* Payload wird verifiziert.
+
+Bambu:
+
+* Mapping wird angelegt.
+* kein Write-Command.
+
+OpenPrintTag:
+
+* Mapping wird angelegt.
+* kein Write-Command.
+
+OpenTag3D:
+
+* Mapping wird angelegt.
+* kein Write-Command.
+
+Unknown:
+
+* Mapping wird angelegt.
+* kein Write-Command.
+
+## RemoveTagAssignment
+
+Native FilamentStation-Tag:
+
+* Mapping wird entfernt.
+* eigener Payload wird entfernt.
+* Löschung wird verifiziert.
+
+Bambu:
+
+* Mapping wird entfernt.
+* kein Erase-Command.
+
+OpenPrintTag/OpenTag3D:
+
+* Mapping wird entfernt.
+* kein Erase-Command.
+
+Unknown:
+
+* Mapping wird entfernt.
+* kein Erase-Command.
+
+## Fehlerfälle
+
+* Schreiben schlägt fehl.
+* Verifikation schlägt fehl.
+* Mapping-Speicherung schlägt fehl.
+* Tag wird während Operation entfernt.
+* Tag wird zwischen Lesen und Schreiben ausgetauscht.
+* UID bei Verifikation stimmt nicht mehr.
 
 ---
 
-# 32. Coding-Regeln
+# 31. Coding-Regeln
 
 * C++17.
-* Englische Klassen- und Methodennamen.
-* Kleine Klassen.
-* Komposition bevorzugen.
-* Keine monolithischen Dateien.
-* Keine langen `delay()`.
-* Kein Busy Waiting.
-* Keine Hardwarezugriffe aus AppTask oder UI.
-* Keine LVGL-Aufrufe außerhalb UiTask.
-* Keine SD-Zugriffe außerhalb StorageTask.
-* Keine langen ISRs.
-* Keine Formatdetails erfinden.
-* Externe Tagformate über eigene Parser kapseln.
-* Parser führen keine Netzwerk- oder Dateisystemzugriffe aus.
-* Gewichte intern `float` in Gramm.
+* keine Busy-Wait-Schleifen.
+* keine Hardwarezugriffe aus AppTask.
+* keine LVGL-Aufrufe außerhalb UiTask.
+* keine SD-Zugriffe außerhalb StorageTask.
+* Parser ohne Netzwerk/Storage.
+* technische Tagoperationen in NfcTask.
+* Workflowentscheidung in AppTask.
+* UI kennt nur semantische Benutzeraktionen.
+* keine Formatdetails erfinden.
 * Queue-Nachrichten klein halten.
 
 ---
 
-# 33. Regeln für Codex
+# 32. Regeln für Codex
 
-Vor jeder Änderung:
+Vor Änderungen:
 
 1. `AGENTS.md` vollständig lesen.
 2. `TASKS.md` vollständig lesen.
-3. Repository analysieren.
-4. aktuellen Implementierungsstand berücksichtigen.
-5. erledigte Aufgaben nicht unnötig neu implementieren.
-6. kurzen Umsetzungsplan erstellen.
+3. bestehenden Code analysieren.
+4. bereits implementierte Funktionen weiterverwenden.
+5. keine unnötigen Refactorings.
 
-Aktueller Migrationsgrundsatz:
+Aktueller Stand:
 
-> Die bestehende Implementierung bis einschließlich Aufgabe 5.3 ist die Ausgangsbasis.
+> Aufgaben bis einschließlich 5.11 wurden bereits mit dem bisherigen Tag-Menü umgesetzt.
 
-Neue Anforderungen ab 5.4 dürfen bestehende funktionierende Hardware-, RTOS-, Waagen-, GUI- und PN532-Funktionalität nicht unnötig ersetzen.
+Das neue UX-Konzept erfordert eine Migration, keinen Neubau des NFC-Subsystems.
 
-Bei NFC/RFID-Arbeiten:
+Codex muss insbesondere vorhandene Implementierungen für:
 
-* vorhandenen NfcTask weiterverwenden,
-* Hardwaretreiber nicht neu schreiben, wenn nicht notwendig,
-* Parser von Hardwarezugriff trennen,
-* externe Formatspezifikationen vor Implementierung prüfen,
-* keine Formatdetails erfinden,
-* Bambu-Tags niemals beschreiben,
-* OpenPrintTag/OpenTag3D in Version 1 nur lesen,
-* unbekannte Tags niemals automatisch verändern,
-* native FilamentStation-Tags als NTAG/NDEF mit `spoolman:<id>` verwenden.
+```text
+LinkTag
+WriteTag
+UnlinkTag
+EraseTag
+```
 
-Bei GUI-Arbeiten:
+identifizieren und unter den neuen Workflows:
 
-* vorhandenes EEZ-Projekt weiterverwenden,
-* kein zweites UI-Projekt,
-* generierten Code nicht manuell ändern,
-* `CMP_SPOOL_PICKER` statt eigener Spool-Suchhauptscreens verwenden,
-* Tagformat und Tagtechnologie im Workflow sichtbar machen,
-* keine Security-Key-Funktion erzeugen.
+```text
+AssignTag
+RemoveTagAssignment
+```
 
-Nach jedem Arbeitsschritt:
+orchestrieren.
 
-1. EEZ-Code neu generieren, falls nötig.
+Technische NfcCommands dürfen erhalten bleiben.
+
+Die öffentliche UI-Schnittstelle wird jedoch vereinheitlicht.
+
+Nach jedem Teilpaket:
+
+1. EEZ neu generieren, falls nötig.
 2. `pio run`.
-3. Tests ausführen.
-4. Compilerwarnungen prüfen.
+3. Tests.
+4. Compilerwarnungen.
 5. geänderte Dateien auflisten.
-6. nur tatsächlich erledigte Checkboxen abhaken.
-7. offene Annahmen dokumentieren.
-8. nächsten offenen Arbeitsschritt nennen.
+6. nur erledigte Checkboxen abhaken.
+7. nächsten Schritt nennen.

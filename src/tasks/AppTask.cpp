@@ -1877,6 +1877,7 @@ void appTask(void* parameter) {
         currentTag.physicalWritable = previousTag.physicalWritable;
         currentTag.uidLength = event.nfcUidLength;
         std::memcpy(currentTag.uid, event.nfcUid, event.nfcUidLength);
+        nfc::updateTagCapabilities(currentTag);
         tagPresent = true;
         pendingTagOperation = PendingTagOperation::None;
         rtos::UiCommand hide{};
@@ -1898,6 +1899,7 @@ void appTask(void* parameter) {
         currentTag.payloadValid = true;
         currentTag.writable = currentTag.physicalWritable;
         currentTag.erasable = currentTag.physicalWritable;
+        nfc::updateTagCapabilities(currentTag);
         currentTag.definition = {};
         currentTag.definition.format = models::TagFormat::EmptyNdef;
         pendingTagOperation = PendingTagOperation::None;

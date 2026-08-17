@@ -2,18 +2,15 @@
 
 ## Allgemeine Regeln
 
-* Phasen in der angegebenen Reihenfolge bearbeiten.
-* Pro Codex-Auftrag nur einen klar abgegrenzten Abschnitt umsetzen.
-* Keine schnelle Polling-Schleife verwenden.
-* Busy Waiting ist verboten.
-* Interrupts führen keine Hardwarekommunikation aus.
-* Nur StorageTask greift auf SD zu.
-* Nur UiTask greift auf LVGL zu.
-* AppTask koordiniert die fachlichen Abläufe.
-* Alle persistenten Anwendungsdateien liegen als JSON auf SD.
-* WLAN-Zugangsdaten sind die systembedingte WiFiManager-Ausnahme.
-* Druckerbezogene Befehle enthalten immer `printerId`.
-* Codex hakt nur tatsächlich implementierte und geprüfte Aufgaben ab.
+* Phasen in Reihenfolge bearbeiten.
+* Keine schnelle Polling-Schleife.
+* Busy Waiting verboten.
+* nur StorageTask → SD.
+* nur UiTask → LVGL.
+* AppTask koordiniert Workflows.
+* persistente Daten als JSON auf SD.
+* druckerbezogene Nachrichten enthalten `printerId`.
+* nur tatsächlich erledigte Aufgaben abhaken.
 
 ---
 
@@ -33,29 +30,21 @@
 ## 0.2 Grundstruktur
 
 * [x] Verzeichnisstruktur aus `AGENTS.md` anlegen
-* [x] `BoardConfig.h` anlegen
-* [x] `AppConfig.h` anlegen
-* [x] `TaskConfig.h` anlegen
-* [x] `Secrets.example.h` anlegen
-* [x] minimale Modelle erzeugen
-* [x] Message-Typen vorbereiten
-* [x] noch keine unnötigen Hardwarebibliotheken einbinden
+* [x] `BoardConfig.h`
+* [x] `AppConfig.h`
+* [x] `TaskConfig.h`
+* [x] `Secrets.example.h`
+* [x] minimale Modelle
+* [x] Message-Typen
+* [x] keine unnötigen Bibliotheken
 
 ## 0.3 Minimaler Build
 
-* [x] Startmeldung über Serial
-* [x] Chipmodell ausgeben
-* [x] Heap ausgeben
-* [x] PSRAM ausgeben
-* [x] `pio run` erfolgreich ausführen
-
-### Abnahmekriterien Phase 0
-
-* Projekt kompiliert.
-* Keine neuen Warnungen.
-* Keine Zugangsdaten enthalten.
-* Keine GPIOs erfunden.
-* Projektstruktur entspricht `AGENTS.md`.
+* [x] Startmeldung
+* [x] Chipmodell
+* [x] Heap
+* [x] PSRAM
+* [x] `pio run`
 
 ---
 
@@ -63,28 +52,28 @@
 
 ## 1.1 RtosContext
 
-* [x] `RtosContext` implementieren
-* [x] Task-Handles zentral verwalten
-* [x] Queue-Handles zentral verwalten
-* [x] Event Group anlegen
-* [x] notwendige Mutexes anlegen
-* [x] Erzeugungsfehler behandeln
+* [x] RtosContext
+* [x] Task-Handles
+* [x] Queue-Handles
+* [x] Event Group
+* [x] Mutexes
+* [x] Fehlerbehandlung
 
 ## 1.2 Nachrichtentypen
 
-* [x] `AppEvent` definieren
-* [x] `UiCommand` definieren
-* [x] `UiAction` definieren
-* [x] `ScaleCommand` definieren
-* [x] `NfcCommand` definieren
-* [x] `StorageCommand` definieren
-* [x] `NetworkCommand` definieren
-* [x] `SpoolmanCommand` definieren
-* [x] `BambuCommand` definieren
-* [x] `requestId` vorsehen
-* [x] `printerId` vorsehen
+* [x] AppEvent
+* [x] UiCommand
+* [x] UiAction
+* [x] ScaleCommand
+* [x] NfcCommand
+* [x] StorageCommand
+* [x] NetworkCommand
+* [x] SpoolmanCommand
+* [x] BambuCommand
+* [x] requestId
+* [x] printerId
 
-## 1.3 Task-Gerüste
+## 1.3 Tasks
 
 * [x] UiTask
 * [x] AppTask
@@ -97,44 +86,34 @@
 
 ## 1.4 Task-Konfiguration
 
-* [x] Namen zentral definieren
-* [x] Stackgrößen zentral definieren
-* [x] Prioritäten zentral definieren
-* [x] Core-Affinitäten zentral definieren
-* [x] Taskparameter dokumentieren
+* [x] Namen
+* [x] Stackgrößen
+* [x] Prioritäten
+* [x] Core-Affinitäten
+* [x] Dokumentation
 
 ## 1.5 Kommunikationstest
 
-* [x] UiTask sendet Testaktion
-* [x] AppTask empfängt Testaktion
-* [x] AppTask sendet UiCommand
-* [x] UiTask empfängt UiCommand
-* [x] Queue-Timeout behandeln
-* [x] Queue-Überlauf erkennen
-* [x] Kommunikation protokollieren
-
-### Abnahmekriterien Phase 1
-
-* Alle Tasks werden erzeugt.
-* Keine schnelle Polling-Schleife.
-* Kommunikation funktioniert.
-* `loop()` enthält keine Anwendungslogik.
-* Stackgrößen und Prioritäten dokumentiert.
+* [x] UiTask → AppTask
+* [x] AppTask → UiTask
+* [x] Queue-Timeout
+* [x] Queue-Überlauf
+* [x] Logging
 
 ---
 
-# Phase 2 – SD-Karte und JSON-Speicherung
+# Phase 2 – SD und JSON
 
 ## 2.1 SD-Hardware
 
-* [x] SD-Schnittstelle verifizieren
-* [x] Pinbelegung dokumentieren
-* [x] SD nur im StorageTask initialisieren
-* [x] Card-Detect prüfen
-* [x] Card-Detect-Interrupt verwenden, falls vorhanden
-* [x] Entfernen und Einsetzen erkennen
+* [x] Schnittstelle
+* [x] Pinbelegung
+* [x] StorageTask-only
+* [x] Card Detect
+* [x] Interrupt falls vorhanden
+* [x] Entfernen/Einsetzen
 
-## 2.2 Verzeichnisstruktur
+## 2.2 Verzeichnisse
 
 * [x] `/config`
 * [x] `/cache`
@@ -145,708 +124,498 @@
 
 ## 2.3 JsonStorage
 
-* [x] JSON laden
-* [x] JSON validieren
-* [x] JSON speichern
-* [x] maximale Dateigröße prüfen
-* [x] Fehlercodes definieren
-* [x] `schemaVersion` verarbeiten
-* [x] Standardwerte einsetzen
-* [x] Schema-Migration vorbereiten
+* [x] laden
+* [x] validieren
+* [x] speichern
+* [x] Dateigröße
+* [x] Fehlercodes
+* [x] schemaVersion
+* [x] Defaultwerte
+* [x] Migration
 
 ## 2.4 Atomisches Speichern
 
-* [x] `.tmp.json` schreiben
-* [x] flushen
+* [x] tmp schreiben
+* [x] flush
 * [x] schließen
-* [x] erneut validieren
-* [x] bestehende Datei als `.bak.json`
-* [x] temporäre Datei umbenennen
+* [x] validieren
+* [x] Backup
+* [x] umbenennen
 * [x] Backup entfernen
 * [ ] Wiederherstellung testen
 
 ## 2.5 Storage-Queue
 
-* [x] Leseanfragen über Queue
-* [x] Schreibanfragen über Queue
-* [x] Antworten über App-Queue
-* [x] mehrere Anfragen geordnet verarbeiten
-* [x] direkte SD-Zugriffe anderer Tasks verhindern
+* [x] Lesen
+* [x] Schreiben
+* [x] Antworten
+* [x] mehrere Anfragen
+* [x] keine anderen direkten SD-Zugriffe
 
-## 2.6 Konfigurationsdateien
+## 2.6 Konfigurationen
 
-* [x] `/config/device.json`
-* [x] `/config/network.json`
-* [x] `/config/spoolman.json`
-* [x] `/config/bambu.json`
-* [x] `/config/ui.json`
-* [x] `/config/scale.json`
-* [x] `/config/nfc.json`
-
-### Abnahmekriterien Phase 2
-
-* JSON-Dateien speichern und laden.
-* Beschädigte Dateien erkennen.
-* Backups wiederherstellen.
-* Nur StorageTask greift auf SD zu.
-* Fehlende SD-Karte wird korrekt gemeldet.
+* [x] device.json
+* [x] network.json
+* [x] spoolman.json
+* [x] bambu.json
+* [x] ui.json
+* [x] scale.json
+* [x] nfc.json
 
 ---
 
-# Phase 3 – Display, Touch, LVGL und GUI
+# Phase 3 – Display, LVGL und GUI
 
-## 3.1 Hardwareprüfung
+## 3.1–3.9
 
-* [x] Displaycontroller verifizieren
-* [x] Touchcontroller verifizieren
-* [x] Pinbelegung dokumentieren
-* [x] GPIO-Konflikte prüfen
-* [x] Hintergrundbeleuchtung prüfen
+* [x] Hardwareprüfung
+* [x] LovyanGFX
+* [x] Touch
+* [x] LVGL
+* [x] UiTask
+* [x] bestehende EEZ-GUI migriert
+* [x] Designsystem
+* [x] UI-Datenmodelle
+* [x] Home
+* [x] Druckerauswahl
 
-## 3.2 LovyanGFX
+## 3.10 Staging-Screens – UX-Migration erforderlich
 
-* [x] Display initialisieren
-* [x] Rotation konfigurieren
-* [x] Farbtest
-* [x] Touchkoordinaten
-* [x] Touchrotation
-* [x] Touchtest
+Die Screens wurden bereits implementiert, müssen aber auf das neue Tag-Konzept migriert werden.
 
-## 3.3 LVGL
-
-* [x] LVGL 9 integrieren
-* [x] `lv_conf.h`
-* [x] Renderpuffer
-* [x] PSRAM-Nutzung
-* [x] Flush-Callback
-* [x] Touch-Callback
-* [x] LVGL nur im UiTask
-
-## 3.4 UiTask
-
-* [x] `uiCommandQueue` verarbeiten
-* [x] LVGL-Timing verwenden
-* [x] unnötig kurze Schleifen vermeiden
-* [x] optional Touch-IRQ prüfen
-* [x] keine UI-Aufrufe aus anderen Tasks
-
-## 3.5 Bestehende EEZ-GUI migrieren
-
-* [x] bestehendes EEZ-Projekt sichern
-* [x] vorhandene Screens analysieren
-* [x] vorhandene Navigation analysieren
-* [x] unpassende Placeholder-Screens entfernen
-* [x] vorhandene Widgets weiterverwenden, wenn sinnvoll
-* [x] kein zweites EEZ-Projekt erzeugen
-* [x] Screen-Namen aus `AGENTS.md` verwenden
-* [x] permanente Drucker-Kopfzeile ergänzen
-* [x] aktuellen Drucker immer anzeigen
-* [x] Drucker-Kopfzeile antippbar machen
-* [x] Settings-Schaltfläche ergänzen
-* [x] globale untere Aktionsleiste erstellen
-* [x] Home auf AMS-, External- und Staging-Struktur umbauen
-* [x] Security-Key-Elemente entfernen
-* [x] generierten Code nur nach `src/ui/generated/`
-* [x] `pio run`
-
-## 3.6 Designsystem und Komponenten
-
-* [x] globale Farben
-* [x] globale Schriftgrößen
-* [x] globale Abstände
-* [x] Mindesthöhe der Touchflächen
-* [x] `CMP_TOP_PRINTER_BAR`
-* [x] `CMP_BOTTOM_ACTION_BAR`
-* [x] `CMP_STATUS_BADGE`
-* [x] `CMP_CONNECTION_INDICATOR`
-* [x] `CMP_AMS_SELECTOR`
-* [x] `CMP_TRAY_CARD`
-* [x] `CMP_STAGING_CARD`
-* [x] `CMP_SPOOL_SUMMARY`
-* [x] `CMP_WEIGHT_DISPLAY`
-* [x] `CMP_PROGRESS_OVERLAY`
-* [x] `CMP_CONFIRM_DIALOG`
-* [x] `CMP_RESULT_DIALOG`
-* [x] `CMP_ERROR_DIALOG`
-* [x] `CMP_NUMERIC_INPUT`
-* [x] `CMP_TEXT_INPUT`
-* [x] `CMP_SETTINGS_BUTTON`
-
-## 3.7 UI-Datenmodelle
-
-* [x] `UiPrinterSummary`
-* [x] `UiAmsSummary`
-* [x] `UiTraySummary`
-* [x] `UiStagingSummary`
-* [x] `UiSpoolSummary`
-* [x] `UiWeightState`
-* [x] `UiConnectionState`
-* [x] `UiSettingsState`
-* [x] mehrere Drucker berücksichtigen
-* [x] `printerId` in Aktionen
-* [x] `amsId` in Aktionen
-* [x] `trayId` in Aktionen
-* [x] `spoolId` in Aktionen
-* [x] Mock-Datenprovider
-
-## 3.8 Home-Screen
-
-* [x] `SCR_HOME`
-* [x] Drucker-Kopfzeile
-* [x] Druckerstatus
-* [x] aktives AMS
-* [x] mehrere AMS-Einheiten
-* [x] vier Slots
-* [x] External Slot
-* [x] Staging
-* [x] Gewicht
-* [x] Stabilitätsstatus
-* [x] NFC-Status
-* [x] Spoolman-Status
-* [x] WLAN-Status
-* [x] Slot-Aktionen senden
-* [x] Staging-Aktion senden
-* [x] Druckerauswahl senden
-* [x] Settings öffnen
-
-## 3.9 Druckerauswahl
-
-* [x] `SCR_PRINTER_SELECT`
-* [x] Druckerliste
-* [x] aktueller Drucker markiert
-* [x] Standarddrucker markiert
-* [x] Online-/Offline-Status
-* [x] AMS-Anzahl
-* [x] Druckerwechsel als UiAction
-* [x] Rückkehr zur vorherigen Ansicht
-* [x] Drucker verwalten
-
-## 3.10 Staging-Screens
+Bereits vorhanden:
 
 * [x] `SCR_STAGING_DETAILS`
-* [x] Spoolman-ID
-* [x] Hersteller
-* [x] Material
-* [x] Farbe
-* [x] Leergewicht
-* [x] Bruttogewicht
-* [x] Restgewicht
+* [x] Spooldaten
+* [x] Gewichte
 * [x] NFC-Status
 * [x] Quick Weight
-* [x] Mehr
-* [x] Schließen
-* [x] `SCR_STAGING_ACTIONS`
-* [x] Slot konfigurieren
 * [x] Advanced Weight
+* [x] Slot konfigurieren
 * [x] Staging leeren
-* [x] Tag schreiben
-* [x] Tag verknüpfen
-* [x] Tag trennen
-* [x] Tag löschen
-* [x] Spule suchen
-* [x] Spulendetails
+* [x] Spule auswählen
+
+Neu zu migrieren:
+
+* [ ] bisherige Buttons „Tag schreiben“ und „Tag verknüpfen“ entfernen
+* [ ] stattdessen genau einen Button „Tag zuordnen“ anzeigen
+* [ ] bisherige Buttons „Tag löschen“ und „Tag trennen“ entfernen
+* [ ] stattdessen genau einen Button „Tag-Zuordnung entfernen“ anzeigen
+* [ ] Tagaktionen abhängig vom Zuordnungsstatus aktivieren
+* [ ] „Tag zuordnen“ deaktivieren beziehungsweise anpassen, wenn bereits korrekt zugeordnet
+* [ ] „Tag-Zuordnung entfernen“ nur bei vorhandener Zuordnung anbieten
+* [ ] keine technischen Write/Link/Erase/Unlink-Begriffe im UI anzeigen
+* [ ] EEZ-Actions entsprechend migrieren
+* [ ] Build
 
 ## 3.11 Slot-Screens
 
-* [x] `SCR_TRAY_DETAILS`
-* [x] Tab Slotinformationen
-* [x] Tab Spuleninformationen
-* [x] `SCR_TRAY_ACTIONS`
-* [x] aus Staging konfigurieren
-* [x] manuell konfigurieren
-* [x] Zuordnung entfernen
-* [x] Slot zurücksetzen
-* [x] Zuordnung erneut anwenden
-* [x] Slot aktualisieren
-* [x] `SCR_TRAY_SELECT`
-* [x] Druckerwechsel im Auswahlmodus
-* [x] AMS-Wechsel im Auswahlmodus
-* [x] Slot hervorheben
-* [x] Zusammenfassung nach Auswahl
+* [x] Slotdetails
+* [x] Tabs
+* [x] Slotaktionen
+* [x] TraySelect
+* [x] Drucker-/AMS-Wechsel
 
-## 3.12 Spulen-Screens – entfällt
+## 3.12 Spulenscreens
 
-Separate Spulensuche und Spulendetailansicht werden nicht benötigt.
+Separate Hauptscreens entfallen.
 
-Spulenauswahl wird in späteren Workflows über wiederverwendbare Komponenten umgesetzt.
+Spulenauswahl erfolgt über Picker.
 
-## 3.13 Settings-Grundstruktur
+## 3.13–3.17 Settings/Dialoge
 
-* [x] `SCR_SETTINGS_HOME`
-* [x] WLAN
-* [x] Spoolman
-* [x] Waage
-* [x] Bambu-Drucker
-* [x] Gerät
-* [x] Diagnose
+* [x] Settings Home
+* [x] Spoolman Settings
+* [x] Druckerverwaltung
+* [x] WLAN Settings
+* [x] Scale Settings
+* [x] Device Settings
+* [x] Diagnostics
 * [x] Firmware
-* [x] keine Security-Key-Kategorie
-* [x] Navigation
-* [x] Zurücknavigation
-
-## 3.14 Spoolman-Settings
-
-* [x] `SCR_SETTINGS_SPOOLMAN`
-* [x] Verbindungsname
-* [x] HTTP/HTTPS
-* [x] Host/IP
-* [x] Port
-* [x] API-Basispfad
-* [x] Timeout
-* [x] Verbindung testen
-* [x] Status
-* [x] Serverversion
-* [x] Speichern
-* [x] Abbrechen
-* [x] Eingabevalidierung
-* [x] kein Security-Key-Feld
-
-## 3.15 Druckerverwaltung
-
-* [x] `SCR_SETTINGS_PRINTERS`
-* [x] Druckerliste
-* [x] hinzufügen
-* [x] bearbeiten
-* [x] löschen
-* [x] aktivieren/deaktivieren
-* [x] Standarddrucker
-* [x] aktiver Drucker
-* [x] `SCR_SETTINGS_PRINTER_EDIT`
-* [x] Anzeigename
-* [x] Host/IP
-* [x] Seriennummer
-* [x] LAN-Zugangscode
-* [x] Zugangscode maskieren
-* [x] Verbindung testen
-* [x] Speichern
-* [x] Abbrechen
-* [x] kein Security Key
-
-## 3.16 Weitere Settings-Screens
-
-* [x] `SCR_SETTINGS_WIFI`
-* [x] `SCR_SETTINGS_SCALE`
-* [x] `SCR_SETTINGS_DEVICE`
-* [x] `SCR_SETTINGS_DIAGNOSTICS`
-* [x] `SCR_SETTINGS_FIRMWARE`
-
-## 3.17 Dialoge und Overlays
-
-* [x] Boot-Fortschritt
-* [x] Verbindungsfortschritt
-* [x] NFC-Leseoverlay
-* [x] NFC-Schreiboverlay
-* [x] Gewichtsstabilisierung
-* [x] Spoolman-Anfrage
-* [x] Bambu-Verbindung
-* [x] Bestätigungsdialog
-* [x] Fehlerdialog
-* [x] Erfolgsdialog
-* [x] Neustartbestätigung
-* [x] WLAN-Resetbestätigung
-
-### Abnahmekriterien Phase 3
-
-* Alle Screenskelett vorhanden.
-* Navigation mit Mock-Daten möglich.
-* Mehrdruckerunterstützung sichtbar.
-* Spoolman eigener Settings-Screen.
-* Keine Security-Key-Funktion.
-* Build erfolgreich.
+* [x] Dialoge
+* [x] Overlays
 
 ---
 
-# Phase 4 – Waage und Gewicht
+# Phase 4 – Waage
 
-## 4.1 HX711-Hardware
+## 4.1–4.8
 
-* [x] HX711-Pins verifizieren
-* [x] DOUT-Interruptfähigkeit prüfen
-* [x] Interrupt registrieren
-* [x] ISR mit `IRAM_ATTR`
-* [x] ISR weckt ScaleTask
-* [x] keine HX711-Kommunikation in ISR
-
-## 4.2 ScaleTask
-
-* [x] auf Notification blockieren
-* [x] Messwert lesen
-* [x] Verbindungsfehler
-* [x] Filter aufrufen
-* [x] Event an AppTask
-
-## 4.3 Filter
-
-* [x] gleitender Mittelwert
-* [x] Tiefpassfilter
-* [x] Ausreißer
-* [x] negative Kleinwerte
-* [x] Stabilität
-* [x] Stabilitätszeit
-* [x] Konfiguration zentral
-
-## 4.4 Tarierung und Kalibrierung
-
-* [x] Commands über Queue
-* [x] Tarieren
+* [x] HX711
+* [x] IRQ
+* [x] ScaleTask
+* [x] Filter
+* [x] Tarierung
 * [x] Kalibrierung
-* [x] Kalibrierfaktor
-* [x] Speicherung über StorageTask
-* [x] `/config/scale.json`
-* [x] Laden beim Start
-* [x] Zurücksetzen
-
-## 4.5 GUI-Anbindung
-
-* [x] WeightDisplay mit ScaleTask
-* [x] stabil anzeigen
-* [x] instabil anzeigen
-* [x] Fehler anzeigen
-* [x] Quick Weight freischalten
-* [x] Advanced Weight mit realen Daten
-* [x] Scale-Settings mit realen Daten
-* [x] Tarierworkflow
-* [x] Kalibrierworkflow
-
-## 4.6 Quick Weight
-
-* [x] aktuelle Spule
-* [x] aktuelles Gewicht
-* [x] Stabilität
-* [x] berechnetes Restgewicht
-* [x] letzte Messung
-* [x] Bestätigung
-* [x] AppTask-Aktion
-
-## 4.7 Advanced Weight
-
-* [x] gebrauchte Spule
-* [x] volle/neue Spule
-* [x] Leergewicht korrigieren
-* [x] Ausgangsgewicht korrigieren
-* [x] Zusammenfassung
-* [x] Bestätigung
-* [x] Ergebnisdialog
-
-## 4.8 Tests
-
-* [x] Filtertest
-* [x] Stabilitätstest
-* [x] Ausreißertest
-* [x] Kalibrierberechnung
-* [x] simulierte Interruptfolge
-
-### Abnahmekriterien Phase 4
-
-* ScaleTask blockiert ereignisgesteuert.
-* Kein Busy Waiting.
-* Kalibrierung bleibt erhalten.
-* Ruhendes Gewicht stabil.
-* GUI bleibt reaktionsfähig.
+* [x] GUI
+* [x] Quick Weight
+* [x] Advanced Weight
+* [x] Tests
 
 ---
 
-# Phase 5 – NFC/RFID und Tag-Workflows
+# Phase 5 – NFC/RFID
 
-## 5.1 PN532-Hardware
+## 5.1 Hardware
 
-* [x] Schnittstelle festlegen
-* [x] IRQ prüfen
-* [x] Interrupt einrichten
-* [x] ISR weckt NfcTask
-* [x] keine Buskommunikation in ISR
+* [x] PN532
+* [x] IRQ
+* [x] ISR
+* [x] Task Notification
 
-## 5.2 Gemeinsamer Bus
+## 5.2 Bus
 
-* [x] Touch-/PN532-Bus prüfen
-* [x] I²C-Mutex falls nötig
-* [x] maximale Haltezeit
-* [x] Deadlocks vermeiden
+* [x] Bus geprüft
+* [x] Mutex
+* [x] Haltezeiten
+* [x] Deadlock-Vermeidung
 
-## 5.3 Grundlegendes NFC lesen und schreiben
+## 5.3 Basis
 
-Bereits implementierte Basisfunktionalität:
+* [x] UID
+* [x] NDEF
+* [x] spoolman-Payload
+* [x] Bambu
+* [x] Legacy
+* [x] Schreiben
+* [x] Löschen
+* [x] Verifizieren
+* [x] Entprellen
 
-* [x] UID lesen
-* [x] NDEF lesen
-* [x] `spoolman:<id>` parsen
-* [x] Bambu-Tag erkennen
-* [x] Legacy-Tag erkennen
-* [x] Tag schreiben
-* [x] Tag löschen
-* [x] Tag verifizieren
-* [x] Entprellung
+## 5.4 Parserarchitektur
 
-Die bestehende Funktionalität ist Ausgangspunkt für die folgenden Aufgaben und soll nicht unnötig neu geschrieben werden.
+* [x] TagTechnology
+* [x] TagFormat
+* [x] TagDefinition
+* [x] TagReadResult
+* [x] RawTagData
+* [x] ITagParser
+* [x] Registry
+* [x] FilamentStation Parser
+* [x] Bambu Parser Integration
+* [x] Legacy Integration
+* [x] Unknown
+* [x] Tests
+* [x] Build
 
----
+## 5.5 Native Tags
 
-## 5.4 Tag-Abstraktions- und Parserarchitektur
+* [x] NTAG213
+* [x] NTAG215
+* [x] NTAG216
+* [x] Payload lesen
+* [x] Payload schreiben
+* [x] Verifikation
+* [x] Löschen
+* [x] GUI
+* [x] Tests
 
-* [x] vorhandene NfcTask-Implementierung analysieren
-* [x] vorhandene Erkennung aus 5.3 weiterverwenden
-* [x] `TagTechnology` definieren
-* [x] `TagFormat` definieren
-* [x] `TagDefinition` definieren
-* [x] `TagReadResult` definieren
-* [x] `RawTagData` definieren
-* [x] `ITagParser` Interface definieren
-* [x] `TagParserRegistry` implementieren
-* [x] Parser hardwareunabhängig halten
-* [x] Parser dürfen keinen SD-Zugriff durchführen
-* [x] Parser dürfen keinen Spoolman-Zugriff durchführen
-* [x] Parser dürfen keine GUI-Funktionen aufrufen
-* [x] deterministische Parser-Reihenfolge implementieren
-* [x] unbekannten Tagfall definieren
-* [x] leeren NDEF-Tag erkennen
-* [x] vorhandene `spoolman:<id>`-Erkennung in `FilamentStationTagParser` kapseln
-* [x] vorhandene Bambu-Erkennung in neue Architektur integrieren
-* [x] vorhandene Legacy-Erkennung in neue Architektur integrieren
-* [x] AppEvent um klassifizierte Tagdaten erweitern
-* [x] bestehende API möglichst kompatibel halten
-* [x] Build durchführen
-* [x] Parser-Basistests erstellen
+## 5.6 Bambu
 
-### Abnahmekriterien 5.4
+* [x] Erkennung
+* [x] Definition
+* [x] Mapping
+* [x] Importworkflow
+* [x] read-only
+* [x] Tests
 
-* bestehende PN532-Hardwarelogik funktioniert weiterhin
-* NfcTask erkennt Technologie und logisches Format getrennt
-* Native-, Bambu-, Legacy- und Unknown-Fälle laufen über gemeinsame Abstraktion
-* Parser besitzen keine Netzwerk-/Storage-Abhängigkeiten
-* unbekannte Tags erzeugen keine erfundenen Daten
-* `pio run` erfolgreich
+## 5.7 OpenPrintTag
 
----
+* [x] Spezifikation
+* [x] Parser
+* [x] Definition
+* [x] Import
+* [x] Mapping
+* [x] read-only
+* [x] Tests
 
-## 5.5 Native FilamentStation-Tags
+## 5.8 OpenTag3D
 
-Unterstützte Chips:
+* [x] Spezifikation
+* [x] Parser
+* [x] Definition
+* [x] Import
+* [x] Mapping
+* [x] read-only
+* [x] Tests
 
-* NTAG213
-* NTAG215
-* NTAG216
+## 5.9 Legacy und Unknown
 
-NTAG215 ist der bevorzugte Standard.
+* [x] Legacy Parser
+* [x] Migration
+* [x] Unknown Screen
+* [x] UID-Zuordnung
+* [x] sichere Behandlung
 
-* [x] NTAG213 erkennen
-* [x] NTAG215 erkennen
-* [x] NTAG216 erkennen
-* [x] NDEF-Payload `spoolman:<id>` lesen
-* [x] Spool-ID validieren
-* [x] ungültige Payload klar ablehnen
-* [x] leeren NDEF-Tag erkennen
-* [x] native Tags schreiben
-* [x] geschriebenen Tag erneut lesen
-* [x] UID prüfen
-* [x] Payload prüfen
-* [x] Verifikation erst danach erfolgreich melden
-* [x] native Tags löschen
-* [x] Schreibfähigkeit vor Schreibvorgang prüfen
-* [x] `SCR_TAG_ACTION_SELECT` mit realer Tagklassifikation verbinden
-* [x] `SCR_TAG_REVIEW` verwenden
-* [x] `SCR_TAG_WRITE` verwenden
-* [x] `SCR_TAG_RESULT` verwenden
-* [x] vorhandene Spule über `CMP_SPOOL_PICKER` auswählen
-* [x] zuletzt verwendete Spule unterstützen
-* [x] optional Quick/Advanced Weight danach anbieten
-* [x] automatisierte Parser-Tests
+## 5.10 Bisherige Tagoperationen
 
-### Abnahmekriterien 5.5
+Technische Funktionalität ist bereits implementiert:
 
-* NTAG213/215/216 können als native FilamentStation-Tags verwendet werden
-* Payload bleibt `spoolman:<id>`
-* Schreiben wird durch erneutes Lesen verifiziert
-* keine Filamentstammdaten werden auf Tag dupliziert
+* [x] nativen Tag schreiben
+* [x] Mapping anlegen
+* [x] Mapping entfernen
+* [x] nativen Payload löschen
+* [x] Bambu nicht beschreiben
+* [x] OpenPrintTag nicht beschreiben
+* [x] OpenTag3D nicht beschreiben
+* [x] Unknown nicht beschreiben
+* [x] Fortschritt
+* [x] Verifikation
+* [x] Fehlerbehandlung
 
----
+Diese technischen Operationen bleiben erhalten.
 
-## 5.6 Originale Bambu-Lab-Tags
-
-Wichtige Regel:
-
-> Originale Bambu-Lab-Tags sind read-only aus Sicht von FilamentStation.
-
-* [x] vorhandene Bambu-Erkennung aus 5.3 analysieren
-* [x] Bambu-Technologie dokumentieren
-* [x] UID sicher auslesen
-* [x] vorhandene lesbare Definition-Daten extrahieren
-* [x] öffentliche/technische Formatspezifikation dokumentieren
-* [x] keine unbekannten Datenfelder erfinden
-* [x] `BambuLabTagParser` implementieren
-* [x] Daten in `TagDefinition` überführen
-* [x] Hersteller abbilden
-* [x] Material abbilden
-* [x] Farbe abbilden
-* [x] Farbcode abbilden
-* [x] bekannte Temperaturinformationen abbilden
-* [x] bekannte Gewichtsinformationen abbilden
-* [x] lokale UID-Zuordnung prüfen
-* [x] vorhandenes Mapping direkt verwenden
-* [x] ohne Mapping Importworkflow starten
-* [x] `SCR_TAG_DEFINITION_IMPORT` verwenden
-* [x] `SCR_BAMBU_SPOOL_TYPE` verwenden, falls notwendig
-* [x] bestehende Spoolman-Spule über `CMP_SPOOL_PICKER` auswählbar machen
-* [x] UID-Mapping nach erfolgreicher Zuordnung speichern
-* [x] Bambu-Tags aus sämtlichen Schreib-/Löschaktionen ausschließen
-* [x] UI darf „Tag schreiben“ bei originalem Bambu-Tag nicht anbieten
-* [x] automatisierter Test: Bambu-Tag erzeugt niemals Write-Command
-
-### Abnahmekriterien 5.6
-
-* Originale Bambu-Tags werden erkannt
-* Definition-Daten werden normalisiert
-* UID kann Spoolman-Spule zugeordnet werden
-* Tag selbst wird niemals verändert
-* keine Security-Key-Funktion notwendig
-
----
-
-## 5.7 OpenPrintTag – Read Support
-
-* [x] aktuelle OpenPrintTag-Spezifikation beziehungsweise Primärquelle recherchieren und dokumentieren
-* [x] Erkennungsmerkmale dokumentieren
-* [x] benötigte Tagtechnologien dokumentieren
-* [x] Testdaten aus belastbarer Quelle bereitstellen
-* [x] `OpenPrintTagParser` implementieren
-* [x] Hersteller parsen, falls vorhanden
-* [x] Material parsen, falls vorhanden
-* [x] Farbe parsen, falls vorhanden
-* [x] Gewichte parsen, falls vorhanden
-* [x] Temperaturen parsen, falls vorhanden
-* [x] unbekannte optionale Felder tolerieren
-* [x] Daten in `TagDefinition` überführen
-* [x] `SCR_TAG_DEFINITION_IMPORT` verwenden
-* [x] vorhandene Spoolman-Spule verbinden
-* [x] Import nach Spoolman anbieten
-* [x] lokales Mapping nur bei Bedarf erzeugen
-* [x] keine Schreibunterstützung implementieren
-* [x] keine Datenfelder erfinden
-* [x] Parser-Tests mit dokumentierten Testvektoren
-
-### Abnahmekriterien 5.7
-
-* bekannte OpenPrintTags werden zuverlässig erkannt
-* Daten können nach Spoolman übernommen werden
-* fremde Tags werden nicht fälschlich als OpenPrintTag erkannt
-* Version 1 schreibt keine OpenPrintTags
-
----
-
-## 5.8 OpenTag3D – Read Support
-
-* [x] aktuelle OpenTag3D-Spezifikation beziehungsweise Primärquelle recherchieren und dokumentieren
-* [x] Erkennungsmerkmale dokumentieren
-* [x] benötigte Tagtechnologien dokumentieren
-* [x] Testdaten bereitstellen
-* [x] `OpenTag3DParser` implementieren
-* [x] Hersteller parsen
-* [x] Material parsen
-* [x] Farbe parsen
-* [x] Gewichte parsen
-* [x] Temperaturen parsen
-* [x] vorhandene optionale Felder abbilden
-* [x] Daten in `TagDefinition` überführen
-* [x] `SCR_TAG_DEFINITION_IMPORT` verwenden
-* [x] vorhandene Spoolman-Spule verbinden
-* [x] Import nach Spoolman anbieten
-* [x] keine Schreibunterstützung implementieren
-* [x] Parser-Tests mit dokumentierten Testvektoren
-
-### Abnahmekriterien 5.8
-
-* bekannte OpenTag3D-Tags werden zuverlässig erkannt
-* normalisierte Daten können an Spoolman weitergegeben werden
-* unbekannte Felder verursachen keinen Absturz
-* Version 1 schreibt keine OpenTag3D-Tags
-
----
-
-## 5.9 Legacy- und unbekannte Tags
-
-### Legacy
-
-* [x] vorhandene Legacy-Erkennung aus 5.3 in `LegacyTagParser` migrieren
-* [x] unterstützte Legacy-Formate explizit dokumentieren
-* [x] verschlüsselte Security-Key-Formate nicht automatisch übernehmen
-* [x] bekannte Daten anzeigen
-* [x] nach Spoolman importieren
-* [x] mit bestehender Spule verbinden
-* [x] Migration auf natives `spoolman:<id>`-Format anbieten, wenn Tag sicher beschreibbar ist
-* [x] Tag löschen nur bei eindeutig unterstütztem beschreibbarem Format
-* [x] `SCR_TAG_LEGACY` verwenden
-
-### Unknown
-
-* [x] `SCR_TAG_UNKNOWN` bereitstellen beziehungsweise anbinden
-* [x] Tagtechnologie anzeigen
-* [x] UID anzeigen
-* [x] NDEF-Status anzeigen
-* [x] Schreibfähigkeit nur anzeigen, wenn sicher bekannt
-* [x] optional UID über `CMP_SPOOL_PICKER` einer Spoolman-Spule zuordnen
-* [x] unbekannten Tag nicht automatisch beschreiben
-* [x] unbekannten MIFARE-Classic-Speicher nicht verändern
-* [x] Mapping als JSON speichern
-
-### Abnahmekriterien 5.9
-
-* bekannte Legacy-Tags können migriert werden
-* unbekannte Tags werden sicher behandelt
-* UID-only-Zuordnung ist möglich
-* kein unbekannter Tag wird automatisch verändert
-
----
-
-## 5.10 Tagoperationen aus Staging
-
-Abhängig vom Tagtyp und den Fähigkeiten müssen Aktionen dynamisch freigegeben werden.
-
-  * [x] Tag schreiben für nativen beschreibbaren NTAG
-  * [x] Tag neu verknüpfen
-  * [x] Tag trennen
-  * [x] Tag löschen, wenn sicher unterstützt
-  * [x] Bambu-Tag: Schreiben deaktiviert
-  * [x] Bambu-Tag: Löschen deaktiviert
-  * [x] OpenPrintTag: Schreiben deaktiviert
-  * [x] OpenTag3D: Schreiben deaktiviert
-  * [x] Unknown: Schreiben standardmäßig deaktiviert
-  * [x] Fortschritt anzeigen
-  * [x] Verifikation durchführen
-  * [x] destruktive Aktionen bestätigen
-  * [x] Tagentfernung während Operation behandeln
-  * [x] Fehlerstatus sauber an AppTask melden
-
----
+Die Benutzeroberfläche wird in 5.12 vereinheitlicht.
 
 ## 5.11 Tag-Mappings
 
-* [x] `/mappings/nfc-spools.json`
-* [x] `/mappings/bambu-tags.json`
-* [x] `/mappings/open-tags.json`
-* [x] Mapping-Schema definieren
-* [x] UID normalisiert speichern
-* [x] Tagformat mitspeichern
-* [x] Spool-ID speichern
-* [x] Laden nur über StorageTask
-* [x] Speichern nur über StorageTask
-* [x] Mapping-Konflikte erkennen
-* [x] doppelte UID erkennen
-* [x] ungültige Spool-ID erkennen
+* [x] nfc-spools.json
+* [x] bambu-tags.json
+* [x] open-tags.json
+* [x] Schema
+* [x] normalisierte UID
+* [x] Tagformat
+* [x] Spool-ID
+* [x] StorageTask
+* [x] Konflikte
+* [x] doppelte UID
+* [x] ungültige Spool-ID
 * [x] Mapping entfernen
-* [x] Mapping ersetzen nur nach Bestätigung
-* [x] beschädigte Mapping-Datei behandeln
+* [x] Mapping ersetzen
+* [x] beschädigte Datei behandeln
 
-### Abnahmekriterien Phase 5
+---
 
-* NfcTask arbeitet ereignisgesteuert.
-* Bestehende Funktionalität aus 5.1–5.3 bleibt erhalten.
-* NTAG213/215/216 funktionieren als native FilamentStation-Tags.
-* Originale Bambu-Tags werden read-only unterstützt.
-* OpenPrintTag wird gelesen und importierbar.
-* OpenTag3D wird gelesen und importierbar.
-* Legacy-Tags werden sicher migriert.
-* Unbekannte Tags werden nicht automatisch verändert.
-* Tagparser sind von Hardware, Spoolman und Storage getrennt.
-* Keine Security-Key- oder Verschlüsselungslogik.
+# 5.12 UX-Migration: einheitliche Tag-Zuordnung
+
+Diese Aufgabe ist die nächste offene Aufgabe.
+
+Bestehende Write/Link/Erase/Unlink-Implementierungen werden nicht entfernt, sondern hinter einem einheitlichen Workflow gekapselt.
+
+## 5.12.1 Capability-Modell
+
+* [x] bestehendes `TagReadResult` analysieren
+* [x] `TagCapabilities` ergänzen oder vorhandenes Modell erweitern
+* [x] `canAssociateByUid`
+* [x] `canWriteFilamentStationPayload`
+* [x] `canClearFilamentStationPayload`
+* [x] `preserveOriginalContent`
+* [x] TagCapabilities für NTAG213
+* [x] TagCapabilities für NTAG215
+* [x] TagCapabilities für NTAG216
+* [x] TagCapabilities für Bambu
+* [x] TagCapabilities für OpenPrintTag
+* [x] TagCapabilities für OpenTag3D
+* [x] TagCapabilities für Legacy
+* [x] TagCapabilities für Unknown
+* [x] bestehendes einfaches `writable` nicht als alleinige Entscheidungsgrundlage verwenden
+* [x] Tests
+
+## 5.12.2 UiAction migrieren
+
+Alte öffentliche Benutzeraktionen:
+
+```text
+LinkTag
+WriteTag
+EraseTag
+UnlinkTag
+AssignUnknownTag
+RewriteLegacyTag
+```
+
+werden ersetzt durch:
+
+```text
+AssignTag
+RemoveTagAssignment
+```
+
+Aufgaben:
+
+* [ ] bestehende Verwendungen aller alten Actions suchen
+* [ ] `AssignTag` ergänzen
+* [ ] `RemoveTagAssignment` ergänzen
+* [ ] alte Actions aus Benutzeroberfläche entfernen
+* [ ] alte Actions intern nur vorübergehend als Kompatibilitätsadapter zulassen
+* [ ] UiBridge migrieren
+* [ ] AppTask migrieren
+* [ ] EEZ-Actions migrieren
+* [ ] Tests anpassen
+
+## 5.12.3 AssignTag-Workflow
+
+* [ ] Benutzer wählt nur „Tag zuordnen“
+* [ ] Spoolman-Spule über Picker auswählen
+* [ ] UID-Mapping erstellen
+* [ ] Capability prüfen
+* [ ] bei nativem beschreibbaren Tag `spoolman:<id>` schreiben
+* [ ] geschriebenen Payload verifizieren
+* [ ] bei Bambu nur Mapping
+* [ ] bei OpenPrintTag nur Mapping
+* [ ] bei OpenTag3D nur Mapping
+* [ ] bei Unknown nur Mapping
+* [ ] Legacy nur schreiben, wenn explizit sicher freigegeben
+* [ ] Originalinhalt fremder Tags bewahren
+* [ ] Ergebnisstatus differenzieren
+* [ ] Tagwechsel während Workflow erkennen
+* [ ] UID bei Verifikation prüfen
+
+## 5.12.4 Verhalten bei Schreibfehler
+
+Standardpolicy:
+
+> Ein erfolgreich gespeichertes UID-Mapping bleibt bestehen, auch wenn das optionale Beschreiben des Tags fehlschlägt.
+
+* [ ] Policy implementieren
+* [ ] Benutzer verständlich informieren
+* [ ] Mapping nicht unbemerkt zurückrollen
+* [ ] Fehlerstatus protokollieren
+* [ ] erneuten Versuch ermöglichen
+
+Beispiel:
+
+```text
+Tag wurde zugeordnet.
+Die Zuordnung konnte jedoch nicht auf dem Tag gespeichert werden.
+```
+
+## 5.12.5 RemoveTagAssignment-Workflow
+
+* [ ] Benutzer wählt nur „Tag-Zuordnung entfernen“
+* [ ] Bestätigungsdialog
+* [ ] lokales Mapping entfernen
+* [ ] Capability prüfen
+* [ ] nativen FilamentStation-Payload wenn sicher möglich entfernen
+* [ ] Löschung verifizieren
+* [ ] Bambu-Inhalt unverändert
+* [ ] OpenPrintTag unverändert
+* [ ] OpenTag3D unverändert
+* [ ] Unknown unverändert
+* [ ] Legacy nur verändern, wenn explizit sicher
+* [ ] Ergebnisstatus differenzieren
+
+## 5.12.6 GUI migrieren
+
+### StagingActions
+
+* [ ] „Tag schreiben“ entfernen
+* [ ] „Tag verknüpfen“ entfernen
+* [ ] „Tag löschen“ entfernen
+* [ ] „Tag trennen“ entfernen
+* [ ] „Tag zuordnen“ ergänzen
+* [ ] „Tag-Zuordnung entfernen“ ergänzen
+
+### Tag-Screens
+
+* [ ] `SCR_TAG_ACTION_SELECT` auf einheitlichen Workflow migrieren
+* [ ] wenn sinnvoll in `SCR_TAG_ASSIGN` umbenennen
+* [ ] `SCR_TAG_WRITE` nicht mehr als benutzerseitigen „Tag schreiben“-Screen verwenden
+* [ ] generischen `SCR_TAG_OPERATION` verwenden oder bestehenden Screen entsprechend migrieren
+* [ ] Review-Screen vereinfachen
+* [ ] Result-Screen anpassen
+* [ ] Unknown-Screen anpassen
+* [ ] Legacy-Screen anpassen
+
+### Beschriftungen
+
+* [ ] keine Anzeige „Tag schreiben“
+* [ ] keine Anzeige „Tag verknüpfen“
+* [ ] keine Anzeige „Tag löschen“
+* [ ] keine Anzeige „Tag trennen“
+* [ ] technische Schritte dürfen nur als Statusinformation erscheinen
+* [ ] deutscher UI-Text konsistent halten
+
+## 5.12.7 Dynamische GUI
+
+Nicht zugeordnet:
+
+```text
+Tag zuordnen
+```
+
+Zuordnung vorhanden:
+
+```text
+Tag-Zuordnung entfernen
+```
+
+Optional zusätzlich bei falscher Zuordnung:
+
+```text
+Tag neu zuordnen
+```
+
+„Tag neu zuordnen“ darf technisch als `AssignTag` mit neuer Spool-ID umgesetzt werden.
+
+* [ ] Zuordnungsstatus anzeigen
+* [ ] aktuelle Spool-ID anzeigen
+* [ ] korrekte Buttons aktivieren/deaktivieren
+* [ ] keine technisch unmögliche Aktion anbieten
+
+## 5.12.8 Ergebnisdialoge
+
+* [ ] Mapping + Tag geschrieben
+* [ ] nur Mapping
+* [ ] Mapping entfernt + Payload entfernt
+* [ ] nur Mapping entfernt
+* [ ] Mapping erfolgreich, Schreiben fehlgeschlagen
+* [ ] Mapping entfernt, Tagbereinigung fehlgeschlagen
+* [ ] Tag während Operation entfernt
+* [ ] UID geändert
+
+## 5.12.9 Tests
+
+AssignTag:
+
+* [ ] NTAG → Mapping + Write
+* [ ] Bambu → Mapping ohne Write
+* [ ] OpenPrintTag → Mapping ohne Write
+* [ ] OpenTag3D → Mapping ohne Write
+* [ ] Unknown → Mapping ohne Write
+* [ ] Legacy SafeRewrite → Mapping + Write
+* [ ] Legacy Preserve → Mapping-only
+
+RemoveTagAssignment:
+
+* [ ] NTAG → Mapping entfernen + Payload entfernen
+* [ ] Bambu → Mapping entfernen, kein Erase
+* [ ] OpenPrintTag → Mapping entfernen, kein Erase
+* [ ] OpenTag3D → Mapping entfernen, kein Erase
+* [ ] Unknown → Mapping entfernen, kein Erase
+
+Fehler:
+
+* [ ] Write schlägt fehl
+* [ ] Verify schlägt fehl
+* [ ] Storage schlägt fehl
+* [ ] Mapping existiert bereits
+* [ ] Tag entfernt
+* [ ] UID geändert
+
+## 5.12.10 Build und Migration
+
+* [ ] EEZ-Projekt neu generieren
+* [ ] `pio run`
+* [ ] vorhandene NFC-Tests
+* [ ] neue Assignment-Tests
+* [ ] Compilerwarnungen prüfen
+* [ ] alte ungenutzte UiActions entfernen
+* [ ] keine toten EEZ-Actions
+* [ ] Dokumentation aktualisieren
+
+### Abnahmekriterien 5.12
+
+* Benutzer sieht nur „Tag zuordnen“ und „Tag-Zuordnung entfernen“.
+* Benutzer muss nicht wissen, ob ein Mapping oder Schreibvorgang notwendig ist.
+* Native NTAGs werden beim Zuordnen automatisch beschrieben.
+* Bambu-Tags bleiben unverändert.
+* OpenPrintTag/OpenTag3D bleiben unverändert.
+* UID-Mapping funktioniert für alle unterstützten Tags.
+* Beim Entfernen werden nur von FilamentStation sicher verwaltbare Inhalte gelöscht.
+* keine fremden Tagdaten werden beschädigt.
+* Build erfolgreich.
+* Tests erfolgreich.
 
 ---
 
@@ -863,32 +632,32 @@ Abhängig vom Tagtyp und den Fähigkeiten müssen Aktionen dynamisch freigegeben
 
 ## 6.2 Portalbetrieb
 
-* [ ] nur im NetworkTask
+* [ ] nur NetworkTask
 * [ ] UI bleibt aktiv
 * [ ] AppTask erhält Status
 * [ ] Abbruch
 * [ ] Timeout
-* [ ] kein `process()` in `loop()`
+* [ ] kein process() in loop()
 
 ## 6.3 WiFi-Events
 
-* [ ] `WiFi.onEvent()`
+* [ ] WiFi.onEvent()
 * [ ] Connected
 * [ ] Got IP
 * [ ] Disconnect
 * [ ] Lost IP
-* [ ] kurze Callback-Nachrichten
-* [ ] Event Group aktualisieren
+* [ ] kurze Callbacks
+* [ ] Event Group
 
 ## 6.4 Netzwerkparameter
 
-* [ ] `/config/network.json`
+* [ ] network.json
 * [ ] Hostname
 * [ ] DHCP/statisch
 * [ ] DNS
 * [ ] Portalname
 * [ ] Timeouts
-* [ ] Speichern über StorageTask
+* [ ] StorageTask
 
 ## 6.5 GUI
 
@@ -896,19 +665,10 @@ Abhängig vom Tagtyp und den Fähigkeiten müssen Aktionen dynamisch freigegeben
 * [ ] SSID
 * [ ] IP
 * [ ] RSSI
-* [ ] Captive Portal starten
-* [ ] WLAN neu konfigurieren
-* [ ] WLAN-Daten löschen
-* [ ] Portal-Anleitung
-* [ ] kein Security Key
-
-### Abnahmekriterien Phase 6
-
-* WLAN ohne Neukompilierung.
-* Portal blockiert andere Tasks nicht.
-* WiFi-Callbacks bleiben kurz.
-* Zusatzparameter als JSON.
-* Passwort nicht auf SD dupliziert.
+* [ ] Captive Portal
+* [ ] neu konfigurieren
+* [ ] Zugangsdaten löschen
+* [ ] Anleitung
 
 ---
 
@@ -916,9 +676,9 @@ Abhängig vom Tagtyp und den Fähigkeiten müssen Aktionen dynamisch freigegeben
 
 ## 7.1 Konfiguration
 
-* [ ] `/config/spoolman.json`
-* [ ] GUI-Werte laden
-* [ ] GUI-Werte speichern
+* [ ] spoolman.json
+* [ ] GUI laden
+* [ ] GUI speichern
 * [ ] URL normalisieren
 * [ ] Timeout
 * [ ] Verbindung testen
@@ -927,78 +687,57 @@ Abhängig vom Tagtyp und den Fähigkeiten müssen Aktionen dynamisch freigegeben
 
 ## 7.2 Spulen
 
-* [ ] Spule nach ID
-* [ ] Spulen suchen
-* [ ] Materialfilter
-* [ ] Herstellerfilter
-* [ ] Farbfilter
-* [ ] Ergebnisse für `CMP_SPOOL_PICKER`
-* [ ] kompakte Spuleninfos für Workflows liefern
+* [ ] nach ID
+* [ ] Suche
+* [ ] Filter
+* [ ] CMP_SPOOL_PICKER
+* [ ] kompakte Infos
 
 ## 7.3 Hersteller und Filamente
 
-* [ ] Hersteller suchen
-* [ ] Hersteller anlegen
+* [ ] Vendor suchen
+* [ ] Vendor anlegen
 * [ ] Filament suchen
 * [ ] Filament anlegen
-* [ ] Dubletten vermeiden
-* [ ] Eingaben validieren
+* [ ] Dubletten
+* [ ] Validierung
 
-## 7.4 Generischer TagDefinition-Import
+## 7.4 TagDefinition-Import
 
-Der Import darf nicht tagformatspezifisch im SpoolmanClient implementiert werden.
-
-Eingabe:
-
-```text
-TagDefinition
-```
-
-* [ ] `TagDefinition` auf Spoolman-Felder abbilden
-* [ ] Hersteller finden
-* [ ] Material normalisieren
-* [ ] Filament finden
-* [ ] Farbe berücksichtigen
-* [ ] Temperaturen berücksichtigen
-* [ ] Gewichte berücksichtigen
-* [ ] passende Datensätze vorschlagen
-* [ ] fehlenden Hersteller optional anlegen
-* [ ] fehlendes Filament optional anlegen
+* [ ] TagDefinition abbilden
+* [ ] Vendor
+* [ ] Material
+* [ ] Filament
+* [ ] Farbe
+* [ ] Temperaturen
+* [ ] Gewicht
+* [ ] Treffer vorschlagen
+* [ ] fehlende Datensätze
 * [ ] Spule anlegen
-* [ ] Spulen-ID zurückmelden
+* [ ] Spool-ID
 * [ ] Dublettenwarnung
-* [ ] unvollständige Tagdaten in UI kennzeichnen
-* [ ] Bambu-Definition importieren
-* [ ] OpenPrintTag-Definition importieren
-* [ ] OpenTag3D-Definition importieren
-* [ ] Legacy-Definition importieren
+* [ ] Bambu
+* [ ] OpenPrintTag
+* [ ] OpenTag3D
+* [ ] Legacy
 
 ## 7.5 Gewicht
 
-* [ ] Quick Weight übertragen
-* [ ] Advanced Weight übertragen
-* [ ] aktualisierte Spule neu laden
-* [ ] Staging aktualisieren
-* [ ] Fehlerdialog
-* [ ] Pending Measurements
+* [ ] Quick Weight
+* [ ] Advanced Weight
+* [ ] Spule neu laden
+* [ ] Staging
+* [ ] Fehler
+* [ ] Pending
 
 ## 7.6 Cache
 
-* [ ] `/cache/spools.json`
-* [ ] `/cache/filaments.json`
-* [ ] `/cache/vendors.json`
-* [ ] Cache-Alter
-* [ ] veraltete Daten markieren
-* [ ] Cache nicht als führende Datenbank
-
-### Abnahmekriterien Phase 7
-
-* asynchrone Spoolman-Aufträge
-* UI blockiert nicht
-* Picker kann Spulen auswählen
-* generischer Tagimport funktioniert
-* Gewicht aktualisiert
-* Cache als JSON
+* [ ] Spulen
+* [ ] Filamente
+* [ ] Vendor
+* [ ] Alter
+* [ ] stale
+* [ ] nicht führend
 
 ---
 
@@ -1007,82 +746,69 @@ TagDefinition
 ## 8.1 Datenmodell
 
 * [ ] mehrere Drucker
-* [ ] stabile PrinterId
+* [ ] PrinterId
 * [ ] aktiver Drucker
-* [ ] Standarddrucker
-* [ ] aktives AMS je Drucker
-* [ ] Cache je Drucker
-* [ ] Slotzuordnung je Drucker
-
-## 8.2 Bambu-Konfiguration
-
-* [ ] `/config/bambu.json`
-* [ ] Name
-* [ ] Host/IP
-* [ ] Seriennummer
-* [ ] LAN-Zugangscode
-* [ ] aktiviert
 * [ ] Standard
-* [ ] ausgewählt
-* [ ] kein Security Key
+* [ ] AMS je Drucker
+* [ ] Cache
+* [ ] Slots
+
+## 8.2 Konfiguration
+
+* [ ] bambu.json
+* [ ] Name
+* [ ] Host
+* [ ] Serial
+* [ ] Access Code
+* [ ] enabled
+* [ ] Default
+* [ ] selected
 
 ## 8.3 BambuTask
 
-* [ ] Commands mit printerId
-* [ ] Events mit printerId
-* [ ] Drucker aktivieren
-* [ ] Drucker wechseln
+* [ ] printerId
 * [ ] verbinden
 * [ ] trennen
-* [ ] Verbindung testen
+* [ ] testen
 * [ ] Status
-* [ ] AMS-Liste
+* [ ] AMS
 * [ ] Slots
-* [ ] External Slot
+* [ ] External
 * [ ] Slotdaten schreiben
-* [ ] Slotdaten zurücksetzen
-* [ ] Wiederverbindung
+* [ ] Reset
+* [ ] Reconnect
 
 ## 8.4 Druckerwechsel
 
-* [ ] alten Zustand sichern
-* [ ] aktiven Drucker ändern
-* [ ] Kopfzeile aktualisieren
-* [ ] AMS-Daten laden
+* [ ] Zustand sichern
+* [ ] wechseln
+* [ ] Header
+* [ ] AMS
 * [ ] Staging erhalten
-* [ ] veraltete Antworten ignorieren
+* [ ] stale Responses
 * [ ] printerId prüfen
 
 ## 8.5 AMS-Zuordnung
 
-* [ ] Spule aus Staging
+* [ ] Staging
 * [ ] Drucker
 * [ ] AMS
 * [ ] Slot
-* [ ] Daten vorbereiten
-* [ ] BambuCommand
+* [ ] Daten
+* [ ] Command
 * [ ] Antwort
-* [ ] Slots neu laden
+* [ ] Reload
 * [ ] Ergebnis
 
-## 8.6 Druckerverwaltungs-GUI
+## 8.6 GUI
 
 * [ ] hinzufügen
 * [ ] bearbeiten
 * [ ] löschen
-* [ ] Standard setzen
-* [ ] aktiv setzen
-* [ ] Verbindung testen
-* [ ] Zugangscode maskieren
-* [ ] Löschbestätigung
-
-### Abnahmekriterien Phase 8
-
-* mindestens zwei Drucker unterstützt
-* aktiver Drucker permanent sichtbar
-* Daten werden nicht vermischt
-* kein Neustart beim Wechsel
-* kein Security-Key-Workflow
+* [ ] Default
+* [ ] aktiv
+* [ ] testen
+* [ ] Code maskieren
 
 ---
 
@@ -1090,70 +816,68 @@ TagDefinition
 
 ## 9.1 Hauptworkflow
 
-* [ ] Drucker auswählen
-* [ ] AMS auswählen
-* [ ] NFC/RFID-Spule erkennen
-* [ ] Staging anzeigen
-* [ ] Gewicht erfassen
-* [ ] Spoolman aktualisieren
-* [ ] Slot auswählen
-* [ ] Bambu konfigurieren
-* [ ] Ergebnis anzeigen
+* [ ] Drucker
+* [ ] AMS
+* [ ] NFC/RFID
+* [ ] Staging
+* [ ] Gewicht
+* [ ] Spoolman
+* [ ] Slot
+* [ ] Bambu
+* [ ] Ergebnis
 
-## 9.2 Native FilamentStation-Tags
+## 9.2 Native Tags
 
-* [ ] bekannten Tag erkennen
-* [ ] Spoolman-ID laden
+* [ ] erkennen
+* [ ] Spool-ID
 * [ ] Staging
 * [ ] wiegen
-* [ ] Spoolman aktualisieren
-* [ ] optional AMS zuweisen
+* [ ] aktualisieren
+* [ ] AMS
 
-## 9.3 Bambu-Tag-Workflow
+## 9.3 Bambu-Tags
 
-* [ ] originalen Bambu-Tag erkennen
-* [ ] UID-Mapping prüfen
-* [ ] Definition auslesen
-* [ ] vorhandene Spule verbinden oder importieren
-* [ ] Mapping speichern
+* [ ] erkennen
+* [ ] Mapping
+* [ ] Definition
+* [ ] importieren/zuordnen
 * [ ] wiegen
-* [ ] optional AMS zuweisen
-* [ ] Tag selbst unverändert lassen
+* [ ] AMS
+* [ ] unverändert lassen
 
-## 9.4 OpenPrintTag-Workflow
+## 9.4 OpenPrintTag
 
-* [ ] Format erkennen
-* [ ] Definition anzeigen
-* [ ] Spoolman-Match
-* [ ] verbinden oder importieren
-* [ ] Staging
-* [ ] optional wiegen
-
-## 9.5 OpenTag3D-Workflow
-
-* [ ] Format erkennen
-* [ ] Definition anzeigen
-* [ ] Spoolman-Match
-* [ ] verbinden oder importieren
-* [ ] Staging
-* [ ] optional wiegen
-
-## 9.6 Legacy-Workflow
-
-* [ ] Legacy erkennen
-* [ ] Daten anzeigen
+* [ ] erkennen
+* [ ] Definition
+* [ ] Match
+* [ ] Tag zuordnen
 * [ ] importieren
-* [ ] verbinden
-* [ ] optional auf natives Format migrieren
-* [ ] löschen nur wenn sicher unterstützt
+* [ ] Staging
 
-## 9.7 Unknown-Tag-Workflow
+## 9.5 OpenTag3D
 
-* [ ] Technologie anzeigen
-* [ ] UID anzeigen
-* [ ] NDEF-Status
-* [ ] optional UID einer Spule zuordnen
-* [ ] keine automatische Änderung
+* [ ] erkennen
+* [ ] Definition
+* [ ] Match
+* [ ] Tag zuordnen
+* [ ] importieren
+* [ ] Staging
+
+## 9.6 Legacy
+
+* [ ] erkennen
+* [ ] anzeigen
+* [ ] importieren
+* [ ] Tag zuordnen
+* [ ] sichere automatische Migration nur innerhalb AssignTag
+
+## 9.7 Unknown
+
+* [ ] Technologie
+* [ ] UID
+* [ ] NDEF
+* [ ] Tag zuordnen
+* [ ] unverändert lassen
 
 ## 9.8 Staging-Workflow
 
@@ -1161,240 +885,221 @@ TagDefinition
 * [ ] Advanced Weight
 * [ ] Configure Slot
 * [ ] Clear Staging
-* [ ] Write Tag abhängig von Fähigkeiten
-* [ ] Link Tag
-* [ ] Unlink Tag
-* [ ] Erase Tag abhängig von Fähigkeiten
+* [ ] Tag zuordnen
+* [ ] Tag-Zuordnung entfernen
 
-## 9.9 Slot-Workflow
+Nicht mehr Bestandteil des Benutzerworkflows:
 
-* [ ] Slotdetails
-* [ ] Spuleninformationen
+```text
+Write Tag
+Link Tag
+Unlink Tag
+Erase Tag
+```
+
+## 9.9 Slot
+
+* [ ] Details
+* [ ] Spule
 * [ ] Configure from Staging
-* [ ] Configure Manually über `CMP_SPOOL_PICKER`
+* [ ] Configure Manually
 * [ ] Untag Slot
-* [ ] Reset Slot
-* [ ] Reapply Assignment
-* [ ] Refresh Slot
+* [ ] Reset
+* [ ] Reapply
+* [ ] Refresh
 
 ## 9.10 Zustandsautomat
 
-* [ ] alle Screens durch AppTask
-* [ ] erlaubte Übergänge
-* [ ] Zurücknavigation
+* [ ] Screens
+* [ ] Übergänge
+* [ ] Zurück
 * [ ] Abbruch
-* [ ] Request-ID
-* [ ] Printer-ID
+* [ ] requestId
+* [ ] printerId
 * [ ] verspätete Antworten
 * [ ] doppelte Aktionen
-* [ ] Tagentfernung mitten im Workflow
-* [ ] Formatwechsel nach erneutem Scan
-
-### Abnahmekriterien Phase 9
-
-* Workflows ohne serielle Bedienung.
-* Kein Busy Waiting.
-* Kommunikation nur über RTOS-Mechanismen.
-* Tagfähigkeiten bestimmen verfügbare Aktionen.
-* Fehler führen zu definiertem Zustand.
+* [ ] Tag entfernt
+* [ ] UID-Wechsel
 
 ---
 
-# Phase 10 – Robustheit und Diagnose
+# Phase 10 – Robustheit
 
 ## 10.1 Task-Diagnose
 
-* [ ] Stack High Water Marks
-* [ ] Laufzeitstatistiken
-* [ ] Queue-Auslastung
+* [ ] Stack
+* [ ] Runtime
+* [ ] Queues
 * [ ] Event Bits
 * [ ] Heap
 * [ ] PSRAM
-* [ ] `/diagnostics/task-stats.json`
 
-## 10.2 Hardware- und Speicherfehler
+## 10.2 Hardware/Speicher
 
-* [ ] SD während Schreiben entfernen
-* [ ] Stromausfall simulieren
-* [ ] HX711 trennen
-* [ ] PN532 trennen
+* [ ] SD entfernen
+* [ ] Stromausfall
+* [ ] HX711 weg
+* [ ] PN532 weg
 * [ ] langsame SD
-* [ ] beschädigte JSON
-* [ ] Backup-Wiederherstellung
+* [ ] JSON beschädigt
+* [ ] Backup
 
-## 10.3 NFC/RFID-Robustheit
+## 10.3 NFC/RFID
 
-* [ ] Tag während Lesen entfernen
-* [ ] Tag während Schreiben entfernen
-* [ ] zwei Tags schnell hintereinander
-* [ ] unbekannter NDEF-Inhalt
-* [ ] beschädigter NDEF-Inhalt
-* [ ] ungültige Spoolman-ID
-* [ ] Bambu-Tag darf nie beschrieben werden
-* [ ] OpenPrintTag darf in V1 nicht beschrieben werden
-* [ ] OpenTag3D darf in V1 nicht beschrieben werden
-* [ ] unbekannter MIFARE-Tag bleibt unverändert
-* [ ] Parser wirft bei unvollständigen Daten keinen Absturz
+* [ ] Tag während Read weg
+* [ ] Tag während Assignment weg
+* [ ] zwei Tags schnell
+* [ ] unbekannter NDEF
+* [ ] beschädigter NDEF
+* [ ] falsche Spool-ID
+* [ ] Bambu nie schreiben
+* [ ] OpenPrintTag nie schreiben
+* [ ] OpenTag3D nie schreiben
+* [ ] Unknown nie schreiben
 * [ ] Mapping-Konflikt
-* [ ] Mapping auf nicht existierende Spule
+* [ ] Spule existiert nicht
+* [ ] Write-Failure nach erfolgreichem Mapping
+* [ ] Clear-Failure nach entferntem Mapping
+* [ ] UID-Wechsel vor Verify
 
-## 10.4 Netzwerkfehler
+## 10.4 Netzwerk
 
-* [ ] WLAN während HTTP trennen
-* [ ] Spoolman neu starten
-* [ ] langsame Antwort
-* [ ] ungültige Antwort
-* [ ] WiFi-Reconnect
-* [ ] MQTT-Reconnect
+* [ ] WLAN weg
+* [ ] Spoolman weg
+* [ ] langsam
+* [ ] ungültig
+* [ ] Reconnect
+* [ ] MQTT
 
-## 10.5 Mehrdruckerfehler
+## 10.5 Mehrdrucker
 
-* [ ] Druckerwechsel während MQTT
-* [ ] Druckerwechsel während Slotupdate
-* [ ] Drucker offline
-* [ ] mehrere Drucker offline
-* [ ] aktiven Drucker löschen
-* [ ] Standarddrucker löschen
-* [ ] Antwort eines alten Druckers
-* [ ] AMS wird getrennt
-* [ ] Slotdaten verschiedener Drucker nicht vermischen
+* [ ] Wechsel während MQTT
+* [ ] Wechsel während Update
+* [ ] offline
+* [ ] mehrere offline
+* [ ] aktiven löschen
+* [ ] Default löschen
+* [ ] alte Antwort
+* [ ] AMS weg
+* [ ] Daten trennen
 
-## 10.6 Workflowfehler
+## 10.6 Workflow
 
-* [ ] Spoolman während Tagimport aus
-* [ ] NFC-Tag während Wizard entfernt
+* [ ] Spoolman bei Import weg
+* [ ] NFC während Wizard weg
 * [ ] Waage instabil
 * [ ] Queue voll
-* [ ] Antwort zu spät
-* [ ] Benutzer bricht ab
-* [ ] doppelte Messung verhindern
+* [ ] Antwort spät
+* [ ] Abbruch
+* [ ] doppelte Messung
 
-## 10.7 Watchdog und Langzeittest
+## 10.7 Langzeit
 
-* [ ] alle Tasks blockieren oder geben CPU frei
-* [ ] keine langen kritischen Abschnitte
-* [ ] keine langen Mutexhaltezeiten
-* [ ] mehrstündiger Betrieb
-* [ ] Speicherverbrauch
-* [ ] UI-Reaktionszeit
-* [ ] Dateiintegrität
-* [ ] kontrollierter Neustart nur durch AppTask
-
-### Abnahmekriterien Phase 10
-
-* keine offensichtlichen Speicherlecks
-* keine unnötig laufenden Tasks
-* keine Deadlocks
-* Dateiwiederherstellung funktioniert
-* Mehrdruckerdaten bleiben getrennt
-* unbekannte Tags bleiben unverändert
+* [ ] Task Blocking
+* [ ] Critical Sections
+* [ ] Mutex
+* [ ] Langzeit
+* [ ] Speicher
+* [ ] UI
+* [ ] Dateien
+* [ ] Neustart
 
 ---
 
-# Phase 11 – Dokumentation und Release
+# Phase 11 – Dokumentation
 
-## 11.1 Technische Dokumentation
+## 11.1 Technik
 
-* [ ] Architekturdiagramm
-* [ ] Taskdiagramm
-* [ ] Queueübersicht
-* [ ] Event-Group-Übersicht
-* [ ] Interruptübersicht
-* [ ] Taskprioritäten
-* [ ] Stackgrößen
-* [ ] GPIO-Tabelle
-* [ ] Verdrahtungsplan
-* [ ] Stückliste
+* [ ] Architektur
+* [ ] Tasks
+* [ ] Queues
+* [ ] Events
+* [ ] IRQ
+* [ ] Prioritäten
+* [ ] Stacks
+* [ ] GPIO
+* [ ] Verdrahtung
+* [ ] BOM
 
-## 11.2 NFC/RFID-Dokumentation
+## 11.2 NFC/RFID
 
-* [ ] unterstützte Tagtechnologien
-* [ ] unterstützte Tagformate
-* [ ] FilamentStation-NDEF-Format
-* [ ] NTAG215 als Empfehlung
-* [ ] NTAG213-Kompatibilität
-* [ ] NTAG216-Kompatibilität
-* [ ] Bambu-Read-only-Regel
-* [ ] Bambu-Mapping
-* [ ] OpenPrintTag-Quelle/Spezifikation
-* [ ] OpenTag3D-Quelle/Spezifikation
-* [ ] unterstützte Legacy-Formate
-* [ ] Verhalten unbekannter Tags
-* [ ] Parserarchitektur
-* [ ] Tag-Capability-Matrix
+* [ ] Tagtechnologien
+* [ ] Tagformate
+* [ ] FilamentStation-Payload
+* [ ] NTAG215
+* [ ] NTAG213
+* [ ] NTAG216
+* [ ] Bambu read-only
+* [ ] OpenPrintTag
+* [ ] OpenTag3D
+* [ ] Legacy
+* [ ] Unknown
+* [ ] Parser
+* [ ] Capabilities
+* [ ] Zuordnungsworkflow
+* [ ] Remove-Workflow
 
-## 11.3 Speicher und Daten
+## 11.3 Daten
 
-* [ ] JSON-Schemas
-* [ ] SD-Verzeichnisstruktur
-* [ ] Backup-Strategie
-* [ ] Cache-Strategie
-* [ ] Pending-Measurement-Strategie
-* [ ] Tag-Mapping-Schemas
+* [ ] JSON
+* [ ] Verzeichnisse
+* [ ] Backup
+* [ ] Cache
+* [ ] Pending
+* [ ] Mappings
 
 ## 11.4 Workflows
 
-* [ ] Screenübersicht
-* [ ] Navigationsdiagramm
+* [ ] Screens
+* [ ] Navigation
 * [ ] Hauptworkflow
-* [ ] Staging-Workflow
-* [ ] Slot-Workflow
-* [ ] Native-Tag-Workflow
-* [ ] Bambu-Tag-Workflow
-* [ ] OpenPrintTag-Workflow
-* [ ] OpenTag3D-Workflow
-* [ ] Legacy-Workflow
-* [ ] Unknown-Tag-Workflow
-* [ ] Mehrdruckerworkflow
+* [ ] Staging
+* [ ] Slot
+* [ ] Tag zuordnen
+* [ ] Tag-Zuordnung entfernen
+* [ ] Bambu
+* [ ] OpenPrintTag
+* [ ] OpenTag3D
+* [ ] Legacy
+* [ ] Unknown
+* [ ] Mehrdrucker
 
-## 11.5 Bedienungsanleitungen
+## 11.5 Benutzeranleitung
 
 * [ ] Installation
 * [ ] WLAN
-* [ ] WiFiManager
 * [ ] Spoolman
-* [ ] Waagenkalibrierung
-* [ ] NFC/RFID
-* [ ] eigene Tags beschreiben
-* [ ] Bambu-Tag importieren
-* [ ] OpenPrintTag importieren
-* [ ] OpenTag3D importieren
-* [ ] Drucker hinzufügen
-* [ ] Drucker wechseln
-* [ ] AMS-Zuweisung
-* [ ] Firmwareupdate
+* [ ] Waage
+* [ ] NFC
+* [ ] Tag zuordnen
+* [ ] Tag-Zuordnung entfernen
+* [ ] Bambu importieren
+* [ ] Open Tags
+* [ ] Drucker
+* [ ] AMS
+* [ ] Update
 
-## 11.6 Entwicklerdokumentation
+## 11.6 Entwickler
 
 * [ ] Build
 * [ ] Upload
 * [ ] Tests
-* [ ] EEZ-Studio-Export
-* [ ] neuen Screen ergänzen
-* [ ] neue Action ergänzen
-* [ ] neuen Task ergänzen
-* [ ] neues JSON-Schema ergänzen
-* [ ] neuen Tagparser ergänzen
+* [ ] EEZ Export
+* [ ] Screen
+* [ ] Action
+* [ ] Task
+* [ ] JSON
+* [ ] Tagparser
 
-## 11.7 Lizenz und Release
+## 11.7 Release
 
-* [ ] Bibliothekslizenzen
-* [ ] keine unzulässig kopierten SpoolEase-Dateien
-* [ ] Quellenhinweise
-* [ ] Quellen für externe Tagformate
+* [ ] Lizenzen
+* [ ] SpoolEase-Code nicht kopiert
+* [ ] Quellen
 * [ ] eigene Lizenz
-* [ ] Drittanbieterhinweise
-* [ ] Versionsnummer
+* [ ] Version
 * [ ] Changelog
-* [ ] Release-Build
-* [ ] reproduzierbarer Build
-* [ ] bekannte Einschränkungen
-* [ ] bestätigen, dass kein Security-Key-Workflow existiert
-
-### Abnahmekriterien Phase 11
-
-* neuer Entwickler kann bauen
-* Hardware kann aufgebaut werden
-* Workflows sind dokumentiert
-* Tagformate sind dokumentiert
-* Release ist reproduzierbar
+* [ ] Release
+* [ ] reproduzierbar
+* [ ] Known Issues
+* [ ] kein Security-Key-Workflow

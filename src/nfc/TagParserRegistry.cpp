@@ -2,10 +2,18 @@
 
 #include <cstring>
 
+#include "nfc/TagWritePolicy.h"
 #include "services/NfcPayload.h"
 
 namespace filament_station {
 namespace nfc {
+
+namespace {
+models::TagReadResult finalize(models::TagReadResult result) {
+  updateTagCapabilities(result);
+  return result;
+}
+}  // namespace
 
 TagParserRegistry::TagParserRegistry()
     : parsers_{{&filamentStation_, &bambuLab_, &openPrintTag_, &openTag3D_,
@@ -38,7 +46,7 @@ models::TagReadResult TagParserRegistry::parse(
     result.writable = true;
     result.erasable = true;
     result.definition.format = models::TagFormat::EmptyNdef;
-    return result;
+    return finalize(result);
   }
 
   for (std::size_t index = 0; index < parserCount_; ++index) {
@@ -53,7 +61,7 @@ models::TagReadResult TagParserRegistry::parse(
       result.payloadValid = false;
       result.writable = false;
       result.erasable = false;
-      return result;
+      return finalize(result);
     }
     if (parseResult != TagParseResult::Parsed) continue;
     result.format = parser->format();
@@ -66,7 +74,7 @@ models::TagReadResult TagParserRegistry::parse(
          result.format == models::TagFormat::Legacy) &&
         result.physicalWritable;
     result.erasable = result.writable;
-    return result;
+    return finalize(result);
   }
 
   if (tag.ndefPresent && tag.ndefReadable &&
@@ -77,7 +85,7 @@ models::TagReadResult TagParserRegistry::parse(
     result.writable = tag.hardwareWritable;
     result.erasable = tag.hardwareWritable;
     result.definition.format = models::TagFormat::EmptyNdef;
-    return result;
+    return finalize(result);
   }
 
   if (tag.ndefPresent && tag.ndefReadable &&
@@ -90,7 +98,7 @@ models::TagReadResult TagParserRegistry::parse(
   result.format = models::TagFormat::Unknown;
   result.writable = false;
   result.erasable = false;
-  return result;
+  return finalize(result);
 }
 
 }  // namespace nfc

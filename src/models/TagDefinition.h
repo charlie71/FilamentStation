@@ -29,6 +29,9 @@ enum class TagFormat : std::uint8_t {
 struct TagDefinition {
   TagFormat format = TagFormat::Unknown;
   bool hasSpoolId = false;
+  // Set only by a concrete, verified legacy parser that explicitly permits
+  // replacing its payload with the native FilamentStation reference.
+  bool safeToRewriteAsFilamentStation = false;
   std::uint32_t spoolId = 0;
   char vendor[48]{};
   char filamentName[48]{};

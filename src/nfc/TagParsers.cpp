@@ -143,8 +143,16 @@ bool LegacyTagParser::canParse(const models::RawTagData& tag) const {
 }
 TagParseResult LegacyTagParser::parse(const models::RawTagData& tag,
                                       models::TagDefinition& result) const {
-  return parseKnownPayload(tag, services::NfcPayloadType::Legacy, format(),
-                           "Legacy spool NDEF", result);
+  const auto parsed =
+      parseKnownPayload(tag, services::NfcPayloadType::Legacy, format(),
+                        "Legacy spool NDEF", result);
+  if (parsed == TagParseResult::Parsed) {
+    // This parser recognizes the documented plain-text spool:<id> payload.
+    // It is the only legacy representation currently verified as safe to
+    // replace with spoolman:<id> on a writable native NTAG.
+    result.safeToRewriteAsFilamentStation = true;
+  }
+  return parsed;
 }
 
 }  // namespace nfc
