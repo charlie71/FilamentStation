@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <array>
+#include "config/NfcConfig.h"
 #include "config/ScaleConfig.h"
 #include "nfc/TagWritePolicy.h"
 #include "rtos/Messages.h"
@@ -60,6 +61,23 @@ models::TagReadResult currentTag{};
 bool tagPresent = false;
 rtos::SpoolId pendingTagSpoolId = 0;
 rtos::SpoolId lastUsedTagSpoolId = 0;
+enum class TagAssignmentStage : std::uint8_t {
+  None,
+  SelectingSpool,
+  SavingMapping,
+  WritingPayload,
+  AbortedAwaitingStorage,
+};
+struct PendingTagAssignment {
+  TagAssignmentStage stage = TagAssignmentStage::None;
+  std::uint32_t requestId = 0;
+  rtos::SpoolId spoolId = 0;
+  models::TagFormat mappingFormat = models::TagFormat::Unknown;
+  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};
+  std::uint8_t uidLength = 0;
+  bool writePayload = false;
+};
+PendingTagAssignment pendingTagAssignment{};
 std::array<rtos::NfcUidMapping, rtos::kMaximumNfcUidMappings> bambuMappings{};
 std::uint8_t bambuMappingCount = 0;
 bool pendingBambuMapping = false;
@@ -118,6 +136,20 @@ rtos::SpoolId mappedNfcSpool(const models::TagReadResult& tag) {
   return 0;
 }
 
+bool assignmentTagMatches(const models::TagReadResult& tag) {
+  return pendingTagAssignment.uidLength > 0 &&
+         tag.uidLength == pendingTagAssignment.uidLength &&
+         std::memcmp(tag.uid, pendingTagAssignment.uid.data(),
+                     pendingTagAssignment.uidLength) == 0;
+}
+
+models::TagFormat assignmentMappingFormat(const models::TagReadResult& tag) {
+  return tag.format == models::TagFormat::EmptyNdef ||
+                 tag.format == models::TagFormat::FilamentStation
+             ? models::TagFormat::FilamentStation
+             : tag.format;
+}
+
 std::int32_t stagingTagCapabilities() {
   if (!tagPresent) return 0;
   std::int32_t capabilities = rtos::UI_TAG_CAP_LINK;
@@ -131,6 +163,7 @@ std::int32_t stagingTagCapabilities() {
 
 const char* mappingFormatName(models::TagFormat format) {
   switch (format) {
+    case models::TagFormat::FilamentStation: return "filamentStation";
     case models::TagFormat::BambuLab: return "bambuLab";
     case models::TagFormat::OpenPrintTag: return "openPrintTag";
     case models::TagFormat::OpenTag3D: return "openTag3D";
@@ -511,19 +544,56 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
 
   switch (action.type) {
     case rtos::UiActionType::AssignTag: {
-      // Temporary adapter for 5.12.2: the UI exposes one semantic action,
-      // while the proven write/mapping implementations remain untouched.
-      // Their ordered orchestration is implemented in 5.12.3.
-      rtos::UiAction compatibilityAction = action;
-      if (currentScreen == rtos::UiScreenId::TagLegacy &&
-          currentTag.definition.hasSpoolId) {
-        compatibilityAction.type = rtos::UiActionType::MigrateLegacyTag;
-      } else if (currentScreen == rtos::UiScreenId::StagingActions) {
-        compatibilityAction.type = rtos::UiActionType::LinkTag;
-      } else {
-        compatibilityAction.type = rtos::UiActionType::WriteTag;
+      if (!tagPresent || !currentTag.capabilities.canAssociateByUid ||
+          currentTag.uidLength == 0 ||
+          currentTag.uidLength > pendingTagAssignment.uid.size()) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Zuordnung nicht m\xC3\xB6glich",
+                    "Es ist kein zuordenbarer NFC-Tag vorhanden.");
+        return;
       }
-      handleUiAction(ctx, compatibilityAction);
+      if (pendingTagAssignment.stage != TagAssignmentStage::None) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Zuordnung l\xC3\xA4uft bereits",
+                    "Bitte den laufenden NFC-Vorgang abschlie\xC3\x9F" "en.");
+        return;
+      }
+
+      rtos::SpoolId spoolId = action.spoolId;
+      if (action.value == 1) spoolId = lastUsedTagSpoolId;
+      if (spoolId == 0 && currentTag.definition.hasSpoolId)
+        spoolId = currentTag.definition.spoolId;
+
+      pendingTagAssignment = {};
+      pendingTagAssignment.stage = TagAssignmentStage::SelectingSpool;
+      pendingTagAssignment.requestId = action.requestId;
+      pendingTagAssignment.spoolId = spoolId;
+      pendingTagAssignment.mappingFormat = assignmentMappingFormat(currentTag);
+      pendingTagAssignment.uidLength = currentTag.uidLength;
+      std::memcpy(pendingTagAssignment.uid.data(), currentTag.uid,
+                  currentTag.uidLength);
+      pendingTagAssignment.writePayload =
+          currentTag.capabilities.canWriteFilamentStationPayload;
+
+      pendingBambuUidLength = currentTag.uidLength;
+      std::memcpy(pendingBambuUid.data(), currentTag.uid,
+                  currentTag.uidLength);
+      pendingMappingFormat = pendingTagAssignment.mappingFormat;
+      pendingBambuMapping = true;
+
+      if (spoolId == 0) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::SpoolPicker, action.requestId,
+                    "Spoolman-Spule ausw\xC3\xA4hlen", "");
+        return;
+      }
+
+      rtos::UiAction selection = action;
+      selection.type = rtos::UiActionType::SelectSpool;
+      selection.spoolId = spoolId;
+      handleUiAction(ctx, selection);
       return;
     }
 
@@ -539,6 +609,9 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     }
 
     case rtos::UiActionType::Cancel:
+      if (pendingTagAssignment.stage ==
+          TagAssignmentStage::SelectingSpool)
+        pendingTagAssignment = {};
       pendingBambuMapping = false;
       pendingUnlinkConfirmation = false;
       pendingMappingReplacementConfirmation = false;
@@ -1271,6 +1344,9 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         if (!persistNfcMappings(ctx, action.requestId, pendingMappingFormat)) {
           mapping = previousBambuMapping;
           if (pendingBambuMappingWasNew) --bambuMappingCount;
+          if (pendingTagAssignment.stage ==
+              TagAssignmentStage::SelectingSpool)
+            pendingTagAssignment = {};
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
                       "Speichern fehlgeschlagen",
@@ -1280,6 +1356,12 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         pendingBambuMappingSave = true;
         pendingBambuMappingRequestId = action.requestId;
         pendingBambuMappingSpoolId = action.spoolId;
+        if (pendingTagAssignment.stage ==
+            TagAssignmentStage::SelectingSpool) {
+          pendingTagAssignment.stage = TagAssignmentStage::SavingMapping;
+          pendingTagAssignment.requestId = action.requestId;
+          pendingTagAssignment.spoolId = action.spoolId;
+        }
         sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                     rtos::UiOverlayKind::BambuMappingSave, action.requestId,
                     "Zuordnung speichern",
@@ -1879,7 +1961,17 @@ void appTask(void* parameter) {
           continue;
         }
         const bool operationWasPending =
-            pendingTagOperation != PendingTagOperation::None;
+            pendingTagOperation != PendingTagOperation::None ||
+            pendingTagAssignment.stage != TagAssignmentStage::None;
+        if (pendingTagAssignment.stage ==
+            TagAssignmentStage::SavingMapping) {
+          pendingTagAssignment.stage =
+              TagAssignmentStage::AbortedAwaitingStorage;
+        } else if (pendingTagAssignment.stage !=
+                   TagAssignmentStage::AbortedAwaitingStorage) {
+          pendingTagAssignment = {};
+        }
+        pendingBambuMapping = false;
         tagPresent = false;
         currentTag = {};
         pendingTagOperation = PendingTagOperation::None;
@@ -1894,6 +1986,21 @@ void appTask(void* parameter) {
                       "Der Tag wurde w\xC3\xA4hrend des Vorgangs entfernt.");
         }
       } else if (event.type == rtos::AppEventType::NfcTagWritten) {
+        const bool assignmentWrite =
+            pendingTagAssignment.stage ==
+            TagAssignmentStage::WritingPayload;
+        if (assignmentWrite &&
+            (event.nfcUidLength != pendingTagAssignment.uidLength ||
+             std::memcmp(event.nfcUid, pendingTagAssignment.uid.data(),
+                         pendingTagAssignment.uidLength) != 0)) {
+          pendingTagAssignment = {};
+          pendingTagOperation = PendingTagOperation::None;
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, event.requestId,
+                      "UID-Verifikation fehlgeschlagen",
+                      "Der gelesene Tag stimmt nicht mit der gespeicherten Zuordnung \xC3\xBC" "berein.");
+          continue;
+        }
         lastUsedTagSpoolId = event.spoolId;
         const models::TagReadResult previousTag = currentTag;
         currentTag = event.tagReadResult;
@@ -1916,9 +2023,17 @@ void appTask(void* parameter) {
         result.screenId = rtos::UiScreenId::TagResult;
         result.requestId = event.requestId;
         result.spoolId = event.spoolId;
-        std::snprintf(result.text, sizeof(result.text),
-                      "Tag erfolgreich mit Spule %lu verbunden. UID und Payload wurden verifiziert.",
-                      static_cast<unsigned long>(event.spoolId));
+        if (assignmentWrite) {
+          std::snprintf(
+              result.text, sizeof(result.text),
+              "Tag erfolgreich Spule %lu zugeordnet und beschrieben.\nUID und Payload wurden verifiziert.",
+              static_cast<unsigned long>(event.spoolId));
+          pendingTagAssignment = {};
+        } else {
+          std::snprintf(result.text, sizeof(result.text),
+                        "Tag erfolgreich mit Spule %lu verbunden. UID und Payload wurden verifiziert.",
+                        static_cast<unsigned long>(event.spoolId));
+        }
         currentScreen = result.screenId;
         sendUiCommand(ctx, result, "AppTask: NFC result screen queue overflow");
       } else if (event.type == rtos::AppEventType::NfcTagErased) {
@@ -1944,6 +2059,9 @@ void appTask(void* parameter) {
         sendUiCommand(ctx, result, "AppTask: NFC erase result queue overflow");
       } else if (event.type == rtos::AppEventType::NfcError &&
                  pendingTagOperation != PendingTagOperation::None) {
+        if (pendingTagAssignment.stage ==
+            TagAssignmentStage::WritingPayload)
+          pendingTagAssignment = {};
         pendingTagOperation = PendingTagOperation::None;
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
@@ -2011,6 +2129,67 @@ void appTask(void* parameter) {
                  event.requestId == pendingBambuMappingRequestId &&
                  event.type == rtos::AppEventType::StorageWriteCompleted) {
         pendingBambuMappingSave = false;
+        if (pendingTagAssignment.stage ==
+            TagAssignmentStage::AbortedAwaitingStorage) {
+          pendingTagAssignment = {};
+          continue;
+        }
+        if (pendingTagAssignment.stage == TagAssignmentStage::SavingMapping) {
+          rtos::UiCommand hide{};
+          hide.type = rtos::UiCommandType::HideProgress;
+          sendUiCommand(ctx, hide,
+                        "AppTask: assignment mapping progress close overflow");
+
+          if (!tagPresent || !assignmentTagMatches(currentTag)) {
+            pendingTagAssignment = {};
+            sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                        rtos::UiOverlayKind::Error, event.requestId,
+                        "Tag hat sich ge\xC3\xA4ndert",
+                        "Die UID stimmt nicht mehr mit dem zugeordneten Tag \xC3\xBC" "berein.");
+            continue;
+          }
+
+          if (pendingTagAssignment.writePayload &&
+              currentTag.capabilities.canWriteFilamentStationPayload) {
+            rtos::NfcCommand nfcCommand{};
+            nfcCommand.type = rtos::NfcCommandType::WriteSpoolTag;
+            nfcCommand.requestId = pendingTagAssignment.requestId;
+            nfcCommand.spoolId = pendingTagAssignment.spoolId;
+            if (xQueueSend(ctx.nfcCommandQueue, &nfcCommand,
+                           pdMS_TO_TICKS(50)) != pdPASS) {
+              pendingTagAssignment = {};
+              sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                          rtos::UiOverlayKind::Error, event.requestId,
+                          "NFC-Auftrag fehlgeschlagen",
+                          "Die Zuordnung wurde gespeichert, aber der Schreibauftrag konnte nicht gestartet werden.");
+              continue;
+            }
+            pendingTagSpoolId = pendingTagAssignment.spoolId;
+            pendingTagOperation = PendingTagOperation::Write;
+            pendingTagAssignment.stage = TagAssignmentStage::WritingPayload;
+            sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                        rtos::UiOverlayKind::TagWrite, event.requestId,
+                        "Tag wird zugeordnet",
+                        "Zuordnung gespeichert. FilamentStation-Daten werden geschrieben und verifiziert.");
+            continue;
+          }
+
+          rtos::UiCommand result{};
+          result.type = rtos::UiCommandType::ShowScreen;
+          result.screenId = rtos::UiScreenId::TagResult;
+          result.requestId = pendingTagAssignment.requestId;
+          result.spoolId = pendingTagAssignment.spoolId;
+          std::snprintf(
+              result.text, sizeof(result.text),
+              "Tag erfolgreich Spule %lu zugeordnet.\nOriginaler Taginhalt wurde nicht ver\xC3\xA4ndert.",
+              static_cast<unsigned long>(pendingTagAssignment.spoolId));
+          lastUsedTagSpoolId = pendingTagAssignment.spoolId;
+          pendingTagAssignment = {};
+          currentScreen = result.screenId;
+          sendUiCommand(ctx, result,
+                        "AppTask: mapping-only assignment result overflow");
+          continue;
+        }
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
         sendUiCommand(ctx, hide, "AppTask: Bambu save progress close overflow");
@@ -2042,6 +2221,10 @@ void appTask(void* parameter) {
                  event.requestId == pendingBambuMappingRequestId &&
                  event.type == rtos::AppEventType::StorageRequestError) {
         pendingBambuMappingSave = false;
+        if (pendingTagAssignment.stage == TagAssignmentStage::SavingMapping ||
+            pendingTagAssignment.stage ==
+                TagAssignmentStage::AbortedAwaitingStorage)
+          pendingTagAssignment = {};
         if (pendingMappingRemoval) {
           bambuMappings = mappingRemovalBackup;
           bambuMappingCount = mappingRemovalBackupCount;

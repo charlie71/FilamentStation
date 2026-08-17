@@ -43,7 +43,9 @@ bool isMappingPath(const char* path) {
 }
 
 bool parseMappingFormat(const char* text, models::TagFormat& format) {
-  if (std::strcmp(text, "bambuLab") == 0) format = models::TagFormat::BambuLab;
+  if (std::strcmp(text, "filamentStation") == 0)
+    format = models::TagFormat::FilamentStation;
+  else if (std::strcmp(text, "bambuLab") == 0) format = models::TagFormat::BambuLab;
   else if (std::strcmp(text, "openPrintTag") == 0) format = models::TagFormat::OpenPrintTag;
   else if (std::strcmp(text, "openTag3D") == 0) format = models::TagFormat::OpenTag3D;
   else if (std::strcmp(text, "legacy") == 0) format = models::TagFormat::Legacy;
@@ -58,7 +60,8 @@ bool formatAllowedForPath(models::TagFormat format, const char* path) {
   if (std::strcmp(path, "/mappings/open-tags.json") == 0)
     return format == models::TagFormat::OpenPrintTag ||
            format == models::TagFormat::OpenTag3D;
-  return format == models::TagFormat::Unknown ||
+  return format == models::TagFormat::FilamentStation ||
+         format == models::TagFormat::Unknown ||
          format == models::TagFormat::Legacy;
 }
 

@@ -445,21 +445,21 @@ Aufgaben:
 
 ## 5.12.3 AssignTag-Workflow
 
-* [ ] Benutzer wählt nur „Tag zuordnen“
-* [ ] Spoolman-Spule über Picker auswählen
-* [ ] UID-Mapping erstellen
-* [ ] Capability prüfen
-* [ ] bei nativem beschreibbaren Tag `spoolman:<id>` schreiben
-* [ ] geschriebenen Payload verifizieren
-* [ ] bei Bambu nur Mapping
-* [ ] bei OpenPrintTag nur Mapping
-* [ ] bei OpenTag3D nur Mapping
-* [ ] bei Unknown nur Mapping
-* [ ] Legacy nur schreiben, wenn explizit sicher freigegeben
-* [ ] Originalinhalt fremder Tags bewahren
-* [ ] Ergebnisstatus differenzieren
-* [ ] Tagwechsel während Workflow erkennen
-* [ ] UID bei Verifikation prüfen
+* [x] Benutzer wählt nur „Tag zuordnen“
+* [x] Spoolman-Spule über Picker auswählen
+* [x] UID-Mapping erstellen
+* [x] Capability prüfen
+* [x] bei nativem beschreibbaren Tag `spoolman:<id>` schreiben
+* [x] geschriebenen Payload verifizieren
+* [x] bei Bambu nur Mapping
+* [x] bei OpenPrintTag nur Mapping
+* [x] bei OpenTag3D nur Mapping
+* [x] bei Unknown nur Mapping
+* [x] Legacy nur schreiben, wenn explizit sicher freigegeben
+* [x] Originalinhalt fremder Tags bewahren
+* [x] Ergebnisstatus differenzieren
+* [x] Tagwechsel während Workflow erkennen
+* [x] UID bei Verifikation prüfen
 
 ## 5.12.4 Verhalten bei Schreibfehler
 

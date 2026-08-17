@@ -1074,7 +1074,11 @@ void tagActionClicked(lv_event_t* event) {
 }
 
 void lastTagSpoolClicked(lv_event_t*) {
-  sendAction(rtos::UiActionType::SelectSpool, currentPrinterId);
+  sendAction(rtos::UiActionType::AssignTag, currentPrinterId, 0, 0, 1);
+}
+
+void assignTagWithPickerClicked(lv_event_t*) {
+  sendAction(rtos::UiActionType::AssignTag, currentPrinterId);
 }
 
 void makeDescendantsTouchTransparent(lv_obj_t* object) {
@@ -1382,8 +1386,7 @@ void bindGeneratedWidgets() {
   bindClick(objects.tag_write_header, headerClicked);
   bindClick(objects.tag_result_header, headerClicked);
   for (lv_obj_t* control : tagSettings) bindClick(control, settingsClicked);
-  bindClick(objects.tag_action_select_spool, tagActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::SearchSpool));
+  bindClick(objects.tag_action_select_spool, assignTagWithPickerClicked);
   bindClick(objects.tag_action_use_last_spool, lastTagSpoolClicked);
   bindClick(objects.tag_action_write, tagActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::AssignTag));
@@ -1405,27 +1408,24 @@ void bindGeneratedWidgets() {
   bindClick(objects.tag_result_close, backClicked);
   bindClick(objects.tag_definition_import_header, headerClicked);
   bindClick(objects.tag_definition_import_settings, settingsClicked);
-  bindClick(objects.tag_definition_import_select_spool, tagActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::SearchSpool));
+  bindClick(objects.tag_definition_import_select_spool,
+            assignTagWithPickerClicked);
   bindClick(objects.tag_definition_import_spoolman, tagActionClicked,
             static_cast<std::uintptr_t>(
                 rtos::UiActionType::ImportTagDefinition));
   bindClick(objects.tag_definition_import_cancel, tagActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::Cancel));
   bindClick(objects.tag_legacy_header, headerClicked);
-  bindClick(objects.tag_legacy_select_spool, tagActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::SearchSpool));
+  bindClick(objects.tag_legacy_select_spool, assignTagWithPickerClicked);
   bindClick(objects.tag_legacy_import, tagActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::ImportTagDefinition));
-  bindClick(objects.tag_legacy_migrate, tagActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::AssignTag));
+  bindClick(objects.tag_legacy_migrate, assignTagWithPickerClicked);
   bindClick(objects.tag_legacy_erase, tagActionClicked,
             static_cast<std::uintptr_t>(
                 rtos::UiActionType::RemoveTagAssignment));
   bindClick(objects.tag_legacy_close, backClicked);
   bindClick(objects.tag_unknown_header, headerClicked);
-  bindClick(objects.tag_unknown_select_spool, tagActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::SearchSpool));
+  bindClick(objects.tag_unknown_select_spool, assignTagWithPickerClicked);
   bindClick(objects.tag_unknown_close, backClicked);
   bindClick(objects.bambu_spool_type_back, tagActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::Cancel));
