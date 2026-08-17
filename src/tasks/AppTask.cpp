@@ -519,6 +519,25 @@ void sendOverlay(rtos::RtosContext& ctx, rtos::UiCommandType type,
   }
 }
 
+void reportAssignmentWriteFailure(rtos::RtosContext& ctx,
+                                  std::uint32_t requestId,
+                                  const char* diagnostic) {
+  const rtos::SpoolId assignedSpoolId = pendingTagAssignment.spoolId;
+  pendingTagOperation = PendingTagOperation::None;
+  pendingTagAssignment = {};
+  if (assignedSpoolId != 0) lastUsedTagSpoolId = assignedSpoolId;
+  rtos::logLine(diagnostic);
+
+  rtos::UiCommand hide{};
+  hide.type = rtos::UiCommandType::HideProgress;
+  sendUiCommand(ctx, hide,
+                "AppTask: assignment write failure progress close overflow");
+  sendOverlay(
+      ctx, rtos::UiCommandType::ShowDialog, rtos::UiOverlayKind::Error,
+      requestId, "Tag teilweise zugeordnet",
+      "Tag wurde zugeordnet.\nDie Zuordnung konnte jedoch nicht auf dem Tag gespeichert werden.\nErneut \"Tag zuordnen\" w\xC3\xA4hlen, um den Schreibvorgang zu wiederholen.");
+}
+
 void showHomeWhenStartupReady(rtos::RtosContext& ctx) {
   if (startupNavigationSent || !uiStartupReady || !storageStartupReady) return;
   rtos::UiCommand command{};
@@ -1963,6 +1982,9 @@ void appTask(void* parameter) {
         const bool operationWasPending =
             pendingTagOperation != PendingTagOperation::None ||
             pendingTagAssignment.stage != TagAssignmentStage::None;
+        const bool assignmentWriteWasPending =
+            pendingTagAssignment.stage ==
+            TagAssignmentStage::WritingPayload;
         if (pendingTagAssignment.stage ==
             TagAssignmentStage::SavingMapping) {
           pendingTagAssignment.stage =
@@ -1976,7 +1998,11 @@ void appTask(void* parameter) {
         currentTag = {};
         pendingTagOperation = PendingTagOperation::None;
         pendingUnlinkConfirmation = false;
-        if (operationWasPending) {
+        if (assignmentWriteWasPending) {
+          reportAssignmentWriteFailure(
+              ctx, event.requestId,
+              "AppTask: AssignTag payload write failed because tag was removed; mapping retained");
+        } else if (operationWasPending) {
           rtos::UiCommand hide{};
           hide.type = rtos::UiCommandType::HideProgress;
           sendUiCommand(ctx, hide, "AppTask: removed-tag progress close overflow");
@@ -1993,12 +2019,9 @@ void appTask(void* parameter) {
             (event.nfcUidLength != pendingTagAssignment.uidLength ||
              std::memcmp(event.nfcUid, pendingTagAssignment.uid.data(),
                          pendingTagAssignment.uidLength) != 0)) {
-          pendingTagAssignment = {};
-          pendingTagOperation = PendingTagOperation::None;
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, event.requestId,
-                      "UID-Verifikation fehlgeschlagen",
-                      "Der gelesene Tag stimmt nicht mit der gespeicherten Zuordnung \xC3\xBC" "berein.");
+          reportAssignmentWriteFailure(
+              ctx, event.requestId,
+              "AppTask: AssignTag UID verification failed; mapping retained");
           continue;
         }
         lastUsedTagSpoolId = event.spoolId;
@@ -2060,8 +2083,12 @@ void appTask(void* parameter) {
       } else if (event.type == rtos::AppEventType::NfcError &&
                  pendingTagOperation != PendingTagOperation::None) {
         if (pendingTagAssignment.stage ==
-            TagAssignmentStage::WritingPayload)
-          pendingTagAssignment = {};
+            TagAssignmentStage::WritingPayload) {
+          reportAssignmentWriteFailure(
+              ctx, event.requestId,
+              "AppTask: AssignTag payload write or verification failed; mapping retained");
+          continue;
+        }
         pendingTagOperation = PendingTagOperation::None;
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
@@ -2157,11 +2184,9 @@ void appTask(void* parameter) {
             nfcCommand.spoolId = pendingTagAssignment.spoolId;
             if (xQueueSend(ctx.nfcCommandQueue, &nfcCommand,
                            pdMS_TO_TICKS(50)) != pdPASS) {
-              pendingTagAssignment = {};
-              sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                          rtos::UiOverlayKind::Error, event.requestId,
-                          "NFC-Auftrag fehlgeschlagen",
-                          "Die Zuordnung wurde gespeichert, aber der Schreibauftrag konnte nicht gestartet werden.");
+              reportAssignmentWriteFailure(
+                  ctx, event.requestId,
+                  "AppTask: AssignTag NFC command queue full; mapping retained");
               continue;
             }
             pendingTagSpoolId = pendingTagAssignment.spoolId;
@@ -2171,6 +2196,13 @@ void appTask(void* parameter) {
                         rtos::UiOverlayKind::TagWrite, event.requestId,
                         "Tag wird zugeordnet",
                         "Zuordnung gespeichert. FilamentStation-Daten werden geschrieben und verifiziert.");
+            continue;
+          }
+
+          if (pendingTagAssignment.writePayload) {
+            reportAssignmentWriteFailure(
+                ctx, event.requestId,
+                "AppTask: AssignTag write capability changed after mapping save; mapping retained");
             continue;
           }
 

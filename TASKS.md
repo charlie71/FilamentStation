@@ -467,11 +467,11 @@ Standardpolicy:
 
 > Ein erfolgreich gespeichertes UID-Mapping bleibt bestehen, auch wenn das optionale Beschreiben des Tags fehlschlägt.
 
-* [ ] Policy implementieren
-* [ ] Benutzer verständlich informieren
-* [ ] Mapping nicht unbemerkt zurückrollen
-* [ ] Fehlerstatus protokollieren
-* [ ] erneuten Versuch ermöglichen
+* [x] Policy implementieren
+* [x] Benutzer verständlich informieren
+* [x] Mapping nicht unbemerkt zurückrollen
+* [x] Fehlerstatus protokollieren
+* [x] erneuten Versuch ermöglichen
 
 Beispiel:
 
