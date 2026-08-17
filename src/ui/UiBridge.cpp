@@ -1297,7 +1297,20 @@ void bindGeneratedWidgets() {
   lv_obj_set_size(objects.staging_action_link_tag, 232, 52);
   lv_obj_set_pos(objects.staging_action_unlink_tag, 244, 100);
   lv_obj_set_size(objects.staging_action_unlink_tag, 232, 52);
-  lv_obj_add_flag(objects.staging_action_write_tag, LV_OBJ_FLAG_HIDDEN);
+  setControlText(objects.staging_action_write_tag, "Kein NFC-Tag erkannt");
+  lv_obj_remove_flag(objects.staging_action_write_tag, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_remove_flag(objects.staging_action_write_tag, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_pos(objects.staging_action_write_tag, 4, 156);
+  lv_obj_set_size(objects.staging_action_write_tag, 472, 52);
+  lv_obj_set_style_bg_opa(objects.staging_action_write_tag, LV_OPA_COVER,
+                          LV_PART_MAIN);
+  lv_obj_set_style_bg_color(objects.staging_action_write_tag,
+                            lv_color_hex(0xECEFF1), LV_PART_MAIN);
+  lv_obj_set_style_text_color(objects.staging_action_write_tag,
+                              lv_color_hex(0x101820), LV_PART_MAIN);
+  lv_obj_set_style_text_align(objects.staging_action_write_tag,
+                              LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+  lv_obj_set_style_radius(objects.staging_action_write_tag, 8, LV_PART_MAIN);
   lv_obj_add_flag(objects.staging_action_erase_tag, LV_OBJ_FLAG_HIDDEN);
   setControlText(objects.tray_select_external, "Extern");
   setControlText(objects.tray_action_reset, "Slot zur\xC3\xBC" "cksetzen");
@@ -2466,16 +2479,38 @@ void processUiCommand(const rtos::UiCommand& command) {
       break;
     case rtos::UiCommandType::ShowScreen:
       if (command.screenId == rtos::UiScreenId::StagingActions) {
+        const bool canAssign = (command.value & rtos::UI_TAG_CAP_LINK) != 0;
+        const bool canRemove =
+            (command.value & rtos::UI_TAG_CAP_UNLINK) != 0;
         setLabelButtonAvailable(
-            objects.staging_action_link_tag,
-            (command.value & rtos::UI_TAG_CAP_LINK) != 0, 0x1565C0);
+            objects.staging_action_link_tag, canAssign, 0x1565C0);
         setLabelButtonAvailable(
-            objects.staging_action_unlink_tag,
-            (command.value & rtos::UI_TAG_CAP_UNLINK) != 0, 0x1565C0);
+            objects.staging_action_unlink_tag, canRemove, 0xC62828);
+        char assignmentStatus[64]{};
+        if (command.spoolId != 0) {
+          std::snprintf(assignmentStatus, sizeof(assignmentStatus),
+                        "Zugeordnet zu Spule #%lu",
+                        static_cast<unsigned long>(command.spoolId));
+        } else if (canAssign) {
+          std::snprintf(assignmentStatus, sizeof(assignmentStatus),
+                        "Nicht zugeordnet");
+        } else {
+          std::snprintf(assignmentStatus, sizeof(assignmentStatus),
+                        "Kein NFC-Tag erkannt");
+        }
+        setControlText(objects.staging_action_write_tag, assignmentStatus);
       }
       if (command.screenId == rtos::UiScreenId::TagActionSelect &&
           command.text[0] != '\0') {
         lv_label_set_text(objects.tag_action_info, command.text);
+        const bool canAssign = (command.value & rtos::UI_TAG_CAP_LINK) != 0;
+        const bool canRemove =
+            (command.value & rtos::UI_TAG_CAP_UNLINK) != 0;
+        setLabelButtonAvailable(objects.tag_action_select_spool, canAssign,
+                                0x1565C0);
+        setLabelButtonAvailable(objects.tag_action_use_last_spool, canAssign,
+                                0x1565C0);
+        setLabelButtonAvailable(objects.tag_action_erase, canRemove, 0xC62828);
       } else if (command.screenId == rtos::UiScreenId::TagReview &&
                  command.text[0] != '\0') {
         lv_label_set_text(objects.tag_review_summary, command.text);
@@ -2488,15 +2523,22 @@ void processUiCommand(const rtos::UiCommand& command) {
       } else if (command.screenId == rtos::UiScreenId::TagLegacy &&
                  command.text[0] != '\0') {
         lv_label_set_text(objects.tag_legacy_summary, command.text);
-        const bool writable = command.value != 0;
+        const bool canAssign = (command.value & rtos::UI_TAG_CAP_LINK) != 0;
+        const bool canRemove =
+            (command.value & rtos::UI_TAG_CAP_UNLINK) != 0;
+        setLabelButtonAvailable(objects.tag_legacy_select_spool, canAssign,
+                                0x1565C0);
         lv_obj_set_flag(objects.tag_legacy_erase, LV_OBJ_FLAG_CLICKABLE,
-                        writable);
+                        canRemove);
         lv_obj_set_style_bg_color(objects.tag_legacy_erase,
-                                  lv_color_hex(writable ? 0xC62828 : 0x616161),
+                                  lv_color_hex(canRemove ? 0xC62828 : 0x616161),
                                   LV_PART_MAIN);
       } else if (command.screenId == rtos::UiScreenId::TagUnknown &&
-                 command.text[0] != '\0') {
+                  command.text[0] != '\0') {
         lv_label_set_text(objects.tag_unknown_summary, command.text);
+        setLabelButtonAvailable(
+            objects.tag_unknown_select_spool,
+            (command.value & rtos::UI_TAG_CAP_LINK) != 0, 0x1565C0);
       }
       if (command.screenId == rtos::UiScreenId::TrayDetails ||
           command.screenId == rtos::UiScreenId::TrayActions) {

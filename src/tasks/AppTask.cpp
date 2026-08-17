@@ -173,14 +173,14 @@ models::TagFormat assignmentMappingFormat(const models::TagReadResult& tag) {
 }
 
 std::int32_t stagingTagCapabilities() {
-  if (!tagPresent) return 0;
-  std::int32_t capabilities = rtos::UI_TAG_CAP_LINK;
-  if (nfc::mayWriteTag(currentTag)) capabilities |= rtos::UI_TAG_CAP_WRITE;
-  if (nfc::mayEraseTag(currentTag)) capabilities |= rtos::UI_TAG_CAP_ERASE;
-  if (mappedNfcSpool(currentTag) != 0 ||
-      currentTag.definition.hasSpoolId)
-    capabilities |= rtos::UI_TAG_CAP_UNLINK;
-  return capabilities;
+  if (!tagPresent || !currentTag.capabilities.canAssociateByUid) return 0;
+  return mappedNfcSpool(currentTag) == 0 ? rtos::UI_TAG_CAP_LINK
+                                         : rtos::UI_TAG_CAP_UNLINK;
+}
+
+void applyTagUiState(rtos::UiCommand& command) {
+  command.value = stagingTagCapabilities();
+  command.spoolId = tagPresent ? mappedNfcSpool(currentTag) : 0;
 }
 
 const char* mappingFormatName(models::TagFormat format) {
@@ -709,7 +709,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                 : rtos::UiScreenId::TagActionSelect;
         currentScreen = command.screenId;
         if (command.screenId == rtos::UiScreenId::StagingActions)
-          command.value = stagingTagCapabilities();
+          applyTagUiState(command);
         sendUiCommand(ctx, command, "AppTask: NFC cancel navigation overflow");
         return;
       }
@@ -1033,7 +1033,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         currentScreen = previousScreen;
       }
       if (command.screenId == rtos::UiScreenId::StagingActions)
-        command.value = stagingTagCapabilities();
+        applyTagUiState(command);
       sendUiCommand(ctx, command, "AppTask: back command queue overflow");
       return;
 
@@ -1295,7 +1295,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       command.type = rtos::UiCommandType::ShowScreen;
       command.screenId = currentScreen;
       if (currentScreen == rtos::UiScreenId::StagingActions)
-        command.value = stagingTagCapabilities();
+        applyTagUiState(command);
       sendUiCommand(ctx, command,
                     "AppTask: staging screen command queue overflow");
       return;
@@ -1872,14 +1872,18 @@ void appTask(void* parameter) {
           rtos::UiCommand navigation{};
           navigation.type = rtos::UiCommandType::ShowScreen;
           navigation.screenId = rtos::UiScreenId::TagActionSelect;
-          navigation.spoolId = pendingTagSpoolId;
+          applyTagUiState(navigation);
           std::snprintf(navigation.text, sizeof(navigation.text),
-                        "%s | %s | %s", chip,
+                        navigation.spoolId == 0
+                            ? "%s | %s | %s\nNicht zugeordnet"
+                            : "%s | %s | %s\nZugeordnet zu Spule #%lu",
+                        chip,
                         currentTag.format == models::TagFormat::FilamentStation
                             ? "FilamentStation"
                             : "leer",
                         currentTag.writable ? "beschreibbar"
-                                            : "schreibgesch\xC3\xBCtzt");
+                                            : "schreibgesch\xC3\xBCtzt",
+                        static_cast<unsigned long>(navigation.spoolId));
           if (sendUiCommand(ctx, navigation,
                             "AppTask: NFC action screen queue overflow")) {
             previousScreen = currentScreen;
@@ -1976,14 +1980,15 @@ void appTask(void* parameter) {
           legacy.type = rtos::UiCommandType::ShowScreen;
           legacy.screenId = rtos::UiScreenId::TagLegacy;
           legacy.requestId = event.requestId;
-          legacy.spoolId = currentTag.definition.spoolId;
-          legacy.value = nfc::mayWriteTag(currentTag) ? 1 : 0;
+          applyTagUiState(legacy);
           std::snprintf(
               legacy.text, sizeof(legacy.text),
-              "Format: spool:<id>\nSpoolman-ID: %lu\nTechnologie: %s\nUID: %s\nMigration: %s",
+              legacy.spoolId == 0
+                  ? "Format: Legacy\nSpoolman-ID: %lu\nTechnologie: %s\nUID: %s\nNicht zugeordnet"
+                  : "Format: Legacy\nSpoolman-ID: %lu\nTechnologie: %s\nUID: %s\nZugeordnet zu Spule #%lu",
               static_cast<unsigned long>(currentTag.definition.spoolId),
               tagTechnologyName(currentTag.technology), uid,
-              nfc::mayWriteTag(currentTag) ? "m\xC3\xB6glich" : "nicht m\xC3\xB6glich");
+              static_cast<unsigned long>(legacy.spoolId));
           previousScreen = currentScreen;
           currentScreen = legacy.screenId;
           sendUiCommand(ctx, legacy, "AppTask: legacy screen overflow");
@@ -2015,9 +2020,10 @@ void appTask(void* parameter) {
             unknown.type = rtos::UiCommandType::ShowScreen;
             unknown.screenId = rtos::UiScreenId::TagUnknown;
             unknown.requestId = event.requestId;
+            applyTagUiState(unknown);
             std::snprintf(
                 unknown.text, sizeof(unknown.text),
-                "Technologie: %s\nUID: %s\nNDEF: %s\nSchreibf\xC3\xA4higkeit: %s\nUnbekannte Daten werden nicht ver\xC3\xA4ndert.",
+                "Technologie: %s\nUID: %s\nNDEF: %s\nSchreibf\xC3\xA4higkeit: %s\nNicht zugeordnet",
                 tagTechnologyName(currentTag.technology), uid,
                 currentTag.ndefPresent
                     ? currentTag.ndefReadable ? "vorhanden, lesbar"

@@ -548,10 +548,10 @@ Tag neu zuordnen
 
 „Tag neu zuordnen“ darf technisch als `AssignTag` mit neuer Spool-ID umgesetzt werden.
 
-* [ ] Zuordnungsstatus anzeigen
-* [ ] aktuelle Spool-ID anzeigen
-* [ ] korrekte Buttons aktivieren/deaktivieren
-* [ ] keine technisch unmögliche Aktion anbieten
+* [x] Zuordnungsstatus anzeigen
+* [x] aktuelle Spool-ID anzeigen
+* [x] korrekte Buttons aktivieren/deaktivieren
+* [x] keine technisch unmögliche Aktion anbieten
 
 ## 5.12.8 Ergebnisdialoge
 

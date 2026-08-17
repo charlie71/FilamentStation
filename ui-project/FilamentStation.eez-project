@@ -3827,8 +3827,8 @@
               "objID": "61000000-0015-4600-8600-100000000000",
               "type": "LVGLLabelWidget",
               "left": 4,
-              "top": 100,
-              "width": 152,
+              "top": 156,
+              "width": 472,
               "height": 52,
               "customInputs": [],
               "customOutputs": [],
@@ -3846,7 +3846,7 @@
               "widthUnit": "px",
               "heightUnit": "px",
               "children": [],
-              "widgetFlags": "HIDDEN",
+              "widgetFlags": "",
               "hiddenFlagType": "literal",
               "clickableFlagType": "literal",
               "checkedStateType": "literal",
@@ -3856,7 +3856,7 @@
                 "objID": "3f914ad7-7c6a-3726-18ab-1e366918cdb5"
               },
               "groupIndex": 0,
-              "text": "Nicht verwendet",
+              "text": "Kein NFC-Tag erkannt",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -9225,7 +9225,7 @@
                 "objID": "55ac0000-1003-4000-8000-000000000000"
               },
               "groupIndex": 0,
-              "text": "NTAG21x | FilamentStation | beschreibbar",
+              "text": "NTAG215 | FilamentStation | beschreibbar\nNicht zugeordnet",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false,
