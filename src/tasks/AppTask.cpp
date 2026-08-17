@@ -879,8 +879,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                     rtos::UiOverlayKind::TagWrite, action.requestId,
                     pendingTagOperation == PendingTagOperation::Write
-                        ? "Tag wird geschrieben"
-                        : "Tag wird gel\xC3\xB6scht",
+                        ? "Tag wird zugeordnet"
+                        : "Tag-Zuordnung wird entfernt",
                     "Tag am Leser belassen. Lesen, Schreiben und Verifikation laufen.");
         return;
       }
@@ -2313,7 +2313,7 @@ void appTask(void* parameter) {
             sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                         rtos::UiOverlayKind::TagWrite, event.requestId,
                         "Tag wird zugeordnet",
-                        "Zuordnung gespeichert. FilamentStation-Daten werden geschrieben und verifiziert.");
+                        "Zuordnung gespeichert. Der Tag wird aktualisiert und das Ergebnis gepr\xC3\xBC" "ft.");
             continue;
           }
 

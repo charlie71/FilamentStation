@@ -499,32 +499,32 @@ Die Zuordnung konnte jedoch nicht auf dem Tag gespeichert werden.
 
 ### StagingActions
 
-* [ ] „Tag schreiben“ entfernen
-* [ ] „Tag verknüpfen“ entfernen
-* [ ] „Tag löschen“ entfernen
-* [ ] „Tag trennen“ entfernen
-* [ ] „Tag zuordnen“ ergänzen
-* [ ] „Tag-Zuordnung entfernen“ ergänzen
+* [x] „Tag schreiben“ entfernen
+* [x] „Tag verknüpfen“ entfernen
+* [x] „Tag löschen“ entfernen
+* [x] „Tag trennen“ entfernen
+* [x] „Tag zuordnen“ ergänzen
+* [x] „Tag-Zuordnung entfernen“ ergänzen
 
 ### Tag-Screens
 
-* [ ] `SCR_TAG_ACTION_SELECT` auf einheitlichen Workflow migrieren
-* [ ] wenn sinnvoll in `SCR_TAG_ASSIGN` umbenennen
-* [ ] `SCR_TAG_WRITE` nicht mehr als benutzerseitigen „Tag schreiben“-Screen verwenden
-* [ ] generischen `SCR_TAG_OPERATION` verwenden oder bestehenden Screen entsprechend migrieren
-* [ ] Review-Screen vereinfachen
-* [ ] Result-Screen anpassen
-* [ ] Unknown-Screen anpassen
-* [ ] Legacy-Screen anpassen
+* [x] `SCR_TAG_ACTION_SELECT` auf einheitlichen Workflow migrieren
+* [x] wenn sinnvoll in `SCR_TAG_ASSIGN` umbenennen
+* [x] `SCR_TAG_WRITE` nicht mehr als benutzerseitigen „Tag schreiben“-Screen verwenden
+* [x] generischen `SCR_TAG_OPERATION` verwenden oder bestehenden Screen entsprechend migrieren
+* [x] Review-Screen vereinfachen
+* [x] Result-Screen anpassen
+* [x] Unknown-Screen anpassen
+* [x] Legacy-Screen anpassen
 
 ### Beschriftungen
 
-* [ ] keine Anzeige „Tag schreiben“
-* [ ] keine Anzeige „Tag verknüpfen“
-* [ ] keine Anzeige „Tag löschen“
-* [ ] keine Anzeige „Tag trennen“
-* [ ] technische Schritte dürfen nur als Statusinformation erscheinen
-* [ ] deutscher UI-Text konsistent halten
+* [x] keine Anzeige „Tag schreiben“
+* [x] keine Anzeige „Tag verknüpfen“
+* [x] keine Anzeige „Tag löschen“
+* [x] keine Anzeige „Tag trennen“
+* [x] technische Schritte dürfen nur als Statusinformation erscheinen
+* [x] deutscher UI-Text konsistent halten
 
 ## 5.12.7 Dynamische GUI
 

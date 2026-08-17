@@ -1290,6 +1290,15 @@ void bindGeneratedWidgets() {
   setControlText(objects.staging_details_quick_weight, "Schnellwiegen");
   setControlText(objects.staging_action_advanced_weight,
                  "Erweitertes Wiegen");
+  setControlText(objects.staging_action_link_tag, "Tag zuordnen");
+  setControlText(objects.staging_action_unlink_tag,
+                 "Tag-Zuordnung entfernen");
+  lv_obj_set_pos(objects.staging_action_link_tag, 4, 100);
+  lv_obj_set_size(objects.staging_action_link_tag, 232, 52);
+  lv_obj_set_pos(objects.staging_action_unlink_tag, 244, 100);
+  lv_obj_set_size(objects.staging_action_unlink_tag, 232, 52);
+  lv_obj_add_flag(objects.staging_action_write_tag, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(objects.staging_action_erase_tag, LV_OBJ_FLAG_HIDDEN);
   setControlText(objects.tray_select_external, "Extern");
   setControlText(objects.tray_action_reset, "Slot zur\xC3\xBC" "cksetzen");
   setControlText(objects.scale_settings_reset,
@@ -1325,22 +1334,22 @@ void bindGeneratedWidgets() {
       objects.tag_legacy_settings, objects.tag_unknown_settings,
   }};
   for (lv_obj_t* control : tagSettings) setControlText(control, "Einst.");
-  setControlText(objects.tag_action_title, "NFC-Tag-Aktionen");
-  setControlText(objects.tag_action_select_spool, "Spule ausw\xC3\xA4hlen");
+  setControlText(objects.tag_action_title, "NFC-Tag zuordnen");
+  setControlText(objects.tag_action_select_spool, "Tag zuordnen");
   setControlText(objects.tag_action_use_last_spool,
                  "Zuletzt verwendete Spule");
-  setControlText(objects.tag_action_write, "Tag schreiben");
-  setControlText(objects.tag_action_erase, "Tag l\xC3\xB6schen");
+  lv_obj_add_flag(objects.tag_action_write, LV_OBJ_FLAG_HIDDEN);
+  setControlText(objects.tag_action_erase, "Tag-Zuordnung entfernen");
   setControlText(objects.tag_action_back, "Zur\xC3\xBC" "ck");
-  setControlText(objects.tag_review_title, "Tag pr\xC3\xBC" "fen");
+  setControlText(objects.tag_review_title, "Tag-Zuordnung pr\xC3\xBC" "fen");
   setControlText(objects.tag_review_back, "Zur\xC3\xBC" "ck");
   setControlText(objects.tag_review_cancel, "Abbrechen");
   setControlText(objects.tag_review_confirm, "Best\xC3\xA4tigen");
-  setControlText(objects.tag_write_title, "Tag wird geschrieben");
+  setControlText(objects.tag_write_title, "Tag wird zugeordnet");
   setControlText(objects.tag_write_detected, "Tag erkannt");
-  setControlText(objects.tag_write_memory, "Speicher gepr\xC3\xBC" "ft");
-  setControlText(objects.tag_write_data, "Daten werden geschrieben");
-  setControlText(objects.tag_write_verify, "Daten werden verifiziert");
+  setControlText(objects.tag_write_memory, "Zuordnung wird gespeichert");
+  setControlText(objects.tag_write_data, "Tag wird bei Bedarf aktualisiert");
+  setControlText(objects.tag_write_verify, "Ergebnis wird gepr\xC3\xBC" "ft");
   setControlText(objects.tag_write_cancel, "Abbrechen");
   setControlText(objects.tag_result_title, "NFC-Ergebnis");
   setControlText(objects.tag_result_quick_weight, "Schnell wiegen");
@@ -1350,19 +1359,18 @@ void bindGeneratedWidgets() {
   setControlText(objects.tag_definition_import_title,
                  "Tagdefinition erkannt");
   setControlText(objects.tag_definition_import_select_spool,
-                 "Spule verbinden");
+                 "Tag zuordnen");
   setControlText(objects.tag_definition_import_spoolman,
                  "Nach Spoolman importieren");
   setControlText(objects.tag_definition_import_cancel, "Abbrechen");
   setControlText(objects.tag_legacy_title, "Legacy-Tag erkannt");
-  setControlText(objects.tag_legacy_select_spool, "Spule verbinden");
+  setControlText(objects.tag_legacy_select_spool, "Tag zuordnen");
   setControlText(objects.tag_legacy_import, "Nach Spoolman importieren");
-  setControlText(objects.tag_legacy_migrate, "Nativ migrieren");
-  setControlText(objects.tag_legacy_erase, "Tag l\xC3\xB6schen");
+  lv_obj_add_flag(objects.tag_legacy_migrate, LV_OBJ_FLAG_HIDDEN);
+  setControlText(objects.tag_legacy_erase, "Tag-Zuordnung entfernen");
   setControlText(objects.tag_legacy_close, "Schlie\xC3\x9F" "en");
   setControlText(objects.tag_unknown_title, "Unbekannter NFC-Tag");
-  setControlText(objects.tag_unknown_select_spool,
-                 "UID mit Spule verbinden");
+  setControlText(objects.tag_unknown_select_spool, "Tag zuordnen");
   setControlText(objects.tag_unknown_close, "Schlie\xC3\x9F" "en");
   setControlText(objects.bambu_spool_type_title, "Leergewicht ausw\xC3\xA4hlen");
   setControlText(objects.bambu_spool_type_back, "Zur\xC3\xBC" "ck");
@@ -1388,8 +1396,6 @@ void bindGeneratedWidgets() {
   for (lv_obj_t* control : tagSettings) bindClick(control, settingsClicked);
   bindClick(objects.tag_action_select_spool, assignTagWithPickerClicked);
   bindClick(objects.tag_action_use_last_spool, lastTagSpoolClicked);
-  bindClick(objects.tag_action_write, tagActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::AssignTag));
   bindClick(objects.tag_action_erase, tagActionClicked,
             static_cast<std::uintptr_t>(
                 rtos::UiActionType::RemoveTagAssignment));
@@ -1419,7 +1425,6 @@ void bindGeneratedWidgets() {
   bindClick(objects.tag_legacy_select_spool, assignTagWithPickerClicked);
   bindClick(objects.tag_legacy_import, tagActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::ImportTagDefinition));
-  bindClick(objects.tag_legacy_migrate, assignTagWithPickerClicked);
   bindClick(objects.tag_legacy_erase, tagActionClicked,
             static_cast<std::uintptr_t>(
                 rtos::UiActionType::RemoveTagAssignment));
@@ -1458,14 +1463,9 @@ void bindGeneratedWidgets() {
             static_cast<std::uintptr_t>(rtos::UiActionType::AdvancedWeight));
   bindClick(objects.staging_action_clear, stagingActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::ClearStaging));
-  bindClick(objects.staging_action_write_tag, stagingActionClicked,
-            static_cast<std::uintptr_t>(rtos::UiActionType::AssignTag));
   bindClick(objects.staging_action_link_tag, stagingActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::AssignTag));
   bindClick(objects.staging_action_unlink_tag, stagingActionClicked,
-            static_cast<std::uintptr_t>(
-                rtos::UiActionType::RemoveTagAssignment));
-  bindClick(objects.staging_action_erase_tag, stagingActionClicked,
             static_cast<std::uintptr_t>(
                 rtos::UiActionType::RemoveTagAssignment));
 
@@ -1668,7 +1668,7 @@ void bindGeneratedWidgets() {
   }
   styleLabelButton(objects.spoolman_setting_cancel, 0x455A64);
 
-  const std::array<lv_obj_t*, 12> stagingButtons{{
+  const std::array<lv_obj_t*, 11> stagingButtons{{
       objects.staging_details_header,
       objects.staging_details_settings,
       objects.staging_details_quick_weight,
@@ -1678,7 +1678,6 @@ void bindGeneratedWidgets() {
       objects.staging_actions_settings,
       objects.staging_action_configure,
       objects.staging_action_advanced_weight,
-      objects.staging_action_write_tag,
       objects.staging_action_link_tag,
       objects.staging_action_unlink_tag,
   }};
@@ -1686,7 +1685,6 @@ void bindGeneratedWidgets() {
     styleLabelButton(button);
   }
   styleLabelButton(objects.staging_action_clear, 0xC62828);
-  styleLabelButton(objects.staging_action_erase_tag, 0xC62828);
   styleLabelButton(objects.staging_actions_back, 0x455A64);
   const std::array<lv_obj_t*, 23> trayButtons{{
       objects.tray_details_header, objects.tray_details_settings,
@@ -1712,9 +1710,9 @@ void bindGeneratedWidgets() {
   styleLabelButton(objects.tray_select_cancel, 0x455A64);
   styleLabelButton(objects.home_active_ams, 0x455A64);
   styleLabelButton(objects.home_ams_4, 0x455A64);
-  const std::array<lv_obj_t*, 9> tagButtons{{
+  const std::array<lv_obj_t*, 8> tagButtons{{
       objects.tag_action_select_spool, objects.tag_action_use_last_spool,
-      objects.tag_action_write, objects.tag_review_confirm,
+      objects.tag_review_confirm,
       objects.tag_result_quick_weight, objects.tag_result_advanced_weight,
       objects.tag_action_back, objects.tag_review_back,
       objects.tag_result_close,
@@ -2469,17 +2467,11 @@ void processUiCommand(const rtos::UiCommand& command) {
     case rtos::UiCommandType::ShowScreen:
       if (command.screenId == rtos::UiScreenId::StagingActions) {
         setLabelButtonAvailable(
-            objects.staging_action_write_tag,
-            (command.value & rtos::UI_TAG_CAP_WRITE) != 0, 0x1565C0);
-        setLabelButtonAvailable(
             objects.staging_action_link_tag,
             (command.value & rtos::UI_TAG_CAP_LINK) != 0, 0x1565C0);
         setLabelButtonAvailable(
             objects.staging_action_unlink_tag,
             (command.value & rtos::UI_TAG_CAP_UNLINK) != 0, 0x1565C0);
-        setLabelButtonAvailable(
-            objects.staging_action_erase_tag,
-            (command.value & rtos::UI_TAG_CAP_ERASE) != 0, 0xC62828);
       }
       if (command.screenId == rtos::UiScreenId::TagActionSelect &&
           command.text[0] != '\0') {
@@ -2497,13 +2489,8 @@ void processUiCommand(const rtos::UiCommand& command) {
                  command.text[0] != '\0') {
         lv_label_set_text(objects.tag_legacy_summary, command.text);
         const bool writable = command.value != 0;
-        lv_obj_set_flag(objects.tag_legacy_migrate, LV_OBJ_FLAG_CLICKABLE,
-                        writable);
         lv_obj_set_flag(objects.tag_legacy_erase, LV_OBJ_FLAG_CLICKABLE,
                         writable);
-        lv_obj_set_style_bg_color(objects.tag_legacy_migrate,
-                                  lv_color_hex(writable ? 0x1565C0 : 0x616161),
-                                  LV_PART_MAIN);
         lv_obj_set_style_bg_color(objects.tag_legacy_erase,
                                   lv_color_hex(writable ? 0xC62828 : 0x616161),
                                   LV_PART_MAIN);
