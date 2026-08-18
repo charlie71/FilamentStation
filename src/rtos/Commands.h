@@ -175,7 +175,13 @@ enum class NfcCommandType : std::uint8_t {
   EraseTag,
 };
 enum class StorageCommandType : std::uint8_t { LoadJson, SaveJson, DeleteJson, CreateBackup };
-enum class NetworkCommandType : std::uint8_t { Connect, Reconfigure, StartPortal, ClearCredentials };
+enum class NetworkCommandType : std::uint8_t {
+  Connect,
+  Reconfigure,
+  StartPortal,
+  StopPortal,
+  ClearCredentials,
+};
 enum class SpoolmanCommandType : std::uint8_t {
   HealthCheck,
   LoadSpool,

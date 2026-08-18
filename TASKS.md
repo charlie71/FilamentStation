@@ -632,12 +632,12 @@ Fehler:
 
 ## 6.2 Portalbetrieb
 
-* [ ] nur NetworkTask
-* [ ] UI bleibt aktiv
-* [ ] AppTask erhält Status
-* [ ] Abbruch
-* [ ] Timeout
-* [ ] kein process() in loop()
+* [x] nur NetworkTask
+* [x] UI bleibt aktiv
+* [x] AppTask erhält Status
+* [x] Abbruch
+* [x] Timeout
+* [x] kein process() in loop()
 
 ## 6.3 WiFi-Events
 

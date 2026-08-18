@@ -386,7 +386,11 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
     lv_obj_remove_flag(overlayProgress, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(overlayCancel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Schlie\xC3\x9F" "en");
+    lv_label_set_text(
+        lv_obj_get_child(overlayCancel, 0),
+        command.overlayKind == rtos::UiOverlayKind::ConnectionProgress
+            ? "Abbrechen"
+            : "Schlie\xC3\x9F" "en");
   } else {
     lv_obj_add_flag(overlayProgress, LV_OBJ_FLAG_HIDDEN);
     // Numeric input hides the standard buttons. Always restore the

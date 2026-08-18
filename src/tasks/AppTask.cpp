@@ -20,6 +20,9 @@ bool uiStartupReady = false;
 bool storageStartupReady = false;
 bool startupNavigationSent = false;
 rtos::UiOverlayKind pendingOverlay = rtos::UiOverlayKind::None;
+bool wifiPortalRequested = false;
+bool wifiPortalActive = false;
+std::uint32_t wifiPortalRequestId = 0;
 constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;
 constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;
 constexpr std::uint32_t kNfcMappingLoadRequestId = 0x4E464302U;
@@ -453,6 +456,16 @@ bool sendScaleCommand(rtos::RtosContext& ctx,
   return true;
 }
 
+bool sendNetworkCommand(rtos::RtosContext& ctx,
+                        const rtos::NetworkCommand& command) {
+  if (xQueueSend(ctx.networkCommandQueue, &command, pdMS_TO_TICKS(1000)) ==
+      pdPASS) {
+    return true;
+  }
+  rtos::logLine("AppTask: networkCommandQueue timeout/overflow");
+  return false;
+}
+
 void sendScaleUiState(rtos::RtosContext& ctx, std::uint32_t requestId = 0) {
   static TickType_t lastUpdateTick = 0;
   static std::int32_t lastFlags = -1;
@@ -688,6 +701,19 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     }
 
     case rtos::UiActionType::Cancel:
+      if (wifiPortalRequested || wifiPortalActive) {
+        rtos::NetworkCommand networkCommand{};
+        networkCommand.type = rtos::NetworkCommandType::StopPortal;
+        networkCommand.requestId =
+            wifiPortalRequestId != 0 ? wifiPortalRequestId : action.requestId;
+        if (!sendNetworkCommand(ctx, networkCommand)) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Abbruch fehlgeschlagen",
+                      "Der Abbruchauftrag konnte nicht an den NetworkTask gesendet werden.");
+        }
+        return;
+      }
       if (pendingTagAssignment.stage ==
           TagAssignmentStage::SelectingSpool)
         pendingTagAssignment = {};
@@ -1081,10 +1107,22 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::RefreshDiagnostics:
     case rtos::UiActionType::CheckFirmwareUpdate: {
       if (action.type == rtos::UiActionType::StartWifiPortal) {
+        rtos::NetworkCommand networkCommand{};
+        networkCommand.type = rtos::NetworkCommandType::StartPortal;
+        networkCommand.requestId = action.requestId;
+        if (!sendNetworkCommand(ctx, networkCommand)) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "WLAN-Portal nicht gestartet",
+                      "Der Auftrag konnte nicht an den NetworkTask gesendet werden.");
+          return;
+        }
+        wifiPortalRequested = true;
+        wifiPortalRequestId = action.requestId;
         sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                     rtos::UiOverlayKind::ConnectionProgress,
-                    action.requestId, "Verbindung wird vorbereitet",
-                    "WLAN-Konfiguration wird gestartet (Mock)." );
+                    action.requestId, "WLAN-Konfiguration",
+                    "Das Konfigurationsportal wird gestartet.");
         return;
       }
       if (action.type == rtos::UiActionType::ResetWifiCredentials) {
@@ -2125,6 +2163,65 @@ void appTask(void* parameter) {
       std::snprintf(status.title, sizeof(status.title), "NFC");
       std::snprintf(status.text, sizeof(status.text), "%s", event.text);
       sendUiCommand(ctx, status, "AppTask: NFC status UI queue overflow");
+    } else if (event.type == rtos::AppEventType::WifiConnected ||
+               event.type == rtos::AppEventType::WifiDisconnected ||
+               event.type == rtos::AppEventType::WifiConfigPortalStarted ||
+               event.type == rtos::AppEventType::WifiConfigPortalStopped ||
+               event.type == rtos::AppEventType::WifiConfigPortalTimedOut) {
+      rtos::UiCommand status{};
+      status.type = rtos::UiCommandType::ShowStatus;
+      status.requestId = event.requestId;
+      std::snprintf(status.title, sizeof(status.title), "WLAN");
+      std::snprintf(status.text, sizeof(status.text), "%s", event.text);
+      sendUiCommand(ctx, status, "AppTask: WiFi status UI queue overflow");
+
+      if (event.type == rtos::AppEventType::WifiConfigPortalStarted) {
+        wifiPortalRequested = false;
+        wifiPortalActive = true;
+        wifiPortalRequestId = event.requestId;
+        if (event.requestId != 0) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                      rtos::UiOverlayKind::ConnectionProgress,
+                      event.requestId, "WLAN konfigurieren", event.text);
+        }
+        continue;
+      }
+
+      const bool wasInteractivePortal =
+          wifiPortalRequestId != 0 || event.requestId != 0;
+      const std::uint32_t resultRequestId =
+          event.requestId != 0 ? event.requestId : wifiPortalRequestId;
+      wifiPortalRequested = false;
+      wifiPortalActive = false;
+      wifiPortalRequestId = 0;
+      if (!wasInteractivePortal) continue;
+
+      rtos::UiCommand hide{};
+      hide.type = rtos::UiCommandType::HideProgress;
+      sendUiCommand(ctx, hide, "AppTask: WiFi progress close overflow");
+      pendingOverlay = rtos::UiOverlayKind::None;
+      if (event.type == rtos::AppEventType::WifiConnected) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Success, resultRequestId,
+                    "WLAN verbunden", event.text);
+      } else if (event.type ==
+                 rtos::AppEventType::WifiConfigPortalTimedOut) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, resultRequestId,
+                    "WLAN-Portal beendet", event.text);
+      } else if (event.type ==
+                 rtos::AppEventType::WifiConfigPortalStopped) {
+        rtos::UiCommand toast{};
+        toast.type = rtos::UiCommandType::ShowToast;
+        toast.requestId = resultRequestId;
+        std::snprintf(toast.text, sizeof(toast.text),
+                      "WLAN-Konfiguration abgebrochen");
+        sendUiCommand(ctx, toast, "AppTask: WiFi cancel UI queue overflow");
+      } else {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, resultRequestId,
+                    "WLAN-Verbindung fehlgeschlagen", event.text);
+      }
     } else if (event.type == rtos::AppEventType::SpoolmanError) {
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
