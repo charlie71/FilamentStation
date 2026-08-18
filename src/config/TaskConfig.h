@@ -27,7 +27,10 @@ constexpr TaskSettings kScaleTask{"ScaleTask", 3072, 2, kNoCoreAffinity};
 // reicht fuer diesen Worst Case nicht aus, auch wenn NTAG-Lesevorgaenge damit
 // noch funktionieren.
 constexpr TaskSettings kNfcTask{"NfcTask", 12288, 2, kNoCoreAffinity};
-constexpr TaskSettings kNetworkTask{"NetworkTask", 4096, 1, kNoCoreAffinity};
+// WiFiManager betreibt waehrend des Captive Portals DNS- und Webserver im
+// NetworkTask. Dafuer wird mehr Stack als fuer das fruehere Queue-Geruest
+// benoetigt.
+constexpr TaskSettings kNetworkTask{"NetworkTask", 8192, 1, kNoCoreAffinity};
 constexpr TaskSettings kSpoolmanTask{"SpoolmanTask", 4096, 1, kNoCoreAffinity};
 constexpr TaskSettings kBambuTask{"BambuTask", 4096, 1, kNoCoreAffinity};
 

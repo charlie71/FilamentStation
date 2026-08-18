@@ -623,12 +623,12 @@ Fehler:
 
 ## 6.1 WiFiManager
 
-* [ ] feste Bibliotheksversion
-* [ ] Instanz im NetworkTask
-* [ ] Captive Portal
-* [ ] AP-Passwort
-* [ ] Portal-Timeout
-* [ ] Verbindungs-Timeout
+* [x] feste Bibliotheksversion
+* [x] Instanz im NetworkTask
+* [x] Captive Portal
+* [x] AP-Passwort
+* [x] Portal-Timeout
+* [x] Verbindungs-Timeout
 
 ## 6.2 Portalbetrieb
 
