@@ -822,10 +822,17 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
   }
   static const nfc::TagParserRegistry registry{};
   const models::TagReadResult result = registry.parse(raw);
-  FS_LOGD(services::LogComponent::Nfc,
-          "Tag classified tech=%s format=%s writable=%s",
+  FS_LOGI(services::LogComponent::Nfc,
+          "Tag read uid=%s uid_bytes=%u sak=0x%02X tech=%s format=%s "
+          "writable=%s ndef_present=%s spool_id=%lu",
+          uid, static_cast<unsigned>(raw.uidLength),
+          static_cast<unsigned>(raw.sak),
           technologyDescription(result.technology),
-          formatDescription(result.format), result.writable ? "true" : "false");
+          formatDescription(result.format), result.writable ? "true" : "false",
+          result.ndefPresent ? "true" : "false",
+          static_cast<unsigned long>(result.definition.hasSpoolId
+                                         ? result.definition.spoolId
+                                         : 0U));
 
   rtos::AppEvent read{};
   read.type = rtos::AppEventType::NfcTagRead;
@@ -1129,6 +1136,7 @@ void nfcTask(void* parameter) {
       char uid[config::kNfcMaxUidLength * 3]{};
       formatUid(removalCandidate, uid, sizeof(uid));
       std::snprintf(event.text, sizeof(event.text), "Tag entfernt: UID=%s", uid);
+      FS_LOGI(services::LogComponent::Nfc, "Tag removed uid=%s", uid);
       sendEvent(ctx, event);
       present = false;
       active = {};

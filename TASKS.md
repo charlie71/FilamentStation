@@ -602,10 +602,10 @@ monitor_filters =
 
 Aufgaben:
 
-* [ ] `default`
-* [ ] `esp32_exception_decoder`
-* [ ] `time`
-* [ ] `log2file`
+* [x] `default`
+* [x] `esp32_exception_decoder`
+* [x] `time`
+* [x] `log2file`
 * [ ] Monitor mit normalem Lauf testen
 * [ ] Logdatei erzeugen
 * [ ] Exception-Decoder nicht durch Logger beeinträchtigen
