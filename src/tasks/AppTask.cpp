@@ -135,7 +135,11 @@ std::array<rtos::NfcUidMapping, rtos::kMaximumNfcUidMappings>
 std::uint8_t mappingRemovalBackupCount = 0;
 enum class TagRemovalStage : std::uint8_t {
   None,
+  LookingUp,
   AwaitingConfirmation,
+  ClearingServerAssignment,
+  // Transitional state used only by legacy code paths outside the semantic
+  // RemoveTagAssignment workflow.
   SavingMapping,
   ClearingPayload,
 };
@@ -144,9 +148,11 @@ struct PendingTagRemoval {
   std::uint32_t requestId = 0;
   rtos::SpoolId spoolId = 0;
   models::TagFormat mappingFormat = models::TagFormat::Unknown;
+  models::TagIdentity identity{};
   std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};
   std::uint8_t uidLength = 0;
   bool clearPayload = false;
+  bool tagRemoved = false;
 };
 PendingTagRemoval pendingTagRemoval{};
 
@@ -214,8 +220,9 @@ models::TagFormat assignmentMappingFormat(const models::TagReadResult& tag) {
 
 std::int32_t stagingTagCapabilities() {
   if (!tagPresent || !currentTag.capabilities.canAssociateByUid) return 0;
-  return mappedNfcSpool(currentTag) == 0 ? rtos::UI_TAG_CAP_LINK
-                                         : rtos::UI_TAG_CAP_UNLINK;
+  // The authoritative assignment state is resolved online by Spoolman when
+  // either semantic action starts. Do not gate an action on legacy SD data.
+  return rtos::UI_TAG_CAP_LINK | rtos::UI_TAG_CAP_UNLINK;
 }
 
 void applyTagUiState(rtos::UiCommand& command) {
@@ -788,6 +795,76 @@ bool sendTagAssignmentCommand(rtos::RtosContext& ctx,
                     pdMS_TO_TICKS(1000)) == pdPASS;
 }
 
+bool sendTagRemovalCommand(rtos::RtosContext& ctx,
+                           rtos::SpoolmanCommandType type,
+                           rtos::SpoolId spoolId = 0) {
+  rtos::SpoolmanCommand command{};
+  command.type = type;
+  command.requestId = pendingTagRemoval.requestId;
+  command.spoolId = spoolId;
+  command.tagIdentity = pendingTagRemoval.identity;
+  return xQueueSend(ctx.spoolmanCommandQueue, &command,
+                    pdMS_TO_TICKS(1000)) == pdPASS;
+}
+
+void finishServerOnlyRemoval(rtos::RtosContext& ctx) {
+  const auto requestId = pendingTagRemoval.requestId;
+  pendingTagRemoval = {};
+  pendingTagOperation = PendingTagOperation::None;
+  resolvedTagIdentity = {};
+  resolvedTagSpoolId = 0;
+  rtos::UiCommand hide{};
+  hide.type = rtos::UiCommandType::HideProgress;
+  sendUiCommand(ctx, hide, "AppTask: removal progress close overflow");
+  rtos::UiCommand result{};
+  result.type = rtos::UiCommandType::ShowScreen;
+  result.screenId = rtos::UiScreenId::TagResult;
+  result.requestId = requestId;
+  std::snprintf(result.text, sizeof(result.text),
+                "Tag-Zuordnung erfolgreich entfernt.\nOriginaler Taginhalt blieb unver\xC3\xA4ndert.");
+  currentScreen = result.screenId;
+  sendUiCommand(ctx, result, "AppTask: server-only removal result overflow");
+}
+
+void continueRemovalAfterSpoolmanUpdate(rtos::RtosContext& ctx) {
+  resolvedTagIdentity = {};
+  resolvedTagSpoolId = 0;
+  if (!pendingTagRemoval.clearPayload) {
+    finishServerOnlyRemoval(ctx);
+    return;
+  }
+  if (!tagPresent || !removalTagMatches(currentTag) ||
+      !currentTag.capabilities.canClearFilamentStationPayload) {
+    const auto requestId = pendingTagRemoval.requestId;
+    pendingTagRemoval = {};
+    pendingTagOperation = PendingTagOperation::None;
+    sendOverlay(
+        ctx, rtos::UiCommandType::ShowDialog, rtos::UiOverlayKind::Error,
+        requestId, "Zuordnung teilweise entfernt",
+        "Die Spoolman-Zuordnung wurde entfernt.\nDie FilamentStation-Daten konnten nicht vom Tag entfernt werden.");
+    return;
+  }
+  rtos::NfcCommand command{};
+  command.type = rtos::NfcCommandType::EraseTag;
+  command.requestId = pendingTagRemoval.requestId;
+  if (xQueueSend(ctx.nfcCommandQueue, &command, pdMS_TO_TICKS(50)) != pdPASS) {
+    const auto requestId = pendingTagRemoval.requestId;
+    pendingTagRemoval = {};
+    sendOverlay(
+        ctx, rtos::UiCommandType::ShowDialog, rtos::UiOverlayKind::Error,
+        requestId, "Zuordnung teilweise entfernt",
+        "Die Spoolman-Zuordnung wurde entfernt.\nDer Auftrag zum Entfernen der FilamentStation-Daten konnte nicht gestartet werden.");
+    return;
+  }
+  pendingTagOperation = PendingTagOperation::Erase;
+  pendingTagRemoval.stage = TagRemovalStage::ClearingPayload;
+  sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+              rtos::UiOverlayKind::TagWrite,
+              pendingTagRemoval.requestId,
+              "Tag-Zuordnung wird entfernt",
+              "Spoolman-Zuordnung entfernt. FilamentStation-Daten werden vom Tag entfernt und verifiziert.");
+}
+
 void finishMappingOnlyAssignment(rtos::RtosContext& ctx, const char* text) {
   const auto requestId = pendingTagAssignment.requestId;
   const auto spoolId = pendingTagAssignment.spoolId;
@@ -971,12 +1048,13 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     }
 
     case rtos::UiActionType::RemoveTagAssignment: {
-      const rtos::SpoolId mappedSpoolId = mappedNfcSpool(currentTag);
-      if (!tagPresent || currentTag.uidLength == 0 || mappedSpoolId == 0) {
+      if (!tagPresent || currentTag.uidLength == 0 ||
+          currentTag.identity.source == models::TagIdentitySource::Unknown ||
+          currentTag.identity.value[0] == '\0') {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, action.requestId,
                     "Entfernen nicht m\xC3\xB6glich",
-                    "F\xC3\xBCr den aktuellen Tag besteht keine lokale Zuordnung.");
+                    "Es ist kein zuordenbarer NFC-Tag vorhanden.");
         return;
       }
       if (pendingTagRemoval.stage != TagRemovalStage::None) {
@@ -986,30 +1064,42 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Bitte den laufenden NFC-Vorgang abschlie\xC3\x9F" "en.");
         return;
       }
+      const EventBits_t spoolmanBits = xEventGroupGetBits(ctx.systemEventGroup);
+      if ((spoolmanBits & (rtos::EVENT_SPOOLMAN_READY |
+                          rtos::EVENT_SPOOLMAN_TAG_FIELD_READY)) !=
+          (rtos::EVENT_SPOOLMAN_READY |
+           rtos::EVENT_SPOOLMAN_TAG_FIELD_READY)) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Entfernen nicht m\xC3\xB6glich",
+                    "Spoolman oder das Textfeld extra.tag ist nicht bereit.");
+        return;
+      }
 
       pendingTagRemoval = {};
-      pendingTagRemoval.stage = TagRemovalStage::AwaitingConfirmation;
+      pendingTagRemoval.stage = TagRemovalStage::LookingUp;
       pendingTagRemoval.requestId = action.requestId;
-      pendingTagRemoval.spoolId = mappedSpoolId;
       pendingTagRemoval.mappingFormat = assignmentMappingFormat(currentTag);
+      pendingTagRemoval.identity = currentTag.identity;
       pendingTagRemoval.uidLength = currentTag.uidLength;
       std::memcpy(pendingTagRemoval.uid.data(), currentTag.uid,
                   currentTag.uidLength);
       pendingTagRemoval.clearPayload =
           nfc::removalEffect(currentTag) ==
           nfc::TagAssignmentEffect::MappingAndPayload;
-      pendingUnlinkConfirmation = true;
-
-      char confirmation[192]{};
-      std::snprintf(
-          confirmation, sizeof(confirmation),
-          pendingTagRemoval.clearPayload
-              ? "Die Verbindung zu Spule #%lu wird entfernt.\nDie FilamentStation-Daten werden auch vom Tag entfernt."
-              : "Die Verbindung zu Spule #%lu wird entfernt.\nDer originale Taginhalt wird nicht ver\xC3\xA4ndert.",
-          static_cast<unsigned long>(mappedSpoolId));
-      sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                  rtos::UiOverlayKind::Confirmation, action.requestId,
-                  "Tag-Zuordnung entfernen?", confirmation);
+      if (!sendTagRemovalCommand(ctx,
+                                 rtos::SpoolmanCommandType::FindSpoolByTag)) {
+        pendingTagRemoval = {};
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Entfernen fehlgeschlagen",
+                    "Die Anfrage konnte nicht an SpoolmanTask gesendet werden.");
+        return;
+      }
+      sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                  rtos::UiOverlayKind::SpoolmanRequest, action.requestId,
+                  "Tag-Zuordnung wird gepr\xC3\xBC" "ft",
+                  "Die zugeordnete Spule wird in Spoolman gesucht.");
       return;
     }
 
@@ -1035,7 +1125,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       pendingServerReassignmentConfirmation = false;
       pendingBambuMapping = false;
       pendingUnlinkConfirmation = false;
-      if (pendingTagRemoval.stage == TagRemovalStage::AwaitingConfirmation)
+      if (pendingTagRemoval.stage == TagRemovalStage::AwaitingConfirmation ||
+          pendingTagRemoval.stage == TagRemovalStage::LookingUp)
         pendingTagRemoval = {};
       pendingMappingReplacementConfirmation = false;
       pendingMappingReplacementApproved = false;
@@ -1178,16 +1269,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                       "Der Zuordnungsauftrag ist nicht mehr aktuell.");
           return;
         }
-        std::uint8_t index = 0;
-        for (; index < bambuMappingCount; ++index) {
-          if (bambuMappings[index].uidLength == pendingTagRemoval.uidLength &&
-              std::memcmp(bambuMappings[index].uid,
-                          pendingTagRemoval.uid.data(),
-                          pendingTagRemoval.uidLength) == 0)
-            break;
-        }
-        if (!tagPresent || !removalTagMatches(currentTag) ||
-            index == bambuMappingCount) {
+        if (!tagPresent || !removalTagMatches(currentTag)) {
           pendingTagRemoval = {};
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
@@ -1195,30 +1277,21 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                       "Der Tag wurde entfernt oder ausgetauscht.");
           return;
         }
-        mappingRemovalBackup = bambuMappings;
-        mappingRemovalBackupCount = bambuMappingCount;
-        pendingMappingFormat = pendingTagRemoval.mappingFormat;
-        for (std::uint8_t move = index; move + 1U < bambuMappingCount; ++move)
-          bambuMappings[move] = bambuMappings[move + 1U];
-        --bambuMappingCount;
-        if (!persistNfcMappings(ctx, action.requestId, pendingMappingFormat)) {
-          bambuMappings = mappingRemovalBackup;
-          bambuMappingCount = mappingRemovalBackupCount;
+        pendingTagRemoval.stage = TagRemovalStage::ClearingServerAssignment;
+        if (!sendTagRemovalCommand(ctx,
+                                   rtos::SpoolmanCommandType::ClearSpoolTag,
+                                   pendingTagRemoval.spoolId)) {
           pendingTagRemoval = {};
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
                       "Entfernen fehlgeschlagen",
-                      "Die ge\xC3\xA4nderte Zuordnung konnte nicht an StorageTask gesendet werden.");
+                      "Die Spoolman-Aktualisierung konnte nicht gestartet werden.");
           return;
         }
-        pendingTagRemoval.stage = TagRemovalStage::SavingMapping;
-        pendingBambuMappingSave = true;
-        pendingBambuMappingRequestId = action.requestId;
-        pendingBambuMappingSpoolId = 0;
         sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                    rtos::UiOverlayKind::BambuMappingSave, action.requestId,
+                    rtos::UiOverlayKind::SpoolmanRequest, action.requestId,
                     "Tag-Zuordnung wird entfernt",
-                    "Die lokale UID-Zuordnung wird entfernt.");
+                    "Das Feld extra.tag der zugeordneten Spule wird geleert und verifiziert.");
         return;
       }
       if (confirmedOverlay == rtos::UiOverlayKind::TagReview) {
@@ -2506,6 +2579,10 @@ void appTask(void* parameter) {
         const bool removalConfirmationWasPending =
             pendingTagRemoval.stage ==
             TagRemovalStage::AwaitingConfirmation;
+        const bool removalServerWasPending =
+            pendingTagRemoval.stage == TagRemovalStage::LookingUp ||
+            pendingTagRemoval.stage ==
+                TagRemovalStage::ClearingServerAssignment;
         const bool assignmentServerUpdateWasPending =
             pendingTagAssignment.stage == TagAssignmentStage::LookingUp ||
             pendingTagAssignment.stage == TagAssignmentStage::ClearingPrevious ||
@@ -2524,6 +2601,7 @@ void appTask(void* parameter) {
         pendingTagOperation = PendingTagOperation::None;
         pendingUnlinkConfirmation = false;
         if (removalConfirmationWasPending) pendingTagRemoval = {};
+        if (removalServerWasPending) pendingTagRemoval.tagRemoved = true;
         if (assignmentWriteWasPending) {
           reportAssignmentWriteFailure(
               ctx, event.requestId,
@@ -2887,6 +2965,52 @@ void appTask(void* parameter) {
       std::snprintf(picker.text, sizeof(picker.text), "%s", event.text);
       sendUiCommand(ctx, picker, "AppTask: Spoolman picker result overflow");
     } else if (event.type == rtos::AppEventType::SpoolmanTagLookup &&
+               pendingTagRemoval.stage == TagRemovalStage::LookingUp &&
+               event.requestId == pendingTagRemoval.requestId) {
+      const auto status = static_cast<services::TagLookupStatus>(event.value);
+      rtos::UiCommand hide{};
+      hide.type = rtos::UiCommandType::HideProgress;
+      sendUiCommand(ctx, hide, "AppTask: removal lookup close overflow");
+      if (status == services::TagLookupStatus::Duplicate) {
+        pendingTagRemoval = {};
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Mehrdeutige Zuordnung",
+                    "Diese Tag-ID ist mehreren Spulen zugeordnet. Bitte die Spoolman-Daten korrigieren.");
+        continue;
+      }
+      if (status != services::TagLookupStatus::Found || event.spoolId == 0) {
+        pendingTagRemoval = {};
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Keine Zuordnung gefunden",
+                    "Dieser Tag ist in Spoolman keiner Spule zugeordnet.");
+        continue;
+      }
+      if (!tagPresent || pendingTagRemoval.tagRemoved ||
+          !removalTagMatches(currentTag)) {
+        pendingTagRemoval = {};
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Entfernen abgebrochen",
+                    "Der Tag wurde w\xC3\xA4hrend der Pr\xC3\xBC" "fung entfernt oder ausgetauscht.");
+        continue;
+      }
+      pendingTagRemoval.spoolId = event.spoolId;
+      pendingTagRemoval.stage = TagRemovalStage::AwaitingConfirmation;
+      pendingUnlinkConfirmation = true;
+      char confirmation[192]{};
+      std::snprintf(
+          confirmation, sizeof(confirmation),
+          pendingTagRemoval.clearPayload
+              ? "Die Verbindung zu Spule #%lu wird entfernt.\nDie FilamentStation-Daten werden auch vom Tag entfernt."
+              : "Die Verbindung zu Spule #%lu wird entfernt.\nDer originale Taginhalt wird nicht ver\xC3\xA4ndert.",
+          static_cast<unsigned long>(event.spoolId));
+      sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                  rtos::UiOverlayKind::Confirmation, event.requestId,
+                  "Tag-Zuordnung entfernen?", confirmation);
+      continue;
+    } else if (event.type == rtos::AppEventType::SpoolmanTagLookup &&
                pendingTagAssignment.stage == TagAssignmentStage::LookingUp &&
                event.requestId == pendingTagAssignment.requestId) {
       const auto status = static_cast<services::TagLookupStatus>(event.value);
@@ -2934,6 +3058,16 @@ void appTask(void* parameter) {
                     "Zuordnung fehlgeschlagen",
                     "Die Spoolman-Aktualisierung konnte nicht gestartet werden.");
       }
+      continue;
+    } else if (event.type == rtos::AppEventType::SpoolmanTagUpdated &&
+               pendingTagRemoval.stage ==
+                   TagRemovalStage::ClearingServerAssignment &&
+               event.requestId == pendingTagRemoval.requestId) {
+      FS_LOGI(services::LogComponent::App,
+              "Tag assignment removed from Spoolman spool_id=%lu tag=%s",
+              static_cast<unsigned long>(pendingTagRemoval.spoolId),
+              pendingTagRemoval.identity.value);
+      continueRemovalAfterSpoolmanUpdate(ctx);
       continue;
     } else if (event.type == rtos::AppEventType::SpoolmanTagUpdated &&
                event.requestId == pendingTagAssignment.requestId) {
@@ -2991,6 +3125,19 @@ void appTask(void* parameter) {
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: Spoolman progress close overflow");
+      if ((pendingTagRemoval.stage == TagRemovalStage::LookingUp ||
+           pendingTagRemoval.stage ==
+               TagRemovalStage::ClearingServerAssignment) &&
+          event.requestId == pendingTagRemoval.requestId) {
+        pendingTagRemoval = {};
+        pendingUnlinkConfirmation = false;
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Entfernen fehlgeschlagen",
+                    event.text[0] != '\0' ? event.text
+                                           : "Spoolman-Anfrage fehlgeschlagen.");
+        continue;
+      }
       if (pendingTagAssignment.stage != TagAssignmentStage::None &&
           pendingTagAssignment.stage != TagAssignmentStage::SelectingSpool &&
           pendingTagAssignment.stage != TagAssignmentStage::WritingPayload &&

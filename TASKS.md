@@ -725,18 +725,18 @@ API gegen die tatsächlich verwendete Spoolman-Version prüfen.
 
 ## 7.7.6 RemoveTagAssignment migrieren
 
-* [ ] Spoolman-Verbindung voraussetzen
-* [ ] Tag anhand `extra.tag` suchen
-* [ ] eindeutige Spule bestimmen
-* [ ] `extra.tag` leeren
-* [ ] Serverantwort prüfen
-* [ ] nativen FilamentStation-Payload optional löschen
-* [ ] Payload-Löschung verifizieren
-* [ ] Bambu unverändert
-* [ ] OpenPrintTag unverändert
-* [ ] OpenTag3D unverändert
-* [ ] Unknown unverändert
-* [ ] lokales Mapping nicht mehr verwenden
+* [x] Spoolman-Verbindung voraussetzen
+* [x] Tag anhand `extra.tag` suchen
+* [x] eindeutige Spule bestimmen
+* [x] `extra.tag` leeren
+* [x] Serverantwort prüfen
+* [x] nativen FilamentStation-Payload optional löschen
+* [x] Payload-Löschung verifizieren
+* [x] Bambu unverändert
+* [x] OpenPrintTag unverändert
+* [x] OpenTag3D unverändert
+* [x] Unknown unverändert
+* [x] lokales Mapping nicht mehr verwenden
 
 ## 7.7.7 Native Payload Konsistenz
 
