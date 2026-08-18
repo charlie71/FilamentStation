@@ -54,7 +54,8 @@ bool removeIfPresent(fs::FS& filesystem, const char* path) {
 
 bool validMappingFormat(const char* format) {
   return format != nullptr &&
-         (std::strcmp(format, "bambuLab") == 0 ||
+         (std::strcmp(format, "filamentStation") == 0 ||
+          std::strcmp(format, "bambuLab") == 0 ||
           std::strcmp(format, "openPrintTag") == 0 ||
           std::strcmp(format, "openTag3D") == 0 ||
           std::strcmp(format, "legacy") == 0 ||

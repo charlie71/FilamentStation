@@ -22,9 +22,11 @@ constexpr TaskSettings kLoggingTask{"LoggingTask", 2048, 1, kNoCoreAffinity};
 constexpr TaskSettings kAppTask{"AppTask", 8192, 3, kNoCoreAffinity};
 constexpr TaskSettings kUiTask{"UiTask", 8192, 2, kNoCoreAffinity};
 constexpr TaskSettings kScaleTask{"ScaleTask", 3072, 2, kNoCoreAffinity};
-// PN532-Frames, wertbasierte TagReadResult/AppEvent-Nachrichten und die
-// HKDF-SHA256-Schluesselableitung liegen zeitweise gleichzeitig im Stack.
-constexpr TaskSettings kNfcTask{"NfcTask", 8192, 2, kNoCoreAffinity};
+// Die Bambu-Erkennung kombiniert MIFARE-Authentifizierung, HKDF-SHA256,
+// Parserdaten und wertbasierte AppEvent-Nachrichten. Der gemessene 8-KiB-Stack
+// reicht fuer diesen Worst Case nicht aus, auch wenn NTAG-Lesevorgaenge damit
+// noch funktionieren.
+constexpr TaskSettings kNfcTask{"NfcTask", 12288, 2, kNoCoreAffinity};
 constexpr TaskSettings kNetworkTask{"NetworkTask", 4096, 1, kNoCoreAffinity};
 constexpr TaskSettings kSpoolmanTask{"SpoolmanTask", 4096, 1, kNoCoreAffinity};
 constexpr TaskSettings kBambuTask{"BambuTask", 4096, 1, kNoCoreAffinity};

@@ -148,6 +148,18 @@ void test_document_type_mismatch_is_rejected() {
           JsonStorage::validate(document, StorageDocumentType::Network)));
 }
 
+void test_native_ntag_mapping_document_is_valid() {
+  JsonDocument document;
+  const auto parseError = deserializeJson(
+      document,
+      R"({"schemaVersion":1,"updatedAt":"1970-01-01T00:00:00Z","documentType":"nfc","tagSchemaVersion":1,"mappings":[{"uid":"04B0008B780000","format":"filamentStation","spoolId":91}]})");
+  TEST_ASSERT_FALSE(parseError);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::Ok),
+      static_cast<int>(JsonStorage::validate(document,
+                                             StorageDocumentType::Nfc)));
+}
+
 }  // namespace
 
 void setup() {
@@ -167,6 +179,7 @@ void setup() {
   RUN_TEST(test_bambu_defaults_support_multiple_printers);
   RUN_TEST(test_scale_defaults_and_calibration_validation);
   RUN_TEST(test_document_type_mismatch_is_rejected);
+  RUN_TEST(test_native_ntag_mapping_document_is_valid);
   UNITY_END();
 }
 

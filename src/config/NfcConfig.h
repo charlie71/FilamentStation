@@ -19,6 +19,11 @@ constexpr std::uint8_t kNfcRemovalConfirmationScans = 3;
 constexpr std::uint8_t kNfcFreshAbsenceConfirmationScans = 5;
 constexpr std::uint32_t kPn532ResponseTimeoutMs = 500;
 constexpr std::uint8_t kPn532MaxTargetRetries = 0x02;
+// NXP specifies up to 10 ms for an NTAG21x WRITE operation. Do not start the
+// next page transaction while the tag can still be programming its EEPROM.
+constexpr std::uint32_t kNtagPageWriteSettleMs = 10;
+constexpr std::uint8_t kNtagPageWriteAttempts = 3;
+constexpr std::uint8_t kNtagVerificationScanAttempts = 3;
 constexpr std::size_t kNfcMaxUidLength = 10;
 // Der offizielle OpenPrintTag-MK1-Testvektor belegt 312 Byte Tag-Speicher.
 constexpr std::size_t kNfcMaxNdefBytes = 384;

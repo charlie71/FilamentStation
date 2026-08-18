@@ -543,8 +543,11 @@ void sendOverlay(rtos::RtosContext& ctx, rtos::UiCommandType type,
 
 void reportAssignmentWriteFailure(rtos::RtosContext& ctx,
                                   std::uint32_t requestId,
-                                  const char* diagnostic) {
+                                  const char* diagnostic,
+                                  const char* userMessage = nullptr) {
   const rtos::SpoolId assignedSpoolId = pendingTagAssignment.spoolId;
+  const std::uint32_t resultRequestId =
+      requestId != 0 ? requestId : pendingTagAssignment.requestId;
   pendingTagOperation = PendingTagOperation::None;
   pendingTagAssignment = {};
   if (assignedSpoolId != 0) lastUsedTagSpoolId = assignedSpoolId;
@@ -556,8 +559,10 @@ void reportAssignmentWriteFailure(rtos::RtosContext& ctx,
                 "AppTask: assignment write failure progress close overflow");
   sendOverlay(
       ctx, rtos::UiCommandType::ShowDialog, rtos::UiOverlayKind::Error,
-      requestId, "Tag teilweise zugeordnet",
-      "Tag wurde zugeordnet.\nDie Zuordnung konnte jedoch nicht auf dem Tag gespeichert werden.\nErneut \"Tag zuordnen\" w\xC3\xA4hlen, um den Schreibvorgang zu wiederholen.");
+      resultRequestId, "Tag teilweise zugeordnet",
+      userMessage != nullptr
+          ? userMessage
+          : "Tag wurde zugeordnet.\nDie Zuordnung konnte jedoch nicht auf dem Tag gespeichert werden.\nEin erneuter Versuch ist m\xC3\xB6glich.");
 }
 
 void showHomeWhenStartupReady(rtos::RtosContext& ctx) {
@@ -2050,6 +2055,9 @@ void appTask(void* parameter) {
         const bool assignmentWriteWasPending =
             pendingTagAssignment.stage ==
             TagAssignmentStage::WritingPayload;
+        const bool assignmentMappingWasPending =
+            pendingTagAssignment.stage ==
+            TagAssignmentStage::SavingMapping;
         const bool removalPayloadWasPending =
             pendingTagRemoval.stage == TagRemovalStage::ClearingPayload;
         const bool removalConfirmationWasPending =
@@ -2072,7 +2080,8 @@ void appTask(void* parameter) {
         if (assignmentWriteWasPending) {
           reportAssignmentWriteFailure(
               ctx, event.requestId,
-              "AppTask: AssignTag payload write failed because tag was removed; mapping retained");
+              "AppTask: AssignTag payload write failed because tag was removed; mapping retained",
+              "Tag wurde zugeordnet.\nDer Tag wurde w\xC3\xA4hrend des Vorgangs entfernt. Die Tagdaten wurden nicht aktualisiert.");
         } else if (removalPayloadWasPending) {
           pendingTagRemoval = {};
           rtos::logLine(
@@ -2086,7 +2095,7 @@ void appTask(void* parameter) {
               rtos::UiOverlayKind::Error, event.requestId,
               "Zuordnung teilweise entfernt",
               "Die Tag-Zuordnung wurde entfernt.\nDie FilamentStation-Daten konnten nicht vom Tag entfernt werden.");
-        } else if (operationWasPending) {
+        } else if (operationWasPending && !assignmentMappingWasPending) {
           rtos::UiCommand hide{};
           hide.type = rtos::UiCommandType::HideProgress;
           sendUiCommand(ctx, hide, "AppTask: removed-tag progress close overflow");
@@ -2105,7 +2114,8 @@ void appTask(void* parameter) {
                          pendingTagAssignment.uidLength) != 0)) {
           reportAssignmentWriteFailure(
               ctx, event.requestId,
-              "AppTask: AssignTag UID verification failed; mapping retained");
+              "AppTask: AssignTag UID verification failed; mapping retained",
+              "Der urspr\xC3\xBCngliche Tag wurde zugeordnet.\nDie UID hat sich w\xC3\xA4hrend des Vorgangs ge\xC3\xA4ndert. Die Tagdaten wurden nicht aktualisiert.");
           continue;
         }
         lastUsedTagSpoolId = event.spoolId;
@@ -2282,7 +2292,12 @@ void appTask(void* parameter) {
         pendingBambuMappingSave = false;
         if (pendingTagAssignment.stage ==
             TagAssignmentStage::AbortedAwaitingStorage) {
-          pendingTagAssignment = {};
+          reportAssignmentWriteFailure(
+              ctx, event.requestId,
+              "AppTask: AssignTag mapping stored after tag removal; mapping retained",
+              pendingTagAssignment.writePayload
+                  ? "Tag wurde zugeordnet.\nDer Tag wurde vor der Aktualisierung entfernt. Die Tagdaten wurden nicht aktualisiert."
+                  : "Tag wurde zugeordnet.\nDer Tag wurde w\xC3\xA4hrend des Speicherns entfernt. Originalinhalt blieb unver\xC3\xA4ndert.");
           continue;
         }
         if (pendingTagAssignment.stage == TagAssignmentStage::SavingMapping) {
@@ -2292,11 +2307,14 @@ void appTask(void* parameter) {
                         "AppTask: assignment mapping progress close overflow");
 
           if (!tagPresent || !assignmentTagMatches(currentTag)) {
-            pendingTagAssignment = {};
-            sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                        rtos::UiOverlayKind::Error, event.requestId,
-                        "Tag hat sich ge\xC3\xA4ndert",
-                        "Die UID stimmt nicht mehr mit dem zugeordneten Tag \xC3\xBC" "berein.");
+            reportAssignmentWriteFailure(
+                ctx, event.requestId,
+                tagPresent
+                    ? "AppTask: AssignTag UID changed after mapping save; mapping retained"
+                    : "AppTask: AssignTag tag removed after mapping save; mapping retained",
+                tagPresent
+                    ? "Der urspr\xC3\xBCngliche Tag wurde zugeordnet.\nDie UID hat sich w\xC3\xA4hrend des Vorgangs ge\xC3\xA4ndert. Die Tagdaten wurden nicht aktualisiert."
+                    : "Tag wurde zugeordnet.\nDer Tag wurde vor der Aktualisierung entfernt. Die Tagdaten wurden nicht aktualisiert.");
             continue;
           }
 
@@ -2355,6 +2373,8 @@ void appTask(void* parameter) {
           if (pendingTagRemoval.clearPayload) {
             if (!tagPresent || !removalTagMatches(currentTag) ||
                 !currentTag.capabilities.canClearFilamentStationPayload) {
+              const bool uidChanged =
+                  tagPresent && !removalTagMatches(currentTag);
               pendingTagRemoval = {};
               rtos::logLine(
                   "AppTask: RemoveTagAssignment cleanup unavailable after mapping removal");
@@ -2362,7 +2382,9 @@ void appTask(void* parameter) {
                   ctx, rtos::UiCommandType::ShowDialog,
                   rtos::UiOverlayKind::Error, event.requestId,
                   "Zuordnung teilweise entfernt",
-                  "Die Tag-Zuordnung wurde entfernt.\nDie FilamentStation-Daten konnten nicht vom Tag entfernt werden.");
+                  uidChanged
+                      ? "Die Tag-Zuordnung wurde entfernt.\nDie UID hat sich w\xC3\xA4hrend des Vorgangs ge\xC3\xA4ndert. Der Taginhalt wurde nicht ver\xC3\xA4ndert."
+                      : "Die Tag-Zuordnung wurde entfernt.\nDie FilamentStation-Daten konnten nicht vom Tag entfernt werden.");
               continue;
             }
             rtos::NfcCommand nfcCommand{};

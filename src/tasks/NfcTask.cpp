@@ -428,14 +428,48 @@ void readBambuBlocks(const TargetInfo& target, models::RawTagData& raw) {
   }
 }
 
-bool writePage(const TargetInfo& target, std::uint8_t page,
+bool writePage(TargetInfo& target, std::uint8_t page,
                const std::uint8_t* bytes) {
   const std::uint8_t command[] = {kMifareWrite, page, bytes[0], bytes[1],
                                   bytes[2], bytes[3]};
-  std::uint8_t response[4]{};
-  std::size_t length = 0;
-  return exchange(target, command, sizeof(command), response, sizeof(response),
-                  length);
+  for (std::uint8_t attempt = 0; attempt < config::kNtagPageWriteAttempts;
+       ++attempt) {
+    std::uint8_t response[4]{};
+    std::size_t length = 0;
+    if (exchange(target, command, sizeof(command), response,
+                 sizeof(response), length)) {
+      vTaskDelay(pdMS_TO_TICKS(config::kNtagPageWriteSettleMs));
+      return true;
+    }
+    vTaskDelay(pdMS_TO_TICKS(config::kNtagPageWriteSettleMs));
+    // A failed InDataExchange can invalidate the PN532 logical target. A
+    // retry with that stale target number can never recover, so explicitly
+    // activate the same physical tag again before retrying the page.
+    resetRfField();
+    TargetInfo reacquired{};
+    bool sameTagReacquired = false;
+    for (std::uint8_t scanAttempt = 0;
+         scanAttempt < config::kNtagVerificationScanAttempts; ++scanAttempt) {
+      if (scanTarget(reacquired) == ScanResult::Found) {
+        sameTagReacquired =
+            reacquired.uidLength == target.uidLength &&
+            std::memcmp(reacquired.uid.data(), target.uid.data(),
+                        target.uidLength) == 0;
+        break;
+      }
+      vTaskDelay(pdMS_TO_TICKS(config::kNfcScanIntervalMs));
+    }
+    if (!sameTagReacquired) {
+      rtos::logf("NfcTask: NTAG page %u retry aborted; tag missing or UID changed",
+                 static_cast<unsigned>(page));
+      return false;
+    }
+    target = reacquired;
+  }
+  rtos::logf("NfcTask: NTAG page %u write failed after %u attempts",
+             static_cast<unsigned>(page),
+             static_cast<unsigned>(config::kNtagPageWriteAttempts));
+  return false;
 }
 
 bool readNdef(const TargetInfo& target, std::uint8_t* output,
@@ -504,7 +538,7 @@ bool readNdef(const TargetInfo& target, std::uint8_t* output,
   return true;
 }
 
-bool writeNdef(const TargetInfo& target, models::TagTechnology technology,
+bool writeNdef(TargetInfo& target, models::TagTechnology technology,
                const std::uint8_t* bytes, std::size_t length) {
   if (length == 0 || (length % 4) != 0) return false;
   std::uint8_t capability[16]{};
@@ -737,7 +771,12 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
                 target.uidLength, target.sak);
   sendEvent(ctx, detected);
 
-  models::RawTagData raw{};
+  // RawTagData contains the complete NDEF buffer and decrypted MIFARE blocks.
+  // It is only used by this single NfcTask, so keep it out of the task stack;
+  // Bambu key derivation and parser events already need substantial stack at
+  // the same point in the call chain.
+  static models::RawTagData raw{};
+  raw = {};
   raw.technology = technologyFor(target);
   if (raw.technology == models::TagTechnology::OtherIso14443A &&
       target.sak == 0x00) {
@@ -818,25 +857,57 @@ bool sameUid(const TargetInfo& left, const TargetInfo& right) {
 }
 
 void handleWrite(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
-                 const TargetInfo& target) {
+                 TargetInfo& target, models::TagReadResult& activeResult) {
   static std::array<std::uint8_t, config::kNfcMaxNdefBytes> bytes{};
   std::size_t length = 0;
   TargetInfo writeTarget = target;
   const models::TagTechnology technology = detectNtagTechnology(writeTarget);
   if (!services::buildSpoolmanType2Ndef(command.spoolId, bytes.data(),
-                                        bytes.size(), length) ||
-      !ntagWritableForPages(
-          writeTarget, technology,
-          static_cast<std::uint8_t>(3U + length / 4U)) ||
-      !writeNdef(writeTarget, technology, bytes.data(), length)) {
-    sendError(ctx, command.requestId, "NFC tag write failed");
+                                        bytes.size(), length)) {
+    rtos::logLine("NfcTask: NTAG payload creation failed");
+    sendError(ctx, command.requestId, "NFC tag payload creation failed");
     return;
+  }
+  const bool payloadAlreadyMatches =
+      activeResult.format == models::TagFormat::FilamentStation &&
+      activeResult.definition.hasSpoolId &&
+      activeResult.definition.spoolId == command.spoolId;
+  if (payloadAlreadyMatches) {
+    rtos::logf(
+        "NfcTask: FilamentStation payload already contains spool %lu; verifying without rewrite",
+        static_cast<unsigned long>(command.spoolId));
+  } else {
+    if (!ntagWritableForPages(
+            writeTarget, technology,
+            static_cast<std::uint8_t>(3U + length / 4U), true)) {
+      rtos::logLine("NfcTask: NTAG write range is not safely writable");
+      sendError(ctx, command.requestId,
+                "NFC tag write range is not writable");
+      return;
+    }
+    if (!writeNdef(writeTarget, technology, bytes.data(), length)) {
+      rtos::logLine("NfcTask: NTAG NDEF page write failed");
+      sendError(ctx, command.requestId, "NFC tag write failed");
+      return;
+    }
   }
   static std::array<std::uint8_t, config::kNfcMaxNdefBytes> verify{};
   std::size_t verifyLength = 0;
   TargetInfo verifiedTarget{};
-  const bool sameTag = scanTarget(verifiedTarget) == ScanResult::Found &&
-                       sameUid(writeTarget, verifiedTarget);
+  // InListPassiveTarget is a fresh activation command. Release the logical
+  // target used for writing before verification, otherwise the PN532 can
+  // report no new target even though the tag is still physically present.
+  resetRfField();
+  bool sameTag = false;
+  for (std::uint8_t attempt = 0;
+       attempt < config::kNtagVerificationScanAttempts; ++attempt) {
+    const ScanResult scanResult = scanTarget(verifiedTarget);
+    if (scanResult == ScanResult::Found) {
+      sameTag = sameUid(writeTarget, verifiedTarget);
+      break;
+    }
+    vTaskDelay(pdMS_TO_TICKS(config::kNfcScanIntervalMs));
+  }
   const auto result = sameTag &&
                               readNdef(verifiedTarget, verify.data(),
                                        verify.size(), verifyLength)
@@ -844,6 +915,12 @@ void handleWrite(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
                           : services::NfcPayloadInfo{};
   if (!sameTag || result.type != services::NfcPayloadType::Spoolman ||
       result.spoolId != command.spoolId) {
+    rtos::logf(
+        "NfcTask: NTAG verification failed: sameUid=%s, payloadType=%u, expectedSpool=%lu, actualSpool=%lu, bytes=%u",
+        sameTag ? "yes" : "no", static_cast<unsigned>(result.type),
+        static_cast<unsigned long>(command.spoolId),
+        static_cast<unsigned long>(result.spoolId),
+        static_cast<unsigned>(verifyLength));
     sendError(ctx, command.requestId, "NFC tag verification failed");
     return;
   }
@@ -852,20 +929,30 @@ void handleWrite(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
   event.requestId = command.requestId;
   event.spoolId = command.spoolId;
   event.nfcTagType = rtos::NfcTagType::Spoolman;
+  event.tagReadResult = activeResult;
   event.tagReadResult.format = models::TagFormat::FilamentStation;
   event.tagReadResult.knownFormat = true;
+  event.tagReadResult.ndefPresent = true;
+  event.tagReadResult.ndefReadable = true;
+  event.tagReadResult.payloadValid = true;
   event.tagReadResult.writable = true;
   event.tagReadResult.erasable = true;
   event.tagReadResult.definition.format = models::TagFormat::FilamentStation;
   event.tagReadResult.definition.hasSpoolId = true;
   event.tagReadResult.definition.spoolId = command.spoolId;
-  fillTarget(event, target);
+  event.tagReadResult.uidLength = verifiedTarget.uidLength;
+  std::memcpy(event.tagReadResult.uid, verifiedTarget.uid.data(),
+              verifiedTarget.uidLength);
+  nfc::updateTagCapabilities(event.tagReadResult);
+  target = verifiedTarget;
+  activeResult = event.tagReadResult;
+  fillTarget(event, verifiedTarget);
   std::snprintf(event.text, sizeof(event.text), "NFC tag written and verified");
   sendEvent(ctx, event);
 }
 
 void handleErase(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
-                 const TargetInfo& target) {
+                 TargetInfo& target, models::TagReadResult& activeResult) {
   const std::uint8_t empty[] = {0x03, 0x00, 0xFE, 0x00};
   static std::array<std::uint8_t, config::kNfcMaxNdefBytes> verify{};
   std::size_t length = 0;
@@ -884,7 +971,15 @@ void handleErase(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
   rtos::AppEvent event{};
   event.type = rtos::AppEventType::NfcTagErased;
   event.requestId = command.requestId;
-  fillTarget(event, target);
+  fillTarget(event, verifiedTarget);
+  target = verifiedTarget;
+  activeResult.format = models::TagFormat::EmptyNdef;
+  activeResult.knownFormat = true;
+  activeResult.ndefPresent = true;
+  activeResult.ndefReadable = true;
+  activeResult.payloadValid = true;
+  activeResult.definition = {};
+  nfc::updateTagCapabilities(activeResult);
   std::snprintf(event.text, sizeof(event.text), "NFC tag erased and verified");
   sendEvent(ctx, event);
 }
@@ -958,7 +1053,7 @@ void nfcTask(void* parameter) {
           break;
         case rtos::NfcCommandType::WriteSpoolTag:
           if (present && nfc::mayWriteTag(activeResult))
-            handleWrite(ctx, command, active);
+            handleWrite(ctx, command, active, activeResult);
           else if (present)
             sendError(ctx, command.requestId, "Tag format is read-only");
           else
@@ -966,7 +1061,7 @@ void nfcTask(void* parameter) {
           break;
         case rtos::NfcCommandType::EraseTag:
           if (present && nfc::mayEraseTag(activeResult))
-            handleErase(ctx, command, active);
+            handleErase(ctx, command, active, activeResult);
           else if (present)
             sendError(ctx, command.requestId, "Tag format cannot be erased");
           else

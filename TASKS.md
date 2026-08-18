@@ -555,43 +555,43 @@ Tag neu zuordnen
 
 ## 5.12.8 Ergebnisdialoge
 
-* [ ] Mapping + Tag geschrieben
-* [ ] nur Mapping
-* [ ] Mapping entfernt + Payload entfernt
-* [ ] nur Mapping entfernt
-* [ ] Mapping erfolgreich, Schreiben fehlgeschlagen
-* [ ] Mapping entfernt, Tagbereinigung fehlgeschlagen
-* [ ] Tag während Operation entfernt
-* [ ] UID geändert
+* [x] Mapping + Tag geschrieben
+* [x] nur Mapping
+* [x] Mapping entfernt + Payload entfernt
+* [x] nur Mapping entfernt
+* [x] Mapping erfolgreich, Schreiben fehlgeschlagen
+* [x] Mapping entfernt, Tagbereinigung fehlgeschlagen
+* [x] Tag während Operation entfernt
+* [x] UID geändert
 
 ## 5.12.9 Tests
 
 AssignTag:
 
-* [ ] NTAG → Mapping + Write
-* [ ] Bambu → Mapping ohne Write
+* [x] NTAG → Mapping + Write
+* [x] Bambu → Mapping ohne Write
 * [ ] OpenPrintTag → Mapping ohne Write
 * [ ] OpenTag3D → Mapping ohne Write
-* [ ] Unknown → Mapping ohne Write
-* [ ] Legacy SafeRewrite → Mapping + Write
+* [x] Unknown → Mapping ohne Write
+* [x] Legacy SafeRewrite → Mapping + Write
 * [ ] Legacy Preserve → Mapping-only
 
 RemoveTagAssignment:
 
-* [ ] NTAG → Mapping entfernen + Payload entfernen
-* [ ] Bambu → Mapping entfernen, kein Erase
+* [x] NTAG → Mapping entfernen + Payload entfernen
+* [x] Bambu → Mapping entfernen, kein Erase
 * [ ] OpenPrintTag → Mapping entfernen, kein Erase
 * [ ] OpenTag3D → Mapping entfernen, kein Erase
-* [ ] Unknown → Mapping entfernen, kein Erase
+* [x] Unknown → Mapping entfernen, kein Erase
 
 Fehler:
 
 * [ ] Write schlägt fehl
 * [ ] Verify schlägt fehl
 * [ ] Storage schlägt fehl
-* [ ] Mapping existiert bereits
-* [ ] Tag entfernt
-* [ ] UID geändert
+* [x] Mapping existiert bereits
+* [x] Tag entfernt
+* [x] UID geändert
 
 ## 5.12.10 Build und Migration
 
