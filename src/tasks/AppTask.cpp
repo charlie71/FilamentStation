@@ -27,6 +27,7 @@ constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;
 constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;
 constexpr std::uint32_t kNfcMappingLoadRequestId = 0x4E464302U;
 constexpr std::uint32_t kOpenMappingLoadRequestId = 0x4E464303U;
+constexpr std::uint32_t kNetworkLoadRequestId = 0x4E455401U;
 std::int32_t scaleCounts = 0;
 std::int32_t scaleOffsetCounts = 0;
 float scaleFactorCountsPerGram = 1.0F;
@@ -505,6 +506,20 @@ bool requestScaleConfiguration(rtos::RtosContext& ctx) {
   if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
       pdPASS) {
     rtos::logLine("AppTask: scale config load queue timeout/overflow");
+    return false;
+  }
+  return true;
+}
+
+bool requestNetworkConfiguration(rtos::RtosContext& ctx) {
+  rtos::StorageCommand command{};
+  command.type = rtos::StorageCommandType::LoadJson;
+  command.requestId = kNetworkLoadRequestId;
+  command.documentType = rtos::StorageDocumentType::Network;
+  std::snprintf(command.path, sizeof(command.path), "/config/network.json");
+  if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
+      pdPASS) {
+    rtos::logLine("AppTask: network config load queue timeout/overflow");
     return false;
   }
   return true;
@@ -2262,6 +2277,13 @@ void appTask(void* parameter) {
                event.type == rtos::AppEventType::StorageWriteCompleted ||
                event.type == rtos::AppEventType::StorageRequestError) {
       if (event.type == rtos::AppEventType::StorageReadCompleted &&
+          event.requestId == kNetworkLoadRequestId) {
+        rtos::NetworkCommand networkCommand{};
+        networkCommand.type = rtos::NetworkCommandType::ApplyConfiguration;
+        networkCommand.requestId = event.requestId;
+        networkCommand.settings = event.networkSettings;
+        sendNetworkCommand(ctx, networkCommand);
+      } else if (event.type == rtos::AppEventType::StorageReadCompleted &&
           event.requestId == kScaleLoadRequestId) {
         scaleOffsetCounts = event.scaleOffsetCounts;
         scaleFactorCountsPerGram = event.scaleFactorCountsPerGram;
@@ -2471,6 +2493,7 @@ void appTask(void* parameter) {
                     "AppTask: storage status UI queue timeout/overflow");
       if (event.type == rtos::AppEventType::SdMounted) {
         storageStartupReady = true;
+        requestNetworkConfiguration(ctx);
         requestScaleConfiguration(ctx);
         rtos::StorageCommand mappingLoad{};
         mappingLoad.type = rtos::StorageCommandType::LoadJson;

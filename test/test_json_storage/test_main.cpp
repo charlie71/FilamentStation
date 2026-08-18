@@ -139,6 +139,71 @@ void test_scale_defaults_and_calibration_validation() {
           JsonStorage::validate(document, StorageDocumentType::Scale)));
 }
 
+void test_network_defaults_are_complete_and_valid() {
+  JsonDocument document;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::Ok),
+      static_cast<int>(JsonStorage::createDefault(
+          StorageDocumentType::Network, document)));
+  TEST_ASSERT_EQUAL_STRING("filamentstation",
+                           document["hostname"].as<const char*>());
+  TEST_ASSERT_TRUE(document["dhcp"].as<bool>());
+  TEST_ASSERT_EQUAL_STRING("", document["ipAddress"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("", document["gateway"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("", document["subnetMask"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("", document["dns"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("FilamentStation",
+                           document["portalName"].as<const char*>());
+  TEST_ASSERT_EQUAL_UINT16(
+      180, document["portalTimeoutSeconds"].as<std::uint16_t>());
+  TEST_ASSERT_EQUAL_UINT16(
+      20, document["connectTimeoutSeconds"].as<std::uint16_t>());
+}
+
+void test_static_network_configuration_validates_ipv4_fields() {
+  JsonDocument document;
+  JsonStorage::createDefault(StorageDocumentType::Network, document);
+  document["dhcp"] = false;
+  document["ipAddress"] = "192.168.10.42";
+  document["gateway"] = "192.168.10.1";
+  document["subnetMask"] = "255.255.255.0";
+  document["dns"] = "1.1.1.1";
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::Ok),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Network)));
+
+  document["ipAddress"] = "192.168.10.999";
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Network)));
+}
+
+void test_network_names_and_timeouts_are_bounded() {
+  JsonDocument document;
+  JsonStorage::createDefault(StorageDocumentType::Network, document);
+  document["hostname"] = "-invalid";
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Network)));
+
+  document["hostname"] = "filamentstation";
+  document["portalName"] = "12345678901234567890123456";
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Network)));
+
+  document["portalName"] = "FilamentStation";
+  document["portalTimeoutSeconds"] = 29;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Network)));
+}
+
 void test_document_type_mismatch_is_rejected() {
   JsonDocument document;
   JsonStorage::createDefault(StorageDocumentType::Device, document);
@@ -178,6 +243,9 @@ void setup() {
   RUN_TEST(test_initial_document_defaults_validate);
   RUN_TEST(test_bambu_defaults_support_multiple_printers);
   RUN_TEST(test_scale_defaults_and_calibration_validation);
+  RUN_TEST(test_network_defaults_are_complete_and_valid);
+  RUN_TEST(test_static_network_configuration_validates_ipv4_fields);
+  RUN_TEST(test_network_names_and_timeouts_are_bounded);
   RUN_TEST(test_document_type_mismatch_is_rejected);
   RUN_TEST(test_native_ntag_mapping_document_is_valid);
   UNITY_END();

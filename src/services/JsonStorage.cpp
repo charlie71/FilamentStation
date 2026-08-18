@@ -118,6 +118,60 @@ bool isNonEmptyString(const JsonVariantConst value) {
   return value.is<const char*>() && value.as<const char*>()[0] != '\0';
 }
 
+bool isOptionalString(const JsonVariantConst value) {
+  return value.is<const char*>();
+}
+
+bool isValidIpv4(const char* value, bool allowEmpty) {
+  if (value == nullptr || value[0] == '\0') return allowEmpty;
+  std::uint8_t octets = 0;
+  const char* cursor = value;
+  while (*cursor != '\0') {
+    if (octets == 4 || !isDigit(*cursor)) return false;
+    unsigned valuePart = 0;
+    unsigned digits = 0;
+    while (isDigit(*cursor)) {
+      valuePart = valuePart * 10U + static_cast<unsigned>(*cursor - '0');
+      if (++digits > 3U || valuePart > 255U) return false;
+      ++cursor;
+    }
+    ++octets;
+    if (*cursor == '\0') break;
+    if (*cursor != '.') return false;
+    ++cursor;
+    if (*cursor == '\0') return false;
+  }
+  return octets == 4;
+}
+
+bool isValidHostname(const char* value) {
+  if (value == nullptr) return false;
+  const std::size_t length = std::strlen(value);
+  if (length == 0 || length > 32 || value[0] == '-' ||
+      value[length - 1] == '-')
+    return false;
+  for (std::size_t index = 0; index < length; ++index) {
+    const unsigned char character = static_cast<unsigned char>(value[index]);
+    if (!std::isalnum(character) && character != '-') return false;
+  }
+  return true;
+}
+
+void applyNetworkDefaults(JsonDocument& document) {
+  if (document["hostname"].isNull()) document["hostname"] = "filamentstation";
+  if (document["dhcp"].isNull()) document["dhcp"] = true;
+  if (document["ipAddress"].isNull()) document["ipAddress"] = "";
+  if (document["gateway"].isNull()) document["gateway"] = "";
+  if (document["subnetMask"].isNull()) document["subnetMask"] = "";
+  if (document["dns"].isNull()) document["dns"] = "";
+  if (document["portalName"].isNull())
+    document["portalName"] = "FilamentStation";
+  if (document["portalTimeoutSeconds"].isNull())
+    document["portalTimeoutSeconds"] = 180;
+  if (document["connectTimeoutSeconds"].isNull())
+    document["connectTimeoutSeconds"] = 20;
+}
+
 }  // namespace
 
 std::size_t JsonStorage::maxSizeFor(
@@ -178,6 +232,10 @@ JsonStorageResult JsonStorage::load(
     if (document["factorCountsPerGram"].isNull()) {
       document["factorCountsPerGram"] = 1.0F;
     }
+  }
+  if (error == JsonStorageError::Ok &&
+      documentType == rtos::StorageDocumentType::Network) {
+    applyNetworkDefaults(document);
   }
   if (error == JsonStorageError::Ok) {
     error = validate(document, documentType);
@@ -261,8 +319,7 @@ JsonStorageError JsonStorage::createDefault(
       document["deviceName"] = "FilamentStation";
       break;
     case rtos::StorageDocumentType::Network:
-      document["hostname"] = "filamentstation";
-      document["dhcp"] = true;
+      applyNetworkDefaults(document);
       break;
     case rtos::StorageDocumentType::Spoolman:
       document["enabled"] = false;
@@ -312,10 +369,30 @@ JsonStorageError JsonStorage::validate(
                  ? JsonStorageError::Ok
                  : JsonStorageError::InvalidDocumentField;
     case rtos::StorageDocumentType::Network:
-      return isNonEmptyString(document["hostname"]) &&
-                     document["dhcp"].is<bool>()
-                 ? JsonStorageError::Ok
-                 : JsonStorageError::InvalidDocumentField;
+      if (!document["dhcp"].is<bool>() ||
+          !document["portalTimeoutSeconds"].is<std::uint16_t>() ||
+          !document["connectTimeoutSeconds"].is<std::uint16_t>() ||
+          !isOptionalString(document["ipAddress"]) ||
+          !isOptionalString(document["gateway"]) ||
+          !isOptionalString(document["subnetMask"]) ||
+          !isOptionalString(document["dns"]) ||
+          !isNonEmptyString(document["portalName"]) ||
+          !isValidHostname(document["hostname"].as<const char*>()) ||
+          std::strlen(document["portalName"].as<const char*>()) > 25U ||
+          document["portalTimeoutSeconds"].as<std::uint16_t>() < 30U ||
+          document["portalTimeoutSeconds"].as<std::uint16_t>() > 900U ||
+          document["connectTimeoutSeconds"].as<std::uint16_t>() < 1U ||
+          document["connectTimeoutSeconds"].as<std::uint16_t>() > 60U ||
+          !isValidIpv4(document["dns"].as<const char*>(), true)) {
+        return JsonStorageError::InvalidDocumentField;
+      }
+      if (!document["dhcp"].as<bool>() &&
+          (!isValidIpv4(document["ipAddress"].as<const char*>(), false) ||
+           !isValidIpv4(document["gateway"].as<const char*>(), false) ||
+           !isValidIpv4(document["subnetMask"].as<const char*>(), false))) {
+        return JsonStorageError::InvalidDocumentField;
+      }
+      return JsonStorageError::Ok;
     case rtos::StorageDocumentType::Spoolman:
       return document["enabled"].is<bool>() &&
                      document["serverUrl"].is<const char*>() &&

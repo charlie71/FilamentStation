@@ -14,7 +14,7 @@ namespace filament_station::tasks {
 namespace {
 
 struct PortalCredentials {
-  char ssid[32]{};
+  char ssid[33]{};
   char password[16]{};
 };
 
@@ -53,12 +53,13 @@ void wifiEventCallback(arduino_event_id_t event) {
   }
 }
 
-PortalCredentials makePortalCredentials() {
+PortalCredentials makePortalCredentials(
+    const models::NetworkSettings& settings) {
   PortalCredentials credentials{};
   const auto deviceSuffix =
       static_cast<std::uint32_t>(ESP.getEfuseMac() & 0x00FFFFFFULL);
   std::snprintf(credentials.ssid, sizeof(credentials.ssid), "%s-%06lX",
-                config::kWifiPortalSsidPrefix,
+                settings.portalName,
                 static_cast<unsigned long>(deviceSuffix));
   std::snprintf(credentials.password, sizeof(credentials.password), "%s-%06lX",
                 config::kWifiPortalPasswordPrefix,
@@ -66,10 +67,26 @@ PortalCredentials makePortalCredentials() {
   return credentials;
 }
 
-void configureManager(WiFiManager& manager) {
+bool configureManager(WiFiManager& manager,
+                      const models::NetworkSettings& settings) {
   manager.setConfigPortalBlocking(false);
-  manager.setConfigPortalTimeout(config::kWifiPortalTimeoutSeconds);
-  manager.setConnectTimeout(config::kWifiConnectTimeoutSeconds);
+  manager.setConfigPortalTimeout(settings.portalTimeoutSeconds);
+  manager.setConnectTimeout(settings.connectTimeoutSeconds);
+  if (!manager.setHostname(settings.hostname)) return false;
+  if (settings.dhcp) return true;
+
+  IPAddress ip;
+  IPAddress gateway;
+  IPAddress subnet;
+  IPAddress dns;
+  if (!ip.fromString(settings.ipAddress) ||
+      !gateway.fromString(settings.gateway) ||
+      !subnet.fromString(settings.subnetMask) ||
+      (settings.dns[0] != '\0' && !dns.fromString(settings.dns))) {
+    return false;
+  }
+  manager.setSTAStaticIPConfig(ip, gateway, subnet, dns);
+  return true;
 }
 
 rtos::AppEvent networkEvent{};
@@ -87,24 +104,26 @@ void publishEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
 }
 
 void publishPortalStarted(rtos::RtosContext& ctx, std::uint32_t requestId,
-                          const PortalCredentials& credentials) {
+                          const PortalCredentials& credentials,
+                          const models::NetworkSettings& settings) {
   char status[192]{};
   std::snprintf(status, sizeof(status),
                 "WLAN: %s\nPasswort: %s\nPortal-Timeout: %lu Sekunden",
                 credentials.ssid, credentials.password,
-                static_cast<unsigned long>(config::kWifiPortalTimeoutSeconds));
+                static_cast<unsigned long>(settings.portalTimeoutSeconds));
   publishEvent(ctx, rtos::AppEventType::WifiConfigPortalStarted, requestId,
                status);
 }
 
 void connectOrStartPortal(rtos::RtosContext& ctx, WiFiManager& manager,
                           const PortalCredentials& credentials,
+                          const models::NetworkSettings& settings,
                           std::uint32_t requestId,
                           TickType_t& portalStartedAt,
                           std::uint32_t& portalRequestId) {
   rtos::logf("NetworkTask: connecting; portal SSID=%s, timeout=%lus",
              credentials.ssid,
-             static_cast<unsigned long>(config::kWifiPortalTimeoutSeconds));
+             static_cast<unsigned long>(settings.portalTimeoutSeconds));
   const bool connected = manager.autoConnect(credentials.ssid,
                                               credentials.password);
   if (connected) {
@@ -115,7 +134,7 @@ void connectOrStartPortal(rtos::RtosContext& ctx, WiFiManager& manager,
     portalStartedAt = xTaskGetTickCount();
     portalRequestId = requestId;
     rtos::logLine("NetworkTask: captive portal active");
-    publishPortalStarted(ctx, requestId, credentials);
+    publishPortalStarted(ctx, requestId, credentials, settings);
     return;
   }
   rtos::logLine("NetworkTask: WiFi connection failed");
@@ -155,16 +174,17 @@ void handleWifiSignal(rtos::RtosContext& ctx, WifiSignal signal,
 
 void startPortal(rtos::RtosContext& ctx, WiFiManager& manager,
                  const PortalCredentials& credentials,
+                 const models::NetworkSettings& settings,
                  std::uint32_t requestId, TickType_t& portalStartedAt,
                  std::uint32_t& portalRequestId) {
   if (manager.getConfigPortalActive()) {
     portalRequestId = requestId;
-    publishPortalStarted(ctx, requestId, credentials);
+    publishPortalStarted(ctx, requestId, credentials, settings);
     return;
   }
   rtos::logf("NetworkTask: captive portal started; SSID=%s, timeout=%lus",
              credentials.ssid,
-             static_cast<unsigned long>(config::kWifiPortalTimeoutSeconds));
+             static_cast<unsigned long>(settings.portalTimeoutSeconds));
   manager.startConfigPortal(credentials.ssid, credentials.password);
   if (!manager.getConfigPortalActive()) {
     rtos::logLine("NetworkTask: captive portal start failed");
@@ -174,7 +194,7 @@ void startPortal(rtos::RtosContext& ctx, WiFiManager& manager,
   }
   portalStartedAt = xTaskGetTickCount();
   portalRequestId = requestId;
-  publishPortalStarted(ctx, requestId, credentials);
+  publishPortalStarted(ctx, requestId, credentials, settings);
 }
 
 }  // namespace
@@ -196,13 +216,11 @@ void networkTask(void* parameter) {
 
   WiFi.onEvent(wifiEventCallback);
   static WiFiManager manager;
-  configureManager(manager);
-  static const PortalCredentials credentials = makePortalCredentials();
+  models::NetworkSettings settings{};
+  PortalCredentials credentials{};
+  bool configurationApplied = false;
   TickType_t portalStartedAt = 0;
   std::uint32_t portalRequestId = 0;
-
-  connectOrStartPortal(ctx, manager, credentials, 0, portalStartedAt,
-                       portalRequestId);
 
   rtos::NetworkCommand command{};
   for (;;) {
@@ -215,14 +233,34 @@ void networkTask(void* parameter) {
     if (ready == ctx.networkCommandQueue &&
         xQueueReceive(ctx.networkCommandQueue, &command, 0) == pdTRUE) {
       switch (command.type) {
+        case rtos::NetworkCommandType::ApplyConfiguration:
+          settings = command.settings;
+          credentials = makePortalCredentials(settings);
+          configurationApplied = configureManager(manager, settings);
+          if (!configurationApplied) {
+            rtos::logLine("NetworkTask: invalid network configuration rejected");
+            publishEvent(ctx, rtos::AppEventType::WifiDisconnected,
+                         command.requestId,
+                         "Netzwerkkonfiguration konnte nicht angewendet werden");
+            break;
+          }
+          rtos::logf("NetworkTask: configuration applied; hostname=%s, mode=%s",
+                     settings.hostname, settings.dhcp ? "DHCP" : "static");
+          connectOrStartPortal(ctx, manager, credentials, settings,
+                               command.requestId, portalStartedAt,
+                               portalRequestId);
+          break;
         case rtos::NetworkCommandType::Connect:
-          connectOrStartPortal(ctx, manager, credentials, command.requestId,
-                               portalStartedAt, portalRequestId);
+          if (configurationApplied)
+            connectOrStartPortal(ctx, manager, credentials, settings,
+                                 command.requestId, portalStartedAt,
+                                 portalRequestId);
           break;
         case rtos::NetworkCommandType::Reconfigure:
         case rtos::NetworkCommandType::StartPortal:
-          startPortal(ctx, manager, credentials, command.requestId,
-                      portalStartedAt, portalRequestId);
+          if (configurationApplied)
+            startPortal(ctx, manager, credentials, settings,
+                        command.requestId, portalStartedAt, portalRequestId);
           break;
         case rtos::NetworkCommandType::StopPortal:
           if (manager.getConfigPortalActive()) manager.stopConfigPortal();
@@ -260,7 +298,9 @@ void networkTask(void* parameter) {
     }
 
     const TickType_t timeoutTicks =
-        pdMS_TO_TICKS(config::kWifiPortalTimeoutSeconds * 1000UL);
+        pdMS_TO_TICKS(static_cast<std::uint32_t>(
+                          settings.portalTimeoutSeconds) *
+                      1000UL);
     if (!manager.getConfigPortalActive() ||
         static_cast<TickType_t>(xTaskGetTickCount() - portalStartedAt) >=
             timeoutTicks) {

@@ -24,7 +24,7 @@ erkannt. Die ersten fachlichen Felder und Standardwerte sind:
 | Datei | `documentType` | Pflichtfelder und Standardwerte |
 |---|---|---|
 | `/config/device.json` | `device` | `deviceName`: `"FilamentStation"` |
-| `/config/network.json` | `network` | `hostname`: `"filamentstation"`, `dhcp`: `true` |
+| `/config/network.json` | `network` | `hostname`: `"filamentstation"`, `dhcp`: `true`, `ipAddress`: `""`, `gateway`: `""`, `subnetMask`: `""`, `dns`: `""`, `portalName`: `"FilamentStation"`, `portalTimeoutSeconds`: `180`, `connectTimeoutSeconds`: `20` |
 | `/config/spoolman.json` | `spoolman` | `enabled`: `false`, `serverUrl`: `""` |
 | `/config/ui.json` | `ui` | `language`: `"de"`, `weightUnit`: `"g"` |
 | `/config/scale.json` | `scale` | `calibrated`: `false`, `tareOffsetCounts`: `0`, `factorCountsPerGram`: `1.0` |
@@ -43,8 +43,42 @@ bleiben weiterhin ausschliesslich in `BoardConfig.h`.
 
 Spoolman enthaelt keine Zugangsdaten. Netzwerkparameter enthalten
 kein WLAN-Passwort; dieses bleibt wie vorgesehen im ESP32-/WiFiManager-
-Systembereich. Weitere Felder werden erst zusammen mit der jeweiligen
-Funktionsphase definiert und validiert.
+Systembereich.
+
+## Netzwerkparameter
+
+`hostname` ist 1 bis 32 Zeichen lang und besteht aus Buchstaben, Ziffern und
+Bindestrichen; ein Bindestrich darf nicht am Anfang oder Ende stehen. Bei
+`dhcp: true` bleiben `ipAddress`, `gateway` und `subnetMask` leer und der ESP32
+bezieht seine Parameter automatisch. Bei `dhcp: false` muessen diese drei
+Felder gueltige IPv4-Adressen enthalten. `dns` ist optional; ein nichtleerer
+Wert muss ebenfalls eine IPv4-Adresse sein.
+
+`portalName` ist der lesbare, maximal 25 Zeichen lange Namensanteil des
+Captive-Portals. Der NetworkTask haengt einen Bindestrich und sechs
+hexadezimale Zeichen aus der Chip-ID an, sodass die WLAN-SSID eindeutig bleibt
+und das 32-Zeichen-Limit nicht ueberschreitet. `portalTimeoutSeconds` liegt
+zwischen 30 und 900 Sekunden, `connectTimeoutSeconds` zwischen 1 und 60
+Sekunden.
+
+Beispiel fuer DHCP:
+
+```json
+{
+  "schemaVersion": 1,
+  "updatedAt": "1970-01-01T00:00:00Z",
+  "documentType": "network",
+  "hostname": "filamentstation",
+  "dhcp": true,
+  "ipAddress": "",
+  "gateway": "",
+  "subnetMask": "",
+  "dns": "",
+  "portalName": "FilamentStation",
+  "portalTimeoutSeconds": 180,
+  "connectTimeoutSeconds": 20
+}
+```
 
 ## Vorlaeufige Groessenlimits
 

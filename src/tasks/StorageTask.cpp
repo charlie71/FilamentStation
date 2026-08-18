@@ -129,6 +129,37 @@ void processLoadCommand(rtos::RtosContext& ctx,
       services::JsonStorage::load(file, command.documentType, document);
   file.close();
   if (result.ok() &&
+      command.documentType == rtos::StorageDocumentType::Network) {
+    rtos::AppEvent event{};
+    event.type = rtos::AppEventType::StorageReadCompleted;
+    event.requestId = command.requestId;
+    event.value = static_cast<std::int32_t>(result.bytesProcessed);
+    auto& settings = event.networkSettings;
+    std::snprintf(settings.hostname, sizeof(settings.hostname), "%s",
+                  document["hostname"].as<const char*>());
+    settings.dhcp = document["dhcp"].as<bool>();
+    std::snprintf(settings.ipAddress, sizeof(settings.ipAddress), "%s",
+                  document["ipAddress"].as<const char*>());
+    std::snprintf(settings.gateway, sizeof(settings.gateway), "%s",
+                  document["gateway"].as<const char*>());
+    std::snprintf(settings.subnetMask, sizeof(settings.subnetMask), "%s",
+                  document["subnetMask"].as<const char*>());
+    std::snprintf(settings.dns, sizeof(settings.dns), "%s",
+                  document["dns"].as<const char*>());
+    std::snprintf(settings.portalName, sizeof(settings.portalName), "%s",
+                  document["portalName"].as<const char*>());
+    settings.portalTimeoutSeconds =
+        document["portalTimeoutSeconds"].as<std::uint16_t>();
+    settings.connectTimeoutSeconds =
+        document["connectTimeoutSeconds"].as<std::uint16_t>();
+    std::snprintf(event.text, sizeof(event.text),
+                  "Network configuration loaded");
+    if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS) {
+      rtos::logLine("StorageTask: network config event queue overflow");
+    }
+    return;
+  }
+  if (result.ok() &&
       command.documentType == rtos::StorageDocumentType::Scale) {
     rtos::AppEvent event{};
     event.type = rtos::AppEventType::StorageReadCompleted;

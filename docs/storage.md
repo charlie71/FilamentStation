@@ -82,6 +82,12 @@ Standardinhalt atomar geschrieben und erneut validiert. Eine vorhandene gueltige
 Datei bleibt unveraendert. Vorhandene Temp- oder Backup-Dateien durchlaufen die
 Wiederherstellungslogik aus Phase 2.4.
 
+Nach erfolgreichem SD-Mount fordert der AppTask die Netzwerkdatei an. Nur der
+StorageTask liest und validiert sie; anschließend sendet er eine wertbasierte
+`NetworkSettings`-Nachricht an den AppTask. Dieser reicht die Konfiguration an
+den NetworkTask weiter. Damit greifen weder AppTask noch NetworkTask direkt auf
+die SD-Karte zu.
+
 Ist eine vorhandene Datei beschaedigt und nicht wiederherstellbar, wird sie
 nicht ueberschrieben. Der StorageTask meldet den Fehler, laesst
 `EVENT_SD_READY` geloescht und verlangt entsprechend der SD-Fehlerstrategie

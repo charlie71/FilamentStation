@@ -651,13 +651,13 @@ Fehler:
 
 ## 6.4 Netzwerkparameter
 
-* [ ] network.json
-* [ ] Hostname
-* [ ] DHCP/statisch
-* [ ] DNS
-* [ ] Portalname
-* [ ] Timeouts
-* [ ] StorageTask
+* [x] network.json
+* [x] Hostname
+* [x] DHCP/statisch
+* [x] DNS
+* [x] Portalname
+* [x] Timeouts
+* [x] StorageTask
 
 ## 6.5 GUI
 

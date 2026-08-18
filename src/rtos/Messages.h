@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <type_traits>
 #include "models/TagReadResult.h"
+#include "models/NetworkSettings.h"
 #include "rtos/Commands.h"
 #include "rtos/Events.h"
 
@@ -38,6 +39,7 @@ struct AppEvent {
   models::TagReadResult tagReadResult;
   NfcUidMapping nfcMappings[kMaximumNfcUidMappings];
   std::uint8_t nfcMappingCount;
+  models::NetworkSettings networkSettings;
   // NFC diagnostics and multi-line UI status messages must remain complete.
   // Keep this fixed-size and value based; no pointers or Arduino Strings cross
   // task boundaries.
@@ -81,7 +83,11 @@ struct StorageCommand {
   char json[kStorageJsonPayloadCapacity];
 };
 
-struct NetworkCommand { NetworkCommandType type; std::uint32_t requestId; };
+struct NetworkCommand {
+  NetworkCommandType type;
+  std::uint32_t requestId;
+  models::NetworkSettings settings;
+};
 struct SpoolmanCommand {
   SpoolmanCommandType type;
   std::uint32_t requestId;
@@ -102,5 +108,6 @@ static_assert(std::is_trivially_copyable_v<AppEvent>);
 static_assert(std::is_trivially_copyable_v<UiCommand>);
 static_assert(std::is_trivially_copyable_v<UiAction>);
 static_assert(std::is_trivially_copyable_v<StorageCommand>);
+static_assert(std::is_trivially_copyable_v<NetworkCommand>);
 
 }  // namespace filament_station::rtos

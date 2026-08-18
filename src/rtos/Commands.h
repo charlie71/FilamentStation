@@ -176,6 +176,7 @@ enum class NfcCommandType : std::uint8_t {
 };
 enum class StorageCommandType : std::uint8_t { LoadJson, SaveJson, DeleteJson, CreateBackup };
 enum class NetworkCommandType : std::uint8_t {
+  ApplyConfiguration,
   Connect,
   Reconfigure,
   StartPortal,
