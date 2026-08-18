@@ -32,9 +32,6 @@ constexpr InitialDocument kInitialDocuments[] = {
     {"/config/ui.json", rtos::StorageDocumentType::Ui},
     {"/config/scale.json", rtos::StorageDocumentType::Scale},
     {"/config/nfc.json", rtos::StorageDocumentType::Nfc},
-    {"/mappings/bambu-tags.json", rtos::StorageDocumentType::Nfc},
-    {"/mappings/nfc-spools.json", rtos::StorageDocumentType::Nfc},
-    {"/mappings/open-tags.json", rtos::StorageDocumentType::Nfc},
 };
 
 bool isMappingPath(const char* path) {
@@ -122,6 +119,19 @@ void processLoadCommand(rtos::RtosContext& ctx,
                         const rtos::StorageCommand& command) {
   File file = SD.open(command.path, FILE_READ);
   if (!file) {
+    if (command.documentType == rtos::StorageDocumentType::Nfc &&
+        isMappingPath(command.path)) {
+      rtos::AppEvent event{};
+      event.type = rtos::AppEventType::StorageReadCompleted;
+      event.requestId = command.requestId;
+      event.value = -1;
+      std::snprintf(event.text, sizeof(event.text),
+                    "Legacy mapping file not found");
+      if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
+        FS_LOGW(services::LogComponent::Storage,
+                "Event enqueue failed queue=app_event document=legacy_mapping_missing");
+      return;
+    }
     sendStorageResult(ctx, command, rtos::AppEventType::StorageReadCompleted,
                       {services::JsonStorageError::FileUnavailable, 0},
                       "JSON loaded and validated");

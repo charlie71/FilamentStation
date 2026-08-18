@@ -761,17 +761,17 @@ API gegen die tatsächlich verwendete Spoolman-Version prüfen.
 
 Übergang für bestehende Geräte:
 
-* [ ] alte Mapping-Dateien optional erkennen
-* [ ] nur bei verbundener Spoolman-Instanz migrieren
-* [ ] UID normalisieren
-* [ ] Spool-ID validieren
-* [ ] `extra.tag` des Zielspools prüfen
-* [ ] bestehende andere Zuordnung prüfen
-* [ ] eindeutige Einträge migrieren
-* [ ] Konflikte nicht überschreiben
-* [ ] vollständige Migration protokollieren
-* [ ] Datei nur nach erfolgreicher vollständiger Migration löschen
-* [ ] fehlende Mapping-Dateien normal behandeln
+* [x] alte Mapping-Dateien optional erkennen
+* [x] nur bei verbundener Spoolman-Instanz migrieren
+* [x] UID normalisieren
+* [x] Spool-ID validieren
+* [x] `extra.tag` des Zielspools prüfen
+* [x] bestehende andere Zuordnung prüfen
+* [x] eindeutige Einträge migrieren
+* [x] Konflikte nicht überschreiben
+* [x] vollständige Migration protokollieren
+* [x] Datei nur nach erfolgreicher vollständiger Migration löschen
+* [x] fehlende Mapping-Dateien normal behandeln
 
 ## 7.7.10 Lokale Mapping-Architektur entfernen
 

@@ -11,6 +11,9 @@ struct SpoolmanSpool {
   char vendor[32]{};
   char filament[40]{};
   char material[24]{};
+  char extraTag[40]{};
+  bool extraTagPresent = false;
+  bool extraTagValid = false;
   char colorHex[kMaximumColors][9]{};
   std::uint8_t colorCount = 0;
   float initialWeightGrams = 0.0F;

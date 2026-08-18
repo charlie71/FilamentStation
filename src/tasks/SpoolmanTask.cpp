@@ -264,6 +264,12 @@ bool parseSpool(JsonVariantConst source, models::SpoolmanSpool& spool) {
                            (filament["spool_weight"] | 0.0F);
   spool.remainingWeightGrams = source["remaining_weight"] | 0.0F;
   spool.archived = source["archived"] | false;
+  const JsonVariantConst extraTag = source["extra"]["tag"];
+  spool.extraTagPresent = !extraTag.isNull();
+  spool.extraTagValid =
+      !spool.extraTagPresent || services::SpoolmanClient::decodeTextExtraField(
+                                    extraTag, spool.extraTag,
+                                    sizeof(spool.extraTag));
   return spool.id != 0;
 }
 

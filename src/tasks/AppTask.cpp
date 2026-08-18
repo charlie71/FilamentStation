@@ -12,6 +12,7 @@
 #include "rtos/RtosContext.h"
 #include "services/SpoolmanUrl.h"
 #include "services/SpoolmanClient.h"
+#include "services/TagIdentity.h"
 #include "services/Logger.h"
 
 namespace filament_station::tasks {
@@ -31,6 +32,10 @@ constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;
 constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;
 constexpr std::uint32_t kNfcMappingLoadRequestId = 0x4E464302U;
 constexpr std::uint32_t kOpenMappingLoadRequestId = 0x4E464303U;
+constexpr std::uint32_t kLegacyMigrationLookupRequestId = 0x4D470101U;
+constexpr std::uint32_t kLegacyMigrationLoadSpoolRequestId = 0x4D470102U;
+constexpr std::uint32_t kLegacyMigrationSetTagRequestId = 0x4D470103U;
+constexpr std::uint32_t kLegacyMigrationDeleteRequestBase = 0x4D470110U;
 constexpr std::uint32_t kNetworkLoadRequestId = 0x4E455401U;
 constexpr std::uint32_t kSpoolmanLoadRequestId = 0x53504D01U;
 constexpr std::uint32_t kPendingWeightLoadRequestId = 0x57475401U;
@@ -164,6 +169,38 @@ struct PendingNativeConsistencyCheck {
   std::uint8_t uidLength = 0;
 };
 PendingNativeConsistencyCheck pendingNativeConsistency{};
+
+struct LegacyMappingFile {
+  const char* path = nullptr;
+  std::uint32_t loadRequestId = 0;
+  bool loadFinished = false;
+  bool exists = false;
+  bool loadFailed = false;
+  bool migrationFailed = false;
+  std::array<rtos::NfcUidMapping, rtos::kMaximumNfcUidMappings> mappings{};
+  std::uint8_t count = 0;
+};
+
+enum class LegacyMigrationStage : std::uint8_t {
+  Waiting,
+  LookingUp,
+  LoadingTarget,
+  SettingTarget,
+  DeletingFile,
+  Complete,
+};
+
+std::array<LegacyMappingFile, 3> legacyMappingFiles{{
+    {"/mappings/bambu-tags.json", kBambuMappingLoadRequestId},
+    {"/mappings/nfc-spools.json", kNfcMappingLoadRequestId},
+    {"/mappings/open-tags.json", kOpenMappingLoadRequestId},
+}};
+LegacyMigrationStage legacyMigrationStage = LegacyMigrationStage::Waiting;
+std::uint8_t legacyMigrationFileIndex = 0;
+std::uint8_t legacyMigrationEntryIndex = 0;
+models::TagIdentity legacyMigrationIdentity{};
+std::uint16_t legacyMigrationMigrated = 0;
+std::uint16_t legacyMigrationConflicts = 0;
 
 const char* tagTechnologyName(models::TagTechnology technology) {
   switch (technology) {
@@ -317,6 +354,129 @@ void mergeNfcMappings(const rtos::AppEvent& event) {
     }
     bambuMappings[destination] = candidate;
   }
+}
+
+LegacyMappingFile* legacyFileForLoadRequest(std::uint32_t requestId) {
+  for (auto& file : legacyMappingFiles)
+    if (file.loadRequestId == requestId) return &file;
+  return nullptr;
+}
+
+bool allLegacyMappingLoadsFinished() {
+  for (const auto& file : legacyMappingFiles)
+    if (!file.loadFinished) return false;
+  return true;
+}
+
+bool sendLegacySpoolmanCommand(rtos::RtosContext& ctx,
+                               rtos::SpoolmanCommandType type,
+                               std::uint32_t requestId,
+                               rtos::SpoolId spoolId = 0) {
+  rtos::SpoolmanCommand command{};
+  command.type = type;
+  command.requestId = requestId;
+  command.spoolId = spoolId;
+  command.tagIdentity = legacyMigrationIdentity;
+  return xQueueSend(ctx.spoolmanCommandQueue, &command,
+                    pdMS_TO_TICKS(1000)) == pdPASS;
+}
+
+void advanceLegacyMigration(rtos::RtosContext& ctx);
+
+void finishLegacyMigrationEntry(rtos::RtosContext& ctx, bool migrated,
+                                const char* reason) {
+  auto& file = legacyMappingFiles[legacyMigrationFileIndex];
+  const auto& mapping = file.mappings[legacyMigrationEntryIndex];
+  if (migrated) {
+    ++legacyMigrationMigrated;
+    FS_LOGI(services::LogComponent::App,
+            "Legacy mapping migrated file=%s entry=%u spool_id=%lu tag=%s",
+            file.path, static_cast<unsigned>(legacyMigrationEntryIndex),
+            static_cast<unsigned long>(mapping.spoolId),
+            legacyMigrationIdentity.value);
+  } else {
+    file.migrationFailed = true;
+    ++legacyMigrationConflicts;
+    FS_LOGW(services::LogComponent::App,
+            "Legacy mapping retained file=%s entry=%u spool_id=%lu tag=%s reason=%s",
+            file.path, static_cast<unsigned>(legacyMigrationEntryIndex),
+            static_cast<unsigned long>(mapping.spoolId),
+            legacyMigrationIdentity.value,
+            reason != nullptr ? reason : "migration_failed");
+  }
+  ++legacyMigrationEntryIndex;
+  legacyMigrationStage = LegacyMigrationStage::Waiting;
+  advanceLegacyMigration(ctx);
+}
+
+void advanceLegacyMigration(rtos::RtosContext& ctx) {
+  while (legacyMigrationFileIndex < legacyMappingFiles.size()) {
+    auto& file = legacyMappingFiles[legacyMigrationFileIndex];
+    if (!file.exists || file.loadFailed) {
+      ++legacyMigrationFileIndex;
+      legacyMigrationEntryIndex = 0;
+      continue;
+    }
+    if (legacyMigrationEntryIndex < file.count) {
+      const auto& mapping = file.mappings[legacyMigrationEntryIndex];
+      if (!services::tagIdentityFromUid(mapping.uid, mapping.uidLength,
+                                        legacyMigrationIdentity)) {
+        finishLegacyMigrationEntry(ctx, false, "invalid_uid");
+        return;
+      }
+      legacyMigrationStage = LegacyMigrationStage::LookingUp;
+      if (!sendLegacySpoolmanCommand(
+              ctx, rtos::SpoolmanCommandType::FindSpoolByTag,
+              kLegacyMigrationLookupRequestId)) {
+        finishLegacyMigrationEntry(ctx, false, "spoolman_queue_full");
+      }
+      return;
+    }
+    if (!file.migrationFailed) {
+      rtos::StorageCommand remove{};
+      remove.type = rtos::StorageCommandType::DeleteJson;
+      remove.requestId = kLegacyMigrationDeleteRequestBase +
+                         legacyMigrationFileIndex;
+      remove.documentType = rtos::StorageDocumentType::Nfc;
+      std::snprintf(remove.path, sizeof(remove.path), "%s", file.path);
+      legacyMigrationStage = LegacyMigrationStage::DeletingFile;
+      if (xQueueSend(ctx.storageCommandQueue, &remove,
+                     pdMS_TO_TICKS(1000)) != pdPASS) {
+        file.migrationFailed = true;
+        legacyMigrationStage = LegacyMigrationStage::Waiting;
+        FS_LOGW(services::LogComponent::App,
+                "Legacy mapping retained file=%s reason=storage_queue_full",
+                file.path);
+      } else {
+        return;
+      }
+    }
+    ++legacyMigrationFileIndex;
+    legacyMigrationEntryIndex = 0;
+  }
+  legacyMigrationStage = LegacyMigrationStage::Complete;
+  FS_LOGI(services::LogComponent::App,
+          "Legacy mapping migration complete migrated=%u retained_or_conflicting=%u",
+          static_cast<unsigned>(legacyMigrationMigrated),
+          static_cast<unsigned>(legacyMigrationConflicts));
+}
+
+void tryStartLegacyMigration(rtos::RtosContext& ctx) {
+  if (legacyMigrationStage != LegacyMigrationStage::Waiting ||
+      !allLegacyMappingLoadsFinished())
+    return;
+  const EventBits_t required =
+      rtos::EVENT_SPOOLMAN_READY | rtos::EVENT_SPOOLMAN_TAG_FIELD_READY;
+  if ((xEventGroupGetBits(ctx.systemEventGroup) & required) != required) return;
+  legacyMigrationFileIndex = 0;
+  legacyMigrationEntryIndex = 0;
+  legacyMigrationMigrated = 0;
+  legacyMigrationConflicts = 0;
+  for (auto& file : legacyMappingFiles) file.migrationFailed = file.loadFailed;
+  FS_LOGI(services::LogComponent::App,
+          "Legacy mapping migration started files=%u",
+          static_cast<unsigned>(legacyMappingFiles.size()));
+  advanceLegacyMigration(ctx);
 }
 
 bool persistNfcMappings(rtos::RtosContext& ctx, std::uint32_t requestId,
@@ -2989,6 +3149,67 @@ void appTask(void* parameter) {
       previousScreen = currentScreen;
       currentScreen = result.screenId;
       sendUiCommand(ctx, result, "AppTask: import result UI overflow");
+    } else if (event.type == rtos::AppEventType::SpoolmanResponse &&
+               event.requestId == kLegacyMigrationLoadSpoolRequestId &&
+               legacyMigrationStage == LegacyMigrationStage::LoadingTarget) {
+      if (event.value < 0) {
+        if (event.spoolId == 0)
+          finishLegacyMigrationEntry(ctx, false, "target_spool_not_found");
+        continue;
+      }
+      const auto& mapping = legacyMappingFiles[legacyMigrationFileIndex]
+                                .mappings[legacyMigrationEntryIndex];
+      if (event.spool.id != mapping.spoolId) {
+        finishLegacyMigrationEntry(ctx, false, "target_spool_mismatch");
+      } else if (!event.spool.extraTagValid) {
+        finishLegacyMigrationEntry(ctx, false,
+                                   "target_spool_tag_field_invalid");
+      } else if (event.spool.extraTag[0] == '\0') {
+        legacyMigrationStage = LegacyMigrationStage::SettingTarget;
+        if (!sendLegacySpoolmanCommand(
+                ctx, rtos::SpoolmanCommandType::SetSpoolTag,
+                kLegacyMigrationSetTagRequestId, mapping.spoolId))
+          finishLegacyMigrationEntry(ctx, false, "spoolman_queue_full");
+      } else if (std::strcmp(event.spool.extraTag,
+                             legacyMigrationIdentity.value) == 0) {
+        finishLegacyMigrationEntry(ctx, true, "already_assigned");
+      } else {
+        finishLegacyMigrationEntry(ctx, false,
+                                   "target_spool_has_other_tag");
+      }
+      continue;
+    } else if (event.type == rtos::AppEventType::SpoolmanTagLookup &&
+               event.requestId == kLegacyMigrationLookupRequestId &&
+               legacyMigrationStage == LegacyMigrationStage::LookingUp) {
+      const auto status = static_cast<services::TagLookupStatus>(event.value);
+      const auto& mapping = legacyMappingFiles[legacyMigrationFileIndex]
+                                .mappings[legacyMigrationEntryIndex];
+      if (status == services::TagLookupStatus::Found) {
+        finishLegacyMigrationEntry(
+            ctx, event.spoolId == mapping.spoolId,
+            event.spoolId == mapping.spoolId ? "already_assigned"
+                                             : "tag_assigned_elsewhere");
+      } else if (status == services::TagLookupStatus::NotFound) {
+        legacyMigrationStage = LegacyMigrationStage::LoadingTarget;
+        if (!sendLegacySpoolmanCommand(
+                ctx, rtos::SpoolmanCommandType::LoadSpool,
+                kLegacyMigrationLoadSpoolRequestId, mapping.spoolId))
+          finishLegacyMigrationEntry(ctx, false, "spoolman_queue_full");
+      } else {
+        finishLegacyMigrationEntry(ctx, false, "tag_lookup_failed");
+      }
+      continue;
+    } else if (event.type == rtos::AppEventType::SpoolmanTagDuplicate &&
+               event.requestId == kLegacyMigrationLookupRequestId &&
+               legacyMigrationStage == LegacyMigrationStage::LookingUp) {
+      finishLegacyMigrationEntry(ctx, false,
+                                 "tag_assigned_to_multiple_spools");
+      continue;
+    } else if (event.type == rtos::AppEventType::SpoolmanTagUpdated &&
+               event.requestId == kLegacyMigrationSetTagRequestId &&
+               legacyMigrationStage == LegacyMigrationStage::SettingTarget) {
+      finishLegacyMigrationEntry(ctx, true, "assigned");
+      continue;
     } else if (event.type == rtos::AppEventType::SpoolmanResponse) {
       if (pendingStagingSpoolRequestId != 0 &&
           event.requestId == pendingStagingSpoolRequestId) {
@@ -3312,7 +3533,20 @@ void appTask(void* parameter) {
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                   rtos::UiOverlayKind::Success, event.requestId,
                   "Spoolman verbunden", event.text);
+      tryStartLegacyMigration(ctx);
     } else if (event.type == rtos::AppEventType::SpoolmanError) {
+      if ((event.requestId == kLegacyMigrationLookupRequestId ||
+           event.requestId == kLegacyMigrationLoadSpoolRequestId ||
+           event.requestId == kLegacyMigrationSetTagRequestId) &&
+          legacyMigrationStage != LegacyMigrationStage::Complete) {
+        FS_LOGW(services::LogComponent::App,
+                "Legacy mapping migration request failed request_id=%lu error=%s",
+                static_cast<unsigned long>(event.requestId), event.text);
+        finishLegacyMigrationEntry(
+            ctx, false,
+            event.text[0] != '\0' ? event.text : "spoolman_request_failed");
+        continue;
+      }
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: Spoolman progress close overflow");
@@ -3483,6 +3717,61 @@ void appTask(void* parameter) {
                   static_cast<unsigned long>(event.requestId));
         continue;
       }
+      if (auto* legacyFile = legacyFileForLoadRequest(event.requestId);
+          legacyFile != nullptr) {
+        legacyFile->loadFinished = true;
+        legacyFile->loadFailed =
+            event.type == rtos::AppEventType::StorageRequestError;
+        legacyFile->exists =
+            event.type == rtos::AppEventType::StorageReadCompleted &&
+            event.value >= 0;
+        legacyFile->count = 0;
+        if (legacyFile->exists) {
+          legacyFile->count = event.nfcMappingCount;
+          for (std::uint8_t index = 0; index < event.nfcMappingCount; ++index)
+            legacyFile->mappings[index] = event.nfcMappings[index];
+          // Keep the transitional runtime lookup intact until step 7.7.10
+          // removes the old local mapping architecture.
+          mergeNfcMappings(event);
+          FS_LOGI(services::LogComponent::App,
+                  "Legacy mapping file detected path=%s entries=%u",
+                  legacyFile->path,
+                  static_cast<unsigned>(legacyFile->count));
+        } else if (legacyFile->loadFailed) {
+          FS_LOGW(services::LogComponent::App,
+                  "Legacy mapping file retained path=%s reason=invalid_or_unreadable",
+                  legacyFile->path);
+        } else {
+          FS_LOGD(services::LogComponent::App,
+                  "Legacy mapping file absent path=%s", legacyFile->path);
+        }
+        tryStartLegacyMigration(ctx);
+        continue;
+      }
+      if (event.requestId >= kLegacyMigrationDeleteRequestBase &&
+          event.requestId <
+              kLegacyMigrationDeleteRequestBase + legacyMappingFiles.size()) {
+        const std::uint8_t index = static_cast<std::uint8_t>(
+            event.requestId - kLegacyMigrationDeleteRequestBase);
+        auto& file = legacyMappingFiles[index];
+        if (event.type == rtos::AppEventType::StorageWriteCompleted) {
+          FS_LOGI(services::LogComponent::App,
+                  "Legacy mapping file deleted after complete migration path=%s entries=%u",
+                  file.path, static_cast<unsigned>(file.count));
+          file.exists = false;
+        } else {
+          file.migrationFailed = true;
+          ++legacyMigrationConflicts;
+          FS_LOGW(services::LogComponent::App,
+                  "Legacy mapping file retained path=%s reason=delete_failed",
+                  file.path);
+        }
+        legacyMigrationFileIndex = static_cast<std::uint8_t>(index + 1U);
+        legacyMigrationEntryIndex = 0;
+        legacyMigrationStage = LegacyMigrationStage::Waiting;
+        advanceLegacyMigration(ctx);
+        continue;
+      }
       if (event.type == rtos::AppEventType::StorageReadCompleted &&
           event.requestId == kNetworkLoadRequestId) {
         rtos::NetworkCommand networkCommand{};
@@ -3537,11 +3826,6 @@ void appTask(void* parameter) {
         scaleCommand.calibrated = event.scaleCalibrated;
         sendScaleCommand(ctx, scaleCommand);
         sendScaleUiState(ctx, event.requestId);
-      } else if (event.type == rtos::AppEventType::StorageReadCompleted &&
-                 (event.requestId == kBambuMappingLoadRequestId ||
-                  event.requestId == kNfcMappingLoadRequestId ||
-                  event.requestId == kOpenMappingLoadRequestId)) {
-        mergeNfcMappings(event);
       } else if (pendingBambuMappingSave &&
                  event.requestId == pendingBambuMappingRequestId &&
                  event.type == rtos::AppEventType::StorageWriteCompleted) {
