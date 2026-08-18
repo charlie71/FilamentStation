@@ -100,14 +100,11 @@ enum class TagAssignmentStage : std::uint8_t {
   WritingPayload,
   // Transitional states used only by legacy import/removal code paths. The
   // semantic AssignTag path never persists a local UID mapping.
-  SavingMapping,
-  AbortedAwaitingStorage,
 };
 struct PendingTagAssignment {
   TagAssignmentStage stage = TagAssignmentStage::None;
   std::uint32_t requestId = 0;
   rtos::SpoolId spoolId = 0;
-  models::TagFormat mappingFormat = models::TagFormat::Unknown;
   models::TagIdentity identity{};
   rtos::SpoolId previousSpoolId = 0;
   std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};
@@ -119,25 +116,7 @@ PendingTagAssignment pendingTagAssignment{};
 bool pendingServerReassignmentConfirmation = false;
 models::TagIdentity resolvedTagIdentity{};
 rtos::SpoolId resolvedTagSpoolId = 0;
-std::array<rtos::NfcUidMapping, rtos::kMaximumNfcUidMappings> bambuMappings{};
-std::uint8_t bambuMappingCount = 0;
-bool pendingBambuMapping = false;
-bool pendingBambuMappingSave = false;
 bool pendingUnlinkConfirmation = false;
-bool pendingMappingReplacementConfirmation = false;
-bool pendingMappingReplacementApproved = false;
-rtos::SpoolId pendingReplacementSpoolId = 0;
-bool pendingBambuMappingWasNew = false;
-std::uint8_t pendingBambuMappingIndex = 0;
-std::uint32_t pendingBambuMappingRequestId = 0;
-rtos::SpoolId pendingBambuMappingSpoolId = 0;
-rtos::NfcUidMapping previousBambuMapping{};
-std::array<std::uint8_t, 10> pendingBambuUid{};
-std::uint8_t pendingBambuUidLength = 0;
-models::TagFormat pendingMappingFormat = models::TagFormat::Unknown;
-std::array<rtos::NfcUidMapping, rtos::kMaximumNfcUidMappings>
-    mappingRemovalBackup{};
-std::uint8_t mappingRemovalBackupCount = 0;
 enum class TagRemovalStage : std::uint8_t {
   None,
   LookingUp,
@@ -145,14 +124,12 @@ enum class TagRemovalStage : std::uint8_t {
   ClearingServerAssignment,
   // Transitional state used only by legacy code paths outside the semantic
   // RemoveTagAssignment workflow.
-  SavingMapping,
   ClearingPayload,
 };
 struct PendingTagRemoval {
   TagRemovalStage stage = TagRemovalStage::None;
   std::uint32_t requestId = 0;
   rtos::SpoolId spoolId = 0;
-  models::TagFormat mappingFormat = models::TagFormat::Unknown;
   models::TagIdentity identity{};
   std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};
   std::uint8_t uidLength = 0;
@@ -169,6 +146,14 @@ struct PendingNativeConsistencyCheck {
   std::uint8_t uidLength = 0;
 };
 PendingNativeConsistencyCheck pendingNativeConsistency{};
+struct PendingTagResolution {
+  bool active = false;
+  std::uint32_t requestId = 0;
+  models::TagIdentity identity{};
+  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};
+  std::uint8_t uidLength = 0;
+};
+PendingTagResolution pendingTagResolution{};
 
 struct LegacyMappingFile {
   const char* path = nullptr;
@@ -177,7 +162,8 @@ struct LegacyMappingFile {
   bool exists = false;
   bool loadFailed = false;
   bool migrationFailed = false;
-  std::array<rtos::NfcUidMapping, rtos::kMaximumNfcUidMappings> mappings{};
+  std::array<rtos::LegacyNfcMappingEntry,
+             rtos::kMaximumLegacyNfcMappings> mappings{};
   std::uint8_t count = 0;
 };
 
@@ -234,12 +220,6 @@ rtos::SpoolId mappedNfcSpool(const models::TagReadResult& tag) {
       tag.identity.source == resolvedTagIdentity.source &&
       std::strcmp(tag.identity.value, resolvedTagIdentity.value) == 0)
     return resolvedTagSpoolId;
-  for (std::uint8_t index = 0; index < bambuMappingCount; ++index) {
-    const auto& mapping = bambuMappings[index];
-    if (mapping.uidLength == tag.uidLength &&
-        std::memcmp(mapping.uid, tag.uid, tag.uidLength) == 0)
-      return mapping.spoolId;
-  }
   return 0;
 }
 
@@ -255,13 +235,6 @@ bool removalTagMatches(const models::TagReadResult& tag) {
          tag.uidLength == pendingTagRemoval.uidLength &&
          std::memcmp(tag.uid, pendingTagRemoval.uid.data(),
                      pendingTagRemoval.uidLength) == 0;
-}
-
-models::TagFormat assignmentMappingFormat(const models::TagReadResult& tag) {
-  return tag.format == models::TagFormat::EmptyNdef ||
-                 tag.format == models::TagFormat::FilamentStation
-             ? models::TagFormat::FilamentStation
-             : tag.format;
 }
 
 std::int32_t stagingTagCapabilities() {
@@ -305,54 +278,6 @@ void showNativeTagAction(rtos::RtosContext& ctx, std::uint32_t requestId,
                     "AppTask: native NFC action screen queue overflow")) {
     previousScreen = currentScreen;
     currentScreen = navigation.screenId;
-  }
-}
-
-const char* mappingFormatName(models::TagFormat format) {
-  switch (format) {
-    case models::TagFormat::FilamentStation: return "filamentStation";
-    case models::TagFormat::BambuLab: return "bambuLab";
-    case models::TagFormat::OpenPrintTag: return "openPrintTag";
-    case models::TagFormat::OpenTag3D: return "openTag3D";
-    case models::TagFormat::Legacy: return "legacy";
-    case models::TagFormat::Unknown: return "unknown";
-    default: return nullptr;
-  }
-}
-
-const char* mappingPath(models::TagFormat format) {
-  if (format == models::TagFormat::BambuLab)
-    return "/mappings/bambu-tags.json";
-  if (format == models::TagFormat::OpenPrintTag ||
-      format == models::TagFormat::OpenTag3D)
-    return "/mappings/open-tags.json";
-  return "/mappings/nfc-spools.json";
-}
-
-bool sameMappingFile(models::TagFormat left, models::TagFormat right) {
-  return std::strcmp(mappingPath(left), mappingPath(right)) == 0;
-}
-
-void mergeNfcMappings(const rtos::AppEvent& event) {
-  for (std::uint8_t source = 0; source < event.nfcMappingCount; ++source) {
-    const auto& candidate = event.nfcMappings[source];
-    std::uint8_t destination = 0;
-    for (; destination < bambuMappingCount; ++destination) {
-      if (bambuMappings[destination].uidLength == candidate.uidLength &&
-          std::memcmp(bambuMappings[destination].uid, candidate.uid,
-                      candidate.uidLength) == 0)
-        break;
-    }
-    if (destination == bambuMappingCount) {
-      if (bambuMappingCount >= bambuMappings.size()) break;
-      ++bambuMappingCount;
-    } else if (bambuMappings[destination].spoolId != candidate.spoolId ||
-               bambuMappings[destination].tagFormat != candidate.tagFormat) {
-      FS_LOGW(services::LogComponent::App,
-              "Duplicate NFC mapping ignored reason=conflict");
-      continue;
-    }
-    bambuMappings[destination] = candidate;
   }
 }
 
@@ -477,60 +402,6 @@ void tryStartLegacyMigration(rtos::RtosContext& ctx) {
           "Legacy mapping migration started files=%u",
           static_cast<unsigned>(legacyMappingFiles.size()));
   advanceLegacyMigration(ctx);
-}
-
-bool persistNfcMappings(rtos::RtosContext& ctx, std::uint32_t requestId,
-                        models::TagFormat changedFormat) {
-  rtos::StorageCommand storage{};
-  storage.type = rtos::StorageCommandType::SaveJson;
-  storage.requestId = requestId;
-  storage.documentType = rtos::StorageDocumentType::Nfc;
-  std::snprintf(storage.path, sizeof(storage.path), "%s",
-                mappingPath(changedFormat));
-  std::size_t used = static_cast<std::size_t>(std::snprintf(
-      storage.json, sizeof(storage.json),
-      "{\"schemaVersion\":1,\"updatedAt\":\"1970-01-01T00:00:00Z\","
-      "\"documentType\":\"nfc\",\"tagSchemaVersion\":1,\"mappings\":["));
-  bool first = true;
-  for (std::uint8_t index = 0; index < bambuMappingCount; ++index) {
-    const auto& mapping = bambuMappings[index];
-    if (!sameMappingFile(mapping.tagFormat, changedFormat)) continue;
-    const char* format = mappingFormatName(mapping.tagFormat);
-    if (format == nullptr || mapping.spoolId == 0 || mapping.uidLength == 0)
-      return false;
-    int written = std::snprintf(storage.json + used,
-                                sizeof(storage.json) - used,
-                                "%s{\"uid\":\"", first ? "" : ",");
-    if (written <= 0 || static_cast<std::size_t>(written) >=
-                            sizeof(storage.json) - used)
-      return false;
-    used += static_cast<std::size_t>(written);
-    for (std::uint8_t uidIndex = 0; uidIndex < mapping.uidLength; ++uidIndex) {
-      written = std::snprintf(storage.json + used,
-                              sizeof(storage.json) - used, "%02X",
-                              mapping.uid[uidIndex]);
-      if (written != 2 || static_cast<std::size_t>(written) >=
-                              sizeof(storage.json) - used)
-        return false;
-      used += 2;
-    }
-    written = std::snprintf(storage.json + used,
-                            sizeof(storage.json) - used,
-                            "\",\"format\":\"%s\",\"spoolId\":%lu}",
-                            format, static_cast<unsigned long>(mapping.spoolId));
-    if (written <= 0 || static_cast<std::size_t>(written) >=
-                            sizeof(storage.json) - used)
-      return false;
-    used += static_cast<std::size_t>(written);
-    first = false;
-  }
-  if (used + 3 > sizeof(storage.json)) return false;
-  storage.json[used++] = ']';
-  storage.json[used++] = '}';
-  storage.json[used] = '\0';
-  storage.jsonLength = static_cast<std::uint16_t>(used);
-  return xQueueSend(ctx.storageCommandQueue, &storage,
-                    pdMS_TO_TICKS(1000)) == pdPASS;
 }
 
 float scaleWeightGrams() {
@@ -1224,7 +1095,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       pendingTagAssignment.stage = TagAssignmentStage::SelectingSpool;
       pendingTagAssignment.requestId = action.requestId;
       pendingTagAssignment.spoolId = spoolId;
-      pendingTagAssignment.mappingFormat = assignmentMappingFormat(currentTag);
       pendingTagAssignment.identity = currentTag.identity;
       pendingTagAssignment.uidLength = currentTag.uidLength;
       std::memcpy(pendingTagAssignment.uid.data(), currentTag.uid,
@@ -1280,7 +1150,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       pendingTagRemoval = {};
       pendingTagRemoval.stage = TagRemovalStage::LookingUp;
       pendingTagRemoval.requestId = action.requestId;
-      pendingTagRemoval.mappingFormat = assignmentMappingFormat(currentTag);
       pendingTagRemoval.identity = currentTag.identity;
       pendingTagRemoval.uidLength = currentTag.uidLength;
       std::memcpy(pendingTagRemoval.uid.data(), currentTag.uid,
@@ -1324,13 +1193,10 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
               TagAssignmentStage::AwaitingReassignmentConfirmation)
         pendingTagAssignment = {};
       pendingServerReassignmentConfirmation = false;
-      pendingBambuMapping = false;
       pendingUnlinkConfirmation = false;
       if (pendingTagRemoval.stage == TagRemovalStage::AwaitingConfirmation ||
           pendingTagRemoval.stage == TagRemovalStage::LookingUp)
         pendingTagRemoval = {};
-      pendingMappingReplacementConfirmation = false;
-      pendingMappingReplacementApproved = false;
       if (currentScreen == rtos::UiScreenId::TagDefinitionImport ||
           currentScreen == rtos::UiScreenId::BambuSpoolType) {
         command.type = rtos::UiCommandType::ShowScreen;
@@ -1367,11 +1233,10 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         command.type = rtos::UiCommandType::HideProgress;
         sendUiCommand(ctx, command, "AppTask: Bambu import dialog close overflow");
         pendingOverlay = rtos::UiOverlayKind::None;
-        pendingBambuMapping = true;
-        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::SpoolPicker, action.requestId,
-                    "Spoolman-Spule ausw\xC3\xA4hlen", "");
-        requestSpoolSearch(ctx, action.requestId);
+        rtos::UiAction assign = action;
+        assign.type = rtos::UiActionType::AssignTag;
+        assign.spoolId = 0;
+        handleUiAction(ctx, assign);
         return;
       }
       if (currentScreen == rtos::UiScreenId::TagReview) {
@@ -1446,16 +1311,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     rtos::UiOverlayKind::SpoolmanRequest, action.requestId,
                     "Zuordnung wird ersetzt",
                     "Die bisherige Spoolman-Zuordnung wird entfernt.");
-        return;
-      }
-      if (confirmedOverlay == rtos::UiOverlayKind::Confirmation &&
-          pendingMappingReplacementConfirmation) {
-        pendingMappingReplacementConfirmation = false;
-        pendingMappingReplacementApproved = true;
-        rtos::UiAction replacement = action;
-        replacement.type = rtos::UiActionType::SelectSpool;
-        replacement.spoolId = pendingReplacementSpoolId;
-        handleUiAction(ctx, replacement);
         return;
       }
       if (confirmedOverlay == rtos::UiOverlayKind::Confirmation &&
@@ -2144,12 +1999,10 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
           (currentScreen == rtos::UiScreenId::TagDefinitionImport ||
            currentScreen == rtos::UiScreenId::TagLegacy ||
            currentScreen == rtos::UiScreenId::TagUnknown)) {
-        pendingBambuMapping = true;
-        pendingMappingFormat = currentTag.format;
-        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::SpoolPicker, action.requestId,
-                    "Spoolman-Spule ausw\xC3\xA4hlen", "");
-        requestSpoolSearch(ctx, action.requestId);
+        rtos::UiAction assign = action;
+        assign.type = rtos::UiActionType::AssignTag;
+        assign.spoolId = 0;
+        handleUiAction(ctx, assign);
         return;
       }
       if (action.type == rtos::UiActionType::SelectSpool &&
@@ -2179,89 +2032,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     rtos::UiOverlayKind::SpoolmanRequest, action.requestId,
                     "Tag wird zugeordnet",
                     "Bestehende Spoolman-Zuordnung wird gepr\xC3\xBC" "ft.");
-        return;
-      }
-      if (pendingBambuMapping) {
-        if (action.spoolId == 0 || pendingBambuUidLength == 0 ||
-            pendingBambuUidLength > pendingBambuUid.size()) {
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, action.requestId,
-                      "Zuordnung fehlgeschlagen", "Keine g\xC3\xBCltige Spule ausgew\xC3\xA4hlt.");
-          return;
-        }
-        std::uint8_t index = 0;
-        for (; index < bambuMappingCount; ++index) {
-          if (bambuMappings[index].uidLength == pendingBambuUidLength &&
-              std::memcmp(bambuMappings[index].uid, pendingBambuUid.data(),
-                          pendingBambuUidLength) == 0)
-            break;
-        }
-        if (index == bambuMappingCount) {
-          if (bambuMappingCount >= bambuMappings.size()) {
-            sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                        rtos::UiOverlayKind::Error, action.requestId,
-                        "Zuordnung fehlgeschlagen", "Der lokale Mapping-Speicher ist voll.");
-            return;
-          }
-          ++bambuMappingCount;
-        } else if (bambuMappings[index].tagFormat != pendingMappingFormat) {
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, action.requestId,
-                      "Mapping-Konflikt",
-                      "Die UID ist bereits mit einem anderen Tagformat gespeichert. Bestehende Zuordnung zuerst trennen.");
-          return;
-        } else if (bambuMappings[index].spoolId != action.spoolId &&
-                   !pendingMappingReplacementApproved) {
-          pendingReplacementSpoolId = action.spoolId;
-          pendingMappingReplacementConfirmation = true;
-          char question[160]{};
-          std::snprintf(question, sizeof(question),
-                        "Diese UID ist bereits mit Spule %lu verbunden. Durch Spule %lu ersetzen?",
-                        static_cast<unsigned long>(bambuMappings[index].spoolId),
-                        static_cast<unsigned long>(action.spoolId));
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Confirmation, action.requestId,
-                      "Zuordnung ersetzen", question);
-          return;
-        }
-        pendingMappingReplacementApproved = false;
-        auto& mapping = bambuMappings[index];
-        previousBambuMapping = mapping;
-        pendingBambuMappingWasNew = index + 1U == bambuMappingCount &&
-                                    mapping.uidLength == 0;
-        pendingBambuMappingIndex = index;
-        mapping.uidLength = pendingBambuUidLength;
-        std::memcpy(mapping.uid, pendingBambuUid.data(), pendingBambuUidLength);
-        mapping.spoolId = action.spoolId;
-        mapping.tagFormat = pendingMappingFormat;
-        pendingBambuMapping = false;
-        command.type = rtos::UiCommandType::HideProgress;
-        sendUiCommand(ctx, command, "AppTask: Bambu picker close overflow");
-        if (!persistNfcMappings(ctx, action.requestId, pendingMappingFormat)) {
-          mapping = previousBambuMapping;
-          if (pendingBambuMappingWasNew) --bambuMappingCount;
-          if (pendingTagAssignment.stage ==
-              TagAssignmentStage::SelectingSpool)
-            pendingTagAssignment = {};
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, action.requestId,
-                      "Speichern fehlgeschlagen",
-                      "Die UID-Zuordnung konnte nicht an StorageTask gesendet werden.");
-          return;
-        }
-        pendingBambuMappingSave = true;
-        pendingBambuMappingRequestId = action.requestId;
-        pendingBambuMappingSpoolId = action.spoolId;
-        if (pendingTagAssignment.stage ==
-            TagAssignmentStage::SelectingSpool) {
-          pendingTagAssignment.stage = TagAssignmentStage::SavingMapping;
-          pendingTagAssignment.requestId = action.requestId;
-          pendingTagAssignment.spoolId = action.spoolId;
-        }
-        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                    rtos::UiOverlayKind::BambuMappingSave, action.requestId,
-                    "Zuordnung speichern",
-                    "Die lokale UID-Zuordnung wird gespeichert.");
         return;
       }
       if (action.type == rtos::UiActionType::SearchSpool &&
@@ -2584,6 +2354,40 @@ void appTask(void* parameter) {
         const bool nativeFormat =
             currentTag.format == models::TagFormat::EmptyNdef ||
             currentTag.format == models::TagFormat::FilamentStation;
+        const bool nativePayload =
+            nativeTechnology &&
+            currentTag.format == models::TagFormat::FilamentStation &&
+            currentTag.definition.hasSpoolId;
+        const bool resolutionKnown =
+            currentTag.identity.source == resolvedTagIdentity.source &&
+            currentTag.identity.source != models::TagIdentitySource::Unknown &&
+            std::strcmp(currentTag.identity.value,
+                        resolvedTagIdentity.value) == 0;
+        if (!nativePayload && !resolutionKnown &&
+            currentTag.identity.source != models::TagIdentitySource::Unknown &&
+            currentTag.identity.value[0] != '\0') {
+          const EventBits_t bits = xEventGroupGetBits(ctx.systemEventGroup);
+          const EventBits_t required =
+              rtos::EVENT_SPOOLMAN_READY |
+              rtos::EVENT_SPOOLMAN_TAG_FIELD_READY;
+          if ((bits & required) == required) {
+            pendingTagResolution = {};
+            pendingTagResolution.active = true;
+            pendingTagResolution.requestId = event.requestId;
+            pendingTagResolution.identity = currentTag.identity;
+            pendingTagResolution.uidLength = currentTag.uidLength;
+            std::memcpy(pendingTagResolution.uid.data(), currentTag.uid,
+                        currentTag.uidLength);
+            rtos::SpoolmanCommand lookup{};
+            lookup.type = rtos::SpoolmanCommandType::FindSpoolByTag;
+            lookup.requestId = event.requestId;
+            lookup.tagIdentity = currentTag.identity;
+            if (xQueueSend(ctx.spoolmanCommandQueue, &lookup,
+                           pdMS_TO_TICKS(1000)) == pdPASS)
+              continue;
+            pendingTagResolution = {};
+          }
+        }
         if (nativeTechnology && nativeFormat) {
           if (currentTag.definition.hasSpoolId)
             pendingTagSpoolId = currentTag.definition.spoolId;
@@ -2645,9 +2449,6 @@ void appTask(void* parameter) {
             currentScreen = result.screenId;
             sendUiCommand(ctx, result, "AppTask: Bambu mapped result overflow");
           } else {
-            pendingBambuUidLength = currentTag.uidLength;
-            std::memcpy(pendingBambuUid.data(), currentTag.uid,
-                        currentTag.uidLength);
             char summary[128]{};
             std::snprintf(summary, sizeof(summary),
                           "Hersteller: %s\nFilament: %s\nMaterial: %s\nFarbe: %s\nNenngewicht: %.0f g\nTag bleibt read-only.",
@@ -2688,9 +2489,6 @@ void appTask(void* parameter) {
             sendUiCommand(ctx, result,
                           "AppTask: open tag mapped result overflow");
           } else {
-            pendingBambuUidLength = currentTag.uidLength;
-            std::memcpy(pendingBambuUid.data(), currentTag.uid,
-                        currentTag.uidLength);
             char summary[128]{};
             std::snprintf(summary, sizeof(summary),
                           "%s\nHersteller: %s\nFilament: %s\nMaterial: %s\nFarbe: %s\nGewicht: %.0f g / Leer: %.0f g",
@@ -2714,9 +2512,6 @@ void appTask(void* parameter) {
             }
           }
         } else if (currentTag.format == models::TagFormat::Legacy) {
-          pendingBambuUidLength = currentTag.uidLength;
-          std::memcpy(pendingBambuUid.data(), currentTag.uid,
-                      currentTag.uidLength);
           char uid[32]{};
           formatTagUid(currentTag, uid, sizeof(uid));
           rtos::UiCommand legacy{};
@@ -2749,9 +2544,6 @@ void appTask(void* parameter) {
             currentScreen = result.screenId;
             sendUiCommand(ctx, result, "AppTask: unknown mapped result overflow");
           } else {
-            pendingBambuUidLength = currentTag.uidLength;
-            std::memcpy(pendingBambuUid.data(), currentTag.uid,
-                        currentTag.uidLength);
             char uid[32]{};
             formatTagUid(currentTag, uid, sizeof(uid));
             const char* writable = currentTag.physicalWritableKnown
@@ -2815,8 +2607,10 @@ void appTask(void* parameter) {
         } else {
           pendingTagAssignment = {};
         }
-        pendingBambuMapping = false;
         pendingNativeConsistency = {};
+        pendingTagResolution = {};
+        resolvedTagIdentity = {};
+        resolvedTagSpoolId = 0;
         tagPresent = false;
         currentTag = {};
         pendingTagOperation = PendingTagOperation::None;
@@ -3210,6 +3004,40 @@ void appTask(void* parameter) {
                legacyMigrationStage == LegacyMigrationStage::SettingTarget) {
       finishLegacyMigrationEntry(ctx, true, "assigned");
       continue;
+    } else if (event.type == rtos::AppEventType::SpoolmanTagLookup &&
+               pendingTagResolution.active &&
+               event.requestId == pendingTagResolution.requestId) {
+      const auto pending = pendingTagResolution;
+      pendingTagResolution = {};
+      const bool sameTag =
+          tagPresent && currentTag.uidLength == pending.uidLength &&
+          std::memcmp(currentTag.uid, pending.uid.data(), pending.uidLength) == 0 &&
+          currentTag.identity.source == pending.identity.source &&
+          std::strcmp(currentTag.identity.value, pending.identity.value) == 0;
+      if (!sameTag) continue;
+      const auto status = static_cast<services::TagLookupStatus>(event.value);
+      resolvedTagIdentity = pending.identity;
+      resolvedTagSpoolId =
+          status == services::TagLookupStatus::Found ? event.spoolId : 0;
+      rtos::AppEvent replay{};
+      replay.type = rtos::AppEventType::NfcTagRead;
+      replay.requestId = event.requestId;
+      replay.tagReadResult = currentTag;
+      if (xQueueSend(ctx.appEventQueue, &replay, pdMS_TO_TICKS(1000)) != pdPASS)
+        FS_LOGW(services::LogComponent::App,
+                "Event enqueue failed queue=app_event op=replay_tag_after_spoolman_lookup");
+      continue;
+    } else if (event.type == rtos::AppEventType::SpoolmanTagDuplicate &&
+               pendingTagResolution.active &&
+               event.requestId == pendingTagResolution.requestId) {
+      pendingTagResolution = {};
+      resolvedTagIdentity = {};
+      resolvedTagSpoolId = 0;
+      sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                  rtos::UiOverlayKind::Error, event.requestId,
+                  "Mehrdeutige Tag-Zuordnung",
+                  "Diese Tag-ID ist mehreren Spulen in Spoolman zugeordnet. Bitte die Spoolman-Daten korrigieren.");
+      continue;
     } else if (event.type == rtos::AppEventType::SpoolmanResponse) {
       if (pendingStagingSpoolRequestId != 0 &&
           event.requestId == pendingStagingSpoolRequestId) {
@@ -3521,6 +3349,21 @@ void appTask(void* parameter) {
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: Spoolman progress close overflow");
+      if (pendingTagResolution.active &&
+          event.requestId == pendingTagResolution.requestId) {
+        resolvedTagIdentity = pendingTagResolution.identity;
+        resolvedTagSpoolId = 0;
+        pendingTagResolution = {};
+        FS_LOGW(services::LogComponent::App,
+                "Tag resolution unavailable source=spoolman error=%s",
+                event.text);
+        rtos::AppEvent replay{};
+        replay.type = rtos::AppEventType::NfcTagRead;
+        replay.requestId = event.requestId;
+        replay.tagReadResult = currentTag;
+        xQueueSend(ctx.appEventQueue, &replay, pdMS_TO_TICKS(1000));
+        continue;
+      }
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
       status.requestId = event.requestId;
@@ -3727,12 +3570,10 @@ void appTask(void* parameter) {
             event.value >= 0;
         legacyFile->count = 0;
         if (legacyFile->exists) {
-          legacyFile->count = event.nfcMappingCount;
-          for (std::uint8_t index = 0; index < event.nfcMappingCount; ++index)
-            legacyFile->mappings[index] = event.nfcMappings[index];
-          // Keep the transitional runtime lookup intact until step 7.7.10
-          // removes the old local mapping architecture.
-          mergeNfcMappings(event);
+          legacyFile->count = event.legacyNfcMappingCount;
+          for (std::uint8_t index = 0;
+               index < event.legacyNfcMappingCount; ++index)
+            legacyFile->mappings[index] = event.legacyNfcMappings[index];
           FS_LOGI(services::LogComponent::App,
                   "Legacy mapping file detected path=%s entries=%u",
                   legacyFile->path,
@@ -3826,188 +3667,6 @@ void appTask(void* parameter) {
         scaleCommand.calibrated = event.scaleCalibrated;
         sendScaleCommand(ctx, scaleCommand);
         sendScaleUiState(ctx, event.requestId);
-      } else if (pendingBambuMappingSave &&
-                 event.requestId == pendingBambuMappingRequestId &&
-                 event.type == rtos::AppEventType::StorageWriteCompleted) {
-        pendingBambuMappingSave = false;
-        if (pendingTagAssignment.stage ==
-            TagAssignmentStage::AbortedAwaitingStorage) {
-          reportAssignmentWriteFailure(
-              ctx, event.requestId,
-              "AppTask: AssignTag mapping stored after tag removal; mapping retained",
-              pendingTagAssignment.writePayload
-                  ? "Tag wurde zugeordnet.\nDer Tag wurde vor der Aktualisierung entfernt. Die Tagdaten wurden nicht aktualisiert."
-                  : "Tag wurde zugeordnet.\nDer Tag wurde w\xC3\xA4hrend des Speicherns entfernt. Originalinhalt blieb unver\xC3\xA4ndert.");
-          continue;
-        }
-        if (pendingTagAssignment.stage == TagAssignmentStage::SavingMapping) {
-          rtos::UiCommand hide{};
-          hide.type = rtos::UiCommandType::HideProgress;
-          sendUiCommand(ctx, hide,
-                        "AppTask: assignment mapping progress close overflow");
-
-          if (!tagPresent || !assignmentTagMatches(currentTag)) {
-            reportAssignmentWriteFailure(
-                ctx, event.requestId,
-                tagPresent
-                    ? "AppTask: AssignTag UID changed after mapping save; mapping retained"
-                    : "AppTask: AssignTag tag removed after mapping save; mapping retained",
-                tagPresent
-                    ? "Der urspr\xC3\xBCngliche Tag wurde zugeordnet.\nDie UID hat sich w\xC3\xA4hrend des Vorgangs ge\xC3\xA4ndert. Die Tagdaten wurden nicht aktualisiert."
-                    : "Tag wurde zugeordnet.\nDer Tag wurde vor der Aktualisierung entfernt. Die Tagdaten wurden nicht aktualisiert.");
-            continue;
-          }
-
-          if (pendingTagAssignment.writePayload &&
-              currentTag.capabilities.canWriteFilamentStationPayload) {
-            rtos::NfcCommand nfcCommand{};
-            nfcCommand.type = rtos::NfcCommandType::WriteSpoolTag;
-            nfcCommand.requestId = pendingTagAssignment.requestId;
-            nfcCommand.spoolId = pendingTagAssignment.spoolId;
-            if (xQueueSend(ctx.nfcCommandQueue, &nfcCommand,
-                           pdMS_TO_TICKS(50)) != pdPASS) {
-              reportAssignmentWriteFailure(
-                  ctx, event.requestId,
-                  "AppTask: AssignTag NFC command queue full; mapping retained");
-              continue;
-            }
-            pendingTagSpoolId = pendingTagAssignment.spoolId;
-            pendingTagOperation = PendingTagOperation::Write;
-            pendingTagAssignment.stage = TagAssignmentStage::WritingPayload;
-            sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                        rtos::UiOverlayKind::TagWrite, event.requestId,
-                        "Tag wird zugeordnet",
-                        "Zuordnung gespeichert. Der Tag wird aktualisiert und das Ergebnis gepr\xC3\xBC" "ft.");
-            continue;
-          }
-
-          if (pendingTagAssignment.writePayload) {
-            reportAssignmentWriteFailure(
-                ctx, event.requestId,
-                "AppTask: AssignTag write capability changed after mapping save; mapping retained");
-            continue;
-          }
-
-          rtos::UiCommand result{};
-          result.type = rtos::UiCommandType::ShowScreen;
-          result.screenId = rtos::UiScreenId::TagResult;
-          result.requestId = pendingTagAssignment.requestId;
-          result.spoolId = pendingTagAssignment.spoolId;
-          std::snprintf(
-              result.text, sizeof(result.text),
-              "Tag erfolgreich Spule %lu zugeordnet.\nOriginaler Taginhalt wurde nicht ver\xC3\xA4ndert.",
-              static_cast<unsigned long>(pendingTagAssignment.spoolId));
-          lastUsedTagSpoolId = pendingTagAssignment.spoolId;
-          pendingTagAssignment = {};
-          currentScreen = result.screenId;
-          sendUiCommand(ctx, result,
-                        "AppTask: mapping-only assignment result overflow");
-          continue;
-        }
-        if (pendingTagRemoval.stage == TagRemovalStage::SavingMapping) {
-          rtos::UiCommand hide{};
-          hide.type = rtos::UiCommandType::HideProgress;
-          sendUiCommand(ctx, hide,
-                        "AppTask: removal mapping progress close overflow");
-
-          if (pendingTagRemoval.clearPayload) {
-            if (!tagPresent || !removalTagMatches(currentTag) ||
-                !currentTag.capabilities.canClearFilamentStationPayload) {
-              const bool uidChanged =
-                  tagPresent && !removalTagMatches(currentTag);
-              pendingTagRemoval = {};
-              FS_LOGE(services::LogComponent::App,
-                      "Tag assignment removal partial mapping_removed=true reason=cleanup_unavailable");
-              sendOverlay(
-                  ctx, rtos::UiCommandType::ShowDialog,
-                  rtos::UiOverlayKind::Error, event.requestId,
-                  "Zuordnung teilweise entfernt",
-                  uidChanged
-                      ? "Die Tag-Zuordnung wurde entfernt.\nDie UID hat sich w\xC3\xA4hrend des Vorgangs ge\xC3\xA4ndert. Der Taginhalt wurde nicht ver\xC3\xA4ndert."
-                      : "Die Tag-Zuordnung wurde entfernt.\nDie FilamentStation-Daten konnten nicht vom Tag entfernt werden.");
-              continue;
-            }
-            rtos::NfcCommand nfcCommand{};
-            nfcCommand.type = rtos::NfcCommandType::EraseTag;
-            nfcCommand.requestId = pendingTagRemoval.requestId;
-            if (xQueueSend(ctx.nfcCommandQueue, &nfcCommand,
-                           pdMS_TO_TICKS(50)) != pdPASS) {
-              pendingTagRemoval = {};
-              FS_LOGE(services::LogComponent::App,
-                      "Command enqueue failed queue=nfc op=clear_payload mapping_removed=true");
-              sendOverlay(
-                  ctx, rtos::UiCommandType::ShowDialog,
-                  rtos::UiOverlayKind::Error, event.requestId,
-                  "Zuordnung teilweise entfernt",
-                  "Die Tag-Zuordnung wurde entfernt.\nDer Auftrag zum Entfernen der FilamentStation-Daten konnte nicht gestartet werden.");
-              continue;
-            }
-            pendingTagOperation = PendingTagOperation::Erase;
-            pendingTagRemoval.stage = TagRemovalStage::ClearingPayload;
-            sendOverlay(
-                ctx, rtos::UiCommandType::ShowProgress,
-                rtos::UiOverlayKind::TagWrite, event.requestId,
-                "Tag-Zuordnung wird entfernt",
-                "Zuordnung entfernt. FilamentStation-Daten werden vom Tag entfernt und die L\xC3\xB6schung wird verifiziert.");
-            continue;
-          }
-
-          rtos::UiCommand result{};
-          result.type = rtos::UiCommandType::ShowScreen;
-          result.screenId = rtos::UiScreenId::TagResult;
-          result.requestId = pendingTagRemoval.requestId;
-          std::snprintf(
-              result.text, sizeof(result.text),
-              "Tag-Zuordnung erfolgreich entfernt.\nOriginaler Taginhalt blieb unver\xC3\xA4ndert.");
-          FS_LOGI(services::LogComponent::App,
-                  "Tag assignment removed mapping_removed=true original_content=preserved");
-          pendingTagRemoval = {};
-          currentScreen = result.screenId;
-          sendUiCommand(ctx, result,
-                        "AppTask: mapping-only removal result overflow");
-          continue;
-        }
-        rtos::UiCommand hide{};
-        hide.type = rtos::UiCommandType::HideProgress;
-        sendUiCommand(ctx, hide, "AppTask: Bambu save progress close overflow");
-        rtos::UiCommand result{};
-        result.type = rtos::UiCommandType::ShowScreen;
-        result.screenId = rtos::UiScreenId::TagResult;
-        result.spoolId = pendingBambuMappingSpoolId;
-        std::snprintf(result.text, sizeof(result.text),
-                      "%s lokal mit Spule %lu verkn\xC3\xBCpft. Der Tag wurde nicht ver\xC3\xA4ndert.",
-                      pendingMappingFormat == models::TagFormat::OpenPrintTag
-                          ? "OpenPrintTag"
-                          : pendingMappingFormat == models::TagFormat::OpenTag3D
-                                ? "OpenTag3D"
-                                : pendingMappingFormat == models::TagFormat::Legacy
-                                      ? "Legacy-Tag"
-                                      : pendingMappingFormat == models::TagFormat::Unknown
-                                            ? "Unbekannter Tag"
-                                            : "Bambu-Tag",
-                      static_cast<unsigned long>(pendingBambuMappingSpoolId));
-        currentScreen = result.screenId;
-        sendUiCommand(ctx, result, "AppTask: Bambu mapping result overflow");
-      } else if (pendingBambuMappingSave &&
-                 event.requestId == pendingBambuMappingRequestId &&
-                 event.type == rtos::AppEventType::StorageRequestError) {
-        pendingBambuMappingSave = false;
-        if (pendingTagAssignment.stage == TagAssignmentStage::SavingMapping ||
-            pendingTagAssignment.stage ==
-                TagAssignmentStage::AbortedAwaitingStorage)
-          pendingTagAssignment = {};
-        if (pendingTagRemoval.stage == TagRemovalStage::SavingMapping) {
-          bambuMappings = mappingRemovalBackup;
-          bambuMappingCount = mappingRemovalBackupCount;
-          pendingTagRemoval = {};
-        } else {
-          bambuMappings[pendingBambuMappingIndex] = previousBambuMapping;
-          if (pendingBambuMappingWasNew) --bambuMappingCount;
-        }
-        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
-                    "Speichern fehlgeschlagen",
-                    "Die UID-Zuordnung wurde nicht dauerhaft gespeichert.");
       }
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;

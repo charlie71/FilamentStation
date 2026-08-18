@@ -224,7 +224,7 @@ void processLoadCommand(rtos::RtosContext& ctx,
     event.requestId = command.requestId;
     const JsonArrayConst mappings = document["mappings"].as<JsonArrayConst>();
     for (const JsonObjectConst mapping : mappings) {
-      if (event.nfcMappingCount >= rtos::kMaximumNfcUidMappings) {
+      if (event.legacyNfcMappingCount >= rtos::kMaximumLegacyNfcMappings) {
         sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
                          "Mapping file contains too many entries",
                          command.requestId);
@@ -240,7 +240,8 @@ void processLoadCommand(rtos::RtosContext& ctx,
                          "Damaged NFC mapping entry", command.requestId);
         return;
       }
-      auto& destination = event.nfcMappings[event.nfcMappingCount];
+      auto& destination =
+          event.legacyNfcMappings[event.legacyNfcMappingCount];
       if (formatText[0] == '\0') {
         // Backward-compatible migration of phase-5.9 files.  The next save
         // writes the explicit format field required by schema version 1.
@@ -278,10 +279,11 @@ void processLoadCommand(rtos::RtosContext& ctx,
                          command.requestId);
         return;
       }
-      for (std::uint8_t existing = 0; existing < event.nfcMappingCount;
+      for (std::uint8_t existing = 0;
+           existing < event.legacyNfcMappingCount;
            ++existing) {
-        if (event.nfcMappings[existing].uidLength == destination.uidLength &&
-            std::memcmp(event.nfcMappings[existing].uid, destination.uid,
+        if (event.legacyNfcMappings[existing].uidLength == destination.uidLength &&
+            std::memcmp(event.legacyNfcMappings[existing].uid, destination.uid,
                         destination.uidLength) == 0) {
           sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
                            "Duplicate UID in NFC mapping file",
@@ -289,7 +291,7 @@ void processLoadCommand(rtos::RtosContext& ctx,
           return;
         }
       }
-      ++event.nfcMappingCount;
+      ++event.legacyNfcMappingCount;
     }
     std::snprintf(event.text, sizeof(event.text), "%s UID mappings loaded",
                   std::strcmp(command.path, "/mappings/bambu-tags.json") == 0

@@ -20,13 +20,15 @@ enum class NfcTagType : std::uint8_t {
   Legacy,
 };
 
-struct NfcUidMapping {
+// Value type used only while importing obsolete on-card mapping files.
+// It is not a runtime tag repository.
+struct LegacyNfcMappingEntry {
   std::uint8_t uid[10]{};
   std::uint8_t uidLength = 0;
   SpoolId spoolId = 0;
   models::TagFormat tagFormat = models::TagFormat::Unknown;
 };
-constexpr std::size_t kMaximumNfcUidMappings = 8;
+constexpr std::size_t kMaximumLegacyNfcMappings = 8;
 
 struct AppEvent {
   AppEventType type;
@@ -40,8 +42,8 @@ struct AppEvent {
   std::uint8_t nfcUid[10];
   std::uint8_t nfcUidLength;
   models::TagReadResult tagReadResult;
-  NfcUidMapping nfcMappings[kMaximumNfcUidMappings];
-  std::uint8_t nfcMappingCount;
+  LegacyNfcMappingEntry legacyNfcMappings[kMaximumLegacyNfcMappings];
+  std::uint8_t legacyNfcMappingCount;
   models::NetworkSettings networkSettings;
   models::SpoolmanSettings spoolmanSettings;
   models::SpoolmanSpool spool{};

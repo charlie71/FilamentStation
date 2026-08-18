@@ -777,15 +777,15 @@ API gegen die tatsächlich verwendete Spoolman-Version prüfen.
 
 Nach erfolgreicher Migration:
 
-* [ ] Runtime-Zugriff auf `nfc-spools.json` entfernen
-* [ ] Runtime-Zugriff auf `bambu-tags.json` entfernen
-* [ ] Runtime-Zugriff auf `open-tags.json` entfernen
-* [ ] StorageCommands für NFC-Mappings entfernen
-* [ ] lokale Mapping-Repository-Klasse entfernen
-* [ ] tote Modelle entfernen
-* [ ] tote Tests entfernen/anpassen
-* [ ] `/mappings/printer-slots.json` nur beibehalten, falls weiterhin benötigt
-* [ ] Dokumentation aktualisieren
+* [x] Runtime-Zugriff auf `nfc-spools.json` entfernen
+* [x] Runtime-Zugriff auf `bambu-tags.json` entfernen
+* [x] Runtime-Zugriff auf `open-tags.json` entfernen
+* [x] StorageCommands für NFC-Mappings entfernen
+* [x] lokale Mapping-Repository-Klasse entfernen
+* [x] tote Modelle entfernen
+* [x] tote Tests entfernen/anpassen
+* [x] `/mappings/printer-slots.json` nur beibehalten, falls weiterhin benötigt
+* [x] Dokumentation aktualisieren
 
 ## 7.7.11 Tests
 
