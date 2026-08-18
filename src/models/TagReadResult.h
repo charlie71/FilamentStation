@@ -6,6 +6,7 @@
 
 #include "config/NfcConfig.h"
 #include "models/TagDefinition.h"
+#include "models/TagIdentity.h"
 
 namespace filament_station {
 namespace models {
@@ -39,6 +40,9 @@ struct TagReadResult {
   TagFormat format = TagFormat::Unknown;
   std::uint8_t uid[config::kNfcMaxUidLength]{};
   std::uint8_t uidLength = 0;
+  // Captured when the tag is parsed and copied by value through the complete
+  // workflow. It must not be derived again after an asynchronous operation.
+  TagIdentity identity{};
   bool ndefPresent = false;
   bool ndefReadable = false;
   bool physicalWritableKnown = false;

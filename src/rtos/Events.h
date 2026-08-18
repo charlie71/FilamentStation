@@ -40,6 +40,9 @@ enum class AppEventType : std::uint8_t {
   WifiConfigPortalTimedOut,
   WifiCredentialsCleared,
   SpoolmanConnected,
+  SpoolmanTagFieldReady,
+  SpoolmanTagLookup,
+  SpoolmanTagUpdated,
   SpoolmanResponse,
   SpoolmanVendorResult,
   SpoolmanFilamentResult,
@@ -61,5 +64,6 @@ constexpr EventBits_t EVENT_WIFI_CONNECTED = BIT4;
 constexpr EventBits_t EVENT_SPOOLMAN_READY = BIT5;
 constexpr EventBits_t EVENT_BAMBU_READY = BIT6;
 constexpr EventBits_t EVENT_FATAL_ERROR = BIT7;
+constexpr EventBits_t EVENT_SPOOLMAN_TAG_FIELD_READY = BIT8;
 
 }  // namespace filament_station::rtos

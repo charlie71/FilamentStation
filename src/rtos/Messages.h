@@ -46,6 +46,7 @@ struct AppEvent {
   models::SpoolmanSettings spoolmanSettings;
   models::SpoolmanSpool spool{};
   models::SpoolmanWeightUpdate weightUpdate{};
+  models::TagIdentity tagIdentity{};
   char networkSsid[33];
   char networkIp[16];
   char spoolColorHex[models::SpoolmanSpool::kMaximumColors][9];
@@ -113,6 +114,7 @@ struct SpoolmanCommand {
   models::SpoolmanVendor vendor{};
   models::SpoolmanFilament filament{};
   models::SpoolmanWeightUpdate weightUpdate{};
+  models::TagIdentity tagIdentity{};
   SpoolmanSearchFilter searchFilter = SpoolmanSearchFilter::FilamentName;
   bool includeArchived = false;
   char searchText[48]{};

@@ -4,6 +4,7 @@
 
 #include "nfc/TagWritePolicy.h"
 #include "services/NfcPayload.h"
+#include "services/TagIdentity.h"
 
 namespace filament_station {
 namespace nfc {
@@ -34,6 +35,7 @@ models::TagReadResult TagParserRegistry::parse(
   result.technology = tag.technology;
   result.uidLength = tag.uidLength;
   std::memcpy(result.uid, tag.uid, tag.uidLength);
+  services::tagIdentityFromUid(tag.uid, tag.uidLength, result.identity);
   result.ndefPresent = tag.ndefPresent;
   result.ndefReadable = tag.ndefReadable;
   result.physicalWritableKnown = tag.hardwareWritableKnown;

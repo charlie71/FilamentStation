@@ -10,6 +10,7 @@
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/SpoolmanCatalog.h"
+#include "services/SpoolmanClient.h"
 #include "services/Logger.h"
 
 namespace filament_station::tasks {
@@ -132,6 +133,48 @@ bool patchJson(const char* url, std::uint32_t timeoutMs,
   }
   return true;
 }
+
+class TaskSpoolmanTransport final : public services::SpoolmanHttpTransport {
+ public:
+  explicit TaskSpoolmanTransport(const models::SpoolmanSettings& settings)
+      : settings_(settings) {}
+
+  bool get(const char* path, JsonDocument& response, char* error,
+           std::size_t errorCapacity) override {
+    char url[320]{};
+    if (!makeUrl(path, url, sizeof(url), error, errorCapacity)) return false;
+    return getJson(url, settings_.timeoutMs, response, error, errorCapacity);
+  }
+
+  bool post(const char* path, const JsonDocument& request,
+            JsonDocument& response, char* error,
+            std::size_t errorCapacity) override {
+    char url[320]{};
+    if (!makeUrl(path, url, sizeof(url), error, errorCapacity)) return false;
+    return postJson(url, settings_.timeoutMs, request, response, error,
+                    errorCapacity);
+  }
+
+  bool patch(const char* path, const JsonDocument& request,
+             JsonDocument& response, char* error,
+             std::size_t errorCapacity) override {
+    char url[320]{};
+    if (!makeUrl(path, url, sizeof(url), error, errorCapacity)) return false;
+    return patchJson(url, settings_.timeoutMs, request, response, error,
+                     errorCapacity);
+  }
+
+ private:
+  bool makeUrl(const char* path, char* url, std::size_t capacity, char* error,
+               std::size_t errorCapacity) const {
+    const int written = std::snprintf(url, capacity, "%s%s",
+                                      settings_.serverUrl, path);
+    if (written > 0 && static_cast<std::size_t>(written) < capacity) return true;
+    std::snprintf(error, errorCapacity, "Spoolman URL is too long");
+    return false;
+  }
+  const models::SpoolmanSettings& settings_;
+};
 
 bool appendUrlEncoded(char* destination, std::size_t capacity,
                       const char* source) {
@@ -878,9 +921,78 @@ void updateWeight(rtos::RtosContext& ctx,
             "Event enqueue failed queue=app_event result=weight");
 }
 
+void executeTagClientCommand(rtos::RtosContext& ctx,
+                             const rtos::SpoolmanCommand& command) {
+  const auto& settings = command.settings.serverUrl[0] != '\0'
+                             ? command.settings
+                             : activeSettings;
+  if (!catalogAvailable(ctx, settings, command.requestId)) return;
+  TaskSpoolmanTransport transport(settings);
+  services::SpoolmanClient client(transport);
+  rtos::AppEvent event{};
+  event.requestId = command.requestId;
+  event.tagIdentity = command.tagIdentity;
+
+  if (command.type == rtos::SpoolmanCommandType::EnsureTagExtraField) {
+    char error[96]{};
+    const auto status = client.ensureTagExtraField(error, sizeof(error));
+    event.value = static_cast<std::int32_t>(status);
+    if (status == services::TagExtraFieldStatus::Available ||
+        status == services::TagExtraFieldStatus::Created) {
+      event.type = rtos::AppEventType::SpoolmanTagFieldReady;
+      xEventGroupSetBits(ctx.systemEventGroup,
+                         rtos::EVENT_SPOOLMAN_TAG_FIELD_READY);
+      std::snprintf(event.text, sizeof(event.text), "%s",
+                    status == services::TagExtraFieldStatus::Created
+                        ? "Spoolman tag field created"
+                        : "Spoolman tag field ready");
+    } else {
+      event.type = rtos::AppEventType::SpoolmanError;
+      xEventGroupClearBits(ctx.systemEventGroup,
+                           rtos::EVENT_SPOOLMAN_TAG_FIELD_READY);
+      std::snprintf(event.text, sizeof(event.text), "%s",
+                    status == services::TagExtraFieldStatus::Incompatible
+                        ? "Spoolman extra field 'tag' must have type text"
+                        : error);
+    }
+  } else if (command.type == rtos::SpoolmanCommandType::FindSpoolByTag) {
+    const auto result = client.findSpoolByTag(command.tagIdentity.value);
+    event.value = static_cast<std::int32_t>(result.status);
+    event.spoolId = result.spoolId;
+    if (result.status == services::TagLookupStatus::Error) {
+      event.type = rtos::AppEventType::SpoolmanError;
+      std::snprintf(event.text, sizeof(event.text), "%s", result.error);
+    } else {
+      event.type = rtos::AppEventType::SpoolmanTagLookup;
+      std::snprintf(event.text, sizeof(event.text), "matches=%u",
+                    static_cast<unsigned>(result.matches));
+      if (result.status == services::TagLookupStatus::Duplicate)
+        FS_LOGE(services::LogComponent::Spoolman,
+                "Duplicate tag assignment tag=%s matches=%u",
+                command.tagIdentity.value,
+                static_cast<unsigned>(result.matches));
+    }
+  } else {
+    const auto result = command.type == rtos::SpoolmanCommandType::SetSpoolTag
+                            ? client.setSpoolTag(command.spoolId,
+                                                 command.tagIdentity.value)
+                            : client.clearSpoolTag(command.spoolId);
+    event.spoolId = command.spoolId;
+    event.type = result.success ? rtos::AppEventType::SpoolmanTagUpdated
+                                : rtos::AppEventType::SpoolmanError;
+    std::snprintf(event.text, sizeof(event.text), "%s",
+                  result.success ? "Spoolman tag assignment updated"
+                                 : result.error);
+  }
+  if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
+    FS_LOGW(services::LogComponent::Spoolman,
+            "Event enqueue failed queue=app_event result=tag_client");
+}
+
 void healthCheck(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
   if ((xEventGroupGetBits(ctx.systemEventGroup) & rtos::EVENT_WIFI_CONNECTED) == 0) {
-    xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SPOOLMAN_READY);
+    xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SPOOLMAN_READY |
+                                                   rtos::EVENT_SPOOLMAN_TAG_FIELD_READY);
     sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
                "Keine WLAN-Verbindung");
     return;
@@ -890,7 +1002,8 @@ void healthCheck(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
   JsonDocument health;
   std::snprintf(url, sizeof(url), "%s/health", command.settings.serverUrl);
   if (!getJson(url, command.settings.timeoutMs, health, error, sizeof(error))) {
-    xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SPOOLMAN_READY);
+    xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SPOOLMAN_READY |
+                                                   rtos::EVENT_SPOOLMAN_TAG_FIELD_READY);
     sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId, error);
     return;
   }
@@ -898,13 +1011,39 @@ void healthCheck(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
   JsonDocument info;
   std::snprintf(url, sizeof(url), "%s/info", command.settings.serverUrl);
   if (!getJson(url, command.settings.timeoutMs, info, error, sizeof(error))) {
-    xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SPOOLMAN_READY);
+    xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SPOOLMAN_READY |
+                                                   rtos::EVENT_SPOOLMAN_TAG_FIELD_READY);
     sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId, error);
     return;
   }
   const char* version = info["version"] | "unbekannt";
+  TaskSpoolmanTransport transport(command.settings);
+  services::SpoolmanClient client(transport);
+  char fieldError[96]{};
+  const auto fieldStatus =
+      client.ensureTagExtraField(fieldError, sizeof(fieldError));
+  const bool tagFieldReady =
+      fieldStatus == services::TagExtraFieldStatus::Available ||
+      fieldStatus == services::TagExtraFieldStatus::Created;
+  if (tagFieldReady) {
+    xEventGroupSetBits(ctx.systemEventGroup,
+                       rtos::EVENT_SPOOLMAN_TAG_FIELD_READY);
+    FS_LOGI(services::LogComponent::Spoolman,
+            "Tag extra field ready status=%s",
+            fieldStatus == services::TagExtraFieldStatus::Created ? "created"
+                                                                  : "available");
+  } else {
+    xEventGroupClearBits(ctx.systemEventGroup,
+                         rtos::EVENT_SPOOLMAN_TAG_FIELD_READY);
+    FS_LOGE(services::LogComponent::Spoolman,
+            "Tag extra field unavailable reason=\"%s\"",
+            fieldStatus == services::TagExtraFieldStatus::Incompatible
+                ? "field type is not text"
+                : fieldError);
+  }
   char message[96]{};
-  std::snprintf(message, sizeof(message), "Online | Version %s", version);
+  std::snprintf(message, sizeof(message), "Online | Version %s | Tag-Feld %s",
+                version, tagFieldReady ? "bereit" : "nicht verfuegbar");
   xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_SPOOLMAN_READY);
   sendResult(ctx, rtos::AppEventType::SpoolmanConnected, command.requestId,
              message);
@@ -920,9 +1059,15 @@ void spoolmanTask(void* parameter) {
     if (command.type == rtos::SpoolmanCommandType::ApplyConfiguration) {
       activeSettings = command.settings;
       if (!activeSettings.enabled)
-        xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SPOOLMAN_READY);
+        xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SPOOLMAN_READY |
+                                                       rtos::EVENT_SPOOLMAN_TAG_FIELD_READY);
     } else if (command.type == rtos::SpoolmanCommandType::HealthCheck) {
       healthCheck(ctx, command);
+    } else if (command.type == rtos::SpoolmanCommandType::EnsureTagExtraField ||
+               command.type == rtos::SpoolmanCommandType::FindSpoolByTag ||
+               command.type == rtos::SpoolmanCommandType::SetSpoolTag ||
+               command.type == rtos::SpoolmanCommandType::ClearSpoolTag) {
+      executeTagClientCommand(ctx, command);
     } else if (command.type == rtos::SpoolmanCommandType::LoadSpool ||
                command.type == rtos::SpoolmanCommandType::SearchSpools) {
       loadSpools(ctx, command);

@@ -658,26 +658,26 @@ Aufgaben:
 
 ## 7.7.2 TagIdentity
 
-* [ ] `TagIdentitySource`
-* [ ] `TagIdentity`
-* [ ] Normalisierung Großbuchstaben
-* [ ] Doppelpunkte entfernen
-* [ ] Bindestriche entfernen
-* [ ] NTAG UID normalisieren
-* [ ] Unknown UID normalisieren
-* [ ] OpenTag UID normalisieren
+* [x] `TagIdentitySource`
+* [x] `TagIdentity`
+* [x] Normalisierung Großbuchstaben
+* [x] Doppelpunkte entfernen
+* [x] Bindestriche entfernen
+* [x] NTAG UID normalisieren
+* [x] Unknown UID normalisieren
+* [x] OpenTag UID normalisieren
 * [ ] Bambu UUID verwenden
-* [ ] Identität während Workflow fixieren
-* [ ] Tests
+* [x] Identität während Workflow fixieren
+* [x] Tests
 
 ## 7.7.3 Spoolman Extra Field `tag`
 
-* [ ] Spoolman Extra-Field-Unterstützung der verwendeten Version prüfen
-* [ ] vorhandene `tag`-Definition lesen
-* [ ] Key `tag` prüfen
-* [ ] Typ Text prüfen
-* [ ] Feld bei Bedarf automatisch anlegen
-* [ ] Fehler bei inkompatiblem Feld behandeln
+* [x] Spoolman Extra-Field-Unterstützung der verwendeten Version prüfen
+* [x] vorhandene `tag`-Definition lesen
+* [x] Key `tag` prüfen
+* [x] Typ Text prüfen
+* [x] Feld bei Bedarf automatisch anlegen
+* [x] Fehler bei inkompatiblem Feld behandeln
 * [ ] Status an AppTask melden
 * [ ] Status in Spoolman Settings anzeigen
 
@@ -685,19 +685,19 @@ Aufgaben:
 
 Implementieren:
 
-* [ ] `ensureTagExtraField()`
-* [ ] `findSpoolByTag()`
-* [ ] `setSpoolTag()`
-* [ ] `clearSpoolTag()`
-* [ ] Extra-Field-Werte korrekt decodieren
-* [ ] Extra-Field-Werte korrekt encodieren
-* [ ] exakte Übereinstimmung
-* [ ] kein Treffer
-* [ ] ein Treffer
-* [ ] mehrere Treffer
-* [ ] HTTP-Fehler
-* [ ] Timeout
-* [ ] Tests
+* [x] `ensureTagExtraField()`
+* [x] `findSpoolByTag()`
+* [x] `setSpoolTag()`
+* [x] `clearSpoolTag()`
+* [x] Extra-Field-Werte korrekt decodieren
+* [x] Extra-Field-Werte korrekt encodieren
+* [x] exakte Übereinstimmung
+* [x] kein Treffer
+* [x] ein Treffer
+* [x] mehrere Treffer
+* [x] HTTP-Fehler
+* [x] Timeout
+* [x] Tests
 
 Keine REST-Endpunkte erfinden.
 

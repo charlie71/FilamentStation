@@ -1,0 +1,48 @@
+19:46:16.829 > I [UI] Widgets bound
+19:46:16.829 > I [UI] Initial model applied
+19:46:16.829 > D [UI] LVGL memory free_bytes=126784 largest_bytes=126132 fragmentation_pct=1
+19:46:16.829 > I [UI] LVGL ready draw_buffer_bytes=38400 draw_buffers=2 psram_used_bytes=338992 psram_free_bytes=1711239
+19:46:16.829 > D [UI] Communication test sent request_id=1
+19:46:16.829 > I [APP] System starting app=FilamentStation firmware=0.1.0-dev
+19:46:16.829 > I [RTOS] Chip detected model=ESP32-S3 revision=0 cores=2
+19:46:16.829 > I [RTOS] Heap available free_bytes=286132
+19:46:16.829 > I [RTOS] PSRAM available total_bytes=2094943 free_bytes=1711239
+19:46:16.829 > D [APP] Communication test response sent request_id=1
+19:46:16.829 > D [APP] Stack watermark free_bytes=3388
+19:46:16.829 > I [SCALE] HX711 interrupt registered pin=11
+19:46:16.829 > D [
+19:46:16.829 > D [UI] Command received request_id=1 type=0
+19:46:16.829 > =8N1
+19:46:16.829 > I [NFC] PNI [RTOS] Infrastructure s
+19:46:16.829 > I [NFCI [NFC] PN532 RF configu
+19:46:16.829 > I [NFCD [NFC] Stack watermark context=initialization free_bytes=6548
+19:46:16.829 > D [UI] Command received request_id=1 type=4
+19:46:16.829 > D [UI] ComD [UI] Command received request_id=0 type=1
+19:46:16.829 > I [STORAGE] SD mounted type="SDHC/SDXC" capacity_bytes=15372124160 capacity_mib=14660
+19:46:16.829 > I [STORAGE] Filesystem usage total_bytes=45808640 used_bytes=19456 free_bytes=45789184
+19:46:16.829 > D [UI] Command received request_id=0 type=1
+19:46:16.829 > I [STORAGE] Initial JSON documents ready count=10
+19:46:16.829 > D [UI] Command received request_id=0 type=5
+19:46:16.829 > D [STORAGE] Stack watermark free_bytes=4832
+19:46:16.829 > D [UI] Command received request_id=0 type=2
+19:46:16.829 > D [UI] Command received request_id=1313166337 type=1
+19:46:16.829 > I [SCALE] Calibration applied calibrated=true
+19:46:16.829 > D [UI] Command received request_id=0 type=13
+19:46:16.829 > D [UI] Command received request_id=0 type=13
+19:46:16.829 > D [UI] Command received request_id=0 type=13
+19:46:16.829 > D [UI] Command received request_id=0 type=13
+19:46:16.829 > D [UI] Command received request_id=0 type=13
+19:46:16.829 > D [UI] Command received request_id=0 type=13
+19:46:16.829 > D [UI] Command received request_id=1397771521 type=1
+19:46:16.829 > I [NET] Configuration applied hostname="filamentstation" mode=dhcp
+19:46:16.829 > I [NET] Connection attempt portal_ssid="FilamentStation-7446A8" timeout_s=180
+19:46:16.829 > D [UI] Command received request_id=1396899841 type=1
+19:46:16.829 > D [UI] Command received request_id=1313227521 type=1
+19:46:16.829 > D [UI] Command received request_id=1313227522 type=1
+19:46:16.829 > D [UI] Command received request_id=1313227523 type=1
+19:46:17.744 > I [NET] WiFi station connected
+19:46:17.744 > I [NET] WiFi address acquired ip=10.0.0.243
+19:46:17.760 > D [UI] Command received request_id=0 type=15
+19:46:17.761 > D [UI] Command received request_id=0 type=1
+19:46:17.761 > D [UI] Command received request_id=0 type=15
+19:46:17.761 > D [UI] Command received request_id=0 type=1

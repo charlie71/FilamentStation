@@ -197,6 +197,10 @@ enum class NetworkCommandType : std::uint8_t {
 enum class SpoolmanCommandType : std::uint8_t {
   ApplyConfiguration,
   HealthCheck,
+  EnsureTagExtraField,
+  FindSpoolByTag,
+  SetSpoolTag,
+  ClearSpoolTag,
   LoadSpool,
   SearchSpools,
   SearchVendors,

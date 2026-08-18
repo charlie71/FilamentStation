@@ -8,6 +8,7 @@
 #include "openprinttag_official_vector.h"
 #include "services/NfcPayload.h"
 #include "services/Ntag21x.h"
+#include "services/TagIdentity.h"
 
 using filament_station::models::RawTagData;
 using filament_station::models::TagDefinition;
@@ -614,6 +615,76 @@ void test_removal_effect_only_clears_managed_payload() {
       filament_station::nfc::removalEffect(tag));
 }
 
+void test_tag_identity_normalizes_hex_separators_and_case() {
+  filament_station::models::TagIdentity identity{};
+  TEST_ASSERT_TRUE(filament_station::services::normalizeTagIdentity(
+      "04:a2-11 FE 42:80:61",
+      filament_station::models::TagIdentitySource::NfcUid, identity));
+  TEST_ASSERT_EQUAL(
+      filament_station::models::TagIdentitySource::NfcUid, identity.source);
+  TEST_ASSERT_EQUAL_STRING("04A211FE428061", identity.value);
+}
+
+void test_tag_identity_rejects_invalid_or_odd_hex() {
+  filament_station::models::TagIdentity identity{};
+  TEST_ASSERT_FALSE(filament_station::services::normalizeTagIdentity(
+      "04A21", filament_station::models::TagIdentitySource::NfcUid,
+      identity));
+  TEST_ASSERT_FALSE(filament_station::services::normalizeTagIdentity(
+      "04A2-X1", filament_station::models::TagIdentitySource::NfcUid,
+      identity));
+  TEST_ASSERT_FALSE(filament_station::services::normalizeTagIdentity(
+      "", filament_station::models::TagIdentitySource::NfcUid, identity));
+  TEST_ASSERT_EQUAL(
+      filament_station::models::TagIdentitySource::Unknown, identity.source);
+}
+
+void test_uid_identity_is_canonical_and_stored_in_read_result() {
+  RawTagData raw{};
+  raw.technology = TagTechnology::Ntag215;
+  raw.uid[0] = 0x04;
+  raw.uid[1] = 0xA2;
+  raw.uid[2] = 0x00;
+  raw.uid[3] = 0xFE;
+  raw.uidLength = 4;
+  const auto result = TagParserRegistry{}.parse(raw);
+  TEST_ASSERT_EQUAL(
+      filament_station::models::TagIdentitySource::NfcUid,
+      result.identity.source);
+  TEST_ASSERT_EQUAL_STRING("04A200FE", result.identity.value);
+}
+
+void test_open_tag_and_unknown_use_nfc_uid_identity() {
+  RawTagData open = makeOpenTag3DVector();
+  open.uid[0] = 0x01;
+  open.uid[1] = 0xAB;
+  open.uidLength = 2;
+  const auto openResult = TagParserRegistry{}.parse(open);
+  TEST_ASSERT_EQUAL(TagFormat::OpenTag3D, openResult.format);
+  TEST_ASSERT_EQUAL_STRING("01AB", openResult.identity.value);
+
+  RawTagData unknown{};
+  unknown.uid[0] = 0xDE;
+  unknown.uid[1] = 0xAD;
+  unknown.uidLength = 2;
+  const auto unknownResult = TagParserRegistry{}.parse(unknown);
+  TEST_ASSERT_EQUAL(TagFormat::Unknown, unknownResult.format);
+  TEST_ASSERT_EQUAL_STRING("DEAD", unknownResult.identity.value);
+}
+
+void test_bambu_uuid_identity_requires_16_bytes_of_hex() {
+  filament_station::models::TagIdentity identity{};
+  TEST_ASSERT_TRUE(filament_station::services::tagIdentityFromBambuUuid(
+      "a1b2c3d4-e5f6-a1b2-c3d4-e5f6a1b2c3d4", identity));
+  TEST_ASSERT_EQUAL(
+      filament_station::models::TagIdentitySource::BambuUuid,
+      identity.source);
+  TEST_ASSERT_EQUAL_STRING("A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
+                           identity.value);
+  TEST_ASSERT_FALSE(filament_station::services::tagIdentityFromBambuUuid(
+      "A1B2C3D4", identity));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_spoolman_payload_round_trip);
@@ -646,5 +717,10 @@ int main(int, char**) {
   RUN_TEST(test_legacy_requires_explicit_safe_rewrite_capability);
   RUN_TEST(test_assignment_effect_is_derived_from_tag_capabilities);
   RUN_TEST(test_removal_effect_only_clears_managed_payload);
+  RUN_TEST(test_tag_identity_normalizes_hex_separators_and_case);
+  RUN_TEST(test_tag_identity_rejects_invalid_or_odd_hex);
+  RUN_TEST(test_uid_identity_is_canonical_and_stored_in_read_result);
+  RUN_TEST(test_open_tag_and_unknown_use_nfc_uid_identity);
+  RUN_TEST(test_bambu_uuid_identity_requires_16_bytes_of_hex);
   return UNITY_END();
 }
