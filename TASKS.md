@@ -641,13 +641,13 @@ Fehler:
 
 ## 6.3 WiFi-Events
 
-* [ ] WiFi.onEvent()
-* [ ] Connected
-* [ ] Got IP
-* [ ] Disconnect
-* [ ] Lost IP
-* [ ] kurze Callbacks
-* [ ] Event Group
+* [x] WiFi.onEvent()
+* [x] Connected
+* [x] Got IP
+* [x] Disconnect
+* [x] Lost IP
+* [x] kurze Callbacks
+* [x] Event Group
 
 ## 6.4 Netzwerkparameter
 

@@ -2163,8 +2163,10 @@ void appTask(void* parameter) {
       std::snprintf(status.title, sizeof(status.title), "NFC");
       std::snprintf(status.text, sizeof(status.text), "%s", event.text);
       sendUiCommand(ctx, status, "AppTask: NFC status UI queue overflow");
-    } else if (event.type == rtos::AppEventType::WifiConnected ||
+    } else if (event.type == rtos::AppEventType::WifiStationConnected ||
+               event.type == rtos::AppEventType::WifiGotIp ||
                event.type == rtos::AppEventType::WifiDisconnected ||
+               event.type == rtos::AppEventType::WifiLostIp ||
                event.type == rtos::AppEventType::WifiConfigPortalStarted ||
                event.type == rtos::AppEventType::WifiConfigPortalStopped ||
                event.type == rtos::AppEventType::WifiConfigPortalTimedOut) {
@@ -2187,6 +2189,13 @@ void appTask(void* parameter) {
         continue;
       }
 
+      if (event.type == rtos::AppEventType::WifiStationConnected ||
+          ((event.type == rtos::AppEventType::WifiDisconnected ||
+            event.type == rtos::AppEventType::WifiLostIp) &&
+           wifiPortalActive)) {
+        continue;
+      }
+
       const bool wasInteractivePortal =
           wifiPortalRequestId != 0 || event.requestId != 0;
       const std::uint32_t resultRequestId =
@@ -2200,7 +2209,7 @@ void appTask(void* parameter) {
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: WiFi progress close overflow");
       pendingOverlay = rtos::UiOverlayKind::None;
-      if (event.type == rtos::AppEventType::WifiConnected) {
+      if (event.type == rtos::AppEventType::WifiGotIp) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Success, resultRequestId,
                     "WLAN verbunden", event.text);

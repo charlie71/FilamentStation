@@ -18,6 +18,41 @@ struct PortalCredentials {
   char password[16]{};
 };
 
+enum class WifiSignal : std::uint8_t {
+  StationConnected,
+  GotIp,
+  Disconnected,
+  LostIp,
+};
+
+QueueHandle_t wifiEventQueue = nullptr;
+volatile bool wifiEventQueueOverflow = false;
+
+void wifiEventCallback(arduino_event_id_t event) {
+  WifiSignal signal{};
+  switch (event) {
+    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+      signal = WifiSignal::StationConnected;
+      break;
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      signal = WifiSignal::GotIp;
+      break;
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      signal = WifiSignal::Disconnected;
+      break;
+    case ARDUINO_EVENT_WIFI_STA_LOST_IP:
+      signal = WifiSignal::LostIp;
+      break;
+    default:
+      return;
+  }
+  // Arduino-ESP32 dispatches WiFi callbacks from its event task, not from an
+  // ISR. Keep the callback bounded: copy one small enum and return.
+  if (xQueueSend(wifiEventQueue, &signal, 0) != pdPASS) {
+    wifiEventQueueOverflow = true;
+  }
+}
+
 PortalCredentials makePortalCredentials() {
   PortalCredentials credentials{};
   const auto deviceSuffix =
@@ -74,8 +109,6 @@ void connectOrStartPortal(rtos::RtosContext& ctx, WiFiManager& manager,
                                               credentials.password);
   if (connected) {
     rtos::logLine("NetworkTask: WiFi connected");
-    publishEvent(ctx, rtos::AppEventType::WifiConnected, requestId,
-                 "WLAN-Verbindung hergestellt");
     return;
   }
   if (manager.getConfigPortalActive()) {
@@ -88,6 +121,36 @@ void connectOrStartPortal(rtos::RtosContext& ctx, WiFiManager& manager,
   rtos::logLine("NetworkTask: WiFi connection failed");
   publishEvent(ctx, rtos::AppEventType::WifiDisconnected, requestId,
                "WLAN-Verbindung konnte nicht hergestellt werden");
+}
+
+void handleWifiSignal(rtos::RtosContext& ctx, WifiSignal signal,
+                      std::uint32_t& portalRequestId) {
+  switch (signal) {
+    case WifiSignal::StationConnected:
+      rtos::logLine("NetworkTask: WiFi station connected");
+      publishEvent(ctx, rtos::AppEventType::WifiStationConnected,
+                   portalRequestId, "WLAN verbunden; IP-Adresse wird bezogen");
+      break;
+    case WifiSignal::GotIp:
+      xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_WIFI_CONNECTED);
+      rtos::logLine("NetworkTask: WiFi got IP");
+      publishEvent(ctx, rtos::AppEventType::WifiGotIp, portalRequestId,
+                   "WLAN-Verbindung und IP-Adresse sind bereit");
+      portalRequestId = 0;
+      break;
+    case WifiSignal::Disconnected:
+      xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_WIFI_CONNECTED);
+      rtos::logLine("NetworkTask: WiFi station disconnected");
+      publishEvent(ctx, rtos::AppEventType::WifiDisconnected,
+                   portalRequestId, "WLAN-Verbindung getrennt");
+      break;
+    case WifiSignal::LostIp:
+      xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_WIFI_CONNECTED);
+      rtos::logLine("NetworkTask: WiFi lost IP");
+      publishEvent(ctx, rtos::AppEventType::WifiLostIp, portalRequestId,
+                   "WLAN-IP-Adresse verloren");
+      break;
+  }
 }
 
 void startPortal(rtos::RtosContext& ctx, WiFiManager& manager,
@@ -118,6 +181,20 @@ void startPortal(rtos::RtosContext& ctx, WiFiManager& manager,
 
 void networkTask(void* parameter) {
   auto& ctx = *static_cast<rtos::RtosContext*>(parameter);
+  wifiEventQueue =
+      xQueueCreate(config::kWifiEventQueueLength, sizeof(WifiSignal));
+  const UBaseType_t queueSetLength = config::kServiceCommandQueueLength +
+                                     config::kWifiEventQueueLength;
+  QueueSetHandle_t queueSet = xQueueCreateSet(queueSetLength);
+  if (wifiEventQueue == nullptr || queueSet == nullptr ||
+      xQueueAddToSet(ctx.networkCommandQueue, queueSet) != pdPASS ||
+      xQueueAddToSet(wifiEventQueue, queueSet) != pdPASS) {
+    rtos::logLine("NetworkTask: WiFi event queue/set creation failed");
+    vTaskDelete(nullptr);
+    return;
+  }
+
+  WiFi.onEvent(wifiEventCallback);
   static WiFiManager manager;
   configureManager(manager);
   static const PortalCredentials credentials = makePortalCredentials();
@@ -134,7 +211,9 @@ void networkTask(void* parameter) {
         portalActive
             ? pdMS_TO_TICKS(config::kWifiPortalServiceIntervalMs)
             : portMAX_DELAY;
-    if (xQueueReceive(ctx.networkCommandQueue, &command, wait) == pdTRUE) {
+    const QueueSetMemberHandle_t ready = xQueueSelectFromSet(queueSet, wait);
+    if (ready == ctx.networkCommandQueue &&
+        xQueueReceive(ctx.networkCommandQueue, &command, 0) == pdTRUE) {
       switch (command.type) {
         case rtos::NetworkCommandType::Connect:
           connectOrStartPortal(ctx, manager, credentials, command.requestId,
@@ -159,6 +238,16 @@ void networkTask(void* parameter) {
           rtos::logLine("NetworkTask: stored WiFi credentials cleared");
           break;
       }
+    } else if (ready == wifiEventQueue) {
+      WifiSignal signal{};
+      if (xQueueReceive(wifiEventQueue, &signal, 0) == pdTRUE) {
+        handleWifiSignal(ctx, signal, portalRequestId);
+      }
+    }
+
+    if (wifiEventQueueOverflow) {
+      wifiEventQueueOverflow = false;
+      rtos::logLine("NetworkTask: WiFi event queue overflow");
     }
 
     if (!manager.getConfigPortalActive()) continue;
@@ -166,10 +255,7 @@ void networkTask(void* parameter) {
     const bool connected = manager.process();
     if (connected) {
       rtos::logLine("NetworkTask: WiFi connected via captive portal");
-      publishEvent(ctx, rtos::AppEventType::WifiConnected, portalRequestId,
-                   "WLAN-Verbindung hergestellt");
       portalStartedAt = 0;
-      portalRequestId = 0;
       continue;
     }
 
@@ -182,7 +268,8 @@ void networkTask(void* parameter) {
       rtos::logLine("NetworkTask: captive portal timed out");
       publishEvent(ctx, rtos::AppEventType::WifiConfigPortalTimedOut,
                    portalRequestId,
-                   "WLAN-Konfigurationsportal wurde wegen ZeitÃ¼" "berschreitung beendet");
+                   "WLAN-Konfigurationsportal wurde wegen Zeit\xC3\xBC"
+                   "berschreitung beendet");
       portalStartedAt = 0;
       portalRequestId = 0;
     }
