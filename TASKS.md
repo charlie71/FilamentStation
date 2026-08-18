@@ -687,11 +687,11 @@ Fehler:
 
 ## 7.2 Spulen
 
-* [ ] nach ID
-* [ ] Suche
-* [ ] Filter
-* [ ] CMP_SPOOL_PICKER
-* [ ] kompakte Infos
+* [x] nach ID
+* [x] Suche
+* [x] Filter
+* [x] CMP_SPOOL_PICKER
+* [x] kompakte Infos
 
 ## 7.3 Hersteller und Filamente
 

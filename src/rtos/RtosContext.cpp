@@ -4,6 +4,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include "config/NetworkConfig.h"
 #include "config/TaskConfig.h"
 #include "rtos/Messages.h"
 #include "tasks/Tasks.h"
@@ -83,13 +84,26 @@ bool RtosContext::createObjects() {
   storageCommandQueue =
       xQueueCreate(config::kStorageCommandQueueLength, sizeof(StorageCommand));
   networkCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(NetworkCommand));
+  // Both queues must be empty when they are added to a FreeRTOS queue set.
+  // Create and connect them before any producer task can enqueue the network
+  // configuration loaded from storage.
+  wifiEventQueue =
+      xQueueCreate(config::kWifiEventQueueLength, sizeof(std::uint8_t));
+  networkQueueSet = xQueueCreateSet(config::kServiceCommandQueueLength +
+                                    config::kWifiEventQueueLength);
+  const bool networkQueuesReady =
+      networkCommandQueue != nullptr && wifiEventQueue != nullptr &&
+      networkQueueSet != nullptr &&
+      xQueueAddToSet(networkCommandQueue, networkQueueSet) == pdPASS &&
+      xQueueAddToSet(wifiEventQueue, networkQueueSet) == pdPASS;
   spoolmanCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(SpoolmanCommand));
   bambuCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(BambuCommand));
   logQueue = xQueueCreate(config::kLogQueueLength, sizeof(LogMessage));
   systemEventGroup = xEventGroupCreate();
 
   return appEventQueue && uiCommandQueue && scaleCommandQueue && nfcCommandQueue &&
-         storageCommandQueue && networkCommandQueue && spoolmanCommandQueue &&
+         storageCommandQueue && networkCommandQueue && networkQueuesReady &&
+         spoolmanCommandQueue &&
          bambuCommandQueue && logQueue && systemEventGroup;
 }
 

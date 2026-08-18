@@ -21,6 +21,8 @@ struct RtosContext {
   QueueHandle_t nfcCommandQueue = nullptr;
   QueueHandle_t storageCommandQueue = nullptr;
   QueueHandle_t networkCommandQueue = nullptr;
+  QueueHandle_t wifiEventQueue = nullptr;
+  QueueSetHandle_t networkQueueSet = nullptr;
   QueueHandle_t spoolmanCommandQueue = nullptr;
   QueueHandle_t bambuCommandQueue = nullptr;
   QueueHandle_t logQueue = nullptr;

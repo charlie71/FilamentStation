@@ -5,6 +5,7 @@
 #include <lvgl.h>
 #include <soc/soc_memory_types.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <cstring>
@@ -109,7 +110,25 @@ lv_obj_t* overlayProgress = nullptr;
 lv_obj_t* overlayCancel = nullptr;
 lv_obj_t* overlayConfirm = nullptr;
 std::array<lv_obj_t*, 4> advancedModeButtons{};
-std::array<lv_obj_t*, 4> spoolPickerButtons{};
+constexpr std::size_t kMaximumSpoolPickerResults = 20;
+constexpr std::int32_t kSpoolPickerRowWidth = 444;
+constexpr std::int32_t kSpoolPickerRowHeight = 46;
+constexpr std::int32_t kSpoolPickerRowPitch = 48;
+std::array<lv_obj_t*, kMaximumSpoolPickerResults> spoolPickerButtons{};
+std::array<std::array<lv_obj_t*,
+                      filament_station::models::SpoolmanSpool::kMaximumColors>,
+           kMaximumSpoolPickerResults>
+    spoolPickerColorPanels{};
+std::array<lv_obj_t*, kMaximumSpoolPickerResults> spoolPickerLabels{};
+std::array<rtos::SpoolId, kMaximumSpoolPickerResults> spoolPickerIds{};
+lv_obj_t* spoolPickerSearch = nullptr;
+lv_obj_t* spoolPickerFilterButton = nullptr;
+lv_obj_t* spoolPickerList = nullptr;
+lv_obj_t* spoolPickerScrollUp = nullptr;
+lv_obj_t* spoolPickerScrollDown = nullptr;
+lv_obj_t* spoolPickerKeyboard = nullptr;
+std::uint8_t spoolPickerFilter = 0;
+bool spoolPickerInputActive = false;
 lv_obj_t* advancedInput = nullptr;
 lv_obj_t* advancedKeyboard = nullptr;
 std::int32_t advancedInputMode = 0;
@@ -133,32 +152,187 @@ void advancedModeClicked(lv_event_t* event) {
 }
 
 void spoolPickerItemClicked(lv_event_t* event) {
-  const auto spoolId = static_cast<rtos::SpoolId>(
+  const auto index = static_cast<std::size_t>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  if (index >= spoolPickerIds.size() || spoolPickerIds[index] == 0) return;
+  const rtos::SpoolId spoolId = spoolPickerIds[index];
   sendAction(rtos::UiActionType::SelectSpool, currentPrinterId, 0, 0, 0,
              spoolId);
 }
 
+bool parseSpoolPickerColor(const char* hex, std::uint32_t& rgb) {
+  if (hex == nullptr) return false;
+  while (*hex == '#') ++hex;
+  if (std::strlen(hex) != 6 && std::strlen(hex) != 8) return false;
+  char value[7]{};
+  std::memcpy(value, hex, 6);
+  char* end = nullptr;
+  const unsigned long parsed = std::strtoul(value, &end, 16);
+  if (end == nullptr || *end != '\0') return false;
+  rgb = static_cast<std::uint32_t>(parsed);
+  return true;
+}
+
+void applySpoolPickerColors(std::size_t index,
+                            const rtos::UiCommand& command) {
+  if (index >= spoolPickerButtons.size()) return;
+  std::array<std::uint32_t,
+             filament_station::models::SpoolmanSpool::kMaximumColors>
+      colors{};
+  std::uint8_t count = 0;
+  const std::uint8_t requested =
+      std::min(command.spoolColorCount,
+               filament_station::models::SpoolmanSpool::kMaximumColors);
+  for (std::uint8_t color = 0; color < requested; ++color) {
+    if (parseSpoolPickerColor(command.spoolColorHex[color], colors[count]))
+      ++count;
+  }
+  lv_obj_set_style_bg_color(spoolPickerButtons[index],
+                            lv_color_hex(0xB0BEC5), LV_PART_MAIN);
+  for (lv_obj_t* panel : spoolPickerColorPanels[index])
+    lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+  if (count == 0) return;
+  for (std::uint8_t color = 0; color < count; ++color) {
+    lv_obj_t* panel = spoolPickerColorPanels[index][color];
+    const std::int32_t left = (kSpoolPickerRowWidth * color) / count;
+    const std::int32_t right = (kSpoolPickerRowWidth * (color + 1)) / count;
+    lv_obj_set_pos(panel, left, 0);
+    lv_obj_set_size(panel, right - left, kSpoolPickerRowHeight);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(colors[color]), LV_PART_MAIN);
+    lv_obj_remove_flag(panel, LV_OBJ_FLAG_HIDDEN);
+  }
+  lv_obj_move_foreground(spoolPickerLabels[index]);
+}
+
 lv_obj_t* createSpoolPickerButton(const char* text, std::int32_t y,
-                                  rtos::SpoolId spoolId) {
-  lv_obj_t* button = lv_button_create(overlayPanel);
-  lv_obj_set_pos(button, 16, y);
-  lv_obj_set_size(button, 388, 40);
-  lv_obj_set_style_bg_color(button, lv_color_hex(0x1565C0), LV_PART_MAIN);
+                                  std::size_t index) {
+  lv_obj_t* button = lv_button_create(spoolPickerList);
+  lv_obj_set_pos(button, 0, y);
+  lv_obj_set_size(button, kSpoolPickerRowWidth, kSpoolPickerRowHeight);
+  lv_obj_set_style_bg_color(button, lv_color_hex(0xB0BEC5), LV_PART_MAIN);
   lv_obj_set_style_radius(button, 8, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(button, 0, LV_PART_MAIN);
+  for (std::size_t color = 0;
+       color < filament_station::models::SpoolmanSpool::kMaximumColors;
+       ++color) {
+    lv_obj_t* panel = lv_obj_create(button);
+    lv_obj_set_pos(panel, 0, 0);
+    lv_obj_set_size(panel, kSpoolPickerRowWidth, kSpoolPickerRowHeight);
+    lv_obj_set_style_border_width(panel, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(panel, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(panel, 0, LV_PART_MAIN);
+    lv_obj_remove_flag(panel, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+    spoolPickerColorPanels[index][color] = panel;
+  }
   lv_obj_t* label = lv_label_create(button);
-  lv_obj_set_width(label, 372);
+  // Keep a wide color frame plus a segmented color band below the caption.
+  lv_obj_set_pos(label, 16, 11);
+  lv_obj_set_size(label, kSpoolPickerRowWidth - 32, 24);
   lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
   lv_label_set_text(label, text);
   lv_obj_set_style_text_font(label, &ui_font_ui_german16, LV_PART_MAIN);
-  lv_obj_center(label);
+  lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(label, lv_color_hex(0x101820), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(label, LV_OPA_70, LV_PART_MAIN);
+  lv_obj_set_style_radius(label, 5, LV_PART_MAIN);
+  lv_obj_set_style_pad_left(label, 6, LV_PART_MAIN);
+  lv_obj_set_style_pad_right(label, 6, LV_PART_MAIN);
+  lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
   lv_obj_remove_flag(label, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_remove_flag(label, LV_OBJ_FLAG_SCROLLABLE);
+  spoolPickerLabels[index] = label;
   lv_obj_add_event_cb(
       button, spoolPickerItemClicked, LV_EVENT_CLICKED,
-      reinterpret_cast<void*>(static_cast<std::uintptr_t>(spoolId)));
+      reinterpret_cast<void*>(static_cast<std::uintptr_t>(index)));
   lv_obj_add_flag(button, LV_OBJ_FLAG_HIDDEN);
   return button;
+}
+
+void submitSpoolPickerSearch() {
+  if (spoolPickerSearch == nullptr ||
+      lv_textarea_get_text(spoolPickerSearch)[0] == '\0')
+    return;
+  sendAction(rtos::UiActionType::SearchSpool, currentPrinterId, 0, 0,
+             10 + spoolPickerFilter, 0,
+             lv_textarea_get_text(spoolPickerSearch));
+}
+
+void spoolPickerScrollClicked(lv_event_t* event) {
+  if (spoolPickerList == nullptr) return;
+  const auto direction = static_cast<std::int32_t>(
+      reinterpret_cast<std::intptr_t>(lv_event_get_user_data(event)));
+  lv_obj_scroll_by(spoolPickerList, 0, direction * (2 * kSpoolPickerRowPitch),
+                   LV_ANIM_ON);
+}
+
+void spoolPickerFilterChanged(lv_event_t*) {
+  if (spoolPickerFilterButton != nullptr)
+    spoolPickerFilter = static_cast<std::uint8_t>(
+        lv_dropdown_get_selected(spoolPickerFilterButton));
+}
+
+void setSpoolPickerInputMode(bool active) {
+  spoolPickerInputActive = active;
+  if (active) {
+    lv_obj_add_flag(spoolPickerList, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(spoolPickerFilterButton, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(spoolPickerScrollUp, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(spoolPickerScrollDown, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(overlayCancel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(spoolPickerKeyboard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(spoolPickerKeyboard);
+  } else {
+    lv_obj_remove_flag(spoolPickerList, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(spoolPickerFilterButton, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(spoolPickerScrollUp, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(spoolPickerScrollDown, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(overlayCancel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(spoolPickerKeyboard, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+void spoolPickerKeyboardEvent(lv_event_t* event) {
+  if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED ||
+      spoolPickerKeyboard == nullptr || spoolPickerSearch == nullptr)
+    return;
+  const std::uint32_t button =
+      lv_buttonmatrix_get_selected_button(spoolPickerKeyboard);
+  if (button == LV_BUTTONMATRIX_BUTTON_NONE) return;
+  const char* key =
+      lv_buttonmatrix_get_button_text(spoolPickerKeyboard, button);
+  if (key == nullptr) return;
+  if (std::strcmp(key, "OK") == 0) {
+    setSpoolPickerInputMode(false);
+    submitSpoolPickerSearch();
+  } else if (std::strcmp(key, "Abbr.") == 0) {
+    setSpoolPickerInputMode(false);
+  } else if (std::strcmp(key, "Entf.") == 0) {
+    lv_textarea_delete_char(spoolPickerSearch);
+  } else if (std::strcmp(key, "<") == 0) {
+    lv_textarea_cursor_left(spoolPickerSearch);
+  } else if (std::strcmp(key, ">") == 0) {
+    lv_textarea_cursor_right(spoolPickerSearch);
+  } else if (std::strcmp(key, "Leer") == 0) {
+    lv_textarea_add_char(spoolPickerSearch, ' ');
+  } else if (std::strcmp(key, "ABC") == 0) {
+    lv_buttonmatrix_set_map(spoolPickerKeyboard, kKeyboardUpperMap);
+  } else if (std::strcmp(key, "abc") == 0) {
+    lv_buttonmatrix_set_map(spoolPickerKeyboard, kKeyboardLowerMap);
+  } else if (std::strcmp(key, "123") == 0) {
+    lv_buttonmatrix_set_map(spoolPickerKeyboard, kKeyboardNumberMap);
+  } else {
+    lv_textarea_add_text(spoolPickerSearch, key);
+  }
+}
+
+void spoolPickerTextareaClicked(lv_event_t*) {
+  if (spoolPickerKeyboard == nullptr || spoolPickerSearch == nullptr) return;
+  lv_buttonmatrix_set_map(spoolPickerKeyboard,
+                          spoolPickerFilter == 3 ? kKeyboardNumberMap
+                                                 : kKeyboardLowerMap);
+  setSpoolPickerInputMode(true);
 }
 
 void advancedKeyboardEvent(lv_event_t* event) {
@@ -277,12 +451,77 @@ void ensureOverlay() {
       createAdvancedModeButton("Leergewicht", 16, 104, 3),
       createAdvancedModeButton("Ausgangsgewicht", 218, 104, 4),
   }};
-  spoolPickerButtons = {{
-      createSpoolPickerButton("#42 | PLA | 642 g Rest", 44, 42),
-      createSpoolPickerButton("#51 | PETG | 811 g Rest", 88, 51),
-      createSpoolPickerButton("#67 | PLA Multicolor | 504 g Rest", 132, 67),
-      createSpoolPickerButton("#91 | PLA Basic | 997 g Rest", 176, 91),
-  }};
+  spoolPickerList = lv_obj_create(overlayPanel);
+  lv_obj_set_pos(spoolPickerList, 12, 76);
+  lv_obj_set_size(spoolPickerList, 456, 196);
+  lv_obj_set_scroll_dir(spoolPickerList, LV_DIR_VER);
+  lv_obj_set_scrollbar_mode(spoolPickerList, LV_SCROLLBAR_MODE_AUTO);
+  lv_obj_set_style_bg_opa(spoolPickerList, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(spoolPickerList, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(spoolPickerList, 0, LV_PART_MAIN);
+  lv_obj_set_style_radius(spoolPickerList, 0, LV_PART_MAIN);
+  for (std::size_t index = 0; index < spoolPickerButtons.size(); ++index) {
+    spoolPickerButtons[index] = createSpoolPickerButton(
+        "", static_cast<std::int32_t>(index) * kSpoolPickerRowPitch, index);
+  }
+  spoolPickerSearch = lv_textarea_create(overlayPanel);
+  lv_obj_set_pos(spoolPickerSearch, 12, 34);
+  lv_obj_set_size(spoolPickerSearch, 280, 36);
+  lv_textarea_set_one_line(spoolPickerSearch, true);
+  lv_textarea_set_max_length(spoolPickerSearch, 47);
+  lv_textarea_set_placeholder_text(spoolPickerSearch, "Suchbegriff");
+  lv_obj_set_style_text_font(spoolPickerSearch, &ui_font_ui_german16,
+                             LV_PART_MAIN);
+  lv_obj_add_event_cb(spoolPickerSearch, spoolPickerTextareaClicked,
+                      LV_EVENT_CLICKED, nullptr);
+  spoolPickerFilterButton = lv_dropdown_create(overlayPanel);
+  lv_obj_set_pos(spoolPickerFilterButton, 296, 34);
+  lv_obj_set_size(spoolPickerFilterButton, 100, 36);
+  lv_dropdown_set_options(spoolPickerFilterButton,
+                          "Name\nMaterial\nHersteller\nID");
+  lv_obj_set_style_text_font(spoolPickerFilterButton, &ui_font_ui_german16,
+                             LV_PART_MAIN);
+  lv_obj_add_event_cb(spoolPickerFilterButton, spoolPickerFilterChanged,
+                      LV_EVENT_VALUE_CHANGED, nullptr);
+  spoolPickerScrollUp = lv_button_create(overlayPanel);
+  lv_obj_set_pos(spoolPickerScrollUp, 400, 34);
+  lv_obj_set_size(spoolPickerScrollUp, 32, 36);
+  lv_obj_t* scrollUpLabel = lv_label_create(spoolPickerScrollUp);
+  lv_label_set_text(scrollUpLabel, "^");
+  lv_obj_set_style_text_font(scrollUpLabel, &ui_font_ui_german16,
+                             LV_PART_MAIN);
+  lv_obj_center(scrollUpLabel);
+  lv_obj_add_event_cb(spoolPickerScrollUp, spoolPickerScrollClicked,
+                      LV_EVENT_CLICKED,
+                      reinterpret_cast<void*>(static_cast<std::intptr_t>(1)));
+  spoolPickerScrollDown = lv_button_create(overlayPanel);
+  lv_obj_set_pos(spoolPickerScrollDown, 436, 34);
+  lv_obj_set_size(spoolPickerScrollDown, 32, 36);
+  lv_obj_t* scrollDownLabel = lv_label_create(spoolPickerScrollDown);
+  lv_label_set_text(scrollDownLabel, "v");
+  lv_obj_set_style_text_font(scrollDownLabel, &ui_font_ui_german16,
+                             LV_PART_MAIN);
+  lv_obj_center(scrollDownLabel);
+  lv_obj_add_event_cb(spoolPickerScrollDown, spoolPickerScrollClicked,
+                      LV_EVENT_CLICKED,
+                      reinterpret_cast<void*>(static_cast<std::intptr_t>(-1)));
+  lv_obj_add_flag(spoolPickerSearch, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(spoolPickerFilterButton, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(spoolPickerList, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(spoolPickerScrollUp, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(spoolPickerScrollDown, LV_OBJ_FLAG_HIDDEN);
+  spoolPickerKeyboard = lv_buttonmatrix_create(lv_layer_top());
+  lv_obj_set_pos(spoolPickerKeyboard, 0, 84);
+  lv_obj_set_size(spoolPickerKeyboard, 480, 236);
+  lv_buttonmatrix_set_map(spoolPickerKeyboard, kKeyboardLowerMap);
+  lv_obj_set_style_pad_all(spoolPickerKeyboard, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_row(spoolPickerKeyboard, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(spoolPickerKeyboard, 2, LV_PART_MAIN);
+  lv_obj_set_style_text_font(spoolPickerKeyboard, LV_FONT_DEFAULT,
+                             LV_PART_ITEMS);
+  lv_obj_add_event_cb(spoolPickerKeyboard, spoolPickerKeyboardEvent,
+                      LV_EVENT_VALUE_CHANGED, nullptr);
+  lv_obj_add_flag(spoolPickerKeyboard, LV_OBJ_FLAG_HIDDEN);
   advancedInput = lv_textarea_create(overlayPanel);
   lv_obj_set_pos(advancedInput, 16, 44);
   lv_obj_set_size(advancedInput, 388, 38);
@@ -304,8 +543,18 @@ void ensureOverlay() {
 
 void hideOverlay() {
   if (overlayBackdrop != nullptr) lv_obj_add_flag(overlayBackdrop, LV_OBJ_FLAG_HIDDEN);
+  if (spoolPickerKeyboard != nullptr)
+    lv_obj_add_flag(spoolPickerKeyboard, LV_OBJ_FLAG_HIDDEN);
   activeOverlayKind = rtos::UiOverlayKind::None;
   activeOverlayRequestId = 0;
+}
+
+void styleOverlayNavigation(std::uint32_t color) {
+  if (overlayCancel == nullptr) return;
+  lv_obj_set_style_bg_color(overlayCancel, lv_color_hex(color), LV_PART_MAIN);
+  lv_obj_t* label = lv_obj_get_child(overlayCancel, 0);
+  if (label != nullptr)
+    lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
 }
 
 void showOverlay(const rtos::UiCommand& command, bool progress) {
@@ -314,12 +563,17 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
   // reused for every dialog.
   lv_obj_set_size(overlayPanel, 420, 238);
   lv_obj_center(overlayPanel);
+  lv_obj_set_style_border_width(overlayPanel, 2, LV_PART_MAIN);
+  lv_obj_set_style_radius(overlayPanel, 12, LV_PART_MAIN);
+  lv_obj_set_pos(overlayTitle, 16, 12);
+  lv_obj_set_size(overlayTitle, 388, 32);
   lv_obj_set_pos(overlayText, 16, 52);
   lv_obj_set_size(overlayText, 388, 100);
   lv_obj_set_pos(overlayCancel, 16, 158);
   lv_obj_set_size(overlayCancel, 170, 50);
   lv_obj_set_pos(overlayConfirm, 218, 158);
   lv_obj_set_size(overlayConfirm, 170, 50);
+  styleOverlayNavigation(0x607D8B);
   if (command.overlayKind == rtos::UiOverlayKind::AdvancedWeightConfirmation ||
       command.overlayKind == rtos::UiOverlayKind::AdvancedWeightResult) {
     // Six separate summary lines need more vertical room than ordinary
@@ -341,6 +595,11 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
     lv_obj_add_flag(button, LV_OBJ_FLAG_HIDDEN);
   for (lv_obj_t* button : spoolPickerButtons)
     lv_obj_add_flag(button, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(spoolPickerSearch, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(spoolPickerFilterButton, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(spoolPickerList, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(spoolPickerScrollUp, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(spoolPickerScrollDown, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(advancedInput, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(advancedKeyboard, LV_OBJ_FLAG_HIDDEN);
   if (command.overlayKind == rtos::UiOverlayKind::AdvancedWeightMode) {
@@ -367,18 +626,31 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
     return;
   }
   if (command.overlayKind == rtos::UiOverlayKind::SpoolPicker) {
-    lv_obj_set_size(overlayPanel, 420, 286);
-    lv_obj_center(overlayPanel);
+    lv_obj_set_pos(overlayPanel, 0, 0);
+    lv_obj_set_size(overlayPanel, 480, 320);
+    lv_obj_set_style_border_width(overlayPanel, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(overlayPanel, 0, LV_PART_MAIN);
+    lv_obj_set_pos(overlayTitle, 12, 4);
+    lv_obj_set_size(overlayTitle, 456, 28);
     lv_obj_add_flag(overlayText, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(overlayProgress, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(overlayCancel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_y(overlayCancel, 220);
-    lv_obj_set_size(overlayCancel, 388, 50);
-    lv_obj_set_x(overlayCancel, 16);
-    lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Abbrechen");
+    lv_obj_set_pos(overlayCancel, 12, 276);
+    lv_obj_set_size(overlayCancel, 456, 36);
+    lv_label_set_text(lv_obj_get_child(overlayCancel, 0),
+                      "Zur\xC3\xBC" "ck");
+    styleOverlayNavigation(0x1565C0);
+    spoolPickerIds.fill(0);
+    spoolPickerInputActive = false;
     for (lv_obj_t* button : spoolPickerButtons)
-      lv_obj_remove_flag(button, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_add_flag(button, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_scroll_to_y(spoolPickerList, 0, LV_ANIM_OFF);
+    lv_obj_remove_flag(spoolPickerSearch, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(spoolPickerFilterButton, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(spoolPickerList, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(spoolPickerScrollUp, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(spoolPickerScrollDown, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(overlayBackdrop);
     return;
   }
@@ -391,6 +663,8 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
         command.overlayKind == rtos::UiOverlayKind::ConnectionProgress
             ? "Abbrechen"
             : "Schlie\xC3\x9F" "en");
+    if (command.overlayKind != rtos::UiOverlayKind::ConnectionProgress)
+      styleOverlayNavigation(0x1565C0);
   } else {
     lv_obj_add_flag(overlayProgress, LV_OBJ_FLAG_HIDDEN);
     // Numeric input hides the standard buttons. Always restore the
@@ -409,6 +683,7 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
     } else {
       lv_obj_add_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
       lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Schlie\xC3\x9F" "en");
+      styleOverlayNavigation(0x1565C0);
     }
   }
   lv_obj_move_foreground(overlayBackdrop);
@@ -1414,9 +1689,9 @@ void bindGeneratedWidgets() {
   styleLabelButton(objects.tag_legacy_import, 0x1565C0);
   styleLabelButton(objects.tag_legacy_migrate, 0x1565C0);
   styleLabelButton(objects.tag_legacy_erase, 0xC62828);
-  styleLabelButton(objects.tag_legacy_close, 0x455A64);
+  styleLabelButton(objects.tag_legacy_close, 0x1565C0);
   styleLabelButton(objects.tag_unknown_select_spool, 0x1565C0);
-  styleLabelButton(objects.tag_unknown_close, 0x455A64);
+  styleLabelButton(objects.tag_unknown_close, 0x1565C0);
   styleLabelButton(objects.bambu_spool_type_low, 0x1565C0);
   styleLabelButton(objects.bambu_spool_type_high, 0x1565C0);
   styleLabelButton(objects.bambu_spool_type_manual, 0x1565C0);
@@ -1749,7 +2024,7 @@ void bindGeneratedWidgets() {
   }
   styleLabelButton(objects.tray_action_untag, 0xC62828);
   styleLabelButton(objects.tray_action_reset, 0xC62828);
-  styleLabelButton(objects.tray_details_close, 0x455A64);
+  styleLabelButton(objects.tray_details_close, 0x1565C0);
   styleLabelButton(objects.tray_actions_back, 0x455A64);
   styleLabelButton(objects.tray_select_cancel, 0x455A64);
   styleLabelButton(objects.home_active_ams, 0x455A64);
@@ -2638,6 +2913,33 @@ void processUiCommand(const rtos::UiCommand& command) {
                       command.text[0] != '\0' ? command.text : "-");
       }
       lv_label_set_text(objects.wifi_settings_ip, text);
+      break;
+    }
+    case rtos::UiCommandType::UpdateSpoolPicker: {
+      if (activeOverlayKind != rtos::UiOverlayKind::SpoolPicker) break;
+      if (command.value == -2) {
+        spoolPickerIds.fill(0);
+        lv_obj_scroll_to_y(spoolPickerList, 0, LV_ANIM_OFF);
+        for (std::size_t index = 0; index < spoolPickerButtons.size(); ++index) {
+          lv_obj_add_flag(spoolPickerButtons[index], LV_OBJ_FLAG_HIDDEN);
+          for (lv_obj_t* panel : spoolPickerColorPanels[index])
+            lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_label_set_text(overlayTitle, command.text);
+      } else if (command.value >= 0 &&
+                 command.value < static_cast<std::int32_t>(spoolPickerButtons.size())) {
+        const std::size_t index = static_cast<std::size_t>(command.value);
+        spoolPickerIds[index] = command.spoolId;
+        lv_label_set_text(spoolPickerLabels[index], command.text);
+        applySpoolPickerColors(index, command);
+        if (!spoolPickerInputActive)
+          lv_obj_remove_flag(spoolPickerButtons[index], LV_OBJ_FLAG_HIDDEN);
+      } else if (command.value == -1) {
+        char title[64]{};
+        std::snprintf(title, sizeof(title), "Spule ausw\xC3\xA4hlen (%lu)",
+                      static_cast<unsigned long>(command.spoolId));
+        lv_label_set_text(overlayTitle, title);
+      }
       break;
     }
     case rtos::UiCommandType::UpdateSettings: {

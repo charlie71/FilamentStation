@@ -82,6 +82,12 @@ void uiTask(void* parameter) {
               static_cast<unsigned long>(command.requestId), command.text);
           rtos::logLine(line);
         }
+        if (command.type == rtos::UiCommandType::UpdateSpoolPicker &&
+            command.value == -1) {
+          rtos::logf("UiTask: minimum remaining stack after spool list: %u bytes",
+                     static_cast<unsigned>(
+                         uxTaskGetStackHighWaterMark(nullptr)));
+        }
       } while (xQueueReceive(ctx.uiCommandQueue, &command, 0) == pdTRUE);
     }
   }

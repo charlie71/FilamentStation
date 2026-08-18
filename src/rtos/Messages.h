@@ -6,6 +6,7 @@
 #include "models/TagReadResult.h"
 #include "models/NetworkSettings.h"
 #include "models/SpoolmanSettings.h"
+#include "models/SpoolmanSpool.h"
 #include "rtos/Commands.h"
 #include "rtos/Events.h"
 
@@ -44,6 +45,8 @@ struct AppEvent {
   models::SpoolmanSettings spoolmanSettings;
   char networkSsid[33];
   char networkIp[16];
+  char spoolColorHex[models::SpoolmanSpool::kMaximumColors][9];
+  std::uint8_t spoolColorCount;
   // NFC diagnostics and multi-line UI status messages must remain complete.
   // Keep this fixed-size and value based; no pointers or Arduino Strings cross
   // task boundaries.
@@ -63,6 +66,8 @@ struct UiCommand {
   std::int32_t value;
   UiNetworkState networkState;
   float weightGrams;
+  char spoolColorHex[models::SpoolmanSpool::kMaximumColors][9];
+  std::uint8_t spoolColorCount;
   char title[48];
   char text[192];
 };
@@ -100,6 +105,9 @@ struct SpoolmanCommand {
   float weightGrams;
   models::SpoolmanSettings settings;
   models::TagDefinition tagDefinition{};
+  SpoolmanSearchFilter searchFilter = SpoolmanSearchFilter::FilamentName;
+  bool includeArchived = false;
+  char searchText[48]{};
 };
 struct BambuCommand {
   BambuCommandType type;

@@ -20,7 +20,10 @@ constexpr TaskSettings kLoggingTask{"LoggingTask", 2048, 1, kNoCoreAffinity};
 // AppEvent contains NFC parsing results and persisted UID mappings by value;
 // UI workflows additionally create fixed-size UiCommand objects.
 constexpr TaskSettings kAppTask{"AppTask", 8192, 3, kNoCoreAffinity};
-constexpr TaskSettings kUiTask{"UiTask", 8192, 2, kNoCoreAffinity};
+// A 20-row spool picker makes LVGL's rounded-rectangle mask renderer recurse
+// more deeply while the scrollable result list is laid out and drawn. The
+// former 8 KiB stack reached its canary during that render pass.
+constexpr TaskSettings kUiTask{"UiTask", 16384, 2, kNoCoreAffinity};
 // ScaleTask erzeugt die wertbasierte zentrale AppEvent-Nachricht auf dem
 // Stack. Seit diese auch persistente Service-Konfigurationen transportiert,
 // reichen 3072 Byte nicht mehr mit sicherer Reserve aus.
@@ -34,7 +37,10 @@ constexpr TaskSettings kNfcTask{"NfcTask", 12288, 2, kNoCoreAffinity};
 // NetworkTask. Dafuer wird mehr Stack als fuer das fruehere Queue-Geruest
 // benoetigt.
 constexpr TaskSettings kNetworkTask{"NetworkTask", 8192, 1, kNoCoreAffinity};
-constexpr TaskSettings kSpoolmanTask{"SpoolmanTask", 4096, 1, kNoCoreAffinity};
+// HTTPClient, TLS and ArduinoJson are used together for nested Spoolman spool
+// responses. Keep enough reserve for parsing without moving large objects
+// through the central AppEvent queue.
+constexpr TaskSettings kSpoolmanTask{"SpoolmanTask", 8192, 1, kNoCoreAffinity};
 constexpr TaskSettings kBambuTask{"BambuTask", 4096, 1, kNoCoreAffinity};
 
 // Queue-Laengen basieren auf geringer Last der Task-Gerueste und werden nach

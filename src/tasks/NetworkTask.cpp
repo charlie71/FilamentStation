@@ -24,6 +24,7 @@ enum class WifiSignal : std::uint8_t {
   Disconnected,
   LostIp,
 };
+static_assert(sizeof(WifiSignal) == sizeof(std::uint8_t));
 
 QueueHandle_t wifiEventQueue = nullptr;
 volatile bool wifiEventQueueOverflow = false;
@@ -211,15 +212,10 @@ void startPortal(rtos::RtosContext& ctx, WiFiManager& manager,
 
 void networkTask(void* parameter) {
   auto& ctx = *static_cast<rtos::RtosContext*>(parameter);
-  wifiEventQueue =
-      xQueueCreate(config::kWifiEventQueueLength, sizeof(WifiSignal));
-  const UBaseType_t queueSetLength = config::kServiceCommandQueueLength +
-                                     config::kWifiEventQueueLength;
-  QueueSetHandle_t queueSet = xQueueCreateSet(queueSetLength);
-  if (wifiEventQueue == nullptr || queueSet == nullptr ||
-      xQueueAddToSet(ctx.networkCommandQueue, queueSet) != pdPASS ||
-      xQueueAddToSet(wifiEventQueue, queueSet) != pdPASS) {
-    rtos::logLine("NetworkTask: WiFi event queue/set creation failed");
+  wifiEventQueue = ctx.wifiEventQueue;
+  QueueSetHandle_t queueSet = ctx.networkQueueSet;
+  if (wifiEventQueue == nullptr || queueSet == nullptr) {
+    rtos::logLine("NetworkTask: WiFi event queue/set unavailable");
     vTaskDelete(nullptr);
     return;
   }

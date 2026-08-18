@@ -57,6 +57,7 @@ enum class UiCommandType : std::uint8_t {
   UpdateSettings,
   UpdateBootStatus,
   UpdateNetworkStatus,
+  UpdateSpoolPicker,
   ShowToast,
 };
 
@@ -200,6 +201,12 @@ enum class SpoolmanCommandType : std::uint8_t {
   SearchSpools,
   UpdateWeight,
   ImportTagDefinition,
+};
+enum class SpoolmanSearchFilter : std::uint8_t {
+  FilamentName,
+  Material,
+  Vendor,
+  Id,
 };
 enum class BambuCommandType : std::uint8_t { Connect, Disconnect, RequestStatus, AssignTray };
 

@@ -491,6 +491,41 @@ void requestSpoolmanConfiguration(rtos::RtosContext& ctx) {
     rtos::logLine("AppTask: Spoolman config load queue overflow");
 }
 
+bool requestSpoolSearch(rtos::RtosContext& ctx, std::uint32_t requestId,
+                        const char* searchText = "",
+                        rtos::SpoolmanSearchFilter filter =
+                            rtos::SpoolmanSearchFilter::FilamentName) {
+  models::SpoolmanSettings settings{};
+  if (validateSpoolmanDraft() != nullptr ||
+      !spoolmanSettingsFromDraft(settings))
+    return false;
+  rtos::UiCommand reset{};
+  reset.type = rtos::UiCommandType::UpdateSpoolPicker;
+  reset.requestId = requestId;
+  reset.value = -2;
+  std::snprintf(reset.text, sizeof(reset.text), "Spulen werden geladen ...");
+  sendUiCommand(ctx, reset, "AppTask: picker reset queue overflow");
+  rtos::SpoolmanCommand command{};
+  command.type = filter == rtos::SpoolmanSearchFilter::Id
+                     ? rtos::SpoolmanCommandType::LoadSpool
+                     : rtos::SpoolmanCommandType::SearchSpools;
+  command.requestId = requestId;
+  command.settings = settings;
+  command.searchFilter = filter;
+  std::snprintf(command.searchText, sizeof(command.searchText), "%s",
+                searchText != nullptr ? searchText : "");
+  if (filter == rtos::SpoolmanSearchFilter::Id) {
+    char* end = nullptr;
+    const unsigned long id = std::strtoul(command.searchText, &end, 10);
+    if (command.searchText[0] == '\0' || end == nullptr || *end != '\0' ||
+        id == 0 || id > UINT32_MAX)
+      return false;
+    command.spoolId = static_cast<rtos::SpoolId>(id);
+  }
+  return xQueueSend(ctx.spoolmanCommandQueue, &command,
+                    pdMS_TO_TICKS(1000)) == pdPASS;
+}
+
 bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
                    const char* failureMessage) {
   if (xQueueSend(ctx.uiCommandQueue, &command, pdMS_TO_TICKS(1000)) == pdPASS) {
@@ -716,6 +751,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::SpoolPicker, action.requestId,
                     "Spoolman-Spule ausw\xC3\xA4hlen", "");
+        requestSpoolSearch(ctx, action.requestId);
         return;
       }
 
@@ -832,6 +868,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::SpoolPicker, action.requestId,
                     "Spoolman-Spule ausw\xC3\xA4hlen", "");
+        requestSpoolSearch(ctx, action.requestId);
         return;
       }
       if (currentScreen == rtos::UiScreenId::TagReview) {
@@ -1516,6 +1553,22 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::SearchSpool:
     case rtos::UiActionType::SelectSpool:
       if (action.type == rtos::UiActionType::SearchSpool &&
+          action.value >= 10) {
+        const std::int32_t rawFilter = action.value - 10;
+        const auto filter = rawFilter == 1
+                                ? rtos::SpoolmanSearchFilter::Material
+                            : rawFilter == 2
+                                ? rtos::SpoolmanSearchFilter::Vendor
+                            : rawFilter == 3
+                                ? rtos::SpoolmanSearchFilter::Id
+                                : rtos::SpoolmanSearchFilter::FilamentName;
+        if (!requestSpoolSearch(ctx, action.requestId, action.text, filter))
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Spoolman-Suche", "Die Suche konnte nicht gestartet werden.");
+        return;
+      }
+      if (action.type == rtos::UiActionType::SearchSpool &&
           (currentScreen == rtos::UiScreenId::TagDefinitionImport ||
            currentScreen == rtos::UiScreenId::TagLegacy ||
            currentScreen == rtos::UiScreenId::TagUnknown)) {
@@ -1524,6 +1577,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::SpoolPicker, action.requestId,
                     "Spoolman-Spule ausw\xC3\xA4hlen", "");
+        requestSpoolSearch(ctx, action.requestId);
         return;
       }
       if (pendingBambuMapping) {
@@ -1614,6 +1668,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::SpoolPicker, action.requestId,
                     "Spoolman-Spule ausw\xC3\xA4hlen", "");
+        requestSpoolSearch(ctx, action.requestId);
         return;
       }
       // A spool selected in the picker supplies the semantic assignment
@@ -2404,6 +2459,19 @@ void appTask(void* parameter) {
                     rtos::UiOverlayKind::Error, resultRequestId,
                     "WLAN-Verbindung fehlgeschlagen", event.text);
       }
+    } else if (event.type == rtos::AppEventType::SpoolmanResponse) {
+      rtos::UiCommand picker{};
+      picker.type = rtos::UiCommandType::UpdateSpoolPicker;
+      picker.requestId = event.requestId;
+      picker.value = event.value;
+      picker.spoolId = event.spoolId;
+      picker.spoolColorCount = event.spoolColorCount;
+      for (std::uint8_t color = 0; color < event.spoolColorCount; ++color)
+        std::snprintf(picker.spoolColorHex[color],
+                      sizeof(picker.spoolColorHex[color]), "%s",
+                      event.spoolColorHex[color]);
+      std::snprintf(picker.text, sizeof(picker.text), "%s", event.text);
+      sendUiCommand(ctx, picker, "AppTask: Spoolman picker result overflow");
     } else if (event.type == rtos::AppEventType::SpoolmanConnected) {
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
