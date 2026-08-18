@@ -230,6 +230,10 @@ void networkTask(void* parameter) {
 
   WiFi.onEvent(wifiEventCallback);
   static WiFiManager manager;
+  // WiFiManager 2.0.17 exposes this as its official runtime switch. Its own
+  // *wm: output bypasses the application logger and may include configuration
+  // details, so keep it disabled and report relevant states through [NET].
+  manager.setDebugOutput(false);
   models::NetworkSettings settings{};
   PortalCredentials credentials{};
   bool configurationApplied = false;

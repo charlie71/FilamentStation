@@ -578,13 +578,13 @@ Aufgaben:
 
 ## 7.6.4 Drittanbieterlogs
 
-* [ ] WiFiManager-Debugausgabe über offizielle API deaktivieren
-* [ ] Netzwerkstatus selbst über `[NET]` loggen
-* [ ] Arduino-ESP32-Core-Debuglevel prüfen
-* [ ] unnötige Core-Debugausgabe reduzieren
-* [ ] andere Library-Debugausgaben soweit offiziell möglich deaktivieren
-* [ ] keine Bibliothek nur für Logformat patchen
-* [ ] Boot-/Panic-/Exception-Output unverändert lassen
+* [x] WiFiManager-Debugausgabe über offizielle API deaktivieren
+* [x] Netzwerkstatus selbst über `[NET]` loggen
+* [x] Arduino-ESP32-Core-Debuglevel prüfen
+* [x] unnötige Core-Debugausgabe reduzieren
+* [x] andere Library-Debugausgaben soweit offiziell möglich deaktivieren
+* [x] keine Bibliothek nur für Logformat patchen
+* [x] Boot-/Panic-/Exception-Output unverändert lassen
 
 ## 7.6.5 PlatformIO Monitor
 
