@@ -42,6 +42,7 @@ enum class AppEventType : std::uint8_t {
   SpoolmanConnected,
   SpoolmanTagFieldReady,
   SpoolmanTagLookup,
+  SpoolmanTagDuplicate,
   SpoolmanTagUpdated,
   SpoolmanResponse,
   SpoolmanVendorResult,

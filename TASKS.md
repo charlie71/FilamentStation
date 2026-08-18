@@ -750,12 +750,12 @@ API gegen die tatsächlich verwendete Spoolman-Version prüfen.
 
 ## 7.7.8 Duplicate Handling
 
-* [ ] gleiche `extra.tag` ID auf mehreren Spulen erkennen
-* [ ] keine automatische Auswahl
-* [ ] Error Event
-* [ ] GUI-Meldung
-* [ ] Log mit Level ERROR/WARN
-* [ ] keine automatische Datenänderung
+* [x] gleiche `extra.tag` ID auf mehreren Spulen erkennen
+* [x] keine automatische Auswahl
+* [x] Error Event
+* [x] GUI-Meldung
+* [x] Log mit Level ERROR/WARN
+* [x] keine automatische Datenänderung
 
 ## 7.7.9 Legacy-Mapping-Migration
 

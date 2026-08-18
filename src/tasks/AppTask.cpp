@@ -3025,6 +3025,57 @@ void appTask(void* parameter) {
                       event.spoolColorHex[color]);
       std::snprintf(picker.text, sizeof(picker.text), "%s", event.text);
       sendUiCommand(ctx, picker, "AppTask: Spoolman picker result overflow");
+    } else if (event.type == rtos::AppEventType::SpoolmanTagDuplicate) {
+      const bool nativeCheck =
+          pendingNativeConsistency.active &&
+          event.requestId == pendingNativeConsistency.requestId &&
+          event.tagIdentity.source == pendingNativeConsistency.identity.source &&
+          std::strcmp(event.tagIdentity.value,
+                      pendingNativeConsistency.identity.value) == 0;
+      const bool removalCheck =
+          pendingTagRemoval.stage == TagRemovalStage::LookingUp &&
+          event.requestId == pendingTagRemoval.requestId &&
+          event.tagIdentity.source == pendingTagRemoval.identity.source &&
+          std::strcmp(event.tagIdentity.value,
+                      pendingTagRemoval.identity.value) == 0;
+      const bool assignmentCheck =
+          pendingTagAssignment.stage == TagAssignmentStage::LookingUp &&
+          event.requestId == pendingTagAssignment.requestId &&
+          event.tagIdentity.source == pendingTagAssignment.identity.source &&
+          std::strcmp(event.tagIdentity.value,
+                      pendingTagAssignment.identity.value) == 0;
+      if (!nativeCheck && !removalCheck && !assignmentCheck) {
+        FS_LOGW(services::LogComponent::App,
+                "Stale duplicate tag event ignored tag=%s matches=%ld",
+                event.tagIdentity.value, static_cast<long>(event.value));
+        continue;
+      }
+      rtos::UiCommand hide{};
+      hide.type = rtos::UiCommandType::HideProgress;
+      sendUiCommand(ctx, hide, "AppTask: duplicate lookup close overflow");
+      if (nativeCheck) {
+        pendingNativeConsistency = {};
+        resolvedTagIdentity = {};
+        resolvedTagSpoolId = 0;
+        showNativeTagAction(
+            ctx, event.requestId, 0,
+            "Konflikt: Diese Tag-ID ist mehreren Spulen in Spoolman zugeordnet.");
+      }
+      if (removalCheck) {
+        pendingTagRemoval = {};
+        pendingUnlinkConfirmation = false;
+      }
+      if (assignmentCheck) pendingTagAssignment = {};
+      FS_LOGE(services::LogComponent::App,
+              "Duplicate tag assignment blocked tag=%s matches=%ld operation=%s",
+              event.tagIdentity.value, static_cast<long>(event.value),
+              nativeCheck ? "consistency"
+                          : removalCheck ? "remove" : "assign");
+      sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                  rtos::UiOverlayKind::Error, event.requestId,
+                  "Mehrdeutige Tag-Zuordnung",
+                  "Diese Tag-ID ist mehreren Spulen zugeordnet. Es wurde keine Spule ausgew\xC3\xA4hlt und keine Zuordnung ge\xC3\xA4ndert. Bitte die Spoolman-Daten korrigieren.");
+      continue;
     } else if (event.type == rtos::AppEventType::SpoolmanTagLookup &&
                pendingNativeConsistency.active &&
                event.requestId == pendingNativeConsistency.requestId) {

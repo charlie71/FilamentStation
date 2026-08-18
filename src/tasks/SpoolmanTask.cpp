@@ -957,20 +957,26 @@ void executeTagClientCommand(rtos::RtosContext& ctx,
     }
   } else if (command.type == rtos::SpoolmanCommandType::FindSpoolByTag) {
     const auto result = client.findSpoolByTag(command.tagIdentity.value);
-    event.value = static_cast<std::int32_t>(result.status);
     event.spoolId = result.spoolId;
     if (result.status == services::TagLookupStatus::Error) {
+      event.value = static_cast<std::int32_t>(result.status);
       event.type = rtos::AppEventType::SpoolmanError;
       std::snprintf(event.text, sizeof(event.text), "%s", result.error);
+    } else if (result.status == services::TagLookupStatus::Duplicate) {
+      event.type = rtos::AppEventType::SpoolmanTagDuplicate;
+      event.value = static_cast<std::int32_t>(result.matches);
+      std::snprintf(event.text, sizeof(event.text),
+                    "Duplicate tag assignment: %u matching spools",
+                    static_cast<unsigned>(result.matches));
+      FS_LOGE(services::LogComponent::Spoolman,
+              "Duplicate tag assignment tag=%s matches=%u",
+              command.tagIdentity.value,
+              static_cast<unsigned>(result.matches));
     } else {
+      event.value = static_cast<std::int32_t>(result.status);
       event.type = rtos::AppEventType::SpoolmanTagLookup;
       std::snprintf(event.text, sizeof(event.text), "matches=%u",
                     static_cast<unsigned>(result.matches));
-      if (result.status == services::TagLookupStatus::Duplicate)
-        FS_LOGE(services::LogComponent::Spoolman,
-                "Duplicate tag assignment tag=%s matches=%u",
-                command.tagIdentity.value,
-                static_cast<unsigned>(result.matches));
     }
   } else {
     const auto result = command.type == rtos::SpoolmanCommandType::SetSpoolTag
