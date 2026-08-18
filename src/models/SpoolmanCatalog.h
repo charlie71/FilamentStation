@@ -25,5 +25,12 @@ struct SpoolmanFilament {
   std::int16_t bedTemperatureC = 0;
 };
 
+struct SpoolmanImportDefinition {
+  SpoolmanVendor vendor{};
+  SpoolmanFilament filament{};
+  float initialWeightGrams = 0.0F;
+  float emptySpoolWeightGrams = 0.0F;
+};
+
 }  // namespace models
 }  // namespace filament_station

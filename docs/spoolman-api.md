@@ -59,3 +59,27 @@ nicht negativ sein und Farbcodes bestehen aus sechs oder acht
 Hexadezimalzeichen. Die in Phase 7.3 geschaffenen Kommandos sind die Grundlage
 fuer den TagDefinition-Import in Phase 7.4; eine neue Katalog-GUI ist nicht
 Bestandteil dieser Phase.
+
+## TagDefinition-Import
+
+Der Import wird ausschliesslich im `SpoolmanTask` ausgefuehrt:
+
+1. `TagDefinition` validieren und auf Vendor, Filament und Spule abbilden.
+2. Vendor anhand des normalisierten Namens suchen und wiederverwenden oder anlegen.
+3. Filament anhand Vendor, Name, Material und Farbe suchen und wiederverwenden oder anlegen.
+4. Eine neue Spule per `POST /spool` anlegen und deren ID an den AppTask zurueckgeben.
+
+Vorhandene Katalogeintraege werden als Treffer verwendet; die Ergebnisanzeige
+weist auf wiederverwendete Datensaetze hin. Eine neue physische Spule wird
+bewusst immer angelegt, da zwei identische Rollen keine Dubletten sind.
+
+Unterstuetzt werden Bambu Lab, OpenPrintTag, OpenTag3D und Legacy. Hersteller,
+Filamentname, Material, Farbe und Nenngewicht muessen in der normalisierten
+Tagdefinition vorhanden sein. Fuer bekannte Materialklassen nutzt die
+Importabbildung eine zentral getestete Dichtetabelle. Die unterstuetzten
+V1-Tagprofile werden als 1,75-mm-Filament abgebildet. Unbekannte Materialien
+oder fehlende Pflichtfelder werden mit einer klaren Fehlermeldung abgelehnt.
+
+Die Spulenerzeugung entspricht dem Spoolman-Vertrag: `filament_id` ist
+erforderlich; `initial_weight` und `spool_weight` werden aus der Tagdefinition
+uebernommen.

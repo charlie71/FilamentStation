@@ -1,6 +1,7 @@
 #pragma once
 
 #include "models/SpoolmanCatalog.h"
+#include "models/TagDefinition.h"
 
 namespace filament_station {
 namespace services {
@@ -26,6 +27,25 @@ bool sameVendor(const models::SpoolmanVendor& left,
                 const models::SpoolmanVendor& right);
 bool sameFilament(const models::SpoolmanFilament& left,
                   const models::SpoolmanFilament& right);
+
+enum class TagImportValidationError : unsigned char {
+  None,
+  UnsupportedFormat,
+  MissingVendor,
+  MissingMaterial,
+  MissingFilament,
+  MissingColor,
+  MissingWeight,
+  UnsupportedMaterial,
+  InvalidColor,
+  InvalidWeight,
+  InvalidTemperature,
+};
+
+TagImportValidationError mapTagDefinition(
+    const models::TagDefinition& definition,
+    models::SpoolmanImportDefinition& result);
+const char* tagImportValidationMessage(TagImportValidationError error);
 
 }  // namespace services
 }  // namespace filament_station

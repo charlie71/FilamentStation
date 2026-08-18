@@ -704,22 +704,22 @@ Fehler:
 
 ## 7.4 TagDefinition-Import
 
-* [ ] TagDefinition abbilden
-* [ ] Vendor
-* [ ] Material
-* [ ] Filament
-* [ ] Farbe
-* [ ] Temperaturen
-* [ ] Gewicht
-* [ ] Treffer vorschlagen
-* [ ] fehlende Datensätze
-* [ ] Spule anlegen
-* [ ] Spool-ID
-* [ ] Dublettenwarnung
-* [ ] Bambu
-* [ ] OpenPrintTag
-* [ ] OpenTag3D
-* [ ] Legacy
+* [x] TagDefinition abbilden
+* [x] Vendor
+* [x] Material
+* [x] Filament
+* [x] Farbe
+* [x] Temperaturen
+* [x] Gewicht
+* [x] Treffer vorschlagen
+* [x] fehlende Datensätze
+* [x] Spule anlegen
+* [x] Spool-ID
+* [x] Dublettenwarnung
+* [x] Bambu
+* [x] OpenPrintTag
+* [x] OpenTag3D
+* [x] Legacy
 
 ## 7.5 Gewicht
 

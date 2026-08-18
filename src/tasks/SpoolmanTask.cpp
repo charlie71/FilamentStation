@@ -480,6 +480,193 @@ void createFilament(rtos::RtosContext& ctx,
                   "Filament wurde angelegt");
 }
 
+bool findImportVendor(const models::SpoolmanSettings& settings,
+                      const models::SpoolmanVendor& wanted,
+                      models::SpoolmanVendor& result, char* error,
+                      std::size_t errorCapacity) {
+  char url[288]{};
+  std::snprintf(url, sizeof(url), "%s/vendor?limit=20&name=",
+                settings.serverUrl);
+  if (!appendQuotedSearch(url, sizeof(url), wanted.name)) {
+    std::snprintf(error, errorCapacity, "Herstellername ist zu lang");
+    return false;
+  }
+  JsonDocument matches;
+  if (!getJson(url, settings.timeoutMs, matches, error, errorCapacity))
+    return false;
+  if (!matches.is<JsonArrayConst>()) return true;
+  for (JsonVariantConst item : matches.as<JsonArrayConst>()) {
+    models::SpoolmanVendor candidate{};
+    if (parseVendor(item, candidate) &&
+        services::sameVendor(candidate, wanted)) {
+      result = candidate;
+      return true;
+    }
+  }
+  return true;
+}
+
+bool createImportVendor(const models::SpoolmanSettings& settings,
+                        const models::SpoolmanVendor& wanted,
+                        models::SpoolmanVendor& result, char* error,
+                        std::size_t errorCapacity) {
+  char url[192]{};
+  std::snprintf(url, sizeof(url), "%s/vendor", settings.serverUrl);
+  JsonDocument request;
+  request["name"] = wanted.name;
+  if (wanted.emptySpoolWeightGrams > 0.0F)
+    request["empty_spool_weight"] = wanted.emptySpoolWeightGrams;
+  JsonDocument response;
+  return postJson(url, settings.timeoutMs, request, response, error,
+                  errorCapacity) &&
+         (parseVendor(response.as<JsonVariantConst>(), result) ||
+          (std::snprintf(error, errorCapacity,
+                         "Herstellerantwort ist unvollstaendig"), false));
+}
+
+bool findImportFilament(const models::SpoolmanSettings& settings,
+                        const models::SpoolmanFilament& wanted,
+                        models::SpoolmanFilament& result, char* error,
+                        std::size_t errorCapacity) {
+  char url[320]{};
+  std::snprintf(url, sizeof(url),
+                "%s/filament?limit=20&vendor.id=%lu&name=",
+                settings.serverUrl,
+                static_cast<unsigned long>(wanted.vendorId));
+  if (!appendQuotedSearch(url, sizeof(url), wanted.name)) {
+    std::snprintf(error, errorCapacity, "Filamentname ist zu lang");
+    return false;
+  }
+  JsonDocument matches;
+  if (!getJson(url, settings.timeoutMs, matches, error, errorCapacity))
+    return false;
+  if (!matches.is<JsonArrayConst>()) return true;
+  for (JsonVariantConst item : matches.as<JsonArrayConst>()) {
+    models::SpoolmanFilament candidate{};
+    if (parseFilament(item, candidate) &&
+        services::sameFilament(candidate, wanted)) {
+      result = candidate;
+      return true;
+    }
+  }
+  return true;
+}
+
+bool createImportFilament(const models::SpoolmanSettings& settings,
+                          const models::SpoolmanFilament& wanted,
+                          models::SpoolmanFilament& result, char* error,
+                          std::size_t errorCapacity) {
+  char url[192]{};
+  std::snprintf(url, sizeof(url), "%s/filament", settings.serverUrl);
+  JsonDocument request;
+  request["vendor_id"] = wanted.vendorId;
+  request["name"] = wanted.name;
+  request["material"] = wanted.material;
+  request["density"] = wanted.densityGramsPerCm3;
+  request["diameter"] = wanted.diameterMillimeters;
+  request["weight"] = wanted.weightGrams;
+  if (wanted.emptySpoolWeightGrams > 0.0F)
+    request["spool_weight"] = wanted.emptySpoolWeightGrams;
+  if (wanted.colorHex[0] != '\0') request["color_hex"] = wanted.colorHex;
+  if (wanted.nozzleTemperatureC > 0)
+    request["settings_extruder_temp"] = wanted.nozzleTemperatureC;
+  JsonDocument response;
+  return postJson(url, settings.timeoutMs, request, response, error,
+                  errorCapacity) &&
+         (parseFilament(response.as<JsonVariantConst>(), result) ||
+          (std::snprintf(error, errorCapacity,
+                         "Filamentantwort ist unvollstaendig"), false));
+}
+
+void importTagDefinition(rtos::RtosContext& ctx,
+                         const rtos::SpoolmanCommand& command) {
+  const auto& settings = command.settings.serverUrl[0] != '\0'
+                             ? command.settings
+                             : activeSettings;
+  if (!catalogAvailable(ctx, settings, command.requestId)) return;
+
+  models::SpoolmanImportDefinition import{};
+  const auto validation =
+      services::mapTagDefinition(command.tagDefinition, import);
+  if (validation != services::TagImportValidationError::None) {
+    sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
+               services::tagImportValidationMessage(validation));
+    return;
+  }
+
+  char error[128]{};
+  models::SpoolmanVendor vendor{};
+  if (!findImportVendor(settings, import.vendor, vendor, error,
+                        sizeof(error))) {
+    sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
+               error);
+    return;
+  }
+  const bool reusedVendor = vendor.id != 0;
+  if (!reusedVendor &&
+      !createImportVendor(settings, import.vendor, vendor, error,
+                          sizeof(error))) {
+    sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
+               error);
+    return;
+  }
+
+  import.filament.vendorId = vendor.id;
+  models::SpoolmanFilament filament{};
+  if (!findImportFilament(settings, import.filament, filament, error,
+                          sizeof(error))) {
+    sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
+               error);
+    return;
+  }
+  const bool reusedFilament = filament.id != 0;
+  if (!reusedFilament &&
+      !createImportFilament(settings, import.filament, filament, error,
+                            sizeof(error))) {
+    sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
+               error);
+    return;
+  }
+
+  char url[192]{};
+  std::snprintf(url, sizeof(url), "%s/spool", settings.serverUrl);
+  JsonDocument request;
+  request["filament_id"] = filament.id;
+  request["initial_weight"] = import.initialWeightGrams;
+  if (import.emptySpoolWeightGrams > 0.0F)
+    request["spool_weight"] = import.emptySpoolWeightGrams;
+  JsonDocument response;
+  if (!postJson(url, settings.timeoutMs, request, response, error,
+                sizeof(error))) {
+    sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
+               error);
+    return;
+  }
+  const std::uint32_t spoolId = response["id"] | 0U;
+  if (spoolId == 0) {
+    sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
+               "Spulenantwort enthaelt keine ID");
+    return;
+  }
+  rtos::AppEvent completed{};
+  completed.type = rtos::AppEventType::SpoolmanImportCompleted;
+  completed.requestId = command.requestId;
+  completed.spoolId = spoolId;
+  completed.value = (reusedVendor ? 1 : 0) | (reusedFilament ? 2 : 0);
+  std::snprintf(
+      completed.text, sizeof(completed.text),
+      "Spule #%lu angelegt. Hersteller: %s. Filament: %s.%s",
+      static_cast<unsigned long>(spoolId),
+      reusedVendor ? "vorhanden" : "neu",
+      reusedFilament ? "vorhanden" : "neu",
+      reusedVendor || reusedFilament
+          ? " Vorhandene Katalogdaten wurden wiederverwendet."
+          : "");
+  if (xQueueSend(ctx.appEventQueue, &completed,
+                 pdMS_TO_TICKS(1000)) != pdPASS)
+    rtos::logLine("SpoolmanTask: import result queue overflow");
+}
+
 void sendSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
                std::int32_t index, const models::SpoolmanSpool& spool) {
   rtos::AppEvent event{};
@@ -627,8 +814,7 @@ void spoolmanTask(void* parameter) {
     } else if (command.type == rtos::SpoolmanCommandType::CreateFilament) {
       createFilament(ctx, command);
     } else if (command.type == rtos::SpoolmanCommandType::ImportTagDefinition) {
-      sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
-                 "Spoolman-Import ist erst in einer sp\xC3\xA4teren Phase verf\xC3\xBCgbar");
+      importTagDefinition(ctx, command);
     }
   }
 }

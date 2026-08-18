@@ -1520,7 +1520,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       return;
 
     case rtos::UiActionType::ImportTagDefinition: {
-      if ((currentTag.format != models::TagFormat::OpenPrintTag &&
+      if ((currentTag.format != models::TagFormat::BambuLab &&
+           currentTag.format != models::TagFormat::OpenPrintTag &&
            currentTag.format != models::TagFormat::OpenTag3D &&
            currentTag.format != models::TagFormat::Legacy) ||
           !currentTag.knownFormat || !currentTag.payloadValid) {
@@ -2459,6 +2460,22 @@ void appTask(void* parameter) {
                     rtos::UiOverlayKind::Error, resultRequestId,
                     "WLAN-Verbindung fehlgeschlagen", event.text);
       }
+    } else if (event.type == rtos::AppEventType::SpoolmanImportCompleted) {
+      pendingTagSpoolId = event.spoolId;
+      currentTag.definition.hasSpoolId = event.spoolId != 0;
+      currentTag.definition.spoolId = event.spoolId;
+      rtos::UiCommand hide{};
+      hide.type = rtos::UiCommandType::HideProgress;
+      sendUiCommand(ctx, hide, "AppTask: import progress close overflow");
+      rtos::UiCommand result{};
+      result.type = rtos::UiCommandType::ShowScreen;
+      result.screenId = rtos::UiScreenId::TagResult;
+      result.requestId = event.requestId;
+      result.spoolId = event.spoolId;
+      std::snprintf(result.text, sizeof(result.text), "%s", event.text);
+      previousScreen = currentScreen;
+      currentScreen = result.screenId;
+      sendUiCommand(ctx, result, "AppTask: import result UI overflow");
     } else if (event.type == rtos::AppEventType::SpoolmanResponse) {
       rtos::UiCommand picker{};
       picker.type = rtos::UiCommandType::UpdateSpoolPicker;
@@ -2492,6 +2509,13 @@ void appTask(void* parameter) {
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: Spoolman progress close overflow");
+      if (currentScreen == rtos::UiScreenId::TagDefinitionImport ||
+          currentScreen == rtos::UiScreenId::TagLegacy) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Import fehlgeschlagen", event.text);
+        continue;
+      }
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
       status.value = 100;
