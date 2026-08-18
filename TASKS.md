@@ -565,16 +565,16 @@ I [SPOOLMAN] Weight updated spool_id=42 weight_g=824.3
 
 Aufgaben:
 
-* [ ] APP migrieren
-* [ ] RTOS migrieren
-* [ ] UI migrieren
-* [ ] STORAGE migrieren
-* [ ] NET migrieren
-* [ ] SCALE migrieren
-* [ ] NFC migrieren
-* [ ] SPOOLMAN migrieren
-* [ ] BAMBU migrieren
-* [ ] sonstige eigene Module migrieren
+* [x] APP migrieren
+* [x] RTOS migrieren
+* [x] UI migrieren
+* [x] STORAGE migrieren
+* [x] NET migrieren
+* [x] SCALE migrieren
+* [x] NFC migrieren
+* [x] SPOOLMAN migrieren
+* [x] BAMBU migrieren
+* [x] sonstige eigene Module migrieren
 
 ## 7.6.4 Drittanbieterlogs
 

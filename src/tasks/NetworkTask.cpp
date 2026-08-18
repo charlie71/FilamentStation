@@ -8,6 +8,7 @@
 #include "tasks/Tasks.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
+#include "services/Logger.h"
 
 namespace filament_station::tasks {
 
@@ -110,7 +111,10 @@ void publishEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
   std::snprintf(networkEvent.text, sizeof(networkEvent.text), "%s", text);
   if (xQueueSend(ctx.appEventQueue, &networkEvent, pdMS_TO_TICKS(100)) !=
       pdPASS) {
-    rtos::logLine("NetworkTask: appEventQueue timeout/overflow");
+    FS_LOGW(services::LogComponent::Net,
+            "Event enqueue failed queue=app_event event=%u request_id=%lu",
+            static_cast<unsigned>(type),
+            static_cast<unsigned long>(requestId));
   }
 }
 
@@ -132,23 +136,24 @@ void connectOrStartPortal(rtos::RtosContext& ctx, WiFiManager& manager,
                           std::uint32_t requestId,
                           TickType_t& portalStartedAt,
                           std::uint32_t& portalRequestId) {
-  rtos::logf("NetworkTask: connecting; portal SSID=%s, timeout=%lus",
-             credentials.ssid,
-             static_cast<unsigned long>(settings.portalTimeoutSeconds));
+  FS_LOGI(services::LogComponent::Net,
+          "Connection attempt portal_ssid=\"%s\" timeout_s=%lu",
+          credentials.ssid,
+          static_cast<unsigned long>(settings.portalTimeoutSeconds));
   const bool connected = manager.autoConnect(credentials.ssid,
                                               credentials.password);
   if (connected) {
-    rtos::logLine("NetworkTask: WiFi connected");
+    FS_LOGI(services::LogComponent::Net, "WiFi connected");
     return;
   }
   if (manager.getConfigPortalActive()) {
     portalStartedAt = xTaskGetTickCount();
     portalRequestId = requestId;
-    rtos::logLine("NetworkTask: captive portal active");
+    FS_LOGI(services::LogComponent::Net, "Captive portal active");
     publishPortalStarted(ctx, requestId, credentials, settings);
     return;
   }
-  rtos::logLine("NetworkTask: WiFi connection failed");
+  FS_LOGW(services::LogComponent::Net, "WiFi connection failed");
   publishEvent(ctx, rtos::AppEventType::WifiDisconnected, requestId,
                "WLAN-Verbindung konnte nicht hergestellt werden");
 }
@@ -157,26 +162,27 @@ void handleWifiSignal(rtos::RtosContext& ctx, WifiSignal signal,
                       std::uint32_t& portalRequestId) {
   switch (signal) {
     case WifiSignal::StationConnected:
-      rtos::logLine("NetworkTask: WiFi station connected");
+      FS_LOGI(services::LogComponent::Net, "WiFi station connected");
       publishEvent(ctx, rtos::AppEventType::WifiStationConnected,
                    portalRequestId, "WLAN verbunden; IP-Adresse wird bezogen");
       break;
     case WifiSignal::GotIp:
       xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_WIFI_CONNECTED);
-      rtos::logLine("NetworkTask: WiFi got IP");
+      FS_LOGI(services::LogComponent::Net, "WiFi address acquired ip=%s",
+              WiFi.localIP().toString().c_str());
       publishEvent(ctx, rtos::AppEventType::WifiGotIp, portalRequestId,
                    "WLAN-Verbindung und IP-Adresse sind bereit");
       portalRequestId = 0;
       break;
     case WifiSignal::Disconnected:
       xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_WIFI_CONNECTED);
-      rtos::logLine("NetworkTask: WiFi station disconnected");
+      FS_LOGW(services::LogComponent::Net, "WiFi station disconnected");
       publishEvent(ctx, rtos::AppEventType::WifiDisconnected,
                    portalRequestId, "WLAN-Verbindung getrennt");
       break;
     case WifiSignal::LostIp:
       xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_WIFI_CONNECTED);
-      rtos::logLine("NetworkTask: WiFi lost IP");
+      FS_LOGW(services::LogComponent::Net, "WiFi address lost");
       publishEvent(ctx, rtos::AppEventType::WifiLostIp, portalRequestId,
                    "WLAN-IP-Adresse verloren");
       break;
@@ -193,12 +199,13 @@ void startPortal(rtos::RtosContext& ctx, WiFiManager& manager,
     publishPortalStarted(ctx, requestId, credentials, settings);
     return;
   }
-  rtos::logf("NetworkTask: captive portal started; SSID=%s, timeout=%lus",
-             credentials.ssid,
-             static_cast<unsigned long>(settings.portalTimeoutSeconds));
+  FS_LOGI(services::LogComponent::Net,
+          "Captive portal starting ssid=\"%s\" timeout_s=%lu",
+          credentials.ssid,
+          static_cast<unsigned long>(settings.portalTimeoutSeconds));
   manager.startConfigPortal(credentials.ssid, credentials.password);
   if (!manager.getConfigPortalActive()) {
-    rtos::logLine("NetworkTask: captive portal start failed");
+    FS_LOGE(services::LogComponent::Net, "Captive portal start failed");
     publishEvent(ctx, rtos::AppEventType::WifiDisconnected, requestId,
                  "WLAN-Konfigurationsportal konnte nicht gestartet werden");
     return;
@@ -215,7 +222,8 @@ void networkTask(void* parameter) {
   wifiEventQueue = ctx.wifiEventQueue;
   QueueSetHandle_t queueSet = ctx.networkQueueSet;
   if (wifiEventQueue == nullptr || queueSet == nullptr) {
-    rtos::logLine("NetworkTask: WiFi event queue/set unavailable");
+    FS_LOGE(services::LogComponent::Net,
+            "Initialization failed reason=event_queue_unavailable");
     vTaskDelete(nullptr);
     return;
   }
@@ -244,14 +252,16 @@ void networkTask(void* parameter) {
           credentials = makePortalCredentials(settings);
           configurationApplied = configureManager(manager, settings);
           if (!configurationApplied) {
-            rtos::logLine("NetworkTask: invalid network configuration rejected");
+            FS_LOGE(services::LogComponent::Net,
+                    "Configuration rejected reason=invalid");
             publishEvent(ctx, rtos::AppEventType::WifiDisconnected,
                          command.requestId,
                          "Netzwerkkonfiguration konnte nicht angewendet werden");
             break;
           }
-          rtos::logf("NetworkTask: configuration applied; hostname=%s, mode=%s",
-                     settings.hostname, settings.dhcp ? "DHCP" : "static");
+          FS_LOGI(services::LogComponent::Net,
+                  "Configuration applied hostname=\"%s\" mode=%s",
+                  settings.hostname, settings.dhcp ? "dhcp" : "static");
           connectOrStartPortal(ctx, manager, credentials, settings,
                                command.requestId, portalStartedAt,
                                portalRequestId);
@@ -281,7 +291,7 @@ void networkTask(void* parameter) {
           break;
         case rtos::NetworkCommandType::StopPortal:
           if (manager.getConfigPortalActive()) manager.stopConfigPortal();
-          rtos::logLine("NetworkTask: captive portal stopped");
+          FS_LOGI(services::LogComponent::Net, "Captive portal stopped");
           publishEvent(ctx, rtos::AppEventType::WifiConfigPortalStopped,
                        command.requestId,
                        "WLAN-Konfigurationsportal wurde abgebrochen");
@@ -292,7 +302,7 @@ void networkTask(void* parameter) {
           manager.resetSettings();
           xEventGroupClearBits(ctx.systemEventGroup,
                                rtos::EVENT_WIFI_CONNECTED);
-          rtos::logLine("NetworkTask: stored WiFi credentials cleared");
+          FS_LOGI(services::LogComponent::Net, "WiFi credentials cleared");
           publishEvent(ctx, rtos::AppEventType::WifiCredentialsCleared,
                        command.requestId,
                        "Gespeicherte WLAN-Zugangsdaten wurden gel\xC3\xB6scht");
@@ -307,14 +317,16 @@ void networkTask(void* parameter) {
 
     if (wifiEventQueueOverflow) {
       wifiEventQueueOverflow = false;
-      rtos::logLine("NetworkTask: WiFi event queue overflow");
+      FS_LOGW(services::LogComponent::Net,
+              "Event enqueue failed queue=wifi_event");
     }
 
     if (!manager.getConfigPortalActive()) continue;
 
     const bool connected = manager.process();
     if (connected) {
-      rtos::logLine("NetworkTask: WiFi connected via captive portal");
+      FS_LOGI(services::LogComponent::Net,
+              "WiFi connected source=captive_portal");
       portalStartedAt = 0;
       continue;
     }
@@ -327,7 +339,7 @@ void networkTask(void* parameter) {
         static_cast<TickType_t>(xTaskGetTickCount() - portalStartedAt) >=
             timeoutTicks) {
       if (manager.getConfigPortalActive()) manager.stopConfigPortal();
-      rtos::logLine("NetworkTask: captive portal timed out");
+      FS_LOGW(services::LogComponent::Net, "Captive portal timed out");
       publishEvent(ctx, rtos::AppEventType::WifiConfigPortalTimedOut,
                    portalRequestId,
                    "WLAN-Konfigurationsportal wurde wegen Zeit\xC3\xBC"

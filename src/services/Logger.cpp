@@ -1,7 +1,9 @@
 #include "services/Logger.h"
 
+#include <Arduino.h>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 
 #include "rtos/RtosContext.h"
 #include "config/TaskConfig.h"
@@ -79,9 +81,24 @@ void Logger::log(LogLevel level, LogComponent component, const char* format,
   std::vsnprintf(line + used, sizeof(line) - used, format, arguments);
   va_end(arguments);
 
-  // RtosContext owns the bounded queue and the sole Serial writer. Enqueuing a
-  // complete value object keeps lines atomic across all producer tasks.
-  rtos::logLine(line);
+  // One logger call always produces one physical line. Besides keeping the
+  // monitor parseable, this prevents unprefixed continuation lines.
+  for (char* character = line + used; *character != '\0'; ++character) {
+    if (*character == '\r' || *character == '\n' || *character == '\t')
+      *character = ' ';
+  }
+
+  // Before the RTOS logger exists there is only the Arduino setup task, so a
+  // direct emergency write is safe and preserves startup diagnostics. During
+  // normal operation the queue and its sole writer keep lines atomic.
+  const auto& context = rtos::context();
+  if (context.logQueue == nullptr || context.loggingTask == nullptr) {
+    Serial.write(reinterpret_cast<const std::uint8_t*>(line),
+                 std::strlen(line));
+    Serial.write(reinterpret_cast<const std::uint8_t*>("\r\n"), 2);
+    return;
+  }
+  rtos::enqueueLogLine(line);
 }
 
 }  // namespace filament_station::services

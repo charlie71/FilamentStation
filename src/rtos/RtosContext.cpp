@@ -1,7 +1,6 @@
 #include "rtos/RtosContext.h"
 
 #include <Arduino.h>
-#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include "config/NetworkConfig.h"
@@ -56,7 +55,7 @@ void loggingTaskMain(void* parameter) {
 
 RtosContext& context() { return instance; }
 
-void logLine(const char* message) {
+void enqueueLogLine(const char* message) {
   auto& ctx = context();
   if (message == nullptr || ctx.logQueue == nullptr) return;
   LogMessage entry{};
@@ -64,16 +63,6 @@ void logLine(const char* message) {
   // Eine volle Queue verwirft nur die komplette neue Zeile. Bereits laufende
   // USB-Ausgaben werden niemals von einem anderen Task unterbrochen.
   xQueueSend(ctx.logQueue, &entry, pdMS_TO_TICKS(10));
-}
-
-void logf(const char* format, ...) {
-  if (format == nullptr) return;
-  char line[config::kLogMessageCapacity]{};
-  va_list arguments;
-  va_start(arguments, format);
-  std::vsnprintf(line, sizeof(line), format, arguments);
-  va_end(arguments);
-  logLine(line);
 }
 
 bool RtosContext::createObjects() {

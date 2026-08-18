@@ -14,6 +14,7 @@
 #include "rtos/RtosContext.h"
 #include "services/ScaleFilter.h"
 #include "services/ScaleMath.h"
+#include "services/Logger.h"
 
 namespace filament_station::tasks {
 
@@ -207,9 +208,9 @@ void processScaleCommand(rtos::RtosContext& ctx,
       calibration.factorCountsPerGram = command.factorCountsPerGram;
       calibration.calibrated = command.calibrated;
       filter.reset();
-      rtos::logLine(calibration.calibrated
-                        ? "ScaleTask: calibration loaded"
-                        : "ScaleTask: uncalibrated defaults loaded");
+      FS_LOGI(services::LogComponent::Scale,
+              "Calibration applied calibrated=%s",
+              calibration.calibrated ? "true" : "false");
       return;
   }
 }
@@ -220,7 +221,8 @@ void scaleTask(void* parameter) {
   auto& ctx = *static_cast<rtos::RtosContext*>(parameter);
   scaleTaskHandle = xTaskGetCurrentTaskHandle();
   if (!initializeHx711PinsAndInterrupt()) {
-    rtos::logLine("ScaleTask: HX711 GPIO/interrupt initialization failed");
+    FS_LOGE(services::LogComponent::Scale,
+            "HX711 initialization failed stage=gpio_interrupt");
     sendScaleEvent(ctx, rtos::AppEventType::ScaleError, 0,
                    "HX711 GPIO/interrupt initialization failed");
     for (;;) {
@@ -228,7 +230,8 @@ void scaleTask(void* parameter) {
     }
   }
 
-  rtos::logLine("ScaleTask: HX711 DOUT interrupt registered");
+  FS_LOGI(services::LogComponent::Scale,
+          "HX711 interrupt registered pin=%d", config::kHx711DataPin);
   const services::ScaleFilterConfig filterConfig{
       config::kScaleMovingAverageWindow,
       config::kScaleLowPassAlpha,
@@ -240,13 +243,9 @@ void scaleTask(void* parameter) {
   };
   services::ScaleFilter filter(filterConfig);
   ScaleCalibrationState calibration;
-  {
-    char stackMessage[80]{};
-    std::snprintf(stackMessage, sizeof(stackMessage),
-                  "ScaleTask: minimum remaining stack after initialization: %u bytes",
-                  static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
-    rtos::logLine(stackMessage);
-  }
+  FS_LOGD(services::LogComponent::Scale,
+          "Stack watermark context=initialization free_bytes=%u",
+          static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
   bool connected = false;
   bool connectionErrorReported = false;
   bool measurementOverflowReported = false;
@@ -279,14 +278,16 @@ void scaleTask(void* parameter) {
         xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_SCALE_READY);
         if (!sendScaleEvent(ctx, rtos::AppEventType::ScaleReady, filteredCounts,
                             "HX711 ready")) {
-          rtos::logLine("ScaleTask: appEventQueue overflow on ScaleReady");
+          FS_LOGW(services::LogComponent::Scale,
+                  "Event enqueue failed queue=app_event event=ready");
         }
       }
       if (!sendScaleEvent(ctx, rtos::AppEventType::ScaleMeasurement,
                           filteredCounts, "HX711 raw measurement")) {
         if (!measurementOverflowReported) {
           measurementOverflowReported = true;
-          rtos::logLine("ScaleTask: appEventQueue overflow on ScaleMeasurement");
+          FS_LOGW(services::LogComponent::Scale,
+                  "Event enqueue failed queue=app_event event=measurement");
         }
       } else {
         measurementOverflowReported = false;
@@ -308,7 +309,8 @@ void scaleTask(void* parameter) {
       xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SCALE_READY);
       if (!sendScaleEvent(ctx, rtos::AppEventType::ScaleError, 0,
                           "HX711 not responding")) {
-        rtos::logLine("ScaleTask: appEventQueue overflow on ScaleError");
+        FS_LOGW(services::LogComponent::Scale,
+                "Event enqueue failed queue=app_event event=error");
       }
     }
   }

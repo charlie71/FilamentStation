@@ -9,6 +9,7 @@
 #include "drivers/DisplayDriver.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
+#include "services/Logger.h"
 #include "ui/UiBridge.h"
 
 namespace filament_station::tasks {
@@ -16,31 +17,32 @@ void uiTask(void* parameter) {
   auto& ctx = *static_cast<rtos::RtosContext*>(parameter);
   if (!drivers::initializeDisplay()) {
     xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_FATAL_ERROR);
-    rtos::logLine("UiTask: LovyanGFX display initialization failed");
+    FS_LOGE(services::LogComponent::Display, "Display initialization failed");
     vTaskSuspend(nullptr);
   }
-  rtos::logLine("UiTask: LovyanGFX display ready (480x320, rotation 3)");
+  FS_LOGI(services::LogComponent::Display,
+          "Display ready width=480 height=320 rotation=3");
 
   const std::uint32_t psramBefore = ESP.getFreePsram();
   ui::UiRuntimeInfo runtimeInfo{};
   if (!ui::initializeLvgl(runtimeInfo, ctx)) {
     xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_FATAL_ERROR);
-    rtos::logLine("UiTask: LVGL initialization or PSRAM allocation failed");
+    FS_LOGE(services::LogComponent::Ui,
+            "LVGL initialization failed reason=allocation_or_setup");
     vTaskSuspend(nullptr);
   }
   const std::uint32_t psramAfter = ESP.getFreePsram();
   const std::uint32_t psramConsumed =
       psramBefore >= psramAfter ? psramBefore - psramAfter : 0;
-  char lvglLine[128];
-  std::snprintf(lvglLine, sizeof(lvglLine),
-                "UiTask: LVGL ready; buffers=%u x 2; PSRAM used=%lu free=%lu",
-                static_cast<unsigned int>(runtimeInfo.bytesPerDrawBuffer),
-                static_cast<unsigned long>(psramConsumed),
-                static_cast<unsigned long>(psramAfter));
-  rtos::logLine(lvglLine);
+  FS_LOGI(services::LogComponent::Ui,
+          "LVGL ready draw_buffer_bytes=%u draw_buffers=2 psram_used_bytes=%lu psram_free_bytes=%lu",
+          static_cast<unsigned int>(runtimeInfo.bytesPerDrawBuffer),
+          static_cast<unsigned long>(psramConsumed),
+          static_cast<unsigned long>(psramAfter));
   if (!runtimeInfo.drawBuffersInPsram) {
     xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_FATAL_ERROR);
-    rtos::logLine("UiTask: LVGL draw buffers are not fully backed by PSRAM");
+    FS_LOGE(services::LogComponent::Ui,
+            "LVGL draw buffers invalid storage=non_psram");
     vTaskSuspend(nullptr);
   }
 
@@ -52,9 +54,12 @@ void uiTask(void* parameter) {
   std::snprintf(event.text, sizeof(event.text),
                 "UiTask communication test");
   if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS) {
-    rtos::logLine("UiTask: appEventQueue timeout/overflow");
+    FS_LOGW(services::LogComponent::Ui,
+            "Event enqueue failed queue=app_event op=communication_test");
   } else {
-    rtos::logLine("UiTask: test event sent");
+    FS_LOGD(services::LogComponent::Ui,
+            "Communication test sent request_id=%lu",
+            static_cast<unsigned long>(event.requestId));
   }
 
   rtos::UiCommand command{};
@@ -75,18 +80,16 @@ void uiTask(void* parameter) {
         // Continuous weight updates are expected and would otherwise flood
         // USB-CDC. User-visible responses and explicit errors remain logged.
         if (command.type != rtos::UiCommandType::UpdateWeight) {
-          char line[config::kLogMessageCapacity];
-          std::snprintf(
-              line, sizeof(line),
-              "UiTask: response received (requestId=%lu): %s",
-              static_cast<unsigned long>(command.requestId), command.text);
-          rtos::logLine(line);
+          FS_LOGD(services::LogComponent::Ui,
+                  "Command received request_id=%lu type=%u",
+                  static_cast<unsigned long>(command.requestId),
+                  static_cast<unsigned>(command.type));
         }
         if (command.type == rtos::UiCommandType::UpdateSpoolPicker &&
             command.value == -1) {
-          rtos::logf("UiTask: minimum remaining stack after spool list: %u bytes",
-                     static_cast<unsigned>(
-                         uxTaskGetStackHighWaterMark(nullptr)));
+          FS_LOGD(services::LogComponent::Ui,
+                  "Stack watermark context=spool_list free_bytes=%u",
+                  static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
         }
       } while (xQueueReceive(ctx.uiCommandQueue, &command, 0) == pdTRUE);
     }

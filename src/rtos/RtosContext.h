@@ -44,7 +44,8 @@ struct RtosContext {
 };
 
 RtosContext& context();
-void logLine(const char* message);
-void logf(const char* format, ...);
+// Low-level transport used exclusively by services::Logger. Application code
+// must use FS_LOGE/W/I/D/T so every line has canonical metadata.
+void enqueueLogLine(const char* message);
 
 }  // namespace filament_station::rtos

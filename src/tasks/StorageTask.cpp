@@ -11,6 +11,7 @@
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/JsonStorage.h"
+#include "services/Logger.h"
 
 namespace filament_station::tasks {
 namespace {
@@ -74,7 +75,9 @@ void sendStorageEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
   event.value = value;
   std::snprintf(event.text, sizeof(event.text), "%s", text);
   if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS) {
-    rtos::logLine("StorageTask: appEventQueue timeout/overflow");
+    FS_LOGW(services::LogComponent::Storage,
+            "Event enqueue failed queue=app_event event=%u",
+            static_cast<unsigned>(type));
   }
 }
 
@@ -155,7 +158,8 @@ void processLoadCommand(rtos::RtosContext& ctx,
     std::snprintf(event.text, sizeof(event.text),
                   "Network configuration loaded");
     if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS) {
-      rtos::logLine("StorageTask: network config event queue overflow");
+      FS_LOGW(services::LogComponent::Storage,
+              "Event enqueue failed queue=app_event document=network");
     }
     return;
   }
@@ -172,7 +176,8 @@ void processLoadCommand(rtos::RtosContext& ctx,
     std::snprintf(event.text, sizeof(event.text),
                   "Scale configuration loaded");
     if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS) {
-      rtos::logLine("StorageTask: scale config event queue overflow");
+      FS_LOGW(services::LogComponent::Storage,
+              "Event enqueue failed queue=app_event document=scale");
     }
     return;
   }
@@ -193,7 +198,8 @@ void processLoadCommand(rtos::RtosContext& ctx,
     std::snprintf(event.text, sizeof(event.text),
                   "Spoolman configuration loaded");
     if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
-      rtos::logLine("StorageTask: Spoolman config event queue overflow");
+      FS_LOGW(services::LogComponent::Storage,
+              "Event enqueue failed queue=app_event document=spoolman");
     return;
   }
   if (result.ok() && command.documentType == rtos::StorageDocumentType::Nfc &&
@@ -282,7 +288,8 @@ void processLoadCommand(rtos::RtosContext& ctx,
                             ? "Open tag"
                             : "NFC");
     if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
-      rtos::logLine("StorageTask: mapping event queue overflow");
+      FS_LOGW(services::LogComponent::Storage,
+              "Event enqueue failed queue=app_event document=tag_mapping");
     return;
   }
   if (result.ok() &&
@@ -304,7 +311,8 @@ void processLoadCommand(rtos::RtosContext& ctx,
     std::snprintf(event.text, sizeof(event.text),
                   "Pending weight loaded");
     if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
-      rtos::logLine("StorageTask: pending weight event queue overflow");
+      FS_LOGW(services::LogComponent::Storage,
+              "Event enqueue failed queue=app_event document=pending_weight");
     return;
   }
   sendStorageResult(ctx, command, rtos::AppEventType::StorageReadCompleted,
@@ -413,10 +421,8 @@ bool ensureDirectory(const char* path) {
 bool ensureDirectoryStructure() {
   for (const char* path : kRequiredDirectories) {
     if (!ensureDirectory(path)) {
-      char line[96];
-      std::snprintf(line, sizeof(line),
-                    "StorageTask: required directory failed: %s", path);
-      rtos::logLine(line);
+      FS_LOGE(services::LogComponent::Storage,
+              "Required directory unavailable path=%s", path);
       return false;
     }
   }
@@ -428,11 +434,9 @@ bool ensureInitialDocument(const InitialDocument& definition) {
       services::JsonStorage::recoverAtomicSave(SD, definition.path,
                                                definition.type);
   if (!recovery.ok()) {
-    char line[128];
-    std::snprintf(line, sizeof(line),
-                  "StorageTask: recovery failed for %s: %s", definition.path,
-                  services::JsonStorage::errorName(recovery.error));
-    rtos::logLine(line);
+    FS_LOGE(services::LogComponent::Storage,
+            "Document recovery failed path=%s error=%s", definition.path,
+            services::JsonStorage::errorName(recovery.error));
     // A damaged mapping file must not make the complete SD/configuration
     // subsystem unavailable.  Keep it untouched for diagnosis; its explicit
     // load will report a StorageRequestError and no mappings will be applied.
@@ -447,12 +451,9 @@ bool ensureInitialDocument(const InitialDocument& definition) {
         services::JsonStorage::load(file, definition.type, document);
     file.close();
     if (!loaded.ok()) {
-      char line[128];
-      std::snprintf(line, sizeof(line),
-                    "StorageTask: invalid initial file %s: %s",
-                    definition.path,
-                    services::JsonStorage::errorName(loaded.error));
-      rtos::logLine(line);
+      FS_LOGE(services::LogComponent::Storage,
+              "Initial document invalid path=%s error=%s", definition.path,
+              services::JsonStorage::errorName(loaded.error));
       return false;
     }
     return true;
@@ -467,17 +468,13 @@ bool ensureInitialDocument(const InitialDocument& definition) {
   const services::JsonStorageResult saved = services::JsonStorage::atomicSave(
       SD, definition.path, definition.type, document);
   if (!saved.ok()) {
-    char line[128];
-    std::snprintf(line, sizeof(line),
-                  "StorageTask: initial file creation failed %s: %s",
-                  definition.path,
-                  services::JsonStorage::errorName(saved.error));
-    rtos::logLine(line);
+    FS_LOGE(services::LogComponent::Storage,
+            "Initial document creation failed path=%s error=%s",
+            definition.path, services::JsonStorage::errorName(saved.error));
     return false;
   }
-  char line[112];
-  std::snprintf(line, sizeof(line), "StorageTask: created %s", definition.path);
-  rtos::logLine(line);
+  FS_LOGI(services::LogComponent::Storage, "Initial document created path=%s",
+          definition.path);
   return true;
 }
 
@@ -513,30 +510,15 @@ void logSdCardInfo() {
       totalBytes >= usedBytes ? totalBytes - usedBytes : 0;
   constexpr std::uint64_t kBytesPerMiB = 1024ULL * 1024ULL;
 
-  char line[112];
-  std::snprintf(line, sizeof(line), "StorageTask: SD type: %s",
-                cardTypeName(SD.cardType()));
-  rtos::logLine(line);
-  std::snprintf(line, sizeof(line),
-                "StorageTask: SD capacity: %llu bytes (%llu MiB)",
-                static_cast<unsigned long long>(cardSize),
-                static_cast<unsigned long long>(cardSize / kBytesPerMiB));
-  rtos::logLine(line);
-  std::snprintf(line, sizeof(line),
-                "StorageTask: filesystem total: %llu bytes (%llu MiB)",
-                static_cast<unsigned long long>(totalBytes),
-                static_cast<unsigned long long>(totalBytes / kBytesPerMiB));
-  rtos::logLine(line);
-  std::snprintf(line, sizeof(line),
-                "StorageTask: filesystem used: %llu bytes (%llu MiB)",
-                static_cast<unsigned long long>(usedBytes),
-                static_cast<unsigned long long>(usedBytes / kBytesPerMiB));
-  rtos::logLine(line);
-  std::snprintf(line, sizeof(line),
-                "StorageTask: filesystem free: %llu bytes (%llu MiB)",
-                static_cast<unsigned long long>(freeBytes),
-                static_cast<unsigned long long>(freeBytes / kBytesPerMiB));
-  rtos::logLine(line);
+  FS_LOGI(services::LogComponent::Storage,
+          "SD mounted type=\"%s\" capacity_bytes=%llu capacity_mib=%llu",
+          cardTypeName(SD.cardType()), static_cast<unsigned long long>(cardSize),
+          static_cast<unsigned long long>(cardSize / kBytesPerMiB));
+  FS_LOGI(services::LogComponent::Storage,
+          "Filesystem usage total_bytes=%llu used_bytes=%llu free_bytes=%llu",
+          static_cast<unsigned long long>(totalBytes),
+          static_cast<unsigned long long>(usedBytes),
+          static_cast<unsigned long long>(freeBytes));
 }
 
 }  // namespace
@@ -560,23 +542,22 @@ void storageTask(void* parameter) {
                          : structureReady
                                ? "SD configuration invalid; restart required"
                                : "SD directory structure invalid; restart required");
-    rtos::logLine(!mounted
-                      ? "StorageTask: SD initialization failed"
-                      : structureReady
-                            ? "StorageTask: initial JSON setup failed"
-                            : "StorageTask: SD directory setup failed");
+    FS_LOGE(services::LogComponent::Storage,
+            "Initialization failed stage=%s",
+            !mounted ? "sd_mount"
+                     : structureReady ? "initial_documents" : "directories");
   } else {
     xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_SD_READY);
     logSdCardInfo();
     sendStorageEvent(ctx, rtos::AppEventType::SdMounted,
                      "SD card, directories and configuration ready");
-    rtos::logLine("StorageTask: initial JSON files ready");
-    char stackLine[96];
-    std::snprintf(stackLine, sizeof(stackLine),
-                  "StorageTask: minimum remaining stack: %u bytes",
-                  static_cast<unsigned int>(
-                      uxTaskGetStackHighWaterMark(nullptr)));
-    rtos::logLine(stackLine);
+    FS_LOGI(services::LogComponent::Storage,
+            "Initial JSON documents ready count=%u",
+            static_cast<unsigned>(sizeof(kInitialDocuments) /
+                                  sizeof(kInitialDocuments[0])));
+    FS_LOGD(services::LogComponent::Storage,
+            "Stack watermark free_bytes=%u",
+            static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
   }
 
   bool removalLatched =
@@ -598,7 +579,9 @@ void storageTask(void* parameter) {
                          "SD unavailable; restart required", command.requestId,
                          static_cast<std::int32_t>(
                              services::JsonStorageError::FileUnavailable));
-        rtos::logLine("StorageTask: command rejected; restart required");
+        FS_LOGW(services::LogComponent::Storage,
+                "Command rejected reason=restart_required request_id=%lu",
+                static_cast<unsigned long>(command.requestId));
       } else {
         processStorageCommand(ctx, command);
       }
@@ -610,12 +593,14 @@ void storageTask(void* parameter) {
       xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SD_READY);
       sendStorageEvent(ctx, rtos::AppEventType::SdRemoved,
                        "SD card removed; restart required");
-      rtos::logLine("StorageTask: SD card removed; error latched");
+      FS_LOGE(services::LogComponent::Storage,
+              "SD removed restart_required=true");
     } else if (removalLatched && accessible && !reinsertionReported) {
       reinsertionReported = true;
       sendStorageEvent(ctx, rtos::AppEventType::SdReinserted,
                        "SD card reinserted; restart still required");
-      rtos::logLine("StorageTask: SD reinserted; restart still required");
+      FS_LOGW(services::LogComponent::Storage,
+              "SD reinserted restart_required=true");
     }
   }
 }

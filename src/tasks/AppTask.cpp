@@ -11,6 +11,7 @@
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/SpoolmanUrl.h"
+#include "services/Logger.h"
 
 namespace filament_station::tasks {
 namespace {
@@ -244,7 +245,8 @@ void mergeNfcMappings(const rtos::AppEvent& event) {
       ++bambuMappingCount;
     } else if (bambuMappings[destination].spoolId != candidate.spoolId ||
                bambuMappings[destination].tagFormat != candidate.tagFormat) {
-      rtos::logLine("AppTask: conflicting duplicate NFC mapping ignored");
+      FS_LOGW(services::LogComponent::App,
+              "Duplicate NFC mapping ignored reason=conflict");
       continue;
     }
     bambuMappings[destination] = candidate;
@@ -501,7 +503,8 @@ void requestSpoolmanConfiguration(rtos::RtosContext& ctx) {
   command.documentType = rtos::StorageDocumentType::Spoolman;
   std::snprintf(command.path, sizeof(command.path), "/config/spoolman.json");
   if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) != pdPASS)
-    rtos::logLine("AppTask: Spoolman config load queue overflow");
+    FS_LOGW(services::LogComponent::App,
+            "Command enqueue failed queue=storage op=load_spoolman_config");
 }
 
 bool requestSpoolSearch(rtos::RtosContext& ctx, std::uint32_t requestId,
@@ -557,7 +560,11 @@ bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
   if (xQueueSend(ctx.uiCommandQueue, &command, pdMS_TO_TICKS(1000)) == pdPASS) {
     return true;
   }
-  rtos::logLine(failureMessage);
+  (void)failureMessage;
+  FS_LOGW(services::LogComponent::App,
+          "Command enqueue failed queue=ui command=%u request_id=%lu",
+          static_cast<unsigned>(command.type),
+          static_cast<unsigned long>(command.requestId));
   return false;
 }
 
@@ -565,7 +572,9 @@ bool sendScaleCommand(rtos::RtosContext& ctx,
                       const rtos::ScaleCommand& command) {
   if (xQueueSend(ctx.scaleCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
       pdPASS) {
-    rtos::logLine("AppTask: scaleCommandQueue timeout/overflow");
+    FS_LOGW(services::LogComponent::App,
+            "Command enqueue failed queue=scale command=%u",
+            static_cast<unsigned>(command.type));
     return false;
   }
   xTaskNotifyGive(ctx.scaleTask);
@@ -578,7 +587,9 @@ bool sendNetworkCommand(rtos::RtosContext& ctx,
       pdPASS) {
     return true;
   }
-  rtos::logLine("AppTask: networkCommandQueue timeout/overflow");
+  FS_LOGW(services::LogComponent::App,
+          "Command enqueue failed queue=network command=%u",
+          static_cast<unsigned>(command.type));
   return false;
 }
 
@@ -620,7 +631,8 @@ bool requestScaleConfiguration(rtos::RtosContext& ctx) {
   std::snprintf(command.path, sizeof(command.path), "/config/scale.json");
   if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
       pdPASS) {
-    rtos::logLine("AppTask: scale config load queue timeout/overflow");
+    FS_LOGW(services::LogComponent::App,
+            "Command enqueue failed queue=storage op=load_scale_config");
     return false;
   }
   return true;
@@ -633,7 +645,8 @@ bool sendWeightUpdate(rtos::RtosContext& ctx, std::uint32_t requestId,
   command.requestId = requestId;
   command.weightUpdate = update;
   if (!spoolmanSettingsFromDraft(command.settings)) {
-    rtos::logLine("AppTask: weight update has no valid Spoolman configuration");
+    FS_LOGE(services::LogComponent::App,
+            "Weight update rejected reason=invalid_spoolman_configuration");
     return false;
   }
   return xQueueSend(ctx.spoolmanCommandQueue, &command,
@@ -675,7 +688,8 @@ void deletePendingWeight(rtos::RtosContext& ctx) {
                 "/queue/pending-weight.json");
   if (xQueueSend(ctx.storageCommandQueue, &command,
                  pdMS_TO_TICKS(1000)) != pdPASS)
-    rtos::logLine("AppTask: pending weight delete queue overflow");
+    FS_LOGW(services::LogComponent::App,
+            "Command enqueue failed queue=storage op=delete_pending_weight");
 }
 
 bool requestNetworkConfiguration(rtos::RtosContext& ctx) {
@@ -686,7 +700,8 @@ bool requestNetworkConfiguration(rtos::RtosContext& ctx) {
   std::snprintf(command.path, sizeof(command.path), "/config/network.json");
   if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
       pdPASS) {
-    rtos::logLine("AppTask: network config load queue timeout/overflow");
+    FS_LOGW(services::LogComponent::App,
+            "Command enqueue failed queue=storage op=load_network_config");
     return false;
   }
   return true;
@@ -708,13 +723,15 @@ bool persistScaleConfiguration(rtos::RtosContext& ctx,
       static_cast<long>(event.scaleOffsetCounts),
       static_cast<double>(event.scaleFactorCountsPerGram));
   if (length <= 0 || static_cast<std::size_t>(length) >= sizeof(command.json)) {
-    rtos::logLine("AppTask: scale configuration serialization failed");
+    FS_LOGE(services::LogComponent::App,
+            "Scale configuration serialization failed");
     return false;
   }
   command.jsonLength = static_cast<std::uint16_t>(length);
   if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
       pdPASS) {
-    rtos::logLine("AppTask: scale config save queue timeout/overflow");
+    FS_LOGW(services::LogComponent::App,
+            "Command enqueue failed queue=storage op=save_scale_config");
     return false;
   }
   return true;
@@ -746,7 +763,11 @@ void reportAssignmentWriteFailure(rtos::RtosContext& ctx,
   pendingTagOperation = PendingTagOperation::None;
   pendingTagAssignment = {};
   if (assignedSpoolId != 0) lastUsedTagSpoolId = assignedSpoolId;
-  rtos::logLine(diagnostic);
+  const char* detail = diagnostic != nullptr ? diagnostic : "unknown failure";
+  constexpr char kLegacyPrefix[] = "AppTask: ";
+  if (std::strncmp(detail, kLegacyPrefix, sizeof(kLegacyPrefix) - 1U) == 0)
+    detail += sizeof(kLegacyPrefix) - 1U;
+  FS_LOGE(services::LogComponent::App, "%s", detail);
 
   rtos::UiCommand hide{};
   hide.type = rtos::UiCommandType::HideProgress;
@@ -1322,7 +1343,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         networkCommand.type = rtos::NetworkCommandType::RequestStatus;
         networkCommand.requestId = 0;
         if (!sendNetworkCommand(ctx, networkCommand)) {
-          rtos::logLine("AppTask: network status request queue overflow");
+          FS_LOGW(services::LogComponent::App,
+                  "Command enqueue failed queue=network op=request_status");
         }
       }
       return;
@@ -2020,7 +2042,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     }
 
     default:
-      rtos::logLine("AppTask: unhandled UiAction");
+      FS_LOGW(services::LogComponent::App, "UI action unhandled action=%u",
+              static_cast<unsigned>(action.type));
       return;
   }
 }
@@ -2297,7 +2320,8 @@ void appTask(void* parameter) {
             std::memcmp(currentTag.uid, event.nfcUid,
                         event.nfcUidLength) == 0;
         if (!removalMatchesCurrentTag) {
-          rtos::logLine("AppTask: stale NFC removal ignored");
+          FS_LOGW(services::LogComponent::App,
+                  "NFC removal ignored reason=stale_uid");
           continue;
         }
         const bool operationWasPending =
@@ -2335,8 +2359,8 @@ void appTask(void* parameter) {
               "Tag wurde zugeordnet.\nDer Tag wurde w\xC3\xA4hrend des Vorgangs entfernt. Die Tagdaten wurden nicht aktualisiert.");
         } else if (removalPayloadWasPending) {
           pendingTagRemoval = {};
-          rtos::logLine(
-              "AppTask: RemoveTagAssignment payload clear failed because tag was removed; mapping remains removed");
+          FS_LOGE(services::LogComponent::App,
+                  "Tag assignment removal partial mapping_removed=true payload_cleared=false reason=tag_removed");
           rtos::UiCommand hide{};
           hide.type = rtos::UiCommandType::HideProgress;
           sendUiCommand(ctx, hide,
@@ -2413,8 +2437,8 @@ void appTask(void* parameter) {
                          pendingTagRemoval.uidLength) != 0)) {
           pendingTagOperation = PendingTagOperation::None;
           pendingTagRemoval = {};
-          rtos::logLine(
-              "AppTask: RemoveTagAssignment UID verification failed; mapping remains removed");
+          FS_LOGE(services::LogComponent::App,
+                  "Tag assignment removal verification failed mapping_removed=true reason=uid_mismatch");
           sendOverlay(
               ctx, rtos::UiCommandType::ShowDialog,
               rtos::UiOverlayKind::Error, event.requestId,
@@ -2445,8 +2469,8 @@ void appTask(void* parameter) {
                 : "NFC-Tag gel\xC3\xB6scht. Der leere NDEF-Zustand wurde verifiziert.");
         if (assignmentRemoval) pendingTagRemoval = {};
         if (assignmentRemoval)
-          rtos::logLine(
-              "AppTask: RemoveTagAssignment mapping and payload removed; erase verified");
+          FS_LOGI(services::LogComponent::App,
+                  "Tag assignment removed mapping_removed=true payload_cleared=true verified=true");
         currentScreen = result.screenId;
         sendUiCommand(ctx, result, "AppTask: NFC erase result queue overflow");
       } else if (event.type == rtos::AppEventType::NfcError &&
@@ -2461,8 +2485,8 @@ void appTask(void* parameter) {
         if (pendingTagRemoval.stage == TagRemovalStage::ClearingPayload) {
           pendingTagOperation = PendingTagOperation::None;
           pendingTagRemoval = {};
-          rtos::logLine(
-              "AppTask: RemoveTagAssignment payload clear or verification failed; mapping remains removed");
+          FS_LOGE(services::LogComponent::App,
+                  "Tag assignment removal partial mapping_removed=true payload_cleared=false reason=clear_or_verify_failed");
           rtos::UiCommand hide{};
           hide.type = rtos::UiCommandType::HideProgress;
           sendUiCommand(ctx, hide,
@@ -2524,7 +2548,9 @@ void appTask(void* parameter) {
         pendingWeight.requestId = kPendingWeightRetryRequestId;
         if (sendWeightUpdate(ctx, kPendingWeightRetryRequestId,
                              pendingWeight.update))
-          rtos::logLine("AppTask: retrying pending Spoolman weight update");
+          FS_LOGI(services::LogComponent::App,
+                  "Pending weight retry requested spool_id=%lu",
+                  static_cast<unsigned long>(pendingWeight.update.spoolId));
       }
 
       rtos::UiCommand status{};
@@ -2772,7 +2798,9 @@ void appTask(void* parameter) {
       std::snprintf(response.text, sizeof(response.text), "AppTask acknowledged event");
       if (sendUiCommand(ctx, response,
                         "AppTask: uiCommandQueue timeout/overflow")) {
-        rtos::logLine("AppTask: response sent");
+        FS_LOGD(services::LogComponent::App,
+                "Communication test response sent request_id=%lu",
+                static_cast<unsigned long>(response.requestId));
       }
       sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                   rtos::UiOverlayKind::BootProgress, event.requestId,
@@ -2803,7 +2831,9 @@ void appTask(void* parameter) {
       if (event.requestId == kPendingWeightSaveRequestId ||
           event.requestId == kPendingWeightDeleteRequestId) {
         if (event.type == rtos::AppEventType::StorageRequestError)
-          rtos::logLine("AppTask: pending weight storage operation failed");
+          FS_LOGE(services::LogComponent::App,
+                  "Pending weight storage operation failed request_id=%lu",
+                  static_cast<unsigned long>(event.requestId));
         continue;
       }
       if (event.type == rtos::AppEventType::StorageReadCompleted &&
@@ -2823,7 +2853,8 @@ void appTask(void* parameter) {
         spoolman.settings = event.spoolmanSettings;
         if (xQueueSend(ctx.spoolmanCommandQueue, &spoolman,
                        pdMS_TO_TICKS(1000)) != pdPASS)
-          rtos::logLine("AppTask: Spoolman configuration queue overflow");
+          FS_LOGW(services::LogComponent::App,
+                  "Command enqueue failed queue=spoolman op=apply_configuration");
       } else if (pendingSpoolmanSaveRequestId != 0 &&
                  event.requestId == pendingSpoolmanSaveRequestId &&
                  event.type == rtos::AppEventType::StorageWriteCompleted) {
@@ -2954,8 +2985,8 @@ void appTask(void* parameter) {
               const bool uidChanged =
                   tagPresent && !removalTagMatches(currentTag);
               pendingTagRemoval = {};
-              rtos::logLine(
-                  "AppTask: RemoveTagAssignment cleanup unavailable after mapping removal");
+              FS_LOGE(services::LogComponent::App,
+                      "Tag assignment removal partial mapping_removed=true reason=cleanup_unavailable");
               sendOverlay(
                   ctx, rtos::UiCommandType::ShowDialog,
                   rtos::UiOverlayKind::Error, event.requestId,
@@ -2971,8 +3002,8 @@ void appTask(void* parameter) {
             if (xQueueSend(ctx.nfcCommandQueue, &nfcCommand,
                            pdMS_TO_TICKS(50)) != pdPASS) {
               pendingTagRemoval = {};
-              rtos::logLine(
-                  "AppTask: RemoveTagAssignment NFC command queue full; mapping remains removed");
+              FS_LOGE(services::LogComponent::App,
+                      "Command enqueue failed queue=nfc op=clear_payload mapping_removed=true");
               sendOverlay(
                   ctx, rtos::UiCommandType::ShowDialog,
                   rtos::UiOverlayKind::Error, event.requestId,
@@ -2997,8 +3028,8 @@ void appTask(void* parameter) {
           std::snprintf(
               result.text, sizeof(result.text),
               "Tag-Zuordnung erfolgreich entfernt.\nOriginaler Taginhalt blieb unver\xC3\xA4ndert.");
-          rtos::logLine(
-              "AppTask: RemoveTagAssignment mapping removed; original content preserved");
+          FS_LOGI(services::LogComponent::App,
+                  "Tag assignment removed mapping_removed=true original_content=preserved");
           pendingTagRemoval = {};
           currentScreen = result.screenId;
           sendUiCommand(ctx, result,
@@ -3067,7 +3098,8 @@ void appTask(void* parameter) {
                       "/queue/pending-weight.json");
         if (xQueueSend(ctx.storageCommandQueue, &pendingLoad,
                        pdMS_TO_TICKS(1000)) != pdPASS)
-          rtos::logLine("AppTask: pending weight load queue overflow");
+          FS_LOGW(services::LogComponent::App,
+                  "Command enqueue failed queue=storage op=load_pending_weight");
         rtos::StorageCommand mappingLoad{};
         mappingLoad.type = rtos::StorageCommandType::LoadJson;
         mappingLoad.requestId = kBambuMappingLoadRequestId;
@@ -3076,19 +3108,22 @@ void appTask(void* parameter) {
                       "/mappings/bambu-tags.json");
         if (xQueueSend(ctx.storageCommandQueue, &mappingLoad,
                        pdMS_TO_TICKS(1000)) != pdPASS)
-          rtos::logLine("AppTask: Bambu mapping load queue overflow");
+          FS_LOGW(services::LogComponent::App,
+                  "Command enqueue failed queue=storage op=load_bambu_mapping");
         mappingLoad.requestId = kNfcMappingLoadRequestId;
         std::snprintf(mappingLoad.path, sizeof(mappingLoad.path),
                       "/mappings/nfc-spools.json");
         if (xQueueSend(ctx.storageCommandQueue, &mappingLoad,
                        pdMS_TO_TICKS(1000)) != pdPASS)
-          rtos::logLine("AppTask: NFC mapping load queue overflow");
+          FS_LOGW(services::LogComponent::App,
+                  "Command enqueue failed queue=storage op=load_nfc_mapping");
         mappingLoad.requestId = kOpenMappingLoadRequestId;
         std::snprintf(mappingLoad.path, sizeof(mappingLoad.path),
                       "/mappings/open-tags.json");
         if (xQueueSend(ctx.storageCommandQueue, &mappingLoad,
                        pdMS_TO_TICKS(1000)) != pdPASS)
-          rtos::logLine("AppTask: open-tag mapping load queue overflow");
+          FS_LOGW(services::LogComponent::App,
+                  "Command enqueue failed queue=storage op=load_open_tag_mapping");
         showHomeWhenStartupReady(ctx);
       }
     }
@@ -3097,8 +3132,9 @@ void appTask(void* parameter) {
     if (reportedMinimumStack == static_cast<UBaseType_t>(~0U) ||
         minimumStack + 256U < reportedMinimumStack) {
       reportedMinimumStack = minimumStack;
-      rtos::logf("AppTask: minimum remaining stack: %u bytes",
-                 static_cast<unsigned>(minimumStack));
+      FS_LOGD(services::LogComponent::App,
+              "Stack watermark free_bytes=%u",
+              static_cast<unsigned>(minimumStack));
     }
   }
 }

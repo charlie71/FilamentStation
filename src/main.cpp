@@ -6,16 +6,14 @@
 #include "config/BoardConfig.h"
 #include "rtos/Events.h"
 #include "rtos/RtosContext.h"
+#include "services/Logger.h"
 
 #ifndef PIO_UNIT_TESTING
 namespace {
 void haltStartup(const char* reason) {
   auto& ctx = filament_station::rtos::context();
-  if (ctx.logQueue != nullptr && ctx.loggingTask != nullptr) {
-    filament_station::rtos::logf("FATAL: %s", reason);
-  } else {
-    Serial.printf("FATAL: %s\n", reason);
-  }
+  FS_LOGE(filament_station::services::LogComponent::Rtos,
+          "Startup halted reason=\"%s\"", reason);
   if (ctx.systemEventGroup != nullptr) {
     xEventGroupSetBits(ctx.systemEventGroup, filament_station::rtos::EVENT_FATAL_ERROR);
   }
@@ -40,16 +38,19 @@ void setup() {
 
   esp_chip_info_t chipInfo{};
   esp_chip_info(&chipInfo);
-  rtos::logf("%s %s starting", config::kApplicationName,
-             config::kApplicationVersion);
-  rtos::logf("Chip: %s, revision %u, %u cores", ESP.getChipModel(),
-             chipInfo.revision, chipInfo.cores);
-  rtos::logf("Heap: %u bytes free", ESP.getFreeHeap());
-  rtos::logf("PSRAM: %u bytes total, %u bytes free", ESP.getPsramSize(),
-             ESP.getFreePsram());
+  FS_LOGI(services::LogComponent::App, "System starting app=%s firmware=%s",
+          config::kApplicationName, config::kApplicationVersion);
+  FS_LOGI(services::LogComponent::Rtos,
+          "Chip detected model=%s revision=%u cores=%u",
+          ESP.getChipModel(), chipInfo.revision, chipInfo.cores);
+  FS_LOGI(services::LogComponent::Rtos, "Heap available free_bytes=%u",
+          ESP.getFreeHeap());
+  FS_LOGI(services::LogComponent::Rtos,
+          "PSRAM available total_bytes=%u free_bytes=%u", ESP.getPsramSize(),
+          ESP.getFreePsram());
   if (!ctx.createServiceTasks()) { haltStartup("service task creation failed"); }
 
-  rtos::logLine("RTOS infrastructure started");
+  FS_LOGI(services::LogComponent::Rtos, "Infrastructure started");
 }
 
 void loop() { vTaskDelay(portMAX_DELAY); }

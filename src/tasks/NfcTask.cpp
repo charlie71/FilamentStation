@@ -20,6 +20,7 @@
 #include "rtos/RtosContext.h"
 #include "services/NfcPayload.h"
 #include "services/Ntag21x.h"
+#include "services/Logger.h"
 
 namespace filament_station::tasks {
 namespace {
@@ -77,7 +78,9 @@ const char* initializationStep(Pn532InitializationResult result) {
 
 bool sendEvent(rtos::RtosContext& ctx, rtos::AppEvent event) {
   if (xQueueSend(ctx.appEventQueue, &event, 0) == pdPASS) return true;
-  rtos::logLine("NfcTask: app event queue full");
+  FS_LOGW(services::LogComponent::Nfc,
+          "Event enqueue failed queue=app_event event=%u",
+          static_cast<unsigned>(event.type));
   return false;
 }
 
@@ -229,27 +232,22 @@ Pn532InitializationResult initializePn532() {
       length < 5) {
     return Pn532InitializationResult::FirmwareVersionFailed;
   }
-  {
-    char firmware[112]{};
-    std::snprintf(firmware, sizeof(firmware),
-                  "NfcTask: PN532 firmware response: IC=0x%02X, version=%u.%u, "
-                  "support=0x%02X",
-                  response[1], response[2], response[3], response[4]);
-    rtos::logLine(firmware);
-  }
+  FS_LOGI(services::LogComponent::Nfc,
+          "PN532 firmware ic=0x%02X version=%u.%u support=0x%02X",
+          response[1], response[2], response[3], response[4]);
   const std::uint8_t sam[] = {0x01, 0x14, 0x01};
   if (!transceive(kCommandSamConfiguration, sam, sizeof(sam), response,
                   sizeof(response), length)) {
     return Pn532InitializationResult::SamConfigurationFailed;
   }
-  rtos::logLine("NfcTask: PN532 SAM configured");
+  FS_LOGI(services::LogComponent::Nfc, "PN532 SAM configured");
   const std::uint8_t retries[] = {0x05, 0xFF, 0x01,
                                   config::kPn532MaxTargetRetries};
   if (!transceive(kCommandRfConfiguration, retries, sizeof(retries), response,
                   sizeof(response), length)) {
     return Pn532InitializationResult::RfConfigurationFailed;
   }
-  rtos::logLine("NfcTask: PN532 RF configured");
+  FS_LOGI(services::LogComponent::Nfc, "PN532 RF configured");
   return Pn532InitializationResult::Ready;
 }
 
@@ -460,15 +458,17 @@ bool writePage(TargetInfo& target, std::uint8_t page,
       vTaskDelay(pdMS_TO_TICKS(config::kNfcScanIntervalMs));
     }
     if (!sameTagReacquired) {
-      rtos::logf("NfcTask: NTAG page %u retry aborted; tag missing or UID changed",
-                 static_cast<unsigned>(page));
+      FS_LOGW(services::LogComponent::Nfc,
+              "NTAG write retry aborted page=%u reason=tag_missing_or_uid_changed",
+              static_cast<unsigned>(page));
       return false;
     }
     target = reacquired;
   }
-  rtos::logf("NfcTask: NTAG page %u write failed after %u attempts",
-             static_cast<unsigned>(page),
-             static_cast<unsigned>(config::kNtagPageWriteAttempts));
+  FS_LOGE(services::LogComponent::Nfc,
+          "NTAG page write failed page=%u attempts=%u",
+          static_cast<unsigned>(page),
+          static_cast<unsigned>(config::kNtagPageWriteAttempts));
   return false;
 }
 
@@ -585,15 +585,17 @@ models::TagTechnology detectNtagTechnology(TargetInfo& target,
   std::uint8_t capability[16]{};
   if (!readPages(target, 3, capability)) {
     if (diagnostics)
-      rtos::logLine("NfcTask: Type-2 capability page read failed");
+      FS_LOGW(services::LogComponent::Nfc,
+              "Type2 capability read failed page=3");
     return technologyFor(target);
   }
   const models::TagTechnology capabilityTechnology =
       technologyFromCapability(capability);
   if (capabilityTechnology != models::TagTechnology::OtherIso14443A) {
     if (diagnostics)
-      rtos::logf("NfcTask: NTAG identified by CC=%02X %02X %02X %02X",
-                 capability[0], capability[1], capability[2], capability[3]);
+      FS_LOGD(services::LogComponent::Nfc,
+              "NTAG identified cc=%02X%02X%02X%02X", capability[0],
+              capability[1], capability[2], capability[3]);
     return capabilityTechnology;
   }
 
@@ -608,14 +610,15 @@ models::TagTechnology detectNtagTechnology(TargetInfo& target,
   std::size_t versionLength = 0;
   if (!communicateThru(command, sizeof(command), version, sizeof(version),
                        versionLength)) {
-    if (diagnostics) rtos::logLine("NfcTask: NTAG GET_VERSION failed");
+    if (diagnostics)
+      FS_LOGW(services::LogComponent::Nfc, "NTAG GET_VERSION failed");
     return technologyFor(target);
   }
   const models::TagTechnology technology =
       services::identifyNtag21x(version, versionLength, capability);
   if (diagnostics) {
-    rtos::logf(
-        "NfcTask: unformatted GET_VERSION=%02X %02X %02X %02X %02X %02X %02X %02X",
+    FS_LOGD(services::LogComponent::Nfc,
+        "Unformatted NTAG version=%02X%02X%02X%02X%02X%02X%02X%02X",
         version[0], version[1], version[2], version[3], version[4], version[5],
         version[6], version[7]);
   }
@@ -661,8 +664,8 @@ bool ntagWritableForPages(const TargetInfo& target,
       readPages(target, dynamicLockPage(technology), dynamicLocks);
   if (!capabilityRead || !staticLocksRead || !dynamicLocksRead) {
     if (diagnostics)
-      rtos::logf(
-          "NfcTask: writable metadata reads: CC=%s static=%s dynamic=%s",
+      FS_LOGW(services::LogComponent::Nfc,
+          "Writable metadata incomplete cc=%s static=%s dynamic=%s",
           capabilityRead ? "ok" : "failed",
           staticLocksRead ? "ok" : "failed",
           dynamicLocksRead ? "ok" : "failed");
@@ -677,8 +680,8 @@ bool ntagWritableForPages(const TargetInfo& target,
       dynamicLocks[7]);
   if (resultKnown != nullptr) *resultKnown = true;
   if (diagnostics)
-    rtos::logf(
-        "NfcTask: locks static=%02X %02X dynamic=%02X %02X %02X AUTH0=%02X -> %s",
+    FS_LOGD(services::LogComponent::Nfc,
+        "NTAG locks static=%02X%02X dynamic=%02X%02X%02X auth0=%02X writable=%s",
         staticLocks[0], staticLocks[1], dynamicLocks[0], dynamicLocks[1],
         dynamicLocks[2], dynamicLocks[7], writable ? "writable" : "locked");
   return writable;
@@ -790,7 +793,8 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
         std::memcmp(reacquired.uid.data(), target.uid.data(),
                     target.uidLength) == 0) {
       target = reacquired;
-      rtos::logLine("NfcTask: target reacquired after GET_VERSION failure");
+      FS_LOGD(services::LogComponent::Nfc,
+              "Target reacquired after_get_version_failure=true");
     }
   }
   raw.uidLength = target.uidLength;
@@ -818,9 +822,10 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
   }
   static const nfc::TagParserRegistry registry{};
   const models::TagReadResult result = registry.parse(raw);
-  rtos::logf("NfcTask: technology=%s, format=%s, writable=%s",
-             technologyDescription(result.technology),
-             formatDescription(result.format), result.writable ? "yes" : "no");
+  FS_LOGD(services::LogComponent::Nfc,
+          "Tag classified tech=%s format=%s writable=%s",
+          technologyDescription(result.technology),
+          formatDescription(result.format), result.writable ? "true" : "false");
 
   rtos::AppEvent read{};
   read.type = rtos::AppEventType::NfcTagRead;
@@ -864,7 +869,9 @@ void handleWrite(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
   const models::TagTechnology technology = detectNtagTechnology(writeTarget);
   if (!services::buildSpoolmanType2Ndef(command.spoolId, bytes.data(),
                                         bytes.size(), length)) {
-    rtos::logLine("NfcTask: NTAG payload creation failed");
+    FS_LOGE(services::LogComponent::Nfc,
+            "NTAG payload creation failed spool_id=%lu",
+            static_cast<unsigned long>(command.spoolId));
     sendError(ctx, command.requestId, "NFC tag payload creation failed");
     return;
   }
@@ -873,20 +880,21 @@ void handleWrite(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
       activeResult.definition.hasSpoolId &&
       activeResult.definition.spoolId == command.spoolId;
   if (payloadAlreadyMatches) {
-    rtos::logf(
-        "NfcTask: FilamentStation payload already contains spool %lu; verifying without rewrite",
+    FS_LOGI(services::LogComponent::Nfc,
+        "Payload already current spool_id=%lu action=verify_only",
         static_cast<unsigned long>(command.spoolId));
   } else {
     if (!ntagWritableForPages(
             writeTarget, technology,
             static_cast<std::uint8_t>(3U + length / 4U), true)) {
-      rtos::logLine("NfcTask: NTAG write range is not safely writable");
+      FS_LOGE(services::LogComponent::Nfc,
+              "NTAG write rejected reason=unsafe_range");
       sendError(ctx, command.requestId,
                 "NFC tag write range is not writable");
       return;
     }
     if (!writeNdef(writeTarget, technology, bytes.data(), length)) {
-      rtos::logLine("NfcTask: NTAG NDEF page write failed");
+      FS_LOGE(services::LogComponent::Nfc, "NTAG NDEF write failed");
       sendError(ctx, command.requestId, "NFC tag write failed");
       return;
     }
@@ -915,8 +923,8 @@ void handleWrite(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
                           : services::NfcPayloadInfo{};
   if (!sameTag || result.type != services::NfcPayloadType::Spoolman ||
       result.spoolId != command.spoolId) {
-    rtos::logf(
-        "NfcTask: NTAG verification failed: sameUid=%s, payloadType=%u, expectedSpool=%lu, actualSpool=%lu, bytes=%u",
+    FS_LOGE(services::LogComponent::Nfc,
+        "NTAG verification failed same_uid=%s payload_type=%u expected_spool_id=%lu actual_spool_id=%lu bytes=%u",
         sameTag ? "yes" : "no", static_cast<unsigned>(result.type),
         static_cast<unsigned long>(command.spoolId),
         static_cast<unsigned long>(result.spoolId),
@@ -989,39 +997,33 @@ void handleErase(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
 void nfcTask(void* parameter) {
   auto& ctx = *static_cast<rtos::RtosContext*>(parameter);
   if (!initializeUart()) {
-    rtos::logLine("NfcTask: PN532 UART initialization failed");
+    FS_LOGE(services::LogComponent::Nfc,
+            "PN532 UART initialization failed uart=%d",
+            config::kPn532UartNumber);
     sendError(ctx, 0, "PN532 UART initialization failed");
     for (;;) ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
   }
-  {
-    char uartStatus[112]{};
-    std::snprintf(uartStatus, sizeof(uartStatus),
-                  "NfcTask: UART%d ready, TX=GPIO%d -> SCL/RXD, "
-                  "RX=GPIO%d <- SDA/TXD, %lu 8N1",
-                  config::kPn532UartNumber, config::kPn532UartTxPin,
-                  config::kPn532UartRxPin,
-                  static_cast<unsigned long>(config::kPn532UartBaudRate));
-    rtos::logLine(uartStatus);
-  }
+  FS_LOGI(services::LogComponent::Nfc,
+          "UART ready uart=%d tx_gpio=%d rx_gpio=%d baud=%lu mode=8N1",
+          config::kPn532UartNumber, config::kPn532UartTxPin,
+          config::kPn532UartRxPin,
+          static_cast<unsigned long>(config::kPn532UartBaudRate));
   const Pn532InitializationResult initializationResult = initializePn532();
   if (initializationResult != Pn532InitializationResult::Ready) {
-    char initializationError[128]{};
     if (lastTransactionRxBytes == 0) {
-      std::snprintf(initializationError, sizeof(initializationError),
-                    "NfcTask: PN532 %s failed; no UART bytes received",
-                    initializationStep(initializationResult));
-      rtos::logLine(initializationError);
+      FS_LOGE(services::LogComponent::Nfc,
+              "PN532 initialization failed step=%s uart_bytes=0",
+              initializationStep(initializationResult));
       sendError(ctx, 0, "PN532 not responding; check HSU wiring");
     } else {
-      std::snprintf(initializationError, sizeof(initializationError),
-                    "NfcTask: PN532 %s invalid/incomplete (%u UART bytes)",
-                    initializationStep(initializationResult),
-                    static_cast<unsigned>(lastTransactionRxBytes));
-      rtos::logLine(initializationError);
+      FS_LOGE(services::LogComponent::Nfc,
+              "PN532 response invalid step=%s uart_bytes=%u",
+              initializationStep(initializationResult),
+              static_cast<unsigned>(lastTransactionRxBytes));
       sendError(ctx, 0, "PN532 returned an invalid UART frame");
     }
   } else {
-    rtos::logLine("NfcTask: PN532 ready");
+    FS_LOGI(services::LogComponent::Nfc, "PN532 ready");
     xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_NFC_READY);
     rtos::AppEvent event{};
     event.type = rtos::AppEventType::NfcInitialized;
@@ -1029,8 +1031,9 @@ void nfcTask(void* parameter) {
     sendEvent(ctx, event);
   }
 
-  rtos::logf("NfcTask: minimum remaining stack after initialization: %u bytes",
-             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+  FS_LOGD(services::LogComponent::Nfc,
+          "Stack watermark context=initialization free_bytes=%u",
+          static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
 
   bool reading = true;
   bool present = false;
@@ -1161,7 +1164,9 @@ void nfcTask(void* parameter) {
       // A malformed or timed-out UART transaction is not evidence that the
       // tag was removed. Recover the PN532 transport, but preserve presence.
       if (++consecutiveScanErrors >= 2) {
-        rtos::logLine("NfcTask: PN532 scan communication recovery");
+        FS_LOGW(services::LogComponent::Nfc,
+                "PN532 scan recovery consecutive_errors=%u",
+                static_cast<unsigned>(consecutiveScanErrors));
         resetRfField();
         consecutiveScanErrors = 0;
       }

@@ -16,6 +16,7 @@
 #include "config/BoardConfig.h"
 #include "drivers/DisplayDriver.h"
 #include "drivers/TouchDriver.h"
+#include "services/Logger.h"
 #include "ui/generated/ui.h"
 #include "ui/models/MockUiDataProvider.h"
 
@@ -856,7 +857,10 @@ bool sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
   }
   if (xQueueSend(rtosContext->appEventQueue, &event,
                  pdMS_TO_TICKS(250)) != pdPASS) {
-    rtos::logLine("UiTask: appEventQueue overflow while sending UiAction");
+    FS_LOGW(services::LogComponent::Ui,
+            "Action enqueue failed queue=app_event action=%u request_id=%lu",
+            static_cast<unsigned>(type),
+            static_cast<unsigned long>(event.requestId));
     return false;
   }
   return true;
@@ -2748,24 +2752,25 @@ bool initializeLvgl(UiRuntimeInfo& runtimeInfo, rtos::RtosContext& context) {
   lv_indev_set_read_cb(touchInput, readTouch);
 
   ui_init();
-  rtos::logLine("UiTask: EEZ screens created");
+  FS_LOGI(services::LogComponent::Ui, "EEZ screens created");
   // A one-tick delay can expire on the next tick boundary without IDLE0 ever
   // running. Reserve a real scheduling window during this one-time startup.
   vTaskDelay(pdMS_TO_TICKS(250));
   applyApplicationFont();
-  rtos::logLine("UiTask: UI font applied");
+  FS_LOGI(services::LogComponent::Ui, "Application font applied");
   vTaskDelay(pdMS_TO_TICKS(250));
   bindGeneratedWidgets();
-  rtos::logLine("UiTask: UI widgets bound");
+  FS_LOGI(services::LogComponent::Ui, "Widgets bound");
   vTaskDelay(pdMS_TO_TICKS(250));
   updateHeaders(currentPrinterId);
-  rtos::logLine("UiTask: initial UI model applied");
+  FS_LOGI(services::LogComponent::Ui, "Initial model applied");
   lv_mem_monitor_t memoryMonitor{};
   lv_mem_monitor(&memoryMonitor);
-  rtos::logf("UiTask: LVGL memory free=%lu bytes, largest=%lu bytes, fragmentation=%u%%",
-             static_cast<unsigned long>(memoryMonitor.free_size),
-             static_cast<unsigned long>(memoryMonitor.free_biggest_size),
-             static_cast<unsigned>(memoryMonitor.frag_pct));
+  FS_LOGD(services::LogComponent::Ui,
+          "LVGL memory free_bytes=%lu largest_bytes=%lu fragmentation_pct=%u",
+          static_cast<unsigned long>(memoryMonitor.free_size),
+          static_cast<unsigned long>(memoryMonitor.free_biggest_size),
+          static_cast<unsigned>(memoryMonitor.frag_pct));
   vTaskDelay(pdMS_TO_TICKS(250));
   loadScreen(SCREEN_ID_SCR_BOOT);
 

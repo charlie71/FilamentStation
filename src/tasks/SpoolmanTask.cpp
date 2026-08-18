@@ -10,6 +10,7 @@
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/SpoolmanCatalog.h"
+#include "services/Logger.h"
 
 namespace filament_station::tasks {
 namespace {
@@ -22,7 +23,8 @@ void sendResult(rtos::RtosContext& ctx, rtos::AppEventType type,
   event.requestId = requestId;
   std::snprintf(event.text, sizeof(event.text), "%s", text);
   if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
-    rtos::logLine("SpoolmanTask: result queue overflow");
+    FS_LOGW(services::LogComponent::Spoolman,
+            "Event enqueue failed queue=app_event result=generic");
 }
 
 bool getJson(const char* url, std::uint32_t timeoutMs, JsonDocument& document,
@@ -115,10 +117,9 @@ bool patchJson(const char* url, std::uint32_t timeoutMs,
                     serverMessage);
     else
       std::snprintf(error, errorCapacity, "Spoolman HTTP %d", status);
-    char logMessage[224]{};
-    std::snprintf(logMessage, sizeof(logMessage),
-                  "SpoolmanTask: PATCH %s failed: %s", url, error);
-    rtos::logLine(logMessage);
+    FS_LOGE(services::LogComponent::Spoolman,
+            "Request failed method=PATCH url=\"%s\" error=\"%s\"", url,
+            error);
     http.end();
     return false;
   }
@@ -282,7 +283,8 @@ void sendCatalogItem(rtos::RtosContext& ctx, rtos::AppEventType type,
   event.spoolId = id;
   std::snprintf(event.text, sizeof(event.text), "%s", text);
   if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
-    rtos::logLine("SpoolmanTask: catalog result queue overflow");
+    FS_LOGW(services::LogComponent::Spoolman,
+            "Event enqueue failed queue=app_event result=catalog");
 }
 
 bool appendQuotedSearch(char* url, std::size_t capacity, const char* value) {
@@ -711,7 +713,8 @@ void importTagDefinition(rtos::RtosContext& ctx,
           : "");
   if (xQueueSend(ctx.appEventQueue, &completed,
                  pdMS_TO_TICKS(1000)) != pdPASS)
-    rtos::logLine("SpoolmanTask: import result queue overflow");
+    FS_LOGW(services::LogComponent::Spoolman,
+            "Event enqueue failed queue=app_event result=import");
 }
 
 void sendSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
@@ -734,7 +737,8 @@ void sendSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
                 static_cast<double>(spool.remainingWeightGrams),
                 spool.archived ? " \xC2\xB7 archiviert" : "");
   if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
-    rtos::logLine("SpoolmanTask: spool result queue overflow");
+    FS_LOGW(services::LogComponent::Spoolman,
+            "Event enqueue failed queue=app_event result=spool");
 }
 
 void loadSpools(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
@@ -802,7 +806,8 @@ void loadSpools(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
   std::snprintf(completed.text, sizeof(completed.text), "%ld Spulen gefunden",
                 static_cast<long>(count));
   if (xQueueSend(ctx.appEventQueue, &completed, pdMS_TO_TICKS(1000)) != pdPASS)
-    rtos::logLine("SpoolmanTask: completion queue overflow");
+    FS_LOGW(services::LogComponent::Spoolman,
+            "Event enqueue failed queue=app_event result=completion");
 }
 
 void updateWeight(rtos::RtosContext& ctx,
@@ -838,7 +843,8 @@ void updateWeight(rtos::RtosContext& ctx,
     failed.weightUpdate = update;
     std::snprintf(failed.text, sizeof(failed.text), "%s", error);
     if (xQueueSend(ctx.appEventQueue, &failed, pdMS_TO_TICKS(1000)) != pdPASS)
-      rtos::logLine("SpoolmanTask: weight error queue overflow");
+      FS_LOGW(services::LogComponent::Spoolman,
+              "Event enqueue failed queue=app_event result=weight_error");
     return;
   }
   models::SpoolmanSpool spool{};
@@ -868,7 +874,8 @@ void updateWeight(rtos::RtosContext& ctx,
                 static_cast<double>(spool.initialWeightGrams));
   if (xQueueSend(ctx.appEventQueue, &completed,
                  pdMS_TO_TICKS(1000)) != pdPASS)
-    rtos::logLine("SpoolmanTask: weight result queue overflow");
+    FS_LOGW(services::LogComponent::Spoolman,
+            "Event enqueue failed queue=app_event result=weight");
 }
 
 void healthCheck(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
