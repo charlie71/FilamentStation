@@ -176,6 +176,26 @@ void processLoadCommand(rtos::RtosContext& ctx,
     }
     return;
   }
+  if (result.ok() &&
+      command.documentType == rtos::StorageDocumentType::Spoolman) {
+    rtos::AppEvent event{};
+    event.type = rtos::AppEventType::StorageReadCompleted;
+    event.requestId = command.requestId;
+    event.value = static_cast<std::int32_t>(result.bytesProcessed);
+    event.spoolmanSettings.enabled = document["enabled"].as<bool>();
+    std::snprintf(event.spoolmanSettings.name,
+                  sizeof(event.spoolmanSettings.name), "%s",
+                  document["name"].as<const char*>());
+    std::snprintf(event.spoolmanSettings.serverUrl,
+                  sizeof(event.spoolmanSettings.serverUrl), "%s",
+                  document["serverUrl"].as<const char*>());
+    event.spoolmanSettings.timeoutMs = document["timeoutMs"].as<std::uint32_t>();
+    std::snprintf(event.text, sizeof(event.text),
+                  "Spoolman configuration loaded");
+    if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
+      rtos::logLine("StorageTask: Spoolman config event queue overflow");
+    return;
+  }
   if (result.ok() && command.documentType == rtos::StorageDocumentType::Nfc &&
       isMappingPath(command.path)) {
     if (!document["mappings"].is<JsonArrayConst>()) {

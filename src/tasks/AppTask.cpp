@@ -4,11 +4,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <array>
+#include <ArduinoJson.h>
 #include "config/NfcConfig.h"
 #include "config/ScaleConfig.h"
 #include "nfc/TagWritePolicy.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
+#include "services/SpoolmanUrl.h"
 
 namespace filament_station::tasks {
 namespace {
@@ -28,6 +30,8 @@ constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;
 constexpr std::uint32_t kNfcMappingLoadRequestId = 0x4E464302U;
 constexpr std::uint32_t kOpenMappingLoadRequestId = 0x4E464303U;
 constexpr std::uint32_t kNetworkLoadRequestId = 0x4E455401U;
+constexpr std::uint32_t kSpoolmanLoadRequestId = 0x53504D01U;
+std::uint32_t pendingSpoolmanSaveRequestId = 0;
 std::int32_t scaleCounts = 0;
 std::int32_t scaleOffsetCounts = 0;
 float scaleFactorCountsPerGram = 1.0F;
@@ -435,6 +439,56 @@ const char* validateSpoolmanDraft() {
     return "Fehler: Timeout muss 1000..60000 ms sein";
   }
   return nullptr;
+}
+
+bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
+                   const char* failureMessage);
+
+bool spoolmanSettingsFromDraft(models::SpoolmanSettings& settings) {
+  services::SpoolmanUrlParts parts{};
+  std::snprintf(parts.protocol, sizeof(parts.protocol), "%s", spoolmanDraft.protocol);
+  std::snprintf(parts.host, sizeof(parts.host), "%s", spoolmanDraft.host);
+  std::snprintf(parts.port, sizeof(parts.port), "%s", spoolmanDraft.port);
+  std::snprintf(parts.basePath, sizeof(parts.basePath), "%s", spoolmanDraft.basePath);
+  settings.enabled = true;
+  std::snprintf(settings.name, sizeof(settings.name), "%s", spoolmanDraft.name);
+  settings.timeoutMs = static_cast<std::uint32_t>(std::strtoul(spoolmanDraft.timeoutMs, nullptr, 10));
+  return services::buildNormalizedSpoolmanUrl(parts, settings.serverUrl,
+                                               sizeof(settings.serverUrl));
+}
+
+void applySpoolmanSettingsToDraft(const models::SpoolmanSettings& settings) {
+  services::SpoolmanUrlParts parts{};
+  if (settings.serverUrl[0] != '\0' &&
+      services::parseNormalizedSpoolmanUrl(settings.serverUrl, parts)) {
+    std::snprintf(spoolmanDraft.protocol, sizeof(spoolmanDraft.protocol), "%s", parts.protocol);
+    std::snprintf(spoolmanDraft.host, sizeof(spoolmanDraft.host), "%s", parts.host);
+    std::snprintf(spoolmanDraft.port, sizeof(spoolmanDraft.port), "%s", parts.port);
+    std::snprintf(spoolmanDraft.basePath, sizeof(spoolmanDraft.basePath), "%s", parts.basePath);
+  }
+  std::snprintf(spoolmanDraft.name, sizeof(spoolmanDraft.name), "%s", settings.name);
+  std::snprintf(spoolmanDraft.timeoutMs, sizeof(spoolmanDraft.timeoutMs), "%lu",
+                static_cast<unsigned long>(settings.timeoutMs));
+}
+
+void sendSpoolmanDraftToUi(rtos::RtosContext& ctx) {
+  for (std::int32_t field = 1; field <= 6; ++field) {
+    rtos::UiCommand command{};
+    command.type = rtos::UiCommandType::UpdateSettings;
+    command.value = field;
+    std::snprintf(command.text, sizeof(command.text), "%s", spoolmanField(field));
+    sendUiCommand(ctx, command, "AppTask: Spoolman settings UI queue overflow");
+  }
+}
+
+void requestSpoolmanConfiguration(rtos::RtosContext& ctx) {
+  rtos::StorageCommand command{};
+  command.type = rtos::StorageCommandType::LoadJson;
+  command.requestId = kSpoolmanLoadRequestId;
+  command.documentType = rtos::StorageDocumentType::Spoolman;
+  std::snprintf(command.path, sizeof(command.path), "/config/spoolman.json");
+  if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) != pdPASS)
+    rtos::logLine("AppTask: Spoolman config load queue overflow");
 }
 
 bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
@@ -1259,6 +1313,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       if (destination == nullptr || capacity == 0) return;
       std::snprintf(destination, capacity, "%s", action.text);
       command.type = rtos::UiCommandType::UpdateSettings;
+      command.value = action.value;
       command.value = 20 + action.value;
       std::snprintf(command.text, sizeof(command.text), "%s", destination);
       sendUiCommand(ctx, command, "AppTask: printer field queue overflow");
@@ -1315,16 +1370,61 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, action.requestId,
                     "Eingabefehler", error);
-      } else if (action.type == rtos::UiActionType::TestSpoolmanConnection) {
+      } else {
+        models::SpoolmanSettings settings{};
+        if (!spoolmanSettingsFromDraft(settings)) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Eingabefehler", "Die Server-URL konnte nicht normalisiert werden.");
+          return;
+        }
+        if (action.type == rtos::UiActionType::TestSpoolmanConnection) {
         sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                     rtos::UiOverlayKind::SpoolmanRequest,
                     action.requestId, "Spoolman-Anfrage",
-                    "Serverstatus wird abgefragt (Mock)." );
-      } else {
-        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Success, action.requestId,
-                    "Einstellungen g\xC3\xBCltig",
-                    "Spoolman-Konfiguration wurde validiert (Mock)." );
+                    "Serverstatus und Version werden abgefragt.");
+          rtos::SpoolmanCommand spoolman{};
+          spoolman.type = rtos::SpoolmanCommandType::HealthCheck;
+          spoolman.requestId = action.requestId;
+          spoolman.settings = settings;
+          if (xQueueSend(ctx.spoolmanCommandQueue, &spoolman,
+                         pdMS_TO_TICKS(1000)) != pdPASS) {
+            sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                        rtos::UiOverlayKind::Error, action.requestId,
+                        "Spoolman", "Die Anfrage konnte nicht gestartet werden.");
+          }
+        } else {
+          JsonDocument document;
+          document["schemaVersion"] = 1;
+          document["updatedAt"] = "1970-01-01T00:00:00Z";
+          document["documentType"] = "spoolman";
+          document["enabled"] = settings.enabled;
+          document["name"] = settings.name;
+          document["serverUrl"] = settings.serverUrl;
+          document["timeoutMs"] = settings.timeoutMs;
+          rtos::StorageCommand storage{};
+          storage.type = rtos::StorageCommandType::SaveJson;
+          storage.requestId = action.requestId;
+          storage.documentType = rtos::StorageDocumentType::Spoolman;
+          std::snprintf(storage.path, sizeof(storage.path), "/config/spoolman.json");
+          const std::size_t length = serializeJson(document, storage.json,
+                                                   sizeof(storage.json));
+          if (length == 0 || length >= sizeof(storage.json)) {
+            sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                        rtos::UiOverlayKind::Error, action.requestId,
+                        "Speichern fehlgeschlagen", "Konfiguration ist zu gro\xC3\x9F.");
+            return;
+          }
+          storage.jsonLength = static_cast<std::uint16_t>(length);
+          pendingSpoolmanSaveRequestId = action.requestId;
+          if (xQueueSend(ctx.storageCommandQueue, &storage,
+                         pdMS_TO_TICKS(1000)) != pdPASS) {
+            pendingSpoolmanSaveRequestId = 0;
+            sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                        rtos::UiOverlayKind::Error, action.requestId,
+                        "Speichern fehlgeschlagen", "StorageTask ist nicht erreichbar.");
+          }
+        }
       }
       return;
     }
@@ -2304,13 +2404,35 @@ void appTask(void* parameter) {
                     rtos::UiOverlayKind::Error, resultRequestId,
                     "WLAN-Verbindung fehlgeschlagen", event.text);
       }
+    } else if (event.type == rtos::AppEventType::SpoolmanConnected) {
+      rtos::UiCommand hide{};
+      hide.type = rtos::UiCommandType::HideProgress;
+      sendUiCommand(ctx, hide, "AppTask: Spoolman progress close overflow");
+      rtos::UiCommand status{};
+      status.type = rtos::UiCommandType::ShowStatus;
+      status.requestId = event.requestId;
+      status.value = 100;
+      std::snprintf(status.text, sizeof(status.text), "Status: online");
+      const char* version = std::strstr(event.text, "Version ");
+      std::snprintf(status.title, sizeof(status.title), "%s",
+                    version != nullptr ? version + 8 : "unbekannt");
+      sendUiCommand(ctx, status, "AppTask: Spoolman status queue overflow");
+      sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                  rtos::UiOverlayKind::Success, event.requestId,
+                  "Spoolman verbunden", event.text);
     } else if (event.type == rtos::AppEventType::SpoolmanError) {
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: Spoolman progress close overflow");
+      rtos::UiCommand status{};
+      status.type = rtos::UiCommandType::ShowStatus;
+      status.value = 100;
+      std::snprintf(status.text, sizeof(status.text), "Status: offline");
+      std::snprintf(status.title, sizeof(status.title), "-");
+      sendUiCommand(ctx, status, "AppTask: Spoolman error status overflow");
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                   rtos::UiOverlayKind::Error, event.requestId,
-                  "Spoolman-Import nicht verf\xC3\xBCgbar", event.text);
+                  "Spoolman nicht erreichbar", event.text);
     } else if (event.type == rtos::AppEventType::UiCommunicationTest) {
       uiStartupReady = true;
       rtos::UiCommand response{};
@@ -2341,6 +2463,39 @@ void appTask(void* parameter) {
         networkCommand.requestId = event.requestId;
         networkCommand.settings = event.networkSettings;
         sendNetworkCommand(ctx, networkCommand);
+      } else if (event.type == rtos::AppEventType::StorageReadCompleted &&
+                 event.requestId == kSpoolmanLoadRequestId) {
+        applySpoolmanSettingsToDraft(event.spoolmanSettings);
+        sendSpoolmanDraftToUi(ctx);
+        rtos::SpoolmanCommand spoolman{};
+        spoolman.type = rtos::SpoolmanCommandType::ApplyConfiguration;
+        spoolman.requestId = event.requestId;
+        spoolman.settings = event.spoolmanSettings;
+        if (xQueueSend(ctx.spoolmanCommandQueue, &spoolman,
+                       pdMS_TO_TICKS(1000)) != pdPASS)
+          rtos::logLine("AppTask: Spoolman configuration queue overflow");
+      } else if (pendingSpoolmanSaveRequestId != 0 &&
+                 event.requestId == pendingSpoolmanSaveRequestId &&
+                 event.type == rtos::AppEventType::StorageWriteCompleted) {
+        models::SpoolmanSettings settings{};
+        spoolmanSettingsFromDraft(settings);
+        rtos::SpoolmanCommand spoolman{};
+        spoolman.type = rtos::SpoolmanCommandType::ApplyConfiguration;
+        spoolman.requestId = event.requestId;
+        spoolman.settings = settings;
+        xQueueSend(ctx.spoolmanCommandQueue, &spoolman, pdMS_TO_TICKS(1000));
+        pendingSpoolmanSaveRequestId = 0;
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Success, event.requestId,
+                    "Spoolman gespeichert",
+                    "Die normalisierte Server-URL und das Timeout wurden gespeichert.");
+      } else if (pendingSpoolmanSaveRequestId != 0 &&
+                 event.requestId == pendingSpoolmanSaveRequestId &&
+                 event.type == rtos::AppEventType::StorageRequestError) {
+        pendingSpoolmanSaveRequestId = 0;
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Speichern fehlgeschlagen", event.text);
       } else if (event.type == rtos::AppEventType::StorageReadCompleted &&
           event.requestId == kScaleLoadRequestId) {
         scaleOffsetCounts = event.scaleOffsetCounts;
@@ -2552,6 +2707,7 @@ void appTask(void* parameter) {
       if (event.type == rtos::AppEventType::SdMounted) {
         storageStartupReady = true;
         requestNetworkConfiguration(ctx);
+        requestSpoolmanConfiguration(ctx);
         requestScaleConfiguration(ctx);
         rtos::StorageCommand mappingLoad{};
         mappingLoad.type = rtos::StorageCommandType::LoadJson;

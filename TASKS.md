@@ -676,14 +676,14 @@ Fehler:
 
 ## 7.1 Konfiguration
 
-* [ ] spoolman.json
-* [ ] GUI laden
-* [ ] GUI speichern
-* [ ] URL normalisieren
-* [ ] Timeout
-* [ ] Verbindung testen
-* [ ] Status
-* [ ] Version
+* [x] spoolman.json
+* [x] GUI laden
+* [x] GUI speichern
+* [x] URL normalisieren
+* [x] Timeout
+* [x] Verbindung testen
+* [x] Status
+* [x] Version
 
 ## 7.2 Spulen
 

@@ -172,6 +172,13 @@ void applyNetworkDefaults(JsonDocument& document) {
     document["connectTimeoutSeconds"] = 20;
 }
 
+void applySpoolmanDefaults(JsonDocument& document) {
+  if (document["enabled"].isNull()) document["enabled"] = false;
+  if (document["name"].isNull()) document["name"] = "Spoolman";
+  if (document["serverUrl"].isNull()) document["serverUrl"] = "";
+  if (document["timeoutMs"].isNull()) document["timeoutMs"] = 5000;
+}
+
 }  // namespace
 
 std::size_t JsonStorage::maxSizeFor(
@@ -236,6 +243,10 @@ JsonStorageResult JsonStorage::load(
   if (error == JsonStorageError::Ok &&
       documentType == rtos::StorageDocumentType::Network) {
     applyNetworkDefaults(document);
+  }
+  if (error == JsonStorageError::Ok &&
+      documentType == rtos::StorageDocumentType::Spoolman) {
+    applySpoolmanDefaults(document);
   }
   if (error == JsonStorageError::Ok) {
     error = validate(document, documentType);
@@ -322,8 +333,7 @@ JsonStorageError JsonStorage::createDefault(
       applyNetworkDefaults(document);
       break;
     case rtos::StorageDocumentType::Spoolman:
-      document["enabled"] = false;
-      document["serverUrl"] = "";
+      applySpoolmanDefaults(document);
       break;
     case rtos::StorageDocumentType::Bambu:
       document["selectedPrinterId"] = 0;
@@ -395,7 +405,13 @@ JsonStorageError JsonStorage::validate(
       return JsonStorageError::Ok;
     case rtos::StorageDocumentType::Spoolman:
       return document["enabled"].is<bool>() &&
+                     isNonEmptyString(document["name"]) &&
+                     std::strlen(document["name"].as<const char*>()) < 32U &&
                      document["serverUrl"].is<const char*>() &&
+                     std::strlen(document["serverUrl"].as<const char*>()) < 128U &&
+                     document["timeoutMs"].is<std::uint32_t>() &&
+                     document["timeoutMs"].as<std::uint32_t>() >= 1000U &&
+                     document["timeoutMs"].as<std::uint32_t>() <= 60000U &&
                      (!document["enabled"].as<bool>() ||
                       isNonEmptyString(document["serverUrl"]))
                  ? JsonStorageError::Ok

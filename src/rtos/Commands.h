@@ -194,6 +194,7 @@ enum class NetworkCommandType : std::uint8_t {
   ClearCredentials,
 };
 enum class SpoolmanCommandType : std::uint8_t {
+  ApplyConfiguration,
   HealthCheck,
   LoadSpool,
   SearchSpools,

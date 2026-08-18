@@ -116,7 +116,7 @@ std::int32_t advancedInputMode = 0;
 rtos::UiOverlayKind activeOverlayKind = rtos::UiOverlayKind::None;
 std::uint32_t activeOverlayRequestId = 0;
 
-void sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
+bool sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
                 std::uint8_t amsId = 0, std::uint8_t trayId = 0,
                 std::int32_t value = 0, rtos::SpoolId spoolId = 0,
                 const char* text = nullptr);
@@ -557,12 +557,12 @@ void setButtonColors(lv_obj_t* button, std::uint32_t backgroundRgb) {
   }
 }
 
-void sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
+bool sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
                 std::uint8_t amsId, std::uint8_t trayId,
                 std::int32_t value, rtos::SpoolId spoolId,
                 const char* text) {
   if (rtosContext == nullptr) {
-    return;
+    return false;
   }
   rtos::AppEvent event{};
   event.type = rtos::AppEventType::UiAction;
@@ -577,9 +577,12 @@ void sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
   if (text != nullptr) {
     std::snprintf(event.uiAction.text, sizeof(event.uiAction.text), "%s", text);
   }
-  if (xQueueSend(rtosContext->appEventQueue, &event, 0) != pdPASS) {
+  if (xQueueSend(rtosContext->appEventQueue, &event,
+                 pdMS_TO_TICKS(250)) != pdPASS) {
     rtos::logLine("UiTask: appEventQueue overflow while sending UiAction");
+    return false;
   }
+  return true;
 }
 
 void headerClicked(lv_event_t*) {
@@ -724,12 +727,25 @@ void spoolmanKeyboardEvent(lv_event_t* event) {
   }
   if (std::strcmp(key, "OK") == 0) {
     const bool printerEditor = editorContext == EditorContext::Printer;
-    sendAction(printerEditor ? rtos::UiActionType::EditPrinterField
-                             : rtos::UiActionType::EditSpoolmanSetting,
-               printerEditor ? editingPrinterId : currentPrinterId, 0, 0,
-               printerEditor ? activePrinterField : activeSpoolmanField, 0,
-               lv_textarea_get_text(spoolmanEditor));
-    closeSpoolmanEditor();
+    const std::int32_t field =
+        printerEditor ? activePrinterField : activeSpoolmanField;
+    const char* editedText = lv_textarea_get_text(spoolmanEditor);
+    if (sendAction(printerEditor ? rtos::UiActionType::EditPrinterField
+                                 : rtos::UiActionType::EditSpoolmanSetting,
+                   printerEditor ? editingPrinterId : currentPrinterId, 0, 0,
+                   field, 0, editedText)) {
+      if (!printerEditor) {
+        char* destination = spoolmanFieldDestination(field);
+        const std::size_t capacity = spoolmanFieldCapacity(field);
+        if (destination != nullptr && capacity > 0)
+          std::snprintf(destination, capacity, "%s", editedText);
+        updateSpoolmanSettingsContent();
+        lv_label_set_text(objects.spoolman_setting_status,
+                          "Status: ge\xC3\xA4ndert, nicht gespeichert");
+        lv_label_set_text(objects.spoolman_setting_version, "Server: -");
+      }
+      closeSpoolmanEditor();
+    }
   } else if (std::strcmp(key, "Abbr.") == 0) {
     closeSpoolmanEditor();
   } else if (std::strcmp(key, "Entf.") == 0) {
@@ -2672,6 +2688,10 @@ void processUiCommand(const rtos::UiCommand& command) {
       lv_label_set_text(objects.settings_bottom_status, command.text);
       if (command.value >= 100) {
         lv_label_set_text(objects.spoolman_setting_status, command.text);
+        char version[64];
+        std::snprintf(version, sizeof(version), "Server: %s",
+                      command.title[0] != '\0' ? command.title : "-");
+        lv_label_set_text(objects.spoolman_setting_version, version);
       }
       if (command.value >= 200) {
         lv_label_set_text(objects.printer_edit_status, command.text);

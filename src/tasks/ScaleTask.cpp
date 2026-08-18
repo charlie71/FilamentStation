@@ -240,6 +240,13 @@ void scaleTask(void* parameter) {
   };
   services::ScaleFilter filter(filterConfig);
   ScaleCalibrationState calibration;
+  {
+    char stackMessage[80]{};
+    std::snprintf(stackMessage, sizeof(stackMessage),
+                  "ScaleTask: minimum remaining stack after initialization: %u bytes",
+                  static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+    rtos::logLine(stackMessage);
+  }
   bool connected = false;
   bool connectionErrorReported = false;
   bool measurementOverflowReported = false;

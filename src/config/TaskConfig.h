@@ -21,7 +21,10 @@ constexpr TaskSettings kLoggingTask{"LoggingTask", 2048, 1, kNoCoreAffinity};
 // UI workflows additionally create fixed-size UiCommand objects.
 constexpr TaskSettings kAppTask{"AppTask", 8192, 3, kNoCoreAffinity};
 constexpr TaskSettings kUiTask{"UiTask", 8192, 2, kNoCoreAffinity};
-constexpr TaskSettings kScaleTask{"ScaleTask", 3072, 2, kNoCoreAffinity};
+// ScaleTask erzeugt die wertbasierte zentrale AppEvent-Nachricht auf dem
+// Stack. Seit diese auch persistente Service-Konfigurationen transportiert,
+// reichen 3072 Byte nicht mehr mit sicherer Reserve aus.
+constexpr TaskSettings kScaleTask{"ScaleTask", 4096, 2, kNoCoreAffinity};
 // Die Bambu-Erkennung kombiniert MIFARE-Authentifizierung, HKDF-SHA256,
 // Parserdaten und wertbasierte AppEvent-Nachrichten. Der gemessene 8-KiB-Stack
 // reicht fuer diesen Worst Case nicht aus, auch wenn NTAG-Lesevorgaenge damit

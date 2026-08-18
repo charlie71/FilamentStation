@@ -5,6 +5,7 @@
 #include <type_traits>
 #include "models/TagReadResult.h"
 #include "models/NetworkSettings.h"
+#include "models/SpoolmanSettings.h"
 #include "rtos/Commands.h"
 #include "rtos/Events.h"
 
@@ -40,6 +41,7 @@ struct AppEvent {
   NfcUidMapping nfcMappings[kMaximumNfcUidMappings];
   std::uint8_t nfcMappingCount;
   models::NetworkSettings networkSettings;
+  models::SpoolmanSettings spoolmanSettings;
   char networkSsid[33];
   char networkIp[16];
   // NFC diagnostics and multi-line UI status messages must remain complete.
@@ -96,6 +98,7 @@ struct SpoolmanCommand {
   std::uint32_t requestId;
   std::uint32_t spoolId;
   float weightGrams;
+  models::SpoolmanSettings settings;
   models::TagDefinition tagDefinition{};
 };
 struct BambuCommand {

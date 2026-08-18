@@ -25,7 +25,7 @@ erkannt. Die ersten fachlichen Felder und Standardwerte sind:
 |---|---|---|
 | `/config/device.json` | `device` | `deviceName`: `"FilamentStation"` |
 | `/config/network.json` | `network` | `hostname`: `"filamentstation"`, `dhcp`: `true`, `ipAddress`: `""`, `gateway`: `""`, `subnetMask`: `""`, `dns`: `""`, `portalName`: `"FilamentStation"`, `portalTimeoutSeconds`: `180`, `connectTimeoutSeconds`: `20` |
-| `/config/spoolman.json` | `spoolman` | `enabled`: `false`, `serverUrl`: `""` |
+| `/config/spoolman.json` | `spoolman` | `enabled`: `false`, `name`: `"Spoolman"`, `serverUrl`: `""`, `timeoutMs`: `5000` |
 | `/config/ui.json` | `ui` | `language`: `"de"`, `weightUnit`: `"g"` |
 | `/config/scale.json` | `scale` | `calibrated`: `false`, `tareOffsetCounts`: `0`, `factorCountsPerGram`: `1.0` |
 | `/config/nfc.json` | `nfc` | `tagSchemaVersion`: `1` |
@@ -33,6 +33,10 @@ erkannt. Die ersten fachlichen Felder und Standardwerte sind:
 `deviceName`, `hostname`, `language` und `weightUnit` muessen nichtleere
 Zeichenketten sein. `dhcp`, `enabled` und `calibrated` sind boolesche Werte.
 Wenn Spoolman aktiviert wird, darf `serverUrl` nicht leer sein.
+`serverUrl` wird ohne abschliessenden Schraegstrich und inklusive API-Basispfad
+gespeichert, zum Beispiel `http://spoolman.local:7912/api/v1`. `timeoutMs`
+liegt zwischen 1000 und 60000 Millisekunden. Beim Laden vorhandener Dateien
+werden `name` und `timeoutMs` kompatibel ergaenzt.
 `tagSchemaVersion` muss aktuell den Wert 1 besitzen.
 
 Die Scale-Datei speichert den zuletzt tarierten HX711-Rohwert und den bei der
