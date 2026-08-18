@@ -155,6 +155,15 @@ struct PendingTagRemoval {
   bool tagRemoved = false;
 };
 PendingTagRemoval pendingTagRemoval{};
+struct PendingNativeConsistencyCheck {
+  bool active = false;
+  std::uint32_t requestId = 0;
+  rtos::SpoolId payloadSpoolId = 0;
+  models::TagIdentity identity{};
+  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};
+  std::uint8_t uidLength = 0;
+};
+PendingNativeConsistencyCheck pendingNativeConsistency{};
 
 const char* tagTechnologyName(models::TagTechnology technology) {
   switch (technology) {
@@ -228,6 +237,38 @@ std::int32_t stagingTagCapabilities() {
 void applyTagUiState(rtos::UiCommand& command) {
   command.value = stagingTagCapabilities();
   command.spoolId = tagPresent ? mappedNfcSpool(currentTag) : 0;
+}
+
+bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
+                   const char* failureMessage);
+
+void showNativeTagAction(rtos::RtosContext& ctx, std::uint32_t requestId,
+                         rtos::SpoolId authoritativeSpoolId,
+                         const char* assignmentText) {
+  const char* chip =
+      currentTag.technology == models::TagTechnology::Ntag213
+          ? "NTAG213"
+          : (currentTag.technology == models::TagTechnology::Ntag215
+                 ? "NTAG215"
+                 : "NTAG216");
+  rtos::UiCommand navigation{};
+  navigation.type = rtos::UiCommandType::ShowScreen;
+  navigation.screenId = rtos::UiScreenId::TagActionSelect;
+  navigation.requestId = requestId;
+  navigation.value = stagingTagCapabilities();
+  navigation.spoolId = authoritativeSpoolId;
+  std::snprintf(navigation.text, sizeof(navigation.text),
+                "%s | %s | %s\n%s", chip,
+                currentTag.format == models::TagFormat::FilamentStation
+                    ? "FilamentStation"
+                    : "leer",
+                currentTag.writable ? "beschreibbar" : "schreibgesch\xC3\xBCtzt",
+                assignmentText != nullptr ? assignmentText : "Nicht zugeordnet");
+  if (sendUiCommand(ctx, navigation,
+                    "AppTask: native NFC action screen queue overflow")) {
+    previousScreen = currentScreen;
+    currentScreen = navigation.screenId;
+  }
 }
 
 const char* mappingFormatName(models::TagFormat format) {
@@ -2384,33 +2425,52 @@ void appTask(void* parameter) {
             currentTag.format == models::TagFormat::EmptyNdef ||
             currentTag.format == models::TagFormat::FilamentStation;
         if (nativeTechnology && nativeFormat) {
-          const char* chip =
-              currentTag.technology == models::TagTechnology::Ntag213
-                  ? "NTAG213"
-                  : (currentTag.technology == models::TagTechnology::Ntag215
-                         ? "NTAG215"
-                         : "NTAG216");
           if (currentTag.definition.hasSpoolId)
             pendingTagSpoolId = currentTag.definition.spoolId;
-          rtos::UiCommand navigation{};
-          navigation.type = rtos::UiCommandType::ShowScreen;
-          navigation.screenId = rtos::UiScreenId::TagActionSelect;
-          applyTagUiState(navigation);
-          std::snprintf(navigation.text, sizeof(navigation.text),
-                        navigation.spoolId == 0
-                            ? "%s | %s | %s\nNicht zugeordnet"
-                            : "%s | %s | %s\nZugeordnet zu Spule #%lu",
-                        chip,
-                        currentTag.format == models::TagFormat::FilamentStation
-                            ? "FilamentStation"
-                            : "leer",
-                        currentTag.writable ? "beschreibbar"
-                                            : "schreibgesch\xC3\xBCtzt",
-                        static_cast<unsigned long>(navigation.spoolId));
-          if (sendUiCommand(ctx, navigation,
-                            "AppTask: NFC action screen queue overflow")) {
-            previousScreen = currentScreen;
-            currentScreen = navigation.screenId;
+          if (currentTag.format == models::TagFormat::FilamentStation &&
+              currentTag.definition.hasSpoolId &&
+              currentTag.identity.source !=
+                  models::TagIdentitySource::Unknown &&
+              currentTag.identity.value[0] != '\0') {
+            const EventBits_t bits = xEventGroupGetBits(ctx.systemEventGroup);
+            if ((bits & (rtos::EVENT_SPOOLMAN_READY |
+                         rtos::EVENT_SPOOLMAN_TAG_FIELD_READY)) ==
+                (rtos::EVENT_SPOOLMAN_READY |
+                 rtos::EVENT_SPOOLMAN_TAG_FIELD_READY)) {
+              pendingNativeConsistency = {};
+              pendingNativeConsistency.active = true;
+              pendingNativeConsistency.requestId = event.requestId;
+              pendingNativeConsistency.payloadSpoolId =
+                  currentTag.definition.spoolId;
+              pendingNativeConsistency.identity = currentTag.identity;
+              pendingNativeConsistency.uidLength = currentTag.uidLength;
+              std::memcpy(pendingNativeConsistency.uid.data(), currentTag.uid,
+                          currentTag.uidLength);
+              rtos::SpoolmanCommand lookup{};
+              lookup.type = rtos::SpoolmanCommandType::FindSpoolByTag;
+              lookup.requestId = event.requestId;
+              lookup.tagIdentity = currentTag.identity;
+              if (xQueueSend(ctx.spoolmanCommandQueue, &lookup,
+                             pdMS_TO_TICKS(1000)) == pdPASS) {
+                sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                            rtos::UiOverlayKind::SpoolmanRequest,
+                            event.requestId, "Tag-Zuordnung wird gepr\xC3\xBC" "ft",
+                            "NFC-Payload und Spoolman-Zuordnung werden verglichen.");
+                continue;
+              }
+              pendingNativeConsistency = {};
+            }
+            resolvedTagIdentity = {};
+            resolvedTagSpoolId = 0;
+            showNativeTagAction(
+                ctx, event.requestId, 0,
+                "Spoolman-Zuordnung nicht pr\xC3\xBC" "fbar. NDEF wird nicht als Zuordnung verwendet.");
+          } else {
+            showNativeTagAction(ctx, event.requestId,
+                                mappedNfcSpool(currentTag),
+                                mappedNfcSpool(currentTag) == 0
+                                    ? "Nicht zugeordnet"
+                                    : "Zugeordnet");
           }
         } else if (currentTag.format == models::TagFormat::BambuLab) {
           const rtos::SpoolId mappedSpool = mappedNfcSpool(currentTag);
@@ -2596,6 +2656,7 @@ void appTask(void* parameter) {
           pendingTagAssignment = {};
         }
         pendingBambuMapping = false;
+        pendingNativeConsistency = {};
         tagPresent = false;
         currentTag = {};
         pendingTagOperation = PendingTagOperation::None;
@@ -2965,6 +3026,85 @@ void appTask(void* parameter) {
       std::snprintf(picker.text, sizeof(picker.text), "%s", event.text);
       sendUiCommand(ctx, picker, "AppTask: Spoolman picker result overflow");
     } else if (event.type == rtos::AppEventType::SpoolmanTagLookup &&
+               pendingNativeConsistency.active &&
+               event.requestId == pendingNativeConsistency.requestId) {
+      const auto check = pendingNativeConsistency;
+      pendingNativeConsistency = {};
+      rtos::UiCommand hide{};
+      hide.type = rtos::UiCommandType::HideProgress;
+      sendUiCommand(ctx, hide, "AppTask: consistency lookup close overflow");
+      const bool sameTag =
+          tagPresent && currentTag.uidLength == check.uidLength &&
+          std::memcmp(currentTag.uid, check.uid.data(), check.uidLength) == 0 &&
+          currentTag.identity.source == check.identity.source &&
+          std::strcmp(currentTag.identity.value, check.identity.value) == 0;
+      if (!sameTag) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Pr\xC3\xBC" "fung abgebrochen",
+                    "Der NFC-Tag wurde w\xC3\xA4hrend der Pr\xC3\xBC" "fung entfernt oder ausgetauscht.");
+        continue;
+      }
+      const auto status = static_cast<services::TagLookupStatus>(event.value);
+      if (status == services::TagLookupStatus::Duplicate) {
+        resolvedTagIdentity = {};
+        resolvedTagSpoolId = 0;
+        showNativeTagAction(
+            ctx, event.requestId, 0,
+            "Konflikt: Diese Tag-ID ist mehreren Spulen in Spoolman zugeordnet.");
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Mehrdeutige Tag-Zuordnung",
+                    "Diese Tag-ID ist mehreren Spulen zugeordnet. Der NDEF-Payload wird nicht als Zuordnung verwendet.");
+        continue;
+      }
+      if (status == services::TagLookupStatus::NotFound) {
+        resolvedTagIdentity = {};
+        resolvedTagSpoolId = 0;
+        char conflict[160]{};
+        std::snprintf(conflict, sizeof(conflict),
+                      "Konflikt: NDEF nennt Spule #%lu, in Spoolman fehlt die Zuordnung.",
+                      static_cast<unsigned long>(check.payloadSpoolId));
+        showNativeTagAction(ctx, event.requestId, 0, conflict);
+        FS_LOGW(services::LogComponent::App,
+                "Native tag consistency mismatch reason=server_assignment_missing payload_spool_id=%lu tag=%s",
+                static_cast<unsigned long>(check.payloadSpoolId),
+                check.identity.value);
+        continue;
+      }
+      if (status == services::TagLookupStatus::Found && event.spoolId != 0) {
+        resolvedTagIdentity = check.identity;
+        resolvedTagSpoolId = event.spoolId;
+        pendingTagSpoolId = event.spoolId;
+        char state[160]{};
+        if (event.spoolId == check.payloadSpoolId) {
+          std::snprintf(state, sizeof(state),
+                        "Konsistent zu Spule #%lu zugeordnet",
+                        static_cast<unsigned long>(event.spoolId));
+          FS_LOGI(services::LogComponent::App,
+                  "Native tag consistency verified spool_id=%lu tag=%s",
+                  static_cast<unsigned long>(event.spoolId),
+                  check.identity.value);
+        } else {
+          std::snprintf(state, sizeof(state),
+                        "Konflikt: NDEF #%lu, Spoolman-Zuordnung #%lu. Spoolman ist f\xC3\xBChrend.",
+                        static_cast<unsigned long>(check.payloadSpoolId),
+                        static_cast<unsigned long>(event.spoolId));
+          FS_LOGW(services::LogComponent::App,
+                  "Native tag consistency mismatch payload_spool_id=%lu server_spool_id=%lu tag=%s",
+                  static_cast<unsigned long>(check.payloadSpoolId),
+                  static_cast<unsigned long>(event.spoolId),
+                  check.identity.value);
+        }
+        showNativeTagAction(ctx, event.requestId, event.spoolId, state);
+        continue;
+      }
+      resolvedTagIdentity = {};
+      resolvedTagSpoolId = 0;
+      showNativeTagAction(ctx, event.requestId, 0,
+                          "Spoolman-Zuordnung konnte nicht bestimmt werden.");
+      continue;
+    } else if (event.type == rtos::AppEventType::SpoolmanTagLookup &&
                pendingTagRemoval.stage == TagRemovalStage::LookingUp &&
                event.requestId == pendingTagRemoval.requestId) {
       const auto status = static_cast<services::TagLookupStatus>(event.value);
@@ -3125,6 +3265,23 @@ void appTask(void* parameter) {
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: Spoolman progress close overflow");
+      if (pendingNativeConsistency.active &&
+          event.requestId == pendingNativeConsistency.requestId) {
+        pendingNativeConsistency = {};
+        resolvedTagIdentity = {};
+        resolvedTagSpoolId = 0;
+        if (tagPresent) {
+          showNativeTagAction(
+              ctx, event.requestId, 0,
+              "Spoolman-Pr\xC3\xBC" "fung fehlgeschlagen. NDEF wird nicht als Zuordnung verwendet.");
+        }
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Zuordnung nicht pr\xC3\xBC" "fbar",
+                    event.text[0] != '\0' ? event.text
+                                           : "Spoolman-Anfrage fehlgeschlagen.");
+        continue;
+      }
       if ((pendingTagRemoval.stage == TagRemovalStage::LookingUp ||
            pendingTagRemoval.stage ==
                TagRemovalStage::ClearingServerAssignment) &&

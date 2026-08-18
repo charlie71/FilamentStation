@@ -740,13 +740,13 @@ API gegen die tatsächlich verwendete Spoolman-Version prüfen.
 
 ## 7.7.7 Native Payload Konsistenz
 
-* [ ] `spoolman:<id>` gegen Spoolman-Zuordnung prüfen
-* [ ] konsistenter Fall
-* [ ] Payload-ID falsch
-* [ ] Spoolman-Zuordnung fehlt
-* [ ] Tag ist anderer Spule zugeordnet
-* [ ] Konflikt verständlich anzeigen
-* [ ] Spoolman als führende Quelle behandeln
+* [x] `spoolman:<id>` gegen Spoolman-Zuordnung prüfen
+* [x] konsistenter Fall
+* [x] Payload-ID falsch
+* [x] Spoolman-Zuordnung fehlt
+* [x] Tag ist anderer Spule zugeordnet
+* [x] Konflikt verständlich anzeigen
+* [x] Spoolman als führende Quelle behandeln
 
 ## 7.7.8 Duplicate Handling
 
