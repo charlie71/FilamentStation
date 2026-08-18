@@ -285,6 +285,28 @@ void processLoadCommand(rtos::RtosContext& ctx,
       rtos::logLine("StorageTask: mapping event queue overflow");
     return;
   }
+  if (result.ok() &&
+      command.documentType == rtos::StorageDocumentType::PendingWeight) {
+    rtos::AppEvent event{};
+    event.type = rtos::AppEventType::StorageReadCompleted;
+    event.requestId = command.requestId;
+    event.weightUpdate.spoolId = document["spoolId"].as<std::uint32_t>();
+    event.weightUpdate.remainingWeightGrams =
+        document["remainingWeightGrams"].as<float>();
+    event.weightUpdate.initialWeightGrams =
+        document["initialWeightGrams"].as<float>();
+    event.weightUpdate.emptySpoolWeightGrams =
+        document["emptySpoolWeightGrams"].as<float>();
+    event.weightUpdate.updateInitialWeight =
+        document["updateInitialWeight"].as<bool>();
+    event.weightUpdate.updateEmptySpoolWeight =
+        document["updateEmptySpoolWeight"].as<bool>();
+    std::snprintf(event.text, sizeof(event.text),
+                  "Pending weight loaded");
+    if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
+      rtos::logLine("StorageTask: pending weight event queue overflow");
+    return;
+  }
   sendStorageResult(ctx, command, rtos::AppEventType::StorageReadCompleted,
                     result, "JSON loaded and validated");
 }
@@ -339,6 +361,14 @@ void processStorageCommand(rtos::RtosContext& ctx,
       processSaveCommand(ctx, command);
       return;
     case rtos::StorageCommandType::DeleteJson:
+      if (!SD.exists(command.path) || SD.remove(command.path)) {
+        sendStorageEvent(ctx, rtos::AppEventType::StorageWriteCompleted,
+                         "JSON deleted", command.requestId);
+      } else {
+        sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                         "JSON delete failed", command.requestId);
+      }
+      return;
     case rtos::StorageCommandType::CreateBackup:
       sendStorageResult(ctx, command, rtos::AppEventType::StorageRequestError,
                         {services::JsonStorageError::InvalidArgument, 0}, "");

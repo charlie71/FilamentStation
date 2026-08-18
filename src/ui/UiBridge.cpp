@@ -93,6 +93,8 @@ constexpr const char* kKeyboardNumberMap[] = {
 std::uint32_t nextRequestId = 100;
 models::UiWeightState liveWeight{0.0F, 0.0F, false, false, true,
                                  "wartet auf Messwert"};
+models::UiStagingSummary stagingState{};
+models::UiSpoolSummary stagingSpoolState{};
 lv_obj_t* calibrationEditor = nullptr;
 lv_obj_t* calibrationKeyboard = nullptr;
 constexpr std::size_t kHomeColorStripGroups = 6;
@@ -873,7 +875,7 @@ void backClicked(lv_event_t*) {
 }
 
 void stagingClicked(lv_event_t*) {
-  const auto& staging = models::mock::staging();
+  const auto& staging = stagingState;
   const rtos::SpoolId spoolId =
       staging.printerId == currentPrinterId ? staging.spoolId : 0;
   sendAction(rtos::UiActionType::SelectStaging, currentPrinterId, 0, 0, 0,
@@ -1308,7 +1310,7 @@ void managePrintersClicked(lv_event_t*) {
 }
 
 void stagingMoreClicked(lv_event_t*) {
-  const auto& staging = models::mock::staging();
+  const auto& staging = stagingState;
   sendAction(rtos::UiActionType::SelectStaging, currentPrinterId, 0, 0, 1,
              staging.spoolId);
 }
@@ -1316,7 +1318,7 @@ void stagingMoreClicked(lv_event_t*) {
 void stagingActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
-  const auto& spool = models::mock::spool();
+  const auto& spool = stagingSpoolState;
   char advancedData[64]{};
   const char* actionText = nullptr;
   if (type == rtos::UiActionType::QuickWeight) {
@@ -1331,7 +1333,7 @@ void stagingActionClicked(lv_event_t* event) {
              type == rtos::UiActionType::QuickWeight
                  ? static_cast<std::int32_t>(spool.emptyWeightGrams)
                  : 0,
-             models::mock::staging().spoolId,
+             stagingState.spoolId,
              actionText);
 }
 
@@ -1354,7 +1356,7 @@ void trayTargetClicked(lv_event_t* event) {
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   const std::uint8_t amsId = trayId == 0xFF ? 0xFF : currentAmsId;
   sendAction(rtos::UiActionType::SelectTray, currentPrinterId, amsId, trayId,
-             2, models::mock::staging().spoolId);
+             2, stagingState.spoolId);
 }
 
 void tagActionClicked(lv_event_t* event) {
@@ -1363,7 +1365,7 @@ void tagActionClicked(lv_event_t* event) {
   const rtos::SpoolId spoolId =
       (type == rtos::UiActionType::SelectSpool ||
        type == rtos::UiActionType::AssignTag)
-          ? models::mock::staging().spoolId
+          ? stagingState.spoolId
           : 0;
   sendAction(type, currentPrinterId, 0, 0, 0, spoolId);
 }
@@ -1606,7 +1608,11 @@ void bindGeneratedWidgets() {
   lv_obj_set_style_text_align(objects.staging_action_write_tag,
                               LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
   lv_obj_set_style_radius(objects.staging_action_write_tag, 8, LV_PART_MAIN);
-  lv_obj_add_flag(objects.staging_action_erase_tag, LV_OBJ_FLAG_HIDDEN);
+  setControlText(objects.staging_action_erase_tag,
+                 "Spule ausw\xC3\xA4hlen");
+  lv_obj_remove_flag(objects.staging_action_erase_tag, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_pos(objects.staging_action_erase_tag, 4, 212);
+  lv_obj_set_size(objects.staging_action_erase_tag, 472, 48);
   setControlText(objects.tray_select_external, "Extern");
   setControlText(objects.tray_action_reset, "Slot zur\xC3\xBC" "cksetzen");
   setControlText(objects.scale_settings_reset,
@@ -1776,6 +1782,8 @@ void bindGeneratedWidgets() {
   bindClick(objects.staging_action_unlink_tag, stagingActionClicked,
             static_cast<std::uintptr_t>(
                 rtos::UiActionType::RemoveTagAssignment));
+  bindClick(objects.staging_action_erase_tag, stagingActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::SelectSpool));
 
   bindClick(objects.tray_details_header, headerClicked);
   bindClick(objects.tray_actions_header, headerClicked);
@@ -2003,6 +2011,7 @@ void bindGeneratedWidgets() {
   for (lv_obj_t* button : stagingButtons) {
     styleLabelButton(button);
   }
+  styleLabelButton(objects.staging_action_erase_tag);
   styleLabelButton(objects.staging_action_clear, 0xC62828);
   styleLabelButton(objects.staging_actions_back, 0x455A64);
   const std::array<lv_obj_t*, 23> trayButtons{{
@@ -2189,7 +2198,7 @@ void updateHomeContent() {
   updateTrayButton(objects.home_external, currentPrinterId, 0xFF, 0xFF,
                    "Extern", 4);
 
-  const auto& staging = models::mock::staging();
+  const auto& staging = stagingState;
   char stagingText[64];
   if (staging.printerId == currentPrinterId && staging.spoolId != 0) {
     std::snprintf(stagingText, sizeof(stagingText), "Staging\n%s #%lu\n%.0f g",
@@ -2253,8 +2262,8 @@ void updateWeightDisplays() {
 }
 
 void updateStagingContent() {
-  const auto& staging = models::mock::staging();
-  const auto& spool = models::mock::spool();
+  const auto& staging = stagingState;
+  const auto& spool = stagingSpoolState;
   char colors[40];
   switch (staging.colorCount) {
     case 0:
@@ -2449,7 +2458,7 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
     selectedTrayId = trayId;
     trayTargetSelected = true;
   }
-  const auto& staging = models::mock::staging();
+  const auto& staging = stagingState;
   char title[80];
   std::snprintf(title, sizeof(title), "Zielslot für Spule %lu auswählen",
                 static_cast<unsigned long>(staging.spoolId));
@@ -2874,6 +2883,82 @@ void processUiCommand(const rtos::UiCommand& command) {
         updateTrayDetails();
       }
       break;
+    case rtos::UiCommandType::UpdateStaging: {
+      stagingState.spoolId = command.spoolId;
+      stagingState.state = models::UiStagingState::WeightReady;
+      const bool hasReloadedSpool = command.spool.id != 0;
+      stagingState.remainingWeightGrams = hasReloadedSpool
+                                               ? command.spool.remainingWeightGrams
+                                               : command.weightUpdate.remainingWeightGrams;
+      stagingState.grossWeightGrams = liveWeight.grossWeightGrams;
+      stagingSpoolState.spoolId = command.spoolId;
+      stagingSpoolState.remainingWeightGrams = stagingState.remainingWeightGrams;
+      if (hasReloadedSpool) {
+        stagingSpoolState.emptyWeightGrams = command.spool.emptyWeightGrams;
+        stagingSpoolState.initialWeightGrams = command.spool.initialWeightGrams;
+        std::snprintf(stagingState.vendor, sizeof(stagingState.vendor), "%s",
+                      command.spool.vendor);
+        std::snprintf(stagingState.material, sizeof(stagingState.material), "%s",
+                      command.spool.material);
+        std::snprintf(stagingSpoolState.vendor,
+                      sizeof(stagingSpoolState.vendor), "%s",
+                      command.spool.vendor);
+        std::snprintf(stagingSpoolState.filament,
+                      sizeof(stagingSpoolState.filament), "%s",
+                      command.spool.filament);
+        std::snprintf(stagingSpoolState.material,
+                      sizeof(stagingSpoolState.material), "%s",
+                      command.spool.material);
+      }
+      char vendor[32]{}, filament[40]{}, material[24]{};
+      float emptyWeightGrams = command.weightUpdate.emptySpoolWeightGrams;
+      float initialWeightGrams = command.weightUpdate.initialWeightGrams;
+      const int parsed = std::sscanf(
+          command.text, "%31[^|]|%39[^|]|%23[^|]|%f|%f", vendor, filament,
+          material, &emptyWeightGrams, &initialWeightGrams);
+      if (parsed >= 3) {
+        std::snprintf(stagingState.vendor, sizeof(stagingState.vendor), "%s",
+                      vendor);
+        std::snprintf(stagingState.material,
+                      sizeof(stagingState.material), "%s", material);
+        std::snprintf(stagingSpoolState.vendor,
+                      sizeof(stagingSpoolState.vendor), "%s", vendor);
+        std::snprintf(stagingSpoolState.filament,
+                      sizeof(stagingSpoolState.filament), "%s", filament);
+        std::snprintf(stagingSpoolState.material,
+                      sizeof(stagingSpoolState.material), "%s", material);
+      }
+      stagingSpoolState.emptyWeightGrams = emptyWeightGrams;
+      stagingSpoolState.initialWeightGrams = initialWeightGrams;
+      stagingState.colorCount = 0;
+      stagingSpoolState.colorCount = 0;
+      if (hasReloadedSpool) {
+        for (std::uint8_t index = 0;
+             index < command.spool.colorCount &&
+             index < models::kMaximumFilamentColors;
+             ++index) {
+          std::uint32_t rgb = 0;
+          if (!parseSpoolPickerColor(command.spool.colorHex[index], rgb))
+            continue;
+          stagingState.colorRgb[stagingState.colorCount++] = rgb;
+          stagingSpoolState.colorRgb[stagingSpoolState.colorCount++] = rgb;
+        }
+      }
+      for (std::uint8_t index = 0;
+           !hasReloadedSpool && index < command.spoolColorCount &&
+           index < models::kMaximumFilamentColors;
+           ++index) {
+        std::uint32_t rgb = 0;
+        if (!parseSpoolPickerColor(command.spoolColorHex[index], rgb))
+          continue;
+        stagingState.colorRgb[stagingState.colorCount] = rgb;
+        stagingSpoolState.colorRgb[stagingSpoolState.colorCount] = rgb;
+        ++stagingState.colorCount;
+        ++stagingSpoolState.colorCount;
+      }
+      updateStagingContent();
+      break;
+    }
     case rtos::UiCommandType::UpdateWeight:
       liveWeight.grossWeightGrams = command.weightGrams;
       liveWeight.netWeightGrams = command.weightGrams;

@@ -35,8 +35,24 @@ drei Farbsegmenten. Die Beschriftung liegt zur sicheren Lesbarkeit auf einer
 kontrastreichen halbtransparenten Flaeche. Fehlende oder ungueltige Farben
 werden neutral grau dargestellt.
 
-Aenderungsoperationen an Spulen gehoeren zu spaeteren Teilaufgaben und sind
-noch nicht implementiert.
+## Gewicht aktualisieren
+
+Quick Weight und Advanced Weight senden eine wertbasierte Anfrage ueber
+UiTask, AppTask und SpoolmanTask. Der SpoolmanTask aktualisiert die ausgewaehlte
+Spule mit `PATCH /api/v1/spool/{id}`. Quick Weight uebertraegt das ermittelte
+Restgewicht. Advanced Weight kann zusaetzlich Ausgangs- und Leergewicht
+aktualisieren.
+
+Nach erfolgreichem PATCH wird die Spule aus der Antwort beziehungsweise per
+erneutem `GET /api/v1/spool/{id}` geladen. Erst diese Serverdaten aktualisieren
+die Staging-Anzeige. Ein HTTP-, Validierungs- oder Verbindungsfehler wird in der
+GUI angezeigt und die noch nicht uebertragene Messung bleibt als Pending-Aktion
+erhalten.
+
+Version 1 speichert genau die zuletzt fehlgeschlagene Gewichtsaktualisierung.
+Eine neue bestaetigte Messung ersetzt eine bereits wartende Messung. Beim
+naechsten Start oder nach wiederhergestellter WLAN-Verbindung wird sie erneut
+uebertragen; PATCH ist fuer denselben Messwert wiederholbar.
 
 ## Hersteller und Filamente
 

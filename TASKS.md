@@ -723,12 +723,12 @@ Fehler:
 
 ## 7.5 Gewicht
 
-* [ ] Quick Weight
-* [ ] Advanced Weight
-* [ ] Spule neu laden
-* [ ] Staging
-* [ ] Fehler
-* [ ] Pending
+* [x] Quick Weight
+* [x] Advanced Weight
+* [x] Spule neu laden
+* [x] Staging
+* [x] Fehler
+* [x] Pending
 
 ## 7.6 Cache
 

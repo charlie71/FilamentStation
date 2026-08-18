@@ -44,6 +44,8 @@ struct AppEvent {
   std::uint8_t nfcMappingCount;
   models::NetworkSettings networkSettings;
   models::SpoolmanSettings spoolmanSettings;
+  models::SpoolmanSpool spool{};
+  models::SpoolmanWeightUpdate weightUpdate{};
   char networkSsid[33];
   char networkIp[16];
   char spoolColorHex[models::SpoolmanSpool::kMaximumColors][9];
@@ -67,6 +69,8 @@ struct UiCommand {
   std::int32_t value;
   UiNetworkState networkState;
   float weightGrams;
+  models::SpoolmanSpool spool{};
+  models::SpoolmanWeightUpdate weightUpdate{};
   char spoolColorHex[models::SpoolmanSpool::kMaximumColors][9];
   std::uint8_t spoolColorCount;
   char title[48];
@@ -83,7 +87,7 @@ struct ScaleCommand {
 };
 struct NfcCommand { NfcCommandType type; std::uint32_t requestId; std::uint32_t spoolId; };
 
-enum class StorageDocumentType : std::uint8_t { Device, Network, Spoolman, Bambu, Ui, Scale, Nfc, Diagnostics };
+enum class StorageDocumentType : std::uint8_t { Device, Network, Spoolman, Bambu, Ui, Scale, Nfc, Diagnostics, PendingWeight };
 constexpr std::size_t kStorageJsonPayloadCapacity = 768;
 struct StorageCommand {
   StorageCommandType type;
@@ -108,6 +112,7 @@ struct SpoolmanCommand {
   models::TagDefinition tagDefinition{};
   models::SpoolmanVendor vendor{};
   models::SpoolmanFilament filament{};
+  models::SpoolmanWeightUpdate weightUpdate{};
   SpoolmanSearchFilter searchFilter = SpoolmanSearchFilter::FilamentName;
   bool includeArchived = false;
   char searchText[48]{};

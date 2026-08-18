@@ -85,6 +85,53 @@ bool postJson(const char* url, std::uint32_t timeoutMs,
   return true;
 }
 
+bool patchJson(const char* url, std::uint32_t timeoutMs,
+               const JsonDocument& request, JsonDocument& response,
+               char* error, std::size_t errorCapacity) {
+  char payload[384]{};
+  const std::size_t length = serializeJson(request, payload, sizeof(payload));
+  if (length == 0 || length >= sizeof(payload)) {
+    std::snprintf(error, errorCapacity, "Gewichtsdaten sind zu gross");
+    return false;
+  }
+  HTTPClient http;
+  http.setConnectTimeout(static_cast<int32_t>(timeoutMs));
+  http.setTimeout(static_cast<uint16_t>(timeoutMs));
+  if (!http.begin(url)) {
+    std::snprintf(error, errorCapacity, "Ungueltige Server-URL");
+    return false;
+  }
+  http.addHeader("Content-Type", "application/json");
+  const int status = http.PATCH(
+      reinterpret_cast<std::uint8_t*>(payload), length);
+  if (status != HTTP_CODE_OK) {
+    const String responseBody = http.getString();
+    JsonDocument errorDocument;
+    const char* serverMessage = nullptr;
+    if (!deserializeJson(errorDocument, responseBody))
+      serverMessage = errorDocument["message"] | errorDocument["detail"] | nullptr;
+    if (serverMessage != nullptr && serverMessage[0] != '\0')
+      std::snprintf(error, errorCapacity, "Spoolman HTTP %d: %.88s", status,
+                    serverMessage);
+    else
+      std::snprintf(error, errorCapacity, "Spoolman HTTP %d", status);
+    char logMessage[224]{};
+    std::snprintf(logMessage, sizeof(logMessage),
+                  "SpoolmanTask: PATCH %s failed: %s", url, error);
+    rtos::logLine(logMessage);
+    http.end();
+    return false;
+  }
+  const DeserializationError jsonError =
+      deserializeJson(response, http.getStream());
+  http.end();
+  if (jsonError) {
+    std::snprintf(error, errorCapacity, "Ungueltige Serverantwort");
+    return false;
+  }
+  return true;
+}
+
 bool appendUrlEncoded(char* destination, std::size_t capacity,
                       const char* source) {
   constexpr char digits[] = "0123456789ABCDEF";
@@ -674,6 +721,7 @@ void sendSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
   event.requestId = requestId;
   event.value = index;
   event.spoolId = spool.id;
+  event.spool = spool;
   event.spoolColorCount = spool.colorCount;
   for (std::uint8_t color = 0; color < spool.colorCount; ++color)
     std::snprintf(event.spoolColorHex[color],
@@ -757,6 +805,72 @@ void loadSpools(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
     rtos::logLine("SpoolmanTask: completion queue overflow");
 }
 
+void updateWeight(rtos::RtosContext& ctx,
+                  const rtos::SpoolmanCommand& command) {
+  const auto& settings = command.settings.serverUrl[0] != '\0'
+                             ? command.settings
+                             : activeSettings;
+  const auto& update = command.weightUpdate;
+  if (!catalogAvailable(ctx, settings, command.requestId)) return;
+  if (services::validateWeightUpdate(update) !=
+      services::WeightUpdateValidationError::None) {
+    sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
+               "Ungueltige Gewichtsdaten");
+    return;
+  }
+  char url[192]{};
+  std::snprintf(url, sizeof(url), "%s/spool/%lu", settings.serverUrl,
+                static_cast<unsigned long>(update.spoolId));
+  JsonDocument request;
+  request["remaining_weight"] = update.remainingWeightGrams;
+  if (update.updateInitialWeight)
+    request["initial_weight"] = update.initialWeightGrams;
+  if (update.updateEmptySpoolWeight)
+    request["spool_weight"] = update.emptySpoolWeightGrams;
+  JsonDocument response;
+  char error[128]{};
+  if (!patchJson(url, settings.timeoutMs, request, response, error,
+                 sizeof(error))) {
+    rtos::AppEvent failed{};
+    failed.type = rtos::AppEventType::SpoolmanError;
+    failed.requestId = command.requestId;
+    failed.spoolId = update.spoolId;
+    failed.weightUpdate = update;
+    std::snprintf(failed.text, sizeof(failed.text), "%s", error);
+    if (xQueueSend(ctx.appEventQueue, &failed, pdMS_TO_TICKS(1000)) != pdPASS)
+      rtos::logLine("SpoolmanTask: weight error queue overflow");
+    return;
+  }
+  models::SpoolmanSpool spool{};
+  if (!parseSpool(response.as<JsonVariantConst>(), spool)) {
+    JsonDocument reloaded;
+    if (!getJson(url, settings.timeoutMs, reloaded, error, sizeof(error)) ||
+        !parseSpool(reloaded.as<JsonVariantConst>(), spool)) {
+      sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
+                 "Spule konnte nach dem Update nicht neu geladen werden");
+      return;
+    }
+  }
+  rtos::AppEvent completed{};
+  completed.type = rtos::AppEventType::SpoolmanWeightUpdated;
+  completed.requestId = command.requestId;
+  completed.spoolId = spool.id;
+  completed.weightUpdate = update;
+  completed.weightUpdate.remainingWeightGrams = spool.remainingWeightGrams;
+  completed.spoolColorCount = spool.colorCount;
+  for (std::uint8_t index = 0; index < spool.colorCount; ++index)
+    std::snprintf(completed.spoolColorHex[index],
+                  sizeof(completed.spoolColorHex[index]), "%s",
+                  spool.colorHex[index]);
+  std::snprintf(completed.text, sizeof(completed.text),
+                "%s|%s|%s|%.1f|%.1f", spool.vendor, spool.filament,
+                spool.material, static_cast<double>(spool.emptyWeightGrams),
+                static_cast<double>(spool.initialWeightGrams));
+  if (xQueueSend(ctx.appEventQueue, &completed,
+                 pdMS_TO_TICKS(1000)) != pdPASS)
+    rtos::logLine("SpoolmanTask: weight result queue overflow");
+}
+
 void healthCheck(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
   if ((xEventGroupGetBits(ctx.systemEventGroup) & rtos::EVENT_WIFI_CONNECTED) == 0) {
     xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SPOOLMAN_READY);
@@ -813,6 +927,8 @@ void spoolmanTask(void* parameter) {
       searchFilaments(ctx, command);
     } else if (command.type == rtos::SpoolmanCommandType::CreateFilament) {
       createFilament(ctx, command);
+    } else if (command.type == rtos::SpoolmanCommandType::UpdateWeight) {
+      updateWeight(ctx, command);
     } else if (command.type == rtos::SpoolmanCommandType::ImportTagDefinition) {
       importTagDefinition(ctx, command);
     }

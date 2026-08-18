@@ -73,6 +73,19 @@ Die Queue ist FIFO und der StorageTask beendet jede Operation, bevor er die
 naechste Anfrage annimmt. Bei einer entfernten oder beim Start fehlenden Karte
 werden Anfragen explizit abgelehnt und niemals als erfolgreich gemeldet.
 
+## Ausstehende Gewichtsaktualisierung
+
+Kann eine bestaetigte Quick- oder Advanced-Weight-Messung nicht an Spoolman
+uebertragen werden, speichert ausschliesslich der StorageTask die letzte
+ausstehende Aktualisierung unter `/queue/pending-weight.json`. Nach einem
+Neustart laedt der AppTask den typisierten Inhalt ueber die Storage-Queue. Nach
+wiederhergestellter WLAN-Verbindung wird die Aktualisierung erneut angefordert;
+erst nach erfolgreicher Serverantwort entfernt der StorageTask die Datei.
+
+Die Version-1-Policy verwendet einen einzelnen Pending-Eintrag. Eine neue
+bestaetigte Messung ersetzt den wartenden Eintrag, damit ein alter Messwert
+nicht spaeter einen neueren Spoolman-Stand ueberschreibt.
+
 ## Erste Konfigurationsdateien
 
 Nach Mount und Verzeichnispruefung stellt der StorageTask die sechs Dateien

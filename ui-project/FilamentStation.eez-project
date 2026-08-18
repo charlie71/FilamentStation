@@ -3941,9 +3941,9 @@
               "objID": "61000000-0018-4600-8600-100000000000",
               "type": "LVGLLabelWidget",
               "left": 4,
-              "top": 156,
-              "width": 152,
-              "height": 52,
+              "top": 212,
+              "width": 472,
+              "height": 48,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -3960,7 +3960,7 @@
               "widthUnit": "px",
               "heightUnit": "px",
               "children": [],
-              "widgetFlags": "HIDDEN",
+              "widgetFlags": "",
               "hiddenFlagType": "literal",
               "clickableFlagType": "literal",
               "checkedStateType": "literal",
@@ -3970,7 +3970,7 @@
                 "objID": "ff48ccaa-b81f-b796-34fb-9763b9e2321e"
               },
               "groupIndex": 0,
-              "text": "Nicht verwendet",
+              "text": "Spule ausw\u00e4hlen",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true

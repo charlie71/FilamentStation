@@ -46,6 +46,7 @@ enum class AppEventType : std::uint8_t {
   SpoolmanCatalogCreated,
   SpoolmanCatalogDuplicate,
   SpoolmanImportCompleted,
+  SpoolmanWeightUpdated,
   SpoolmanError,
   BambuConnected,
   BambuUpdate,

@@ -115,6 +115,19 @@ bool sameFilament(const models::SpoolmanFilament& left,
          equalColor(left.colorHex, right.colorHex);
 }
 
+WeightUpdateValidationError validateWeightUpdate(
+    const models::SpoolmanWeightUpdate& update) {
+  if (update.spoolId == 0)
+    return WeightUpdateValidationError::MissingSpool;
+  if (update.remainingWeightGrams < 0.0F)
+    return WeightUpdateValidationError::InvalidRemainingWeight;
+  if (update.updateInitialWeight && update.initialWeightGrams < 0.0F)
+    return WeightUpdateValidationError::InvalidInitialWeight;
+  if (update.updateEmptySpoolWeight && update.emptySpoolWeightGrams < 0.0F)
+    return WeightUpdateValidationError::InvalidEmptySpoolWeight;
+  return WeightUpdateValidationError::None;
+}
+
 namespace {
 float materialDensity(const char* material) {
   struct Entry { const char* name; float density; };

@@ -32,5 +32,14 @@ struct SpoolmanImportDefinition {
   float emptySpoolWeightGrams = 0.0F;
 };
 
+struct SpoolmanWeightUpdate {
+  std::uint32_t spoolId = 0;
+  float remainingWeightGrams = 0.0F;
+  float initialWeightGrams = 0.0F;
+  float emptySpoolWeightGrams = 0.0F;
+  bool updateInitialWeight = false;
+  bool updateEmptySpoolWeight = false;
+};
+
 }  // namespace models
 }  // namespace filament_station

@@ -6,6 +6,7 @@
 using filament_station::models::SpoolmanFilament;
 using filament_station::models::SpoolmanVendor;
 using filament_station::services::CatalogValidationError;
+using filament_station::services::WeightUpdateValidationError;
 
 void setUp() {}
 void tearDown() {}
@@ -114,6 +115,30 @@ void testTagDefinitionValidationAndFormats() {
       filament_station::services::mapTagDefinition(missing, mapped));
 }
 
+void testWeightUpdateValidation() {
+  filament_station::models::SpoolmanWeightUpdate update{};
+  TEST_ASSERT_EQUAL(WeightUpdateValidationError::MissingSpool,
+                    filament_station::services::validateWeightUpdate(update));
+
+  update.spoolId = 42;
+  update.remainingWeightGrams = 735.5F;
+  TEST_ASSERT_EQUAL(WeightUpdateValidationError::None,
+                    filament_station::services::validateWeightUpdate(update));
+
+  update.updateInitialWeight = true;
+  update.initialWeightGrams = -1.0F;
+  TEST_ASSERT_EQUAL(
+      WeightUpdateValidationError::InvalidInitialWeight,
+      filament_station::services::validateWeightUpdate(update));
+
+  update.initialWeightGrams = 1000.0F;
+  update.updateEmptySpoolWeight = true;
+  update.emptySpoolWeightGrams = -1.0F;
+  TEST_ASSERT_EQUAL(
+      WeightUpdateValidationError::InvalidEmptySpoolWeight,
+      filament_station::services::validateWeightUpdate(update));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(testVendorValidationAndDuplicateNormalization);
@@ -121,5 +146,6 @@ int main(int, char**) {
   RUN_TEST(testFilamentDuplicateKeyUsesVendorNameMaterialAndColor);
   RUN_TEST(testTagDefinitionMapping);
   RUN_TEST(testTagDefinitionValidationAndFormats);
+  RUN_TEST(testWeightUpdateValidation);
   return UNITY_END();
 }

@@ -31,6 +31,10 @@ constexpr std::uint32_t kNfcMappingLoadRequestId = 0x4E464302U;
 constexpr std::uint32_t kOpenMappingLoadRequestId = 0x4E464303U;
 constexpr std::uint32_t kNetworkLoadRequestId = 0x4E455401U;
 constexpr std::uint32_t kSpoolmanLoadRequestId = 0x53504D01U;
+constexpr std::uint32_t kPendingWeightLoadRequestId = 0x57475401U;
+constexpr std::uint32_t kPendingWeightSaveRequestId = 0x57475402U;
+constexpr std::uint32_t kPendingWeightDeleteRequestId = 0x57475403U;
+constexpr std::uint32_t kPendingWeightRetryRequestId = 0x57475404U;
 std::uint32_t pendingSpoolmanSaveRequestId = 0;
 std::int32_t scaleCounts = 0;
 std::int32_t scaleOffsetCounts = 0;
@@ -63,6 +67,15 @@ struct AdvancedWeightState {
   char spoolName[32]{};
 };
 AdvancedWeightState advancedWeight{};
+struct PendingWeightState {
+  bool active = false;
+  bool advanced = false;
+  std::uint32_t requestId = 0;
+  models::SpoolmanWeightUpdate update{};
+};
+PendingWeightState pendingWeight{};
+bool pendingStagingSpoolSelection = false;
+std::uint32_t pendingStagingSpoolRequestId = 0;
 enum class PendingTagOperation : std::uint8_t { None, Write, Erase };
 PendingTagOperation pendingTagOperation = PendingTagOperation::None;
 models::TagReadResult currentTag{};
@@ -526,6 +539,19 @@ bool requestSpoolSearch(rtos::RtosContext& ctx, std::uint32_t requestId,
                     pdMS_TO_TICKS(1000)) == pdPASS;
 }
 
+bool requestStagingSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
+                         rtos::SpoolId spoolId) {
+  models::SpoolmanSettings settings{};
+  if (spoolId == 0 || !spoolmanSettingsFromDraft(settings)) return false;
+  rtos::SpoolmanCommand command{};
+  command.type = rtos::SpoolmanCommandType::LoadSpool;
+  command.requestId = requestId;
+  command.spoolId = spoolId;
+  command.settings = settings;
+  return xQueueSend(ctx.spoolmanCommandQueue, &command,
+                    pdMS_TO_TICKS(1000)) == pdPASS;
+}
+
 bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
                    const char* failureMessage) {
   if (xQueueSend(ctx.uiCommandQueue, &command, pdMS_TO_TICKS(1000)) == pdPASS) {
@@ -598,6 +624,58 @@ bool requestScaleConfiguration(rtos::RtosContext& ctx) {
     return false;
   }
   return true;
+}
+
+bool sendWeightUpdate(rtos::RtosContext& ctx, std::uint32_t requestId,
+                      const models::SpoolmanWeightUpdate& update) {
+  rtos::SpoolmanCommand command{};
+  command.type = rtos::SpoolmanCommandType::UpdateWeight;
+  command.requestId = requestId;
+  command.weightUpdate = update;
+  if (!spoolmanSettingsFromDraft(command.settings)) {
+    rtos::logLine("AppTask: weight update has no valid Spoolman configuration");
+    return false;
+  }
+  return xQueueSend(ctx.spoolmanCommandQueue, &command,
+                    pdMS_TO_TICKS(1000)) == pdPASS;
+}
+
+bool persistPendingWeight(rtos::RtosContext& ctx,
+                          const models::SpoolmanWeightUpdate& update) {
+  JsonDocument document;
+  document["schemaVersion"] = 1;
+  document["updatedAt"] = "1970-01-01T00:00:00Z";
+  document["documentType"] = "pendingWeight";
+  document["spoolId"] = update.spoolId;
+  document["remainingWeightGrams"] = update.remainingWeightGrams;
+  document["initialWeightGrams"] = update.initialWeightGrams;
+  document["emptySpoolWeightGrams"] = update.emptySpoolWeightGrams;
+  document["updateInitialWeight"] = update.updateInitialWeight;
+  document["updateEmptySpoolWeight"] = update.updateEmptySpoolWeight;
+  rtos::StorageCommand command{};
+  command.type = rtos::StorageCommandType::SaveJson;
+  command.requestId = kPendingWeightSaveRequestId;
+  command.documentType = rtos::StorageDocumentType::PendingWeight;
+  std::snprintf(command.path, sizeof(command.path),
+                "/queue/pending-weight.json");
+  const std::size_t length =
+      serializeJson(document, command.json, sizeof(command.json));
+  if (length == 0 || length >= sizeof(command.json)) return false;
+  command.jsonLength = static_cast<std::uint16_t>(length);
+  return xQueueSend(ctx.storageCommandQueue, &command,
+                    pdMS_TO_TICKS(1000)) == pdPASS;
+}
+
+void deletePendingWeight(rtos::RtosContext& ctx) {
+  rtos::StorageCommand command{};
+  command.type = rtos::StorageCommandType::DeleteJson;
+  command.requestId = kPendingWeightDeleteRequestId;
+  command.documentType = rtos::StorageDocumentType::PendingWeight;
+  std::snprintf(command.path, sizeof(command.path),
+                "/queue/pending-weight.json");
+  if (xQueueSend(ctx.storageCommandQueue, &command,
+                 pdMS_TO_TICKS(1000)) != pdPASS)
+    rtos::logLine("AppTask: pending weight delete queue overflow");
 }
 
 bool requestNetworkConfiguration(rtos::RtosContext& ctx) {
@@ -1033,36 +1111,57 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                       "Der Messwert ist nicht mehr stabil. Bitte erneut wiegen.");
           return;
         }
-        quickWeight.lastMeasurementGrams =
-            quickWeight.pendingGrossWeightGrams;
-        quickWeight.lastMeasurementSpoolId = quickWeight.spoolId;
-        quickWeight.hasLastMeasurement = true;
         quickWeight.pending = false;
-        char result[96];
-        std::snprintf(result, sizeof(result),
-                      "Spule #%lu: %.1f g brutto, %.1f g Restgewicht.",
-                      static_cast<unsigned long>(quickWeight.spoolId),
-                      static_cast<double>(quickWeight.lastMeasurementGrams),
-                      static_cast<double>(quickWeight.pendingRemainingWeightGrams));
-        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Success, action.requestId,
-                    "Messung best\xC3\xA4tigt", result);
+        pendingWeight = {};
+        pendingWeight.active = true;
+        pendingWeight.requestId = action.requestId;
+        pendingWeight.update.spoolId = quickWeight.spoolId;
+        pendingWeight.update.remainingWeightGrams =
+            quickWeight.pendingRemainingWeightGrams;
+        pendingWeight.update.emptySpoolWeightGrams =
+            quickWeight.emptyWeightGrams;
+        if (!sendWeightUpdate(ctx, action.requestId, pendingWeight.update)) {
+          persistPendingWeight(ctx, pendingWeight.update);
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Messung vorgemerkt",
+                      "SpoolmanTask ist nicht erreichbar. Die Messung wurde lokal vorgemerkt.");
+          return;
+        }
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::SpoolmanRequest, action.requestId,
+                    "Gewicht speichern",
+                    "Restgewicht wird an Spoolman gesendet und danach neu geladen.");
         return;
       }
       if (confirmedOverlay == rtos::UiOverlayKind::AdvancedWeightConfirmation) {
         if (!advancedWeight.pending) return;
         advancedWeight.pending = false;
-        advancedWeight.committed = true;
-        char result[128];
-        std::snprintf(result, sizeof(result),
-                      "Spule: #%lu\nRestgewicht: %.1f g\nLeergewicht: %.1f g\nAusgangsgewicht: %.1f g",
-                      static_cast<unsigned long>(advancedWeight.spoolId),
-                      static_cast<double>(advancedWeight.remainingWeightGrams),
-                      static_cast<double>(advancedWeight.emptyWeightGrams),
-                      static_cast<double>(advancedWeight.initialWeightGrams));
-        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::AdvancedWeightResult, action.requestId,
-                    "Erweitertes Wiegen best\xC3\xA4tigt", result);
+        pendingWeight = {};
+        pendingWeight.active = true;
+        pendingWeight.advanced = true;
+        pendingWeight.requestId = action.requestId;
+        pendingWeight.update.spoolId = advancedWeight.spoolId;
+        pendingWeight.update.remainingWeightGrams =
+            advancedWeight.remainingWeightGrams;
+        pendingWeight.update.initialWeightGrams =
+            advancedWeight.initialWeightGrams;
+        pendingWeight.update.emptySpoolWeightGrams =
+            advancedWeight.emptyWeightGrams;
+        pendingWeight.update.updateInitialWeight = true;
+        pendingWeight.update.updateEmptySpoolWeight = true;
+        if (!sendWeightUpdate(ctx, action.requestId, pendingWeight.update)) {
+          persistPendingWeight(ctx, pendingWeight.update);
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Messung vorgemerkt",
+                      "SpoolmanTask ist nicht erreichbar. Die Messung wurde lokal vorgemerkt.");
+          return;
+        }
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::SpoolmanRequest, action.requestId,
+                    "Gewicht speichern",
+                    "Gewichte werden an Spoolman gesendet und danach neu geladen.");
         return;
       }
       const char* result = "Mock-Aktion best\xC3\xA4tigt; keine reale Funktion ausgef\xC3\xBChrt.";
@@ -1553,6 +1652,40 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::ClearStaging:
     case rtos::UiActionType::SearchSpool:
     case rtos::UiActionType::SelectSpool:
+      if (action.type == rtos::UiActionType::SelectSpool &&
+          currentScreen == rtos::UiScreenId::StagingActions) {
+        if (!pendingStagingSpoolSelection) {
+          pendingStagingSpoolSelection = true;
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::SpoolPicker, action.requestId,
+                      "Spoolman-Spule ausw\xC3\xA4hlen", "");
+          if (!requestSpoolSearch(ctx, action.requestId)) {
+            pendingStagingSpoolSelection = false;
+            sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                        rtos::UiOverlayKind::Error, action.requestId,
+                        "Spoolman-Suche",
+                        "Die Spulenauswahl konnte nicht geladen werden.");
+          }
+          return;
+        }
+        if (action.spoolId == 0) return;
+        pendingStagingSpoolSelection = false;
+        pendingStagingSpoolRequestId = action.requestId;
+        command.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, command, "AppTask: staging picker close overflow");
+        if (!requestStagingSpool(ctx, action.requestId, action.spoolId)) {
+          pendingStagingSpoolRequestId = 0;
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Spule laden",
+                      "Die ausgew\xC3\xA4hlte Spule konnte nicht angefordert werden.");
+          return;
+        }
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::SpoolmanRequest, action.requestId,
+                    "Spule laden", "Spoolman-Daten werden geladen.");
+        return;
+      }
       if (action.type == rtos::UiActionType::SearchSpool &&
           action.value >= 10) {
         const std::int32_t rawFilter = action.value - 10;
@@ -2386,6 +2519,14 @@ void appTask(void* parameter) {
       sendUiCommand(ctx, networkStatus,
                     "AppTask: network details UI queue overflow");
 
+      if (event.type == rtos::AppEventType::WifiGotIp &&
+          pendingWeight.active) {
+        pendingWeight.requestId = kPendingWeightRetryRequestId;
+        if (sendWeightUpdate(ctx, kPendingWeightRetryRequestId,
+                             pendingWeight.update))
+          rtos::logLine("AppTask: retrying pending Spoolman weight update");
+      }
+
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
       status.requestId = event.requestId;
@@ -2460,6 +2601,41 @@ void appTask(void* parameter) {
                     rtos::UiOverlayKind::Error, resultRequestId,
                     "WLAN-Verbindung fehlgeschlagen", event.text);
       }
+    } else if (event.type == rtos::AppEventType::SpoolmanWeightUpdated) {
+      const bool advanced = pendingWeight.advanced;
+      pendingWeight = {};
+      quickWeight.lastMeasurementGrams = scaleWeightGrams();
+      quickWeight.lastMeasurementSpoolId = event.spoolId;
+      quickWeight.hasLastMeasurement = true;
+      if (advanced) advancedWeight.committed = true;
+      deletePendingWeight(ctx);
+      rtos::UiCommand hide{};
+      hide.type = rtos::UiCommandType::HideProgress;
+      sendUiCommand(ctx, hide, "AppTask: weight progress close overflow");
+      rtos::UiCommand staging{};
+      staging.type = rtos::UiCommandType::UpdateStaging;
+      staging.requestId = event.requestId;
+      staging.spoolId = event.spoolId;
+      staging.weightUpdate = event.weightUpdate;
+      staging.spoolColorCount = event.spoolColorCount;
+      for (std::uint8_t color = 0; color < event.spoolColorCount; ++color)
+        std::snprintf(staging.spoolColorHex[color],
+                      sizeof(staging.spoolColorHex[color]), "%s",
+                      event.spoolColorHex[color]);
+      std::snprintf(staging.text, sizeof(staging.text), "%s", event.text);
+      sendUiCommand(ctx, staging, "AppTask: staging weight update overflow");
+      char result[144]{};
+      std::snprintf(result, sizeof(result),
+                    "Spule #%lu\nRestgewicht: %.1f g\nSpoolman-Daten wurden neu geladen.",
+                    static_cast<unsigned long>(event.spoolId),
+                    static_cast<double>(event.weightUpdate.remainingWeightGrams));
+      sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                  advanced ? rtos::UiOverlayKind::AdvancedWeightResult
+                           : rtos::UiOverlayKind::Success,
+                  event.requestId,
+                  advanced ? "Erweitertes Wiegen gespeichert"
+                           : "Messung gespeichert",
+                  result);
     } else if (event.type == rtos::AppEventType::SpoolmanImportCompleted) {
       pendingTagSpoolId = event.spoolId;
       currentTag.definition.hasSpoolId = event.spoolId != 0;
@@ -2477,6 +2653,29 @@ void appTask(void* parameter) {
       currentScreen = result.screenId;
       sendUiCommand(ctx, result, "AppTask: import result UI overflow");
     } else if (event.type == rtos::AppEventType::SpoolmanResponse) {
+      if (pendingStagingSpoolRequestId != 0 &&
+          event.requestId == pendingStagingSpoolRequestId) {
+        if (event.value >= 0 && event.spool.id != 0) {
+          pendingStagingSpoolRequestId = 0;
+          rtos::UiCommand hide{};
+          hide.type = rtos::UiCommandType::HideProgress;
+          sendUiCommand(ctx, hide, "AppTask: staging load close overflow");
+          rtos::UiCommand staging{};
+          staging.type = rtos::UiCommandType::UpdateStaging;
+          staging.requestId = event.requestId;
+          staging.spoolId = event.spool.id;
+          staging.spool = event.spool;
+          sendUiCommand(ctx, staging, "AppTask: staging selection overflow");
+          rtos::UiCommand toast{};
+          toast.type = rtos::UiCommandType::ShowToast;
+          toast.requestId = event.requestId;
+          std::snprintf(toast.text, sizeof(toast.text),
+                        "Spule #%lu ins Staging geladen",
+                        static_cast<unsigned long>(event.spool.id));
+          sendUiCommand(ctx, toast, "AppTask: staging toast overflow");
+        }
+        continue;
+      }
       rtos::UiCommand picker{};
       picker.type = rtos::UiCommandType::UpdateSpoolPicker;
       picker.requestId = event.requestId;
@@ -2509,6 +2708,45 @@ void appTask(void* parameter) {
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: Spoolman progress close overflow");
+      if (pendingWeight.active &&
+          (event.requestId == pendingWeight.requestId ||
+           event.requestId == kPendingWeightRetryRequestId)) {
+        const bool permanentMissingSpool =
+            std::strstr(event.text, "HTTP 404") != nullptr;
+        if (permanentMissingSpool) {
+          pendingWeight = {};
+          deletePendingWeight(ctx);
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, event.requestId,
+                      "Spule nicht gefunden",
+                      "Die Spule existiert nicht mehr in Spoolman. Bitte eine vorhandene Spule neu ausw\xC3\xA4hlen.");
+          continue;
+        }
+        pendingWeight.update = event.weightUpdate.spoolId != 0
+                                   ? event.weightUpdate
+                                   : pendingWeight.update;
+        const bool persisted = persistPendingWeight(ctx, pendingWeight.update);
+        char message[192]{};
+        std::snprintf(
+            message, sizeof(message),
+            "%s\nDie Messung wurde lokal vorgemerkt und wird erneut versucht.",
+            event.text[0] != '\0' ? event.text : "Unbekannter Spoolman-Fehler");
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    persisted ? "Messung vorgemerkt"
+                              : "Messung nicht gespeichert",
+                    persisted ? message
+                              : "Spoolman-Fehler; die Pending-Messung konnte nicht auf SD gespeichert werden.");
+        continue;
+      }
+      if (pendingStagingSpoolRequestId != 0 &&
+          event.requestId == pendingStagingSpoolRequestId) {
+        pendingStagingSpoolRequestId = 0;
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Spule konnte nicht geladen werden", event.text);
+        continue;
+      }
       if (currentScreen == rtos::UiScreenId::TagDefinitionImport ||
           currentScreen == rtos::UiScreenId::TagLegacy) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
@@ -2548,6 +2786,26 @@ void appTask(void* parameter) {
                event.type == rtos::AppEventType::StorageReadCompleted ||
                event.type == rtos::AppEventType::StorageWriteCompleted ||
                event.type == rtos::AppEventType::StorageRequestError) {
+      if (event.requestId == kPendingWeightLoadRequestId) {
+        if (event.type == rtos::AppEventType::StorageReadCompleted &&
+            event.weightUpdate.spoolId != 0) {
+          pendingWeight = {};
+          pendingWeight.active = true;
+          pendingWeight.requestId = kPendingWeightRetryRequestId;
+          pendingWeight.update = event.weightUpdate;
+          if ((xEventGroupGetBits(ctx.systemEventGroup) &
+               rtos::EVENT_WIFI_CONNECTED) != 0)
+            sendWeightUpdate(ctx, kPendingWeightRetryRequestId,
+                             pendingWeight.update);
+        }
+        continue;
+      }
+      if (event.requestId == kPendingWeightSaveRequestId ||
+          event.requestId == kPendingWeightDeleteRequestId) {
+        if (event.type == rtos::AppEventType::StorageRequestError)
+          rtos::logLine("AppTask: pending weight storage operation failed");
+        continue;
+      }
       if (event.type == rtos::AppEventType::StorageReadCompleted &&
           event.requestId == kNetworkLoadRequestId) {
         rtos::NetworkCommand networkCommand{};
@@ -2801,6 +3059,15 @@ void appTask(void* parameter) {
         requestNetworkConfiguration(ctx);
         requestSpoolmanConfiguration(ctx);
         requestScaleConfiguration(ctx);
+        rtos::StorageCommand pendingLoad{};
+        pendingLoad.type = rtos::StorageCommandType::LoadJson;
+        pendingLoad.requestId = kPendingWeightLoadRequestId;
+        pendingLoad.documentType = rtos::StorageDocumentType::PendingWeight;
+        std::snprintf(pendingLoad.path, sizeof(pendingLoad.path),
+                      "/queue/pending-weight.json");
+        if (xQueueSend(ctx.storageCommandQueue, &pendingLoad,
+                       pdMS_TO_TICKS(1000)) != pdPASS)
+          rtos::logLine("AppTask: pending weight load queue overflow");
         rtos::StorageCommand mappingLoad{};
         mappingLoad.type = rtos::StorageCommandType::LoadJson;
         mappingLoad.requestId = kBambuMappingLoadRequestId;

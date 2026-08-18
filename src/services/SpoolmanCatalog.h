@@ -28,6 +28,17 @@ bool sameVendor(const models::SpoolmanVendor& left,
 bool sameFilament(const models::SpoolmanFilament& left,
                   const models::SpoolmanFilament& right);
 
+enum class WeightUpdateValidationError : unsigned char {
+  None,
+  MissingSpool,
+  InvalidRemainingWeight,
+  InvalidInitialWeight,
+  InvalidEmptySpoolWeight,
+};
+
+WeightUpdateValidationError validateWeightUpdate(
+    const models::SpoolmanWeightUpdate& update);
+
 enum class TagImportValidationError : unsigned char {
   None,
   UnsupportedFormat,
