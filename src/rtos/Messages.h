@@ -40,6 +40,8 @@ struct AppEvent {
   NfcUidMapping nfcMappings[kMaximumNfcUidMappings];
   std::uint8_t nfcMappingCount;
   models::NetworkSettings networkSettings;
+  char networkSsid[33];
+  char networkIp[16];
   // NFC diagnostics and multi-line UI status messages must remain complete.
   // Keep this fixed-size and value based; no pointers or Arduino Strings cross
   // task boundaries.
@@ -57,6 +59,7 @@ struct UiCommand {
   std::uint8_t amsId;
   std::uint8_t trayId;
   std::int32_t value;
+  UiNetworkState networkState;
   float weightGrams;
   char title[48];
   char text[192];

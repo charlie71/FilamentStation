@@ -56,7 +56,16 @@ enum class UiCommandType : std::uint8_t {
   UpdateWeight,
   UpdateSettings,
   UpdateBootStatus,
+  UpdateNetworkStatus,
   ShowToast,
+};
+
+enum class UiNetworkState : std::uint8_t {
+  Offline,
+  Connecting,
+  Online,
+  PortalActive,
+  CredentialsCleared,
 };
 
 enum class UiOverlayKind : std::uint8_t {
@@ -177,6 +186,7 @@ enum class NfcCommandType : std::uint8_t {
 enum class StorageCommandType : std::uint8_t { LoadJson, SaveJson, DeleteJson, CreateBackup };
 enum class NetworkCommandType : std::uint8_t {
   ApplyConfiguration,
+  RequestStatus,
   Connect,
   Reconfigure,
   StartPortal,

@@ -661,14 +661,14 @@ Fehler:
 
 ## 6.5 GUI
 
-* [ ] WLAN-Status
-* [ ] SSID
-* [ ] IP
-* [ ] RSSI
-* [ ] Captive Portal
-* [ ] neu konfigurieren
-* [ ] Zugangsdaten löschen
-* [ ] Anleitung
+* [x] WLAN-Status
+* [x] SSID
+* [x] IP
+* [x] RSSI
+* [x] Captive Portal
+* [x] neu konfigurieren
+* [x] Zugangsdaten löschen
+* [x] Anleitung
 
 ---
 

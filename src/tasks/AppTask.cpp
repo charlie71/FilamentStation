@@ -978,7 +978,21 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       if (confirmedOverlay == rtos::UiOverlayKind::RestartConfirmation) {
         result = "Neustart best\xC3\xA4tigt; im Mock nicht ausgef\xC3\xBChrt.";
       } else if (confirmedOverlay == rtos::UiOverlayKind::WifiResetConfirmation) {
-        result = "WLAN-Zur\xC3\xBC" "cksetzen best\xC3\xA4tigt; Zugangsdaten bleiben im Mock erhalten.";
+        rtos::NetworkCommand networkCommand{};
+        networkCommand.type = rtos::NetworkCommandType::ClearCredentials;
+        networkCommand.requestId = action.requestId;
+        if (!sendNetworkCommand(ctx, networkCommand)) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "WLAN-Zugangsdaten",
+                      "Der L\xC3\xB6schauftrag konnte nicht gesendet werden.");
+          return;
+        }
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::ConnectionProgress,
+                    action.requestId, "WLAN-Zugangsdaten",
+                    "Gespeicherte Zugangsdaten werden gel\xC3\xB6scht.");
+        return;
       }
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                   rtos::UiOverlayKind::Success, action.requestId,
@@ -1113,6 +1127,14 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       command.screenId = currentScreen;
       sendUiCommand(ctx, command,
                     "AppTask: settings navigation queue overflow");
+      if (action.type == rtos::UiActionType::OpenWifiSettings) {
+        rtos::NetworkCommand networkCommand{};
+        networkCommand.type = rtos::NetworkCommandType::RequestStatus;
+        networkCommand.requestId = 0;
+        if (!sendNetworkCommand(ctx, networkCommand)) {
+          rtos::logLine("AppTask: network status request queue overflow");
+        }
+      }
       return;
     }
 
@@ -2184,13 +2206,49 @@ void appTask(void* parameter) {
                event.type == rtos::AppEventType::WifiLostIp ||
                event.type == rtos::AppEventType::WifiConfigPortalStarted ||
                event.type == rtos::AppEventType::WifiConfigPortalStopped ||
-               event.type == rtos::AppEventType::WifiConfigPortalTimedOut) {
+               event.type == rtos::AppEventType::WifiConfigPortalTimedOut ||
+               event.type == rtos::AppEventType::WifiCredentialsCleared) {
+      rtos::UiCommand networkStatus{};
+      networkStatus.type = rtos::UiCommandType::UpdateNetworkStatus;
+      networkStatus.requestId = event.requestId;
+      networkStatus.value = event.value;
+      std::snprintf(networkStatus.title, sizeof(networkStatus.title), "%s",
+                    event.networkSsid);
+      std::snprintf(networkStatus.text, sizeof(networkStatus.text), "%s",
+                    event.networkIp);
+      if (event.type == rtos::AppEventType::WifiGotIp) {
+        networkStatus.networkState = rtos::UiNetworkState::Online;
+      } else if (event.type == rtos::AppEventType::WifiStationConnected) {
+        networkStatus.networkState = rtos::UiNetworkState::Connecting;
+      } else if (event.type == rtos::AppEventType::WifiConfigPortalStarted) {
+        networkStatus.networkState = rtos::UiNetworkState::PortalActive;
+      } else if (event.type == rtos::AppEventType::WifiCredentialsCleared) {
+        networkStatus.networkState = rtos::UiNetworkState::CredentialsCleared;
+      } else {
+        networkStatus.networkState = rtos::UiNetworkState::Offline;
+      }
+      sendUiCommand(ctx, networkStatus,
+                    "AppTask: network details UI queue overflow");
+
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
       status.requestId = event.requestId;
       std::snprintf(status.title, sizeof(status.title), "WLAN");
       std::snprintf(status.text, sizeof(status.text), "%s", event.text);
       sendUiCommand(ctx, status, "AppTask: WiFi status UI queue overflow");
+
+      if (event.type == rtos::AppEventType::WifiCredentialsCleared) {
+        rtos::UiCommand hide{};
+        hide.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, hide,
+                      "AppTask: WiFi reset progress close overflow");
+        pendingOverlay = rtos::UiOverlayKind::None;
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Success, event.requestId,
+                    "WLAN-Zugangsdaten gel\xC3\xB6scht",
+                    "Das Ger\xC3\xA4t ist nicht mehr mit dem bisherigen WLAN verbunden. Verwenden Sie Neu konfigurieren, um ein WLAN auszuw\xC3\xA4hlen.");
+        continue;
+      }
 
       if (event.type == rtos::AppEventType::WifiConfigPortalStarted) {
         wifiPortalRequested = false;

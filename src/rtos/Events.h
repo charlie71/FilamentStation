@@ -38,6 +38,7 @@ enum class AppEventType : std::uint8_t {
   WifiConfigPortalStarted,
   WifiConfigPortalStopped,
   WifiConfigPortalTimedOut,
+  WifiCredentialsCleared,
   SpoolmanConnected,
   SpoolmanResponse,
   SpoolmanError,

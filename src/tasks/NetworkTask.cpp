@@ -92,10 +92,20 @@ bool configureManager(WiFiManager& manager,
 rtos::AppEvent networkEvent{};
 
 void publishEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
-                  std::uint32_t requestId, const char* text) {
+                  std::uint32_t requestId, const char* text,
+                  const char* ssidOverride = nullptr,
+                  const char* ipOverride = nullptr) {
   std::memset(&networkEvent, 0, sizeof(networkEvent));
   networkEvent.type = type;
   networkEvent.requestId = requestId;
+  networkEvent.value = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
+  const String stationSsid = WiFi.SSID();
+  const String stationIp = WiFi.localIP().toString();
+  std::snprintf(networkEvent.networkSsid,
+                sizeof(networkEvent.networkSsid), "%s",
+                ssidOverride != nullptr ? ssidOverride : stationSsid.c_str());
+  std::snprintf(networkEvent.networkIp, sizeof(networkEvent.networkIp), "%s",
+                ipOverride != nullptr ? ipOverride : stationIp.c_str());
   std::snprintf(networkEvent.text, sizeof(networkEvent.text), "%s", text);
   if (xQueueSend(ctx.appEventQueue, &networkEvent, pdMS_TO_TICKS(100)) !=
       pdPASS) {
@@ -112,7 +122,7 @@ void publishPortalStarted(rtos::RtosContext& ctx, std::uint32_t requestId,
                 credentials.ssid, credentials.password,
                 static_cast<unsigned long>(settings.portalTimeoutSeconds));
   publishEvent(ctx, rtos::AppEventType::WifiConfigPortalStarted, requestId,
-               status);
+               status, credentials.ssid, WiFi.softAPIP().toString().c_str());
 }
 
 void connectOrStartPortal(rtos::RtosContext& ctx, WiFiManager& manager,
@@ -250,6 +260,17 @@ void networkTask(void* parameter) {
                                command.requestId, portalStartedAt,
                                portalRequestId);
           break;
+        case rtos::NetworkCommandType::RequestStatus:
+          if (manager.getConfigPortalActive()) {
+            publishPortalStarted(ctx, 0, credentials, settings);
+          } else if (WiFi.status() == WL_CONNECTED) {
+            publishEvent(ctx, rtos::AppEventType::WifiGotIp, 0,
+                         "WLAN-Verbindung und IP-Adresse sind bereit");
+          } else {
+            publishEvent(ctx, rtos::AppEventType::WifiDisconnected, 0,
+                         "WLAN ist nicht verbunden");
+          }
+          break;
         case rtos::NetworkCommandType::Connect:
           if (configurationApplied)
             connectOrStartPortal(ctx, manager, credentials, settings,
@@ -273,7 +294,12 @@ void networkTask(void* parameter) {
           break;
         case rtos::NetworkCommandType::ClearCredentials:
           manager.resetSettings();
+          xEventGroupClearBits(ctx.systemEventGroup,
+                               rtos::EVENT_WIFI_CONNECTED);
           rtos::logLine("NetworkTask: stored WiFi credentials cleared");
+          publishEvent(ctx, rtos::AppEventType::WifiCredentialsCleared,
+                       command.requestId,
+                       "Gespeicherte WLAN-Zugangsdaten wurden gel\xC3\xB6scht");
           break;
       }
     } else if (ready == wifiEventQueue) {

@@ -1608,6 +1608,17 @@ void bindGeneratedWidgets() {
 
   bindClick(objects.wifi_settings_header, headerClicked);
   bindClick(objects.wifi_settings_settings, settingsClicked);
+  lv_obj_set_pos(objects.wifi_settings_status, 8, 76);
+  lv_obj_set_size(objects.wifi_settings_status, 464, 64);
+  lv_obj_set_pos(objects.wifi_settings_ssid, 8, 144);
+  lv_obj_set_size(objects.wifi_settings_ssid, 464, 28);
+  lv_obj_set_pos(objects.wifi_settings_ip, 8, 176);
+  lv_obj_set_size(objects.wifi_settings_ip, 464, 28);
+  lv_label_set_text(objects.wifi_settings_status,
+                    "Status: Verbindung wird gepr\xC3\xBC" "ft\n"
+                    "Neu konfigurieren startet das WLAN-Portal.");
+  lv_label_set_text(objects.wifi_settings_ssid, "SSID: -");
+  lv_label_set_text(objects.wifi_settings_ip, "IP: - | Signal: -");
   bindClick(objects.wifi_settings_portal, spoolmanActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::StartWifiPortal));
   bindClick(objects.wifi_settings_reset, spoolmanActionClicked,
@@ -2582,6 +2593,37 @@ void processUiCommand(const rtos::UiCommand& command) {
                     command.text);
       updateWeightDisplays();
       break;
+    case rtos::UiCommandType::UpdateNetworkStatus: {
+      const char* statusText = "Offline";
+      if (command.networkState == rtos::UiNetworkState::Connecting)
+        statusText = "Verbunden, IP-Adresse wird bezogen";
+      else if (command.networkState == rtos::UiNetworkState::Online)
+        statusText = "Online";
+      else if (command.networkState == rtos::UiNetworkState::PortalActive)
+        statusText = "Konfigurationsportal aktiv";
+      else if (command.networkState ==
+               rtos::UiNetworkState::CredentialsCleared)
+        statusText = "Zugangsdaten gel\xC3\xB6scht";
+
+      char text[192]{};
+      std::snprintf(text, sizeof(text),
+                    "Status: %s\nNeu konfigurieren startet das WLAN-Portal.",
+                    statusText);
+      lv_label_set_text(objects.wifi_settings_status, text);
+      std::snprintf(text, sizeof(text), "SSID: %s",
+                    command.title[0] != '\0' ? command.title : "-");
+      lv_label_set_text(objects.wifi_settings_ssid, text);
+      if (command.networkState == rtos::UiNetworkState::Online) {
+        std::snprintf(text, sizeof(text), "IP: %s | Signal: %ld dBm",
+                      command.text[0] != '\0' ? command.text : "-",
+                      static_cast<long>(command.value));
+      } else {
+        std::snprintf(text, sizeof(text), "IP: %s | Signal: -",
+                      command.text[0] != '\0' ? command.text : "-");
+      }
+      lv_label_set_text(objects.wifi_settings_ip, text);
+      break;
+    }
     case rtos::UiCommandType::UpdateSettings: {
       const bool printerFieldUpdate = command.value >= 21 && command.value <= 24;
       const std::int32_t field = printerFieldUpdate ? command.value - 20 : command.value;

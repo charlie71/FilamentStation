@@ -7340,7 +7340,7 @@
               "left": 8,
               "top": 76,
               "width": 464,
-              "height": 40,
+              "height": 64,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -7367,7 +7367,7 @@
                 "objID": "c6caca69-a997-c64e-a62f-c83bc884a0ed"
               },
               "groupIndex": 0,
-              "text": "Status: Mock verbunden",
+              "text": "Status: Verbindung wird geprüft\nNeu konfigurieren startet das WLAN-Portal.",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -7376,9 +7376,9 @@
               "objID": "6b000000-0014-4600-8600-100000000000",
               "type": "LVGLLabelWidget",
               "left": 8,
-              "top": 120,
+              "top": 144,
               "width": 464,
-              "height": 40,
+              "height": 28,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -7405,7 +7405,7 @@
                 "objID": "4d255e59-8694-c7fc-e3a4-9c4971372b6d"
               },
               "groupIndex": 0,
-              "text": "SSID: Werkstatt-WLAN",
+              "text": "SSID: -",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -7414,9 +7414,9 @@
               "objID": "6b000000-0015-4600-8600-100000000000",
               "type": "LVGLLabelWidget",
               "left": 8,
-              "top": 164,
+              "top": 176,
               "width": 464,
-              "height": 40,
+              "height": 28,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -7443,7 +7443,7 @@
                 "objID": "3ccb7d75-11f6-1249-f12f-2c14fb418baa"
               },
               "groupIndex": 0,
-              "text": "IP: 192.168.1.80 | RSSI: -52 dBm",
+              "text": "IP: - | Signal: -",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true
@@ -7481,7 +7481,7 @@
                 "objID": "f2a15eb2-de0c-63b5-ce23-681ddacf2aa6"
               },
               "groupIndex": 0,
-              "text": "WLAN konfigurieren",
+              "text": "Neu konfigurieren",
               "textType": "literal",
               "longMode": "WRAP",
               "useStaticText": true

@@ -1831,27 +1831,27 @@ void create_screen_scr_settings_wifi() {
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.wifi_settings_status = obj;
             lv_obj_set_pos(obj, 8, 76);
-            lv_obj_set_size(obj, 464, 40);
+            lv_obj_set_size(obj, 464, 64);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Status: Mock verbunden");
+            lv_label_set_text_static(obj, "Status: Verbindung wird geprüft\nNeu konfigurieren startet das WLAN-Portal.");
         }
         {
             // wifi_settings_ssid
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.wifi_settings_ssid = obj;
-            lv_obj_set_pos(obj, 8, 120);
-            lv_obj_set_size(obj, 464, 40);
+            lv_obj_set_pos(obj, 8, 144);
+            lv_obj_set_size(obj, 464, 28);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "SSID: Werkstatt-WLAN");
+            lv_label_set_text_static(obj, "SSID: -");
         }
         {
             // wifi_settings_ip
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.wifi_settings_ip = obj;
-            lv_obj_set_pos(obj, 8, 164);
-            lv_obj_set_size(obj, 464, 40);
+            lv_obj_set_pos(obj, 8, 176);
+            lv_obj_set_size(obj, 464, 28);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "IP: 192.168.1.80 | RSSI: -52 dBm");
+            lv_label_set_text_static(obj, "IP: - | Signal: -");
         }
         {
             // wifi_settings_portal
@@ -1860,7 +1860,7 @@ void create_screen_scr_settings_wifi() {
             lv_obj_set_pos(obj, 4, 264);
             lv_obj_set_size(obj, 180, 56);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "WLAN konfigurieren");
+            lv_label_set_text_static(obj, "Neu konfigurieren");
         }
         {
             // wifi_settings_reset
