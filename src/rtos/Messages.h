@@ -7,6 +7,7 @@
 #include "models/NetworkSettings.h"
 #include "models/SpoolmanSettings.h"
 #include "models/SpoolmanSpool.h"
+#include "models/SpoolmanCatalog.h"
 #include "rtos/Commands.h"
 #include "rtos/Events.h"
 
@@ -105,6 +106,8 @@ struct SpoolmanCommand {
   float weightGrams;
   models::SpoolmanSettings settings;
   models::TagDefinition tagDefinition{};
+  models::SpoolmanVendor vendor{};
+  models::SpoolmanFilament filament{};
   SpoolmanSearchFilter searchFilter = SpoolmanSearchFilter::FilamentName;
   bool includeArchived = false;
   char searchText[48]{};
@@ -123,5 +126,6 @@ static_assert(std::is_trivially_copyable_v<UiCommand>);
 static_assert(std::is_trivially_copyable_v<UiAction>);
 static_assert(std::is_trivially_copyable_v<StorageCommand>);
 static_assert(std::is_trivially_copyable_v<NetworkCommand>);
+static_assert(std::is_trivially_copyable_v<SpoolmanCommand>);
 
 }  // namespace filament_station::rtos

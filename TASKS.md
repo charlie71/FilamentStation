@@ -695,12 +695,12 @@ Fehler:
 
 ## 7.3 Hersteller und Filamente
 
-* [ ] Vendor suchen
-* [ ] Vendor anlegen
-* [ ] Filament suchen
-* [ ] Filament anlegen
-* [ ] Dubletten
-* [ ] Validierung
+* [x] Vendor suchen
+* [x] Vendor anlegen
+* [x] Filament suchen
+* [x] Filament anlegen
+* [x] Dubletten
+* [x] Validierung
 
 ## 7.4 TagDefinition-Import
 

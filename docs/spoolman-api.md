@@ -37,3 +37,25 @@ werden neutral grau dargestellt.
 
 Aenderungsoperationen an Spulen gehoeren zu spaeteren Teilaufgaben und sind
 noch nicht implementiert.
+
+## Hersteller und Filamente
+
+Der SpoolmanTask kapselt die Katalogoperationen `SearchVendors`,
+`CreateVendor`, `SearchFilaments` und `CreateFilament`. Verwendet werden die
+REST-Endpunkte `GET/POST /api/v1/vendor` und `GET/POST /api/v1/filament`.
+Suchergebnisse sind auf 20 Eintraege begrenzt und werden als kleine,
+wertbasierte Queue-Nachrichten gemeldet.
+
+Vor jedem Anlegen wird serverseitig nach einem exakten Namen gesucht und das
+Ergebnis lokal normalisiert verglichen. Hersteller werden ohne Beachtung von
+Gross-/Kleinschreibung und aeusseren Leerzeichen verglichen. Der
+Filament-Dublettenkey besteht aus Hersteller-ID, Name, Material und Farbcode.
+Ein vorhandener Datensatz wird zurueckgemeldet und nicht erneut angelegt.
+
+Die lokale Validierung folgt dem Spoolman-Vertrag: Namen und Material duerfen
+nicht leer sein, eine Hersteller-ID muss vorhanden sein, Dichte und
+Durchmesser muessen groesser als null sein, Gewichte und Temperaturen duerfen
+nicht negativ sein und Farbcodes bestehen aus sechs oder acht
+Hexadezimalzeichen. Die in Phase 7.3 geschaffenen Kommandos sind die Grundlage
+fuer den TagDefinition-Import in Phase 7.4; eine neue Katalog-GUI ist nicht
+Bestandteil dieser Phase.

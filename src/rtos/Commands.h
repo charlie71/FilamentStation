@@ -199,6 +199,10 @@ enum class SpoolmanCommandType : std::uint8_t {
   HealthCheck,
   LoadSpool,
   SearchSpools,
+  SearchVendors,
+  CreateVendor,
+  SearchFilaments,
+  CreateFilament,
   UpdateWeight,
   ImportTagDefinition,
 };
