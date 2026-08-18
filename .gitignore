@@ -1,5 +1,6 @@
 .pio/
 .pio-core/
 .vscode/
+logs/
 src/config/Secrets.h
 *.ttf

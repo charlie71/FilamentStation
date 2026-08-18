@@ -705,23 +705,23 @@ API gegen die tatsächlich verwendete Spoolman-Version prüfen.
 
 ## 7.7.5 AssignTag migrieren
 
-* [ ] Spoolman-Verbindung voraussetzen
-* [ ] lokale Mapping-Speicherung entfernen
-* [ ] TagIdentity bestimmen
-* [ ] bestehenden `extra.tag` Treffer prüfen
-* [ ] gleiche Zuordnung idempotent behandeln
-* [ ] Zuordnung zu anderer Spule erkennen
-* [ ] Benutzerbestätigung bei Neu-Zuordnung
-* [ ] alten Spoolman-Wert entfernen
-* [ ] neuen Spoolman-Wert setzen
-* [ ] Update verifizieren
-* [ ] best-effort Rollback bei partieller Reassignment-Störung
-* [ ] nativen NTAG anschließend optional beschreiben
-* [ ] NDEF anschließend verifizieren
-* [ ] Bambu unverändert
-* [ ] OpenPrintTag unverändert
-* [ ] OpenTag3D unverändert
-* [ ] Unknown unverändert
+* [x] Spoolman-Verbindung voraussetzen
+* [x] lokale Mapping-Speicherung entfernen
+* [x] TagIdentity bestimmen
+* [x] bestehenden `extra.tag` Treffer prüfen
+* [x] gleiche Zuordnung idempotent behandeln
+* [x] Zuordnung zu anderer Spule erkennen
+* [x] Benutzerbestätigung bei Neu-Zuordnung
+* [x] alten Spoolman-Wert entfernen
+* [x] neuen Spoolman-Wert setzen
+* [x] Update verifizieren
+* [x] best-effort Rollback bei partieller Reassignment-Störung
+* [x] nativen NTAG anschließend optional beschreiben
+* [x] NDEF anschließend verifizieren
+* [x] Bambu unverändert
+* [x] OpenPrintTag unverändert
+* [x] OpenTag3D unverändert
+* [x] Unknown unverändert
 
 ## 7.7.6 RemoveTagAssignment migrieren
 
