@@ -970,11 +970,10 @@ void create_screen_scr_staging_actions() {
             // staging_action_write_tag
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.staging_action_write_tag = obj;
-            lv_obj_set_pos(obj, 4, 100);
-            lv_obj_set_size(obj, 152, 52);
-            lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(obj, 4, 156);
+            lv_obj_set_size(obj, 472, 52);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "Nicht verwendet");
+            lv_label_set_text_static(obj, "Kein NFC-Tag erkannt");
         }
         {
             // staging_action_link_tag
@@ -2296,7 +2295,7 @@ void create_screen_scr_tag_action_select() {
             lv_obj_set_size(obj, 464, 48);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
-            lv_label_set_text_static(obj, "NTAG21x | FilamentStation | beschreibbar");
+            lv_label_set_text_static(obj, "NTAG215 | FilamentStation | beschreibbar\nNicht zugeordnet");
         }
         {
             // tag_action_select_spool

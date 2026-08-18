@@ -595,14 +595,14 @@ Fehler:
 
 ## 5.12.10 Build und Migration
 
-* [ ] EEZ-Projekt neu generieren
-* [ ] `pio run`
-* [ ] vorhandene NFC-Tests
-* [ ] neue Assignment-Tests
-* [ ] Compilerwarnungen prüfen
-* [ ] alte ungenutzte UiActions entfernen
-* [ ] keine toten EEZ-Actions
-* [ ] Dokumentation aktualisieren
+* [x] EEZ-Projekt neu generieren
+* [x] `pio run`
+* [x] vorhandene NFC-Tests
+* [x] neue Assignment-Tests
+* [x] Compilerwarnungen prüfen
+* [x] alte ungenutzte UiActions entfernen
+* [x] keine toten EEZ-Actions
+* [x] Dokumentation aktualisieren
 
 ### Abnahmekriterien 5.12
 

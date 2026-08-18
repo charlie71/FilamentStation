@@ -5,6 +5,11 @@
 namespace filament_station {
 namespace nfc {
 
+enum class TagAssignmentEffect {
+  MappingOnly,
+  MappingAndPayload,
+};
+
 inline bool isNativeNtag(models::TagTechnology technology) {
   return technology == models::TagTechnology::Ntag213 ||
          technology == models::TagTechnology::Ntag215 ||
@@ -58,6 +63,17 @@ inline bool mayWriteTag(const models::TagReadResult& tag) {
 
 inline bool mayEraseTag(const models::TagReadResult& tag) {
   return tag.capabilities.canClearFilamentStationPayload;
+}
+
+inline TagAssignmentEffect assignmentEffect(
+    const models::TagReadResult& tag) {
+  return mayWriteTag(tag) ? TagAssignmentEffect::MappingAndPayload
+                          : TagAssignmentEffect::MappingOnly;
+}
+
+inline TagAssignmentEffect removalEffect(const models::TagReadResult& tag) {
+  return mayEraseTag(tag) ? TagAssignmentEffect::MappingAndPayload
+                          : TagAssignmentEffect::MappingOnly;
 }
 
 }  // namespace nfc

@@ -621,7 +621,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       std::memcpy(pendingTagAssignment.uid.data(), currentTag.uid,
                   currentTag.uidLength);
       pendingTagAssignment.writePayload =
-          currentTag.capabilities.canWriteFilamentStationPayload;
+          nfc::assignmentEffect(currentTag) ==
+          nfc::TagAssignmentEffect::MappingAndPayload;
 
       pendingBambuUidLength = currentTag.uidLength;
       std::memcpy(pendingBambuUid.data(), currentTag.uid,
@@ -669,7 +670,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       std::memcpy(pendingTagRemoval.uid.data(), currentTag.uid,
                   currentTag.uidLength);
       pendingTagRemoval.clearPayload =
-          currentTag.capabilities.canClearFilamentStationPayload;
+          nfc::removalEffect(currentTag) ==
+          nfc::TagAssignmentEffect::MappingAndPayload;
       pendingUnlinkConfirmation = true;
 
       char confirmation[192]{};
@@ -1335,35 +1337,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       return;
     }
 
-    case rtos::UiActionType::MigrateLegacyTag: {
-      if (!tagPresent || currentTag.format != models::TagFormat::Legacy ||
-          !currentTag.definition.hasSpoolId ||
-          !nfc::mayWriteTag(currentTag)) {
-        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, action.requestId,
-                    "Migration nicht m\xC3\xB6glich",
-                    "Nur ein eindeutig erkannter, beschreibbarer Legacy-NTAG kann migriert werden.");
-        return;
-      }
-      pendingTagSpoolId = currentTag.definition.spoolId;
-      pendingTagOperation = PendingTagOperation::Write;
-      command.type = rtos::UiCommandType::ShowScreen;
-      command.screenId = rtos::UiScreenId::TagReview;
-      std::snprintf(command.text, sizeof(command.text),
-                    "Legacy-Payload: spool:%lu\nNeuer Payload: spoolman:%lu\nDanach wird der Tag erneut gelesen und verifiziert.",
-                    static_cast<unsigned long>(pendingTagSpoolId),
-                    static_cast<unsigned long>(pendingTagSpoolId));
-      previousScreen = rtos::UiScreenId::TagLegacy;
-      currentScreen = command.screenId;
-      sendUiCommand(ctx, command, "AppTask: legacy migration review overflow");
-      return;
-    }
-
     case rtos::UiActionType::ClearStaging:
-    case rtos::UiActionType::WriteTag:
-    case rtos::UiActionType::LinkTag:
-    case rtos::UiActionType::UnlinkTag:
-    case rtos::UiActionType::EraseTag:
     case rtos::UiActionType::SearchSpool:
     case rtos::UiActionType::SelectSpool:
       if (action.type == rtos::UiActionType::SearchSpool &&
@@ -1467,9 +1441,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Spoolman-Spule ausw\xC3\xA4hlen", "");
         return;
       }
-      // Only a spool selected in the picker starts the write review here.
-      // EraseTag is also available on this screen and must reach its dedicated
-      // branch below instead of being converted into a write operation.
+      // A spool selected in the picker supplies the semantic assignment
+      // workflow with its target Spoolman ID.
       if (action.type == rtos::UiActionType::SelectSpool &&
           currentScreen == rtos::UiScreenId::TagActionSelect) {
         pendingTagSpoolId = action.spoolId != 0 ? action.spoolId
@@ -1493,92 +1466,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         previousScreen = currentScreen;
         currentScreen = command.screenId;
         sendUiCommand(ctx, command, "AppTask: NFC review screen queue overflow");
-        return;
-      }
-      if (action.type == rtos::UiActionType::LinkTag) {
-        if (!tagPresent || currentTag.uidLength == 0 || action.spoolId == 0) {
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, action.requestId,
-                      "Verkn\xC3\xBCpfen nicht m\xC3\xB6glich",
-                      "Tag und Staging-Spule m\xC3\xBCssen vorhanden sein.");
-          return;
-        }
-        if (nfc::mayWriteTag(currentTag)) {
-          rtos::UiAction write = action;
-          write.type = rtos::UiActionType::WriteTag;
-          handleUiAction(ctx, write);
-          return;
-        }
-        pendingBambuUidLength = currentTag.uidLength;
-        std::memcpy(pendingBambuUid.data(), currentTag.uid,
-                    currentTag.uidLength);
-        pendingMappingFormat = currentTag.format;
-        pendingBambuMapping = true;
-        rtos::UiAction selection = action;
-        selection.type = rtos::UiActionType::SelectSpool;
-        handleUiAction(ctx, selection);
-        return;
-      }
-      if (action.type == rtos::UiActionType::WriteTag) {
-        if (!tagPresent) {
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, action.requestId,
-                      "Kein NFC-Tag", "Bitte einen nativen NTAG auflegen.");
-          return;
-        }
-        if (!nfc::mayWriteTag(currentTag)) {
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, action.requestId,
-                      "Tag ist schreibgesch\xC3\xBCtzt",
-                      "Nur leere oder native beschreibbare NTAGs sind zul\xC3\xA4ssig.");
-          return;
-        }
-        pendingTagSpoolId = action.spoolId != 0 ? action.spoolId
-                                                 : lastUsedTagSpoolId;
-        if (pendingTagSpoolId == 0) {
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, action.requestId,
-                      "Keine Spule ausgew\xC3\xA4hlt",
-                      "Vor dem Schreiben muss eine Spoolman-Spule gew\xC3\xA4hlt werden.");
-          return;
-        }
-        pendingTagOperation = PendingTagOperation::Write;
-        char review[120]{};
-        std::snprintf(review, sizeof(review),
-                      "Spoolman-ID: %lu\nPayload: spoolman:%lu\nDer Tag wird danach erneut gelesen.",
-                      static_cast<unsigned long>(pendingTagSpoolId),
-                      static_cast<unsigned long>(pendingTagSpoolId));
-        command.type = rtos::UiCommandType::ShowScreen;
-        command.screenId = rtos::UiScreenId::TagReview;
-        std::snprintf(command.text, sizeof(command.text), "%s", review);
-        previousScreen = currentScreen;
-        currentScreen = command.screenId;
-        sendUiCommand(ctx, command, "AppTask: NFC review screen queue overflow");
-        return;
-      }
-      if (action.type == rtos::UiActionType::EraseTag) {
-        if (!tagPresent || !nfc::mayEraseTag(currentTag)) {
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, action.requestId,
-                      "Tag kann nicht gel\xC3\xB6scht werden",
-                      "Nur native oder eindeutig erkannte beschreibbare Legacy-NTAGs d\xC3\xBCrfen gel\xC3\xB6scht werden.");
-          return;
-        }
-        pendingTagOperation = PendingTagOperation::Erase;
-        pendingTagSpoolId = 0;
-        command.type = rtos::UiCommandType::ShowScreen;
-        command.screenId = rtos::UiScreenId::TagReview;
-        std::snprintf(command.text, sizeof(command.text),
-                      "Tag: unterst\xC3\xBCtzter NTAG21x\nAktion: NDEF-Zuordnung l\xC3\xB6schen\nDanach wird der leere Zustand verifiziert.");
-        previousScreen = currentScreen;
-        currentScreen = command.screenId;
-        sendUiCommand(ctx, command, "AppTask: NFC erase review queue overflow");
-        return;
-      }
-      if (action.type == rtos::UiActionType::UnlinkTag) {
-        rtos::UiAction compatibilityAction = action;
-        compatibilityAction.type = rtos::UiActionType::RemoveTagAssignment;
-        handleUiAction(ctx, compatibilityAction);
         return;
       }
       if (action.type == rtos::UiActionType::ClearStaging) {

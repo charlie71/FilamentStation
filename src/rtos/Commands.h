@@ -108,17 +108,9 @@ enum class UiActionType : std::uint8_t {
   RefreshSlot,
   AssignTag,
   RemoveTagAssignment,
-  // Internal compatibility actions while the existing NFC operation paths
-  // are folded into the unified assignment state machine (5.12.3-5.12.5).
-  // UiTask/EEZ must not emit these values.
-  LinkTag,
-  WriteTag,
-  EraseTag,
-  UnlinkTag,
   SearchSpool,
   SelectSpool,
   ImportTagDefinition,
-  MigrateLegacyTag,
   SaveMeasurement,
   OpenWifiSettings,
   OpenSpoolmanSettings,
@@ -155,23 +147,9 @@ constexpr bool isPublicTagAssignmentAction(UiActionType type) {
          type == UiActionType::RemoveTagAssignment;
 }
 
-constexpr bool isInternalLegacyTagAction(UiActionType type) {
-  return type == UiActionType::LinkTag || type == UiActionType::WriteTag ||
-         type == UiActionType::EraseTag || type == UiActionType::UnlinkTag ||
-         type == UiActionType::MigrateLegacyTag;
-}
-
 static_assert(isPublicTagAssignmentAction(UiActionType::AssignTag));
 static_assert(
     isPublicTagAssignmentAction(UiActionType::RemoveTagAssignment));
-static_assert(!isPublicTagAssignmentAction(UiActionType::LinkTag));
-static_assert(!isPublicTagAssignmentAction(UiActionType::WriteTag));
-static_assert(!isPublicTagAssignmentAction(UiActionType::EraseTag));
-static_assert(!isPublicTagAssignmentAction(UiActionType::UnlinkTag));
-static_assert(isInternalLegacyTagAction(UiActionType::LinkTag));
-static_assert(isInternalLegacyTagAction(UiActionType::WriteTag));
-static_assert(isInternalLegacyTagAction(UiActionType::EraseTag));
-static_assert(isInternalLegacyTagAction(UiActionType::UnlinkTag));
 
 struct UiAction {
   UiActionType type = UiActionType::Back;

@@ -586,6 +586,34 @@ void test_legacy_requires_explicit_safe_rewrite_capability() {
   TEST_ASSERT_TRUE(preserve.capabilities.preserveOriginalContent);
 }
 
+void test_assignment_effect_is_derived_from_tag_capabilities() {
+  filament_station::models::TagReadResult tag{};
+  tag.capabilities.canAssociateByUid = true;
+  TEST_ASSERT_EQUAL(
+      filament_station::nfc::TagAssignmentEffect::MappingOnly,
+      filament_station::nfc::assignmentEffect(tag));
+
+  tag.capabilities.canWriteFilamentStationPayload = true;
+  TEST_ASSERT_EQUAL(
+      filament_station::nfc::TagAssignmentEffect::MappingAndPayload,
+      filament_station::nfc::assignmentEffect(tag));
+}
+
+void test_removal_effect_only_clears_managed_payload() {
+  filament_station::models::TagReadResult tag{};
+  tag.capabilities.canAssociateByUid = true;
+  tag.capabilities.preserveOriginalContent = true;
+  TEST_ASSERT_EQUAL(
+      filament_station::nfc::TagAssignmentEffect::MappingOnly,
+      filament_station::nfc::removalEffect(tag));
+
+  tag.capabilities.preserveOriginalContent = false;
+  tag.capabilities.canClearFilamentStationPayload = true;
+  TEST_ASSERT_EQUAL(
+      filament_station::nfc::TagAssignmentEffect::MappingAndPayload,
+      filament_station::nfc::removalEffect(tag));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_spoolman_payload_round_trip);
@@ -616,5 +644,7 @@ int main(int, char**) {
   RUN_TEST(test_native_ntag_capabilities_are_semantically_separated);
   RUN_TEST(test_foreign_and_unknown_capabilities_preserve_original_content);
   RUN_TEST(test_legacy_requires_explicit_safe_rewrite_capability);
+  RUN_TEST(test_assignment_effect_is_derived_from_tag_capabilities);
+  RUN_TEST(test_removal_effect_only_clears_managed_payload);
   return UNITY_END();
 }
