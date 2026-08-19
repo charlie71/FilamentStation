@@ -157,9 +157,30 @@ constexpr bool isPublicTagAssignmentAction(UiActionType type) {
          type == UiActionType::RemoveTagAssignment;
 }
 
+constexpr bool requiresOnlineSpoolman(UiActionType type) {
+  switch (type) {
+    case UiActionType::AssignTag:
+    case UiActionType::RemoveTagAssignment:
+    case UiActionType::SearchSpool:
+    case UiActionType::SelectSpool:
+    case UiActionType::ImportTagDefinition:
+    case UiActionType::SaveMeasurement:
+    case UiActionType::QuickWeight:
+    case UiActionType::AdvancedWeight:
+    case UiActionType::ConfigureSlot:
+    case UiActionType::ConfigureSlotFromStaging:
+      return true;
+    default:
+      return false;
+  }
+}
+
 static_assert(isPublicTagAssignmentAction(UiActionType::AssignTag));
 static_assert(
     isPublicTagAssignmentAction(UiActionType::RemoveTagAssignment));
+static_assert(requiresOnlineSpoolman(UiActionType::AssignTag));
+static_assert(requiresOnlineSpoolman(UiActionType::QuickWeight));
+static_assert(!requiresOnlineSpoolman(UiActionType::OpenSpoolmanSettings));
 
 struct UiAction {
   UiActionType type = UiActionType::Back;

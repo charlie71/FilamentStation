@@ -822,13 +822,13 @@ Nach erfolgreicher Migration:
 
 ## 7.8.1 Keine Offline-Workflows
 
-* [ ] Tag zuordnen ohne Spoolman blockieren
-* [ ] Tag-Zuordnung entfernen ohne Spoolman blockieren
-* [ ] Spulensuche ohne Spoolman blockieren
-* [ ] Import ohne Spoolman blockieren
-* [ ] Weight Update ohne Spoolman blockieren
-* [ ] AMS-Spoolman-Zuordnung ohne Spoolman blockieren
-* [ ] verständliche GUI-Meldung
+* [x] Tag zuordnen ohne Spoolman blockieren
+* [x] Tag-Zuordnung entfernen ohne Spoolman blockieren
+* [x] Spulensuche ohne Spoolman blockieren
+* [x] Import ohne Spoolman blockieren
+* [x] Weight Update ohne Spoolman blockieren
+* [x] AMS-Spoolman-Zuordnung ohne Spoolman blockieren
+* [x] verständliche GUI-Meldung
 
 Standardmeldung:
 

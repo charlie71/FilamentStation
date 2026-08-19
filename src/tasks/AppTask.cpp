@@ -851,6 +851,28 @@ void sendOverlay(rtos::RtosContext& ctx, rtos::UiCommandType type,
   }
 }
 
+constexpr const char* kSpoolmanRequiredTitle = "Spoolman nicht verbunden";
+constexpr const char* kSpoolmanRequiredMessage =
+    "Spoolman ist nicht verbunden.\n"
+    "Diese Funktion ben\xC3\xB6tigt eine aktive Spoolman-Verbindung.";
+
+bool spoolmanReady(const rtos::RtosContext& ctx) {
+  return (xEventGroupGetBits(ctx.systemEventGroup) &
+          rtos::EVENT_SPOOLMAN_READY) != 0;
+}
+
+bool requireSpoolman(rtos::RtosContext& ctx, std::uint32_t requestId,
+                     const char* operation) {
+  if (spoolmanReady(ctx)) return true;
+  FS_LOGW(services::LogComponent::App,
+          "Online operation blocked operation=%s reason=spoolman_offline",
+          operation != nullptr ? operation : "unknown");
+  sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+              rtos::UiOverlayKind::Error, requestId,
+              kSpoolmanRequiredTitle, kSpoolmanRequiredMessage);
+  return false;
+}
+
 void reportAssignmentWriteFailure(rtos::RtosContext& ctx,
                                   std::uint32_t requestId,
                                   const char* diagnostic,
@@ -1055,6 +1077,10 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
   command.trayId = action.trayId;
   command.value = action.value;
 
+  if (rtos::requiresOnlineSpoolman(action.type) &&
+      !requireSpoolman(ctx, action.requestId, "ui_action"))
+    return;
+
   switch (action.type) {
     case rtos::UiActionType::AssignTag: {
       if (!tagPresent || !currentTag.capabilities.canAssociateByUid ||
@@ -1239,6 +1265,10 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       if (currentScreen == rtos::UiScreenId::TagReview) {
+        if (!requireSpoolman(ctx, action.requestId, "tag_assignment")) {
+          pendingTagOperation = PendingTagOperation::None;
+          return;
+        }
         if (!tagPresent || pendingTagOperation == PendingTagOperation::None) {
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
@@ -1284,6 +1314,11 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       pendingOverlay = rtos::UiOverlayKind::None;
       if (confirmedOverlay == rtos::UiOverlayKind::Confirmation &&
           pendingServerReassignmentConfirmation) {
+        if (!requireSpoolman(ctx, action.requestId, "reassign_tag")) {
+          pendingServerReassignmentConfirmation = false;
+          pendingTagAssignment = {};
+          return;
+        }
         pendingServerReassignmentConfirmation = false;
         if (pendingTagAssignment.stage !=
             TagAssignmentStage::AwaitingReassignmentConfirmation ||
@@ -1314,6 +1349,12 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       }
       if (confirmedOverlay == rtos::UiOverlayKind::Confirmation &&
           pendingUnlinkConfirmation) {
+        if (!requireSpoolman(ctx, action.requestId,
+                             "remove_tag_assignment")) {
+          pendingUnlinkConfirmation = false;
+          pendingTagRemoval = {};
+          return;
+        }
         pendingUnlinkConfirmation = false;
         if (pendingTagRemoval.stage !=
             TagRemovalStage::AwaitingConfirmation) {
@@ -1350,6 +1391,10 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       if (confirmedOverlay == rtos::UiOverlayKind::TagReview) {
+        if (!requireSpoolman(ctx, action.requestId, "tag_assignment")) {
+          pendingTagOperation = PendingTagOperation::None;
+          return;
+        }
         if (!tagPresent || pendingTagOperation == PendingTagOperation::None) {
           pendingTagOperation = PendingTagOperation::None;
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
@@ -1393,6 +1438,10 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       if (confirmedOverlay == rtos::UiOverlayKind::QuickWeightConfirmation) {
+        if (!requireSpoolman(ctx, action.requestId, "quick_weight_update")) {
+          quickWeight.pending = false;
+          return;
+        }
         if (!quickWeight.pending) return;
         if (scaleError || !scaleStable) {
           quickWeight.pending = false;
@@ -1426,6 +1475,11 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       if (confirmedOverlay == rtos::UiOverlayKind::AdvancedWeightConfirmation) {
+        if (!requireSpoolman(ctx, action.requestId,
+                             "advanced_weight_update")) {
+          advancedWeight.pending = false;
+          return;
+        }
         if (!advancedWeight.pending) return;
         advancedWeight.pending = false;
         pendingWeight = {};
