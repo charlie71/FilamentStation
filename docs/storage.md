@@ -86,6 +86,18 @@ Fruehere Firmwarestaende konnten `/queue/pending-weight.json` beziehungsweise
 StorageTask beim SD-Start einmalig mit dem Entfernen dieser Altdateien. Sie
 werden weder geladen noch als Offline-Datenquelle verwendet.
 
+## Spoolman-Daten
+
+Spulen, Filamente und Hersteller werden ausschliesslich online vom
+SpoolmanTask geladen. Es gibt keinen persistenten Spoolman-Cache und keinen
+SD-basierten Offline-Fallback. Das weiterhin vorhandene Verzeichnis `/cache`
+enthaelt keine autoritative Spoolman-Kopie.
+
+Zur Bereinigung bestehender Installationen entfernt der StorageTask im Auftrag
+des AppTask beim SD-Start die frueher vorgesehenen Dateien
+`/cache/spools.json`, `/cache/filaments.json` und `/cache/vendors.json`. Diese
+Dateien werden nicht gelesen oder ausgewertet.
+
 ## Erste Konfigurationsdateien
 
 Nach Mount und Verzeichnispruefung stellt der StorageTask die sechs Dateien

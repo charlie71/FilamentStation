@@ -42,6 +42,9 @@ constexpr std::uint32_t kSpoolmanLoadRequestId = 0x53504D01U;
 constexpr std::uint32_t kObsoletePendingWeightDeleteRequestId = 0x57475401U;
 constexpr std::uint32_t kObsoletePendingMeasurementsDeleteRequestId =
     0x57475402U;
+constexpr std::uint32_t kObsoleteSpoolCacheDeleteRequestId = 0x43414301U;
+constexpr std::uint32_t kObsoleteFilamentCacheDeleteRequestId = 0x43414302U;
+constexpr std::uint32_t kObsoleteVendorCacheDeleteRequestId = 0x43414303U;
 std::uint32_t pendingSpoolmanSaveRequestId = 0;
 std::int32_t scaleCounts = 0;
 std::int32_t scaleOffsetCounts = 0;
@@ -750,9 +753,9 @@ bool sendWeightUpdate(rtos::RtosContext& ctx, std::uint32_t requestId,
                     pdMS_TO_TICKS(1000)) == pdPASS;
 }
 
-void deleteObsoletePendingWeightFile(rtos::RtosContext& ctx,
-                                     std::uint32_t requestId,
-                                     const char* path) {
+void deleteObsoleteStorageFile(rtos::RtosContext& ctx,
+                               std::uint32_t requestId,
+                               const char* path) {
   rtos::StorageCommand command{};
   command.type = rtos::StorageCommandType::DeleteJson;
   command.requestId = requestId;
@@ -761,7 +764,7 @@ void deleteObsoletePendingWeightFile(rtos::RtosContext& ctx,
   if (xQueueSend(ctx.storageCommandQueue, &command,
                  pdMS_TO_TICKS(1000)) != pdPASS)
     FS_LOGW(services::LogComponent::App,
-            "Command enqueue failed queue=storage op=delete_obsolete_pending_weight path=%s",
+            "Command enqueue failed queue=storage op=delete_obsolete_file path=%s",
             path);
 }
 
@@ -3549,14 +3552,17 @@ void appTask(void* parameter) {
                event.type == rtos::AppEventType::StorageRequestError) {
       if (event.requestId == kObsoletePendingWeightDeleteRequestId ||
           event.requestId ==
-              kObsoletePendingMeasurementsDeleteRequestId) {
+              kObsoletePendingMeasurementsDeleteRequestId ||
+          event.requestId == kObsoleteSpoolCacheDeleteRequestId ||
+          event.requestId == kObsoleteFilamentCacheDeleteRequestId ||
+          event.requestId == kObsoleteVendorCacheDeleteRequestId) {
         if (event.type == rtos::AppEventType::StorageWriteCompleted)
           FS_LOGI(services::LogComponent::App,
-                  "Obsolete pending measurement file removed request_id=%lu",
+                  "Obsolete storage file removed request_id=%lu",
                   static_cast<unsigned long>(event.requestId));
         else
           FS_LOGW(services::LogComponent::App,
-                  "Obsolete pending measurement cleanup failed request_id=%lu",
+                  "Obsolete storage file cleanup failed request_id=%lu",
                   static_cast<unsigned long>(event.requestId));
         continue;
       }
@@ -3680,12 +3686,18 @@ void appTask(void* parameter) {
         requestNetworkConfiguration(ctx);
         requestSpoolmanConfiguration(ctx);
         requestScaleConfiguration(ctx);
-        deleteObsoletePendingWeightFile(
+        deleteObsoleteStorageFile(
             ctx, kObsoletePendingWeightDeleteRequestId,
             "/queue/pending-weight.json");
-        deleteObsoletePendingWeightFile(
+        deleteObsoleteStorageFile(
             ctx, kObsoletePendingMeasurementsDeleteRequestId,
             "/queue/pending-measurements.json");
+        deleteObsoleteStorageFile(ctx, kObsoleteSpoolCacheDeleteRequestId,
+                                  "/cache/spools.json");
+        deleteObsoleteStorageFile(ctx, kObsoleteFilamentCacheDeleteRequestId,
+                                  "/cache/filaments.json");
+        deleteObsoleteStorageFile(ctx, kObsoleteVendorCacheDeleteRequestId,
+                                  "/cache/vendors.json");
         rtos::StorageCommand mappingLoad{};
         mappingLoad.type = rtos::StorageCommandType::LoadJson;
         mappingLoad.requestId = kBambuMappingLoadRequestId;

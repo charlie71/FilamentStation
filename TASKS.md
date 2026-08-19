@@ -863,12 +863,12 @@ Nicht mehr verwenden:
 
 Aufgaben:
 
-* [ ] vorhandene persistente Spool-Caches suchen
-* [ ] Filament-Caches suchen
-* [ ] Vendor-Caches suchen
-* [ ] Offline-Fallback entfernen
-* [ ] alte Dateien ignorieren/löschen
-* [ ] keine Spoolman-Daten von SD als Wahrheit verwenden
+* [x] vorhandene persistente Spool-Caches suchen
+* [x] Filament-Caches suchen
+* [x] Vendor-Caches suchen
+* [x] Offline-Fallback entfernen
+* [x] alte Dateien ignorieren/löschen
+* [x] keine Spoolman-Daten von SD als Wahrheit verwenden
 
 ## 7.8.4 RAM-Cache
 
