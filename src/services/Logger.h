@@ -12,7 +12,8 @@
 static_assert(FS_LOG_LEVEL >= 1 && FS_LOG_LEVEL <= 5,
               "FS_LOG_LEVEL must be between 1 (ERROR) and 5 (TRACE)");
 
-namespace filament_station::services {
+namespace filament_station {
+namespace services {
 
 enum class LogLevel : std::uint8_t {
   Error = 1,
@@ -47,11 +48,15 @@ class Logger final {
   static void log(LogLevel level, LogComponent component, const char* format,
                   ...);
 
+  // Sole serial writer task. RtosContext only creates and owns its handle.
+  static void task(void* parameter);
+
   static const char* levelName(LogLevel level);
   static const char* componentName(LogComponent component);
 };
 
-}  // namespace filament_station::services
+}  // namespace services
+}  // namespace filament_station
 
 // Passing the complete printf-style argument list through __VA_ARGS__ keeps
 // calls without format parameters valid in C++17 without compiler extensions.

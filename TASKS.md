@@ -606,30 +606,30 @@ Aufgaben:
 * [x] `esp32_exception_decoder`
 * [x] `time`
 * [x] `log2file`
-* [ ] Monitor mit normalem Lauf testen
-* [ ] Logdatei erzeugen
-* [ ] Exception-Decoder nicht durch Logger beeinträchtigen
+* [x] Monitor mit normalem Lauf testen
+* [x] Logdatei erzeugen
+* [x] Exception-Decoder nicht durch Logger beeinträchtigen
 
 ## 7.6.6 Cleanup
 
-* [ ] keine direkten `Serial.print*`-Runtime-Logs außerhalb Logger
-* [ ] keine eigenen `log_i/log_d/...` mehr
-* [ ] keine gemischten Prefixe
-* [ ] keine `*wm:` Debugmeldungen im normalen Betrieb
-* [ ] keine sensiblen Daten loggen
-* [ ] `docs/logging.md`
+* [x] keine direkten `Serial.print*`-Runtime-Logs außerhalb Logger
+* [x] keine eigenen `log_i/log_d/...` mehr
+* [x] keine gemischten Prefixe
+* [x] keine `*wm:` Debugmeldungen im normalen Betrieb
+* [x] keine sensiblen Daten loggen
+* [x] `docs/logging.md`
 
 ## 7.6.7 Tests
 
-* [ ] jede Logstufe
-* [ ] jede Kernkomponente
-* [ ] key=value-Felder
-* [ ] parallele Taskausgabe
-* [ ] Level-Filter
-* [ ] lange Nachricht
-* [ ] Logzeile endet exakt einmal mit Newline
-* [ ] `pio device monitor`
-* [ ] `log2file`
+* [x] jede Logstufe
+* [x] jede Kernkomponente
+* [x] key=value-Felder
+* [x] parallele Taskausgabe
+* [x] Level-Filter
+* [x] lange Nachricht
+* [x] Logzeile endet exakt einmal mit Newline
+* [x] `pio device monitor`
+* [x] `log2file`
 
 ### Abnahmekriterien 7.6
 
