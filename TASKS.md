@@ -874,12 +874,12 @@ Aufgaben:
 
 Optional erlaubt:
 
-* [ ] prüfen, ob RAM-Cache überhaupt nötig ist
-* [ ] TTL definieren
-* [ ] maximale Größe definieren
-* [ ] nach Write invalidieren
-* [ ] bei Disconnect verwerfen
-* [ ] niemals Offline-Workflow ermöglichen
+* [x] prüfen, ob RAM-Cache überhaupt nötig ist – derzeit nicht erforderlich
+* [x] TTL definieren – entfällt ohne RAM-Cache
+* [x] maximale Größe definieren – null Cache-Einträge
+* [x] nach Write invalidieren – entfällt ohne RAM-Cache
+* [x] bei Disconnect verwerfen – kein wiederverwendbarer Cache vorhanden
+* [x] niemals Offline-Workflow ermöglichen
 
 Dieser Unterpunkt darf entfallen, wenn kein RAM-Cache benötigt wird.
 

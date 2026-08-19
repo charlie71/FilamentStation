@@ -98,6 +98,10 @@ des AppTask beim SD-Start die frueher vorgesehenen Dateien
 `/cache/spools.json`, `/cache/filaments.json` und `/cache/vendors.json`. Diese
 Dateien werden nicht gelesen oder ausgewertet.
 
+Auch ein fachlicher RAM-Cache wird derzeit bewusst nicht verwendet. Die
+Entscheidung und die Abgrenzung zum flüchtigen UI-View-Zustand sind unter
+[`decisions/ram-cache.md`](decisions/ram-cache.md) dokumentiert.
+
 ## Erste Konfigurationsdateien
 
 Nach Mount und Verzeichnispruefung stellt der StorageTask die sechs Dateien
