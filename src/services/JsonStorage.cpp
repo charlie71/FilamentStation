@@ -185,7 +185,6 @@ std::size_t JsonStorage::maxSizeFor(
     rtos::StorageDocumentType documentType) {
   switch (documentType) {
     case rtos::StorageDocumentType::Scale:
-    case rtos::StorageDocumentType::PendingWeight:
       return kSmallConfigMaxSize;
     case rtos::StorageDocumentType::Device:
     case rtos::StorageDocumentType::Network:
@@ -310,8 +309,6 @@ const char* JsonStorage::documentTypeName(
       return "nfc";
     case rtos::StorageDocumentType::Diagnostics:
       return "diagnostics";
-    case rtos::StorageDocumentType::PendingWeight:
-      return "pendingWeight";
   }
   return nullptr;
 }
@@ -357,14 +354,6 @@ JsonStorageError JsonStorage::createDefault(
       document["mappings"].to<JsonArray>();
       break;
     case rtos::StorageDocumentType::Diagnostics:
-      break;
-    case rtos::StorageDocumentType::PendingWeight:
-      document["spoolId"] = 0;
-      document["remainingWeightGrams"] = 0.0F;
-      document["initialWeightGrams"] = 0.0F;
-      document["emptySpoolWeightGrams"] = 0.0F;
-      document["updateInitialWeight"] = false;
-      document["updateEmptySpoolWeight"] = false;
       break;
   }
   return validate(document, documentType);
@@ -482,19 +471,6 @@ JsonStorageError JsonStorage::validate(
                  : JsonStorageError::InvalidDocumentField;
     case rtos::StorageDocumentType::Diagnostics:
       return JsonStorageError::Ok;
-    case rtos::StorageDocumentType::PendingWeight:
-      return document["spoolId"].is<std::uint32_t>() &&
-                     document["spoolId"].as<std::uint32_t>() != 0 &&
-                     document["remainingWeightGrams"].is<float>() &&
-                     document["remainingWeightGrams"].as<float>() >= 0.0F &&
-                     document["initialWeightGrams"].is<float>() &&
-                     document["initialWeightGrams"].as<float>() >= 0.0F &&
-                     document["emptySpoolWeightGrams"].is<float>() &&
-                     document["emptySpoolWeightGrams"].as<float>() >= 0.0F &&
-                     document["updateInitialWeight"].is<bool>() &&
-                     document["updateEmptySpoolWeight"].is<bool>()
-                 ? JsonStorageError::Ok
-                 : JsonStorageError::InvalidDocumentField;
   }
   return JsonStorageError::InvalidArgument;
 }

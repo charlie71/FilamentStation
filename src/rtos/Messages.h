@@ -90,7 +90,16 @@ struct ScaleCommand {
 };
 struct NfcCommand { NfcCommandType type; std::uint32_t requestId; std::uint32_t spoolId; };
 
-enum class StorageDocumentType : std::uint8_t { Device, Network, Spoolman, Bambu, Ui, Scale, Nfc, Diagnostics, PendingWeight };
+enum class StorageDocumentType : std::uint8_t {
+  Device,
+  Network,
+  Spoolman,
+  Bambu,
+  Ui,
+  Scale,
+  Nfc,
+  Diagnostics
+};
 constexpr std::size_t kStorageJsonPayloadCapacity = 768;
 struct StorageCommand {
   StorageCommandType type;

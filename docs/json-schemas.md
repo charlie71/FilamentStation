@@ -29,7 +29,6 @@ erkannt. Die ersten fachlichen Felder und Standardwerte sind:
 | `/config/ui.json` | `ui` | `language`: `"de"`, `weightUnit`: `"g"` |
 | `/config/scale.json` | `scale` | `calibrated`: `false`, `tareOffsetCounts`: `0`, `factorCountsPerGram`: `1.0` |
 | `/config/nfc.json` | `nfc` | `tagSchemaVersion`: `1` |
-| `/queue/pending-weight.json` | `pendingWeight` | `spoolId`, `remainingWeightGrams`, `initialWeightGrams`, `emptySpoolWeightGrams`, `updateInitialWeight`, `updateEmptySpoolWeight` |
 
 `deviceName`, `hostname`, `language` und `weightUnit` muessen nichtleere
 Zeichenketten sein. `dhcp`, `enabled` und `calibrated` sind boolesche Werte.
@@ -92,7 +91,6 @@ Beispiel fuer DHCP:
 | Scale | 4 KiB |
 | Device, Network, Spoolman, Bambu | 8 KiB |
 | UI, NFC | 16 KiB |
-| Pending Weight | 4 KiB |
 | Diagnostics | 32 KiB |
 
 Die Grenzen werden spaeter gegen die realen Schemas und Messdaten geprueft.

@@ -841,13 +841,13 @@ Diese Funktion benötigt eine aktive Spoolman-Verbindung.
 
 Die bisherige Implementierung aus 7.5 wird nicht mehr benötigt.
 
-* [ ] automatische Pending-Measurement-Erzeugung entfernen
-* [ ] Retry-Queue entfernen
-* [ ] `/queue/pending-measurements.json` nicht mehr verwenden
-* [ ] Fehler direkt anzeigen
-* [ ] manuellen Retry erlauben
-* [ ] alte Pending-Datei optional löschen
-* [ ] Tests anpassen
+* [x] automatische Pending-Measurement-Erzeugung entfernen
+* [x] Retry-Queue entfernen
+* [x] `/queue/pending-measurements.json` nicht mehr verwenden
+* [x] Fehler direkt anzeigen
+* [x] manuellen Retry erlauben
+* [x] alte Pending-Datei optional löschen
+* [x] Tests anpassen
 
 ## 7.8.3 Persistenten Spoolman-Cache entfernen
 
