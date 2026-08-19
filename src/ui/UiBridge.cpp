@@ -1707,14 +1707,14 @@ void bindGeneratedWidgets() {
       objects.device_settings_settings, objects.diagnostics_settings_settings,
       objects.firmware_settings_settings,
   }};
-  for (lv_obj_t* control : settingsControls) setControlText(control, "Einst.");
+  //for (lv_obj_t* control : settingsControls) setControlText(control, "Einst.");
 
   const std::array<lv_obj_t*, 6> tagSettings{{
       objects.tag_action_settings, objects.tag_review_settings,
       objects.tag_write_settings, objects.tag_result_settings,
       objects.tag_legacy_settings, objects.tag_unknown_settings,
   }};
-  for (lv_obj_t* control : tagSettings) setControlText(control, "Einst.");
+  //for (lv_obj_t* control : tagSettings) setControlText(control, "Einst.");
   setControlText(objects.tag_action_title, "NFC-Tag zuordnen");
   setControlText(objects.tag_action_select_spool, "Tag zuordnen");
   setControlText(objects.tag_action_use_last_spool,
@@ -1736,7 +1736,7 @@ void bindGeneratedWidgets() {
   setControlText(objects.tag_result_quick_weight, "Schnell wiegen");
   setControlText(objects.tag_result_advanced_weight, "Erweitert wiegen");
   setControlText(objects.tag_result_close, "Schlie\xC3\x9F" "en");
-  setControlText(objects.tag_definition_import_settings, "Einst.");
+  //setControlText(objects.tag_definition_import_settings, "Einst.");
   setControlText(objects.tag_definition_import_title,
                  "Tagdefinition erkannt");
   setControlText(objects.tag_definition_import_select_spool,
@@ -2204,7 +2204,7 @@ void updateTrayButton(lv_obj_t* button, rtos::PrinterId printerId,
     setButtonColors(button, 0x455A64);
     updateHomeColorStrips(colorStripGroup, {}, 0);
   } else {
-    std::snprintf(text, sizeof(text), "%s\n%s #%lu\n%.0f g", title,
+    std::snprintf(text, sizeof(text), "%s\n%s #%lu\n%.0fg", title,
                   tray->material, static_cast<unsigned long>(tray->spoolId),
                   static_cast<double>(tray->remainingWeightGrams));
     setButtonColors(button,
@@ -2268,7 +2268,7 @@ void updateHomeContent() {
   const auto& staging = stagingState;
   char stagingText[64];
   if (staging.printerId == currentPrinterId && staging.spoolId != 0) {
-    std::snprintf(stagingText, sizeof(stagingText), "Staging\n%s #%lu\n%.0f g",
+    std::snprintf(stagingText, sizeof(stagingText), "Staging\n%s #%lu\n%.0fg",
                   staging.material, static_cast<unsigned long>(staging.spoolId),
                   static_cast<double>(staging.remainingWeightGrams));
     setButtonColors(objects.home_staging,
@@ -2296,13 +2296,13 @@ void updateWeightDisplays() {
   const models::UiWeightState& weight = liveWeight;
   char text[96];
   if (weight.error) {
-    std::snprintf(text, sizeof(text), "Waage\nFehler\n%s", weight.status);
+    std::snprintf(text, sizeof(text), "Fehler\n%s", weight.status);
     setButtonColors(objects.home_weight, 0xC62828);
   } else if (!weight.calibrated) {
-    std::snprintf(text, sizeof(text), "Waage\n-- g\nnicht kalibriert");
+    std::snprintf(text, sizeof(text), "-- g\nnicht kalibriert");
     setButtonColors(objects.home_weight, 0xF9A825);
   } else {
-    std::snprintf(text, sizeof(text), "Waage\n%.1f g\n%s",
+    std::snprintf(text, sizeof(text), "%.1fg\n%s",
                   static_cast<double>(weight.grossWeightGrams), weight.status);
     setButtonColors(objects.home_weight, weight.stable ? 0x2E7D32 : 0xF9A825);
   }
@@ -2374,10 +2374,10 @@ void updateStagingContent() {
   lv_label_set_text(stagingTableRows[2], rowText);
   std::snprintf(rowText, sizeof(rowText), "Farben: %s", colors);
   lv_label_set_text(stagingTableRows[3], rowText);
-  std::snprintf(rowText, sizeof(rowText), "Leergewicht: %.0f g",
+  std::snprintf(rowText, sizeof(rowText), "Leergewicht: %.0fg",
                 static_cast<double>(spool.emptyWeightGrams));
   lv_label_set_text(stagingTableRows[4], rowText);
-  std::snprintf(rowText, sizeof(rowText), "Bruttogewicht: %.0f g",
+  std::snprintf(rowText, sizeof(rowText), "Bruttogewicht: %.0fg",
                 static_cast<double>(staging.grossWeightGrams));
   lv_label_set_text(stagingTableRows[5], rowText);
   std::snprintf(rowText, sizeof(rowText), "Restgewicht: %.0f g (%.1f %%)",
@@ -2481,7 +2481,7 @@ void updateTrayDetails() {
                     static_cast<unsigned long>(tray->colorRgb[1] & 0xFFFFFFU),
                     static_cast<unsigned long>(tray->colorRgb[2] & 0xFFFFFFU));
     }
-    std::snprintf(rows[3].data(), rows[3].size(), "Restgewicht: %.0f g",
+    std::snprintf(rows[3].data(), rows[3].size(), "Restgewicht: %.0fg",
                   static_cast<double>(tray->remainingWeightGrams));
     std::snprintf(rows[4].data(), rows[4].size(), "Letzte Messung: Mock-Daten");
   }

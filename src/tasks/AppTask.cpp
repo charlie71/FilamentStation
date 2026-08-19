@@ -2566,7 +2566,7 @@ void appTask(void* parameter) {
           } else {
             char summary[128]{};
             std::snprintf(summary, sizeof(summary),
-                          "%s\nHersteller: %s\nFilament: %s\nMaterial: %s\nFarbe: %s\nGewicht: %.0f g / Leer: %.0f g",
+                          "%s\nHersteller: %s\nFilament: %s\nMaterial: %s\nFarbe: %s\nGewicht: %.0fg / Leer: %.0fg",
                           formatName,
                           currentTag.definition.vendor,
                           currentTag.definition.filamentName,

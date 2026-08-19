@@ -2,9 +2,11 @@
 
 #include <cstdint>
 
+#include "models/PrinterState.h"
+
 namespace filament_station::rtos {
 
-using PrinterId = std::uint16_t;
+using PrinterId = models::PrinterId;
 using SpoolId = std::uint32_t;
 
 constexpr std::int32_t UI_TAG_CAP_WRITE = 1 << 0;

@@ -906,13 +906,13 @@ Dieser Unterpunkt darf entfallen, wenn kein RAM-Cache benötigt wird.
 
 ## 8.1 Datenmodell
 
-* [ ] mehrere Drucker
-* [ ] stabile PrinterId
-* [ ] aktiver Drucker
-* [ ] Standarddrucker
-* [ ] aktives AMS je Drucker
-* [ ] Druckerstatus
-* [ ] Slots
+* [x] mehrere Drucker
+* [x] stabile PrinterId
+* [x] aktiver Drucker
+* [x] Standarddrucker
+* [x] aktives AMS je Drucker
+* [x] Druckerstatus
+* [x] Slots
 
 ## 8.2 Konfiguration
 
