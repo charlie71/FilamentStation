@@ -615,6 +615,55 @@ void test_removal_effect_only_clears_managed_payload() {
       filament_station::nfc::removalEffect(tag));
 }
 
+void test_assignment_effects_for_all_supported_tag_formats() {
+  using filament_station::nfc::TagAssignmentEffect;
+  filament_station::models::TagReadResult tag{};
+  tag.technology = TagTechnology::Ntag215;
+  tag.format = TagFormat::EmptyNdef;
+  tag.uid[0] = 0x04;
+  tag.uidLength = 1;
+  tag.payloadValid = true;
+  tag.physicalWritableKnown = true;
+  tag.physicalWritable = true;
+  filament_station::nfc::updateTagCapabilities(tag);
+  TEST_ASSERT_EQUAL(TagAssignmentEffect::MappingAndPayload,
+                    filament_station::nfc::assignmentEffect(tag));
+
+  for (const TagFormat format : {TagFormat::BambuLab,
+                                 TagFormat::OpenPrintTag,
+                                 TagFormat::OpenTag3D,
+                                 TagFormat::Unknown}) {
+    tag.format = format;
+    filament_station::nfc::updateTagCapabilities(tag);
+    TEST_ASSERT_TRUE(tag.capabilities.canAssociateByUid);
+    TEST_ASSERT_EQUAL(TagAssignmentEffect::MappingOnly,
+                      filament_station::nfc::assignmentEffect(tag));
+    TEST_ASSERT_TRUE(tag.capabilities.preserveOriginalContent);
+  }
+}
+
+void test_removal_effects_for_native_and_bambu_tags() {
+  using filament_station::nfc::TagAssignmentEffect;
+  filament_station::models::TagReadResult native{};
+  native.technology = TagTechnology::Ntag215;
+  native.format = TagFormat::FilamentStation;
+  native.uid[0] = 0x04;
+  native.uidLength = 1;
+  native.payloadValid = true;
+  native.physicalWritableKnown = true;
+  native.physicalWritable = true;
+  filament_station::nfc::updateTagCapabilities(native);
+  TEST_ASSERT_EQUAL(TagAssignmentEffect::MappingAndPayload,
+                    filament_station::nfc::removalEffect(native));
+
+  auto bambu = native;
+  bambu.format = TagFormat::BambuLab;
+  filament_station::nfc::updateTagCapabilities(bambu);
+  TEST_ASSERT_EQUAL(TagAssignmentEffect::MappingOnly,
+                    filament_station::nfc::removalEffect(bambu));
+  TEST_ASSERT_TRUE(bambu.capabilities.preserveOriginalContent);
+}
+
 void test_tag_identity_normalizes_hex_separators_and_case() {
   filament_station::models::TagIdentity identity{};
   TEST_ASSERT_TRUE(filament_station::services::normalizeTagIdentity(
@@ -717,6 +766,8 @@ int main(int, char**) {
   RUN_TEST(test_legacy_requires_explicit_safe_rewrite_capability);
   RUN_TEST(test_assignment_effect_is_derived_from_tag_capabilities);
   RUN_TEST(test_removal_effect_only_clears_managed_payload);
+  RUN_TEST(test_assignment_effects_for_all_supported_tag_formats);
+  RUN_TEST(test_removal_effects_for_native_and_bambu_tags);
   RUN_TEST(test_tag_identity_normalizes_hex_separators_and_case);
   RUN_TEST(test_tag_identity_rejects_invalid_or_odd_hex);
   RUN_TEST(test_uid_identity_is_canonical_and_stored_in_read_result);

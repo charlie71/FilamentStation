@@ -12,6 +12,7 @@
 #include "rtos/RtosContext.h"
 #include "services/SpoolmanUrl.h"
 #include "services/SpoolmanClient.h"
+#include "services/TagAssignmentPolicy.h"
 #include "services/TagIdentity.h"
 #include "services/Logger.h"
 
@@ -1068,10 +1069,9 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       const EventBits_t spoolmanBits = xEventGroupGetBits(ctx.systemEventGroup);
-      if ((spoolmanBits & (rtos::EVENT_SPOOLMAN_READY |
-                          rtos::EVENT_SPOOLMAN_TAG_FIELD_READY)) !=
-          (rtos::EVENT_SPOOLMAN_READY |
-           rtos::EVENT_SPOOLMAN_TAG_FIELD_READY)) {
+      if (!services::tagOperationsAvailable(
+              (spoolmanBits & rtos::EVENT_SPOOLMAN_READY) != 0,
+              (spoolmanBits & rtos::EVENT_SPOOLMAN_TAG_FIELD_READY) != 0)) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, action.requestId,
                     "Zuordnung nicht m\xC3\xB6glich",
@@ -1136,10 +1136,9 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       const EventBits_t spoolmanBits = xEventGroupGetBits(ctx.systemEventGroup);
-      if ((spoolmanBits & (rtos::EVENT_SPOOLMAN_READY |
-                          rtos::EVENT_SPOOLMAN_TAG_FIELD_READY)) !=
-          (rtos::EVENT_SPOOLMAN_READY |
-           rtos::EVENT_SPOOLMAN_TAG_FIELD_READY)) {
+      if (!services::tagOperationsAvailable(
+              (spoolmanBits & rtos::EVENT_SPOOLMAN_READY) != 0,
+              (spoolmanBits & rtos::EVENT_SPOOLMAN_TAG_FIELD_READY) != 0)) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, action.requestId,
                     "Entfernen nicht m\xC3\xB6glich",
@@ -2955,21 +2954,25 @@ void appTask(void* parameter) {
                                 .mappings[legacyMigrationEntryIndex];
       if (event.spool.id != mapping.spoolId) {
         finishLegacyMigrationEntry(ctx, false, "target_spool_mismatch");
-      } else if (!event.spool.extraTagValid) {
-        finishLegacyMigrationEntry(ctx, false,
-                                   "target_spool_tag_field_invalid");
-      } else if (event.spool.extraTag[0] == '\0') {
+      } else if (services::legacyMigrationDecision(
+                     event.spool.extraTagValid, event.spool.extraTag,
+                     legacyMigrationIdentity.value) ==
+                 services::LegacyMigrationDecision::SetTarget) {
         legacyMigrationStage = LegacyMigrationStage::SettingTarget;
         if (!sendLegacySpoolmanCommand(
                 ctx, rtos::SpoolmanCommandType::SetSpoolTag,
                 kLegacyMigrationSetTagRequestId, mapping.spoolId))
           finishLegacyMigrationEntry(ctx, false, "spoolman_queue_full");
-      } else if (std::strcmp(event.spool.extraTag,
-                             legacyMigrationIdentity.value) == 0) {
+      } else if (services::legacyMigrationDecision(
+                     event.spool.extraTagValid, event.spool.extraTag,
+                     legacyMigrationIdentity.value) ==
+                 services::LegacyMigrationDecision::AlreadyMigrated) {
         finishLegacyMigrationEntry(ctx, true, "already_assigned");
       } else {
-        finishLegacyMigrationEntry(ctx, false,
-                                   "target_spool_has_other_tag");
+        finishLegacyMigrationEntry(
+            ctx, false, event.spool.extraTagValid
+                            ? "target_spool_has_other_tag"
+                            : "target_spool_tag_field_invalid");
       }
       continue;
     } else if (event.type == rtos::AppEventType::SpoolmanTagLookup &&

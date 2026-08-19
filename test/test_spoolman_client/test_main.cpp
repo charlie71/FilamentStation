@@ -4,11 +4,16 @@
 #include <cstring>
 
 #include "services/SpoolmanClient.h"
+#include "services/TagAssignmentPolicy.h"
 
 using filament_station::services::SpoolmanClient;
 using filament_station::services::SpoolmanHttpTransport;
 using filament_station::services::TagExtraFieldStatus;
 using filament_station::services::TagLookupStatus;
+using filament_station::services::AssignmentDecision;
+using filament_station::services::RemovalDecision;
+using filament_station::services::NativeConsistency;
+using filament_station::services::LegacyMigrationDecision;
 
 class MockTransport final : public SpoolmanHttpTransport {
  public:
@@ -175,6 +180,76 @@ void testSetRequiresVerifiedServerResponse() {
   TEST_ASSERT_EQUAL_STRING("Spool tag verification failed", result.error);
 }
 
+void testAssignmentWorkflowDecisions() {
+  using filament_station::services::assignmentDecision;
+  TEST_ASSERT_EQUAL(AssignmentDecision::Blocked,
+                    assignmentDecision(false, TagLookupStatus::NotFound, 0,
+                                       42));
+  TEST_ASSERT_EQUAL(AssignmentDecision::Assign,
+                    assignmentDecision(true, TagLookupStatus::NotFound, 0,
+                                       42));
+  TEST_ASSERT_EQUAL(AssignmentDecision::Idempotent,
+                    assignmentDecision(true, TagLookupStatus::Found, 42, 42));
+  TEST_ASSERT_EQUAL(AssignmentDecision::Reassign,
+                    assignmentDecision(true, TagLookupStatus::Found, 17, 42));
+  TEST_ASSERT_EQUAL(AssignmentDecision::Duplicate,
+                    assignmentDecision(true, TagLookupStatus::Duplicate, 0,
+                                       42));
+}
+
+void testRemovalWorkflowDecisions() {
+  using filament_station::services::removalDecision;
+  TEST_ASSERT_EQUAL(RemovalDecision::Blocked,
+                    removalDecision(false, TagLookupStatus::Found, 42));
+  TEST_ASSERT_EQUAL(RemovalDecision::NotAssigned,
+                    removalDecision(true, TagLookupStatus::NotFound, 0));
+  TEST_ASSERT_EQUAL(RemovalDecision::Remove,
+                    removalDecision(true, TagLookupStatus::Found, 42));
+  TEST_ASSERT_EQUAL(RemovalDecision::Duplicate,
+                    removalDecision(true, TagLookupStatus::Duplicate, 0));
+}
+
+void testOnlineAndExtraFieldRequirements() {
+  using filament_station::services::tagOperationsAvailable;
+  TEST_ASSERT_FALSE(tagOperationsAvailable(false, false));
+  TEST_ASSERT_FALSE(tagOperationsAvailable(true, false));
+  TEST_ASSERT_FALSE(tagOperationsAvailable(false, true));
+  TEST_ASSERT_TRUE(tagOperationsAvailable(true, true));
+}
+
+void testNativePayloadConsistencyDecisions() {
+  using filament_station::services::nativeConsistency;
+  TEST_ASSERT_EQUAL(NativeConsistency::Unavailable,
+                    nativeConsistency(false, TagLookupStatus::Found, 42, 42));
+  TEST_ASSERT_EQUAL(
+      NativeConsistency::MissingServerAssignment,
+      nativeConsistency(true, TagLookupStatus::NotFound, 42, 0));
+  TEST_ASSERT_EQUAL(NativeConsistency::Consistent,
+                    nativeConsistency(true, TagLookupStatus::Found, 42, 42));
+  TEST_ASSERT_EQUAL(
+      NativeConsistency::ConflictingSpool,
+      nativeConsistency(true, TagLookupStatus::Found, 42, 17));
+  TEST_ASSERT_EQUAL(NativeConsistency::Duplicate,
+                    nativeConsistency(true, TagLookupStatus::Duplicate, 42,
+                                      0));
+}
+
+void testLegacyMigrationConflictPolicy() {
+  using filament_station::services::legacyMigrationDecision;
+  TEST_ASSERT_EQUAL(
+      LegacyMigrationDecision::SetTarget,
+      legacyMigrationDecision(true, "", "04A211FE428061"));
+  TEST_ASSERT_EQUAL(
+      LegacyMigrationDecision::AlreadyMigrated,
+      legacyMigrationDecision(true, "04A211FE428061", "04A211FE428061"));
+  TEST_ASSERT_EQUAL(
+      LegacyMigrationDecision::Conflict,
+      legacyMigrationDecision(true, "A1B2C3D4", "04A211FE428061"));
+  TEST_ASSERT_EQUAL(
+      LegacyMigrationDecision::Conflict,
+      legacyMigrationDecision(false, "", "04A211FE428061"));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(testEnsureExistingTextField);
@@ -185,5 +260,10 @@ int main(int, char**) {
   RUN_TEST(testFindRejectsInvalidIdentityAndHttpFailure);
   RUN_TEST(testSetAndClearSpoolTagEncodingAndVerification);
   RUN_TEST(testSetRequiresVerifiedServerResponse);
+  RUN_TEST(testAssignmentWorkflowDecisions);
+  RUN_TEST(testRemovalWorkflowDecisions);
+  RUN_TEST(testOnlineAndExtraFieldRequirements);
+  RUN_TEST(testNativePayloadConsistencyDecisions);
+  RUN_TEST(testLegacyMigrationConflictPolicy);
   return UNITY_END();
 }

@@ -789,22 +789,22 @@ Nach erfolgreicher Migration:
 
 ## 7.7.11 Tests
 
-* [ ] NTAG Assignment
-* [ ] Bambu Assignment
-* [ ] OpenPrintTag Assignment
-* [ ] OpenTag3D Assignment
-* [ ] Unknown Assignment
-* [ ] gleiche Spule
-* [ ] andere Spule
-* [ ] Duplicate
-* [ ] Remove NTAG
-* [ ] Remove Bambu
-* [ ] Spoolman offline
-* [ ] API Timeout
-* [ ] Extra Field fehlt
-* [ ] Extra Field falscher Typ
-* [ ] NDEF/Spoolman Inkonsistenz
-* [ ] Legacy Migration
+* [x] NTAG Assignment
+* [x] Bambu Assignment
+* [x] OpenPrintTag Assignment
+* [x] OpenTag3D Assignment
+* [x] Unknown Assignment
+* [x] gleiche Spule
+* [x] andere Spule
+* [x] Duplicate
+* [x] Remove NTAG
+* [x] Remove Bambu
+* [x] Spoolman offline
+* [x] API Timeout
+* [x] Extra Field fehlt
+* [x] Extra Field falscher Typ
+* [x] NDEF/Spoolman Inkonsistenz
+* [x] Legacy Migration
 
 ### Abnahmekriterien 7.7
 
