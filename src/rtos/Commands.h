@@ -57,6 +57,7 @@ enum class UiCommandType : std::uint8_t {
   UpdateSettings,
   UpdateBootStatus,
   UpdateNetworkStatus,
+  UpdateSpoolmanState,
   UpdateSpoolPicker,
   ShowToast,
 };

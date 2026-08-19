@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <type_traits>
 #include "models/TagReadResult.h"
+#include "models/AppState.h"
 #include "models/NetworkSettings.h"
 #include "models/SpoolmanSettings.h"
 #include "models/SpoolmanSpool.h"
@@ -71,6 +72,8 @@ struct UiCommand {
   std::uint8_t trayId;
   std::int32_t value;
   UiNetworkState networkState;
+  models::SpoolmanAppState spoolmanAppState =
+      models::SpoolmanAppState::SpoolmanUnavailable;
   float weightGrams;
   models::SpoolmanSpool spool{};
   models::SpoolmanWeightUpdate weightUpdate{};

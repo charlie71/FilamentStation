@@ -137,6 +137,10 @@ lv_obj_t* advancedKeyboard = nullptr;
 std::int32_t advancedInputMode = 0;
 rtos::UiOverlayKind activeOverlayKind = rtos::UiOverlayKind::None;
 std::uint32_t activeOverlayRequestId = 0;
+filament_station::models::SpoolmanAppState spoolmanAppState =
+    filament_station::models::SpoolmanAppState::SpoolmanUnavailable;
+bool currentTagCanAssign = false;
+bool currentTagCanRemove = false;
 
 bool sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
                 std::uint8_t amsId = 0, std::uint8_t trayId = 0,
@@ -1451,6 +1455,60 @@ void setLabelButtonAvailable(lv_obj_t* object, bool available,
   }
 }
 
+void applySpoolmanAppState(const rtos::UiCommand* command = nullptr) {
+  const bool online =
+      filament_station::models::spoolmanOperationsAvailable(spoolmanAppState);
+  const bool tagReady =
+      filament_station::models::spoolmanTagOperationsAvailable(
+          spoolmanAppState);
+
+  const std::array<lv_obj_t*, 7> onlineControls{{
+      objects.staging_details_quick_weight,
+      objects.staging_action_configure,
+      objects.staging_action_advanced_weight,
+      objects.staging_action_erase_tag,
+      objects.tray_action_from_staging,
+      objects.tray_action_manual,
+      objects.tag_result_quick_weight,
+  }};
+  for (lv_obj_t* control : onlineControls)
+    setLabelButtonAvailable(control, online, 0x1565C0);
+  setLabelButtonAvailable(objects.tag_result_advanced_weight, online,
+                          0x1565C0);
+
+  setLabelButtonAvailable(objects.staging_action_link_tag,
+                          tagReady && currentTagCanAssign, 0x1565C0);
+  setLabelButtonAvailable(objects.staging_action_unlink_tag,
+                          tagReady && currentTagCanRemove, 0xC62828);
+  setLabelButtonAvailable(objects.tag_action_select_spool,
+                          tagReady && currentTagCanAssign, 0x1565C0);
+  setLabelButtonAvailable(objects.tag_action_use_last_spool,
+                          tagReady && currentTagCanAssign, 0x1565C0);
+  setLabelButtonAvailable(objects.tag_action_erase,
+                          tagReady && currentTagCanRemove, 0xC62828);
+  setLabelButtonAvailable(objects.tag_definition_import_select_spool,
+                          tagReady, 0x1565C0);
+  setLabelButtonAvailable(objects.tag_definition_import_spoolman, tagReady,
+                          0x1565C0);
+  setLabelButtonAvailable(objects.tag_legacy_select_spool,
+                          tagReady && currentTagCanAssign, 0x1565C0);
+  setLabelButtonAvailable(objects.tag_legacy_import, tagReady, 0x1565C0);
+  setLabelButtonAvailable(objects.tag_legacy_erase,
+                          tagReady && currentTagCanRemove, 0xC62828);
+  setLabelButtonAvailable(objects.tag_unknown_select_spool,
+                          tagReady && currentTagCanAssign, 0x1565C0);
+
+  if (command != nullptr) {
+    lv_label_set_text(objects.home_bottom_status, command->text);
+    lv_label_set_text(objects.settings_bottom_status, command->text);
+    lv_label_set_text(objects.spoolman_setting_status, command->text);
+    char version[64]{};
+    std::snprintf(version, sizeof(version), "Server: %s",
+                  command->title[0] != '\0' ? command->title : "-");
+    lv_label_set_text(objects.spoolman_setting_version, version);
+  }
+}
+
 void createHomeColorStrips() {
   const std::array<lv_obj_t*, kHomeColorStripGroups> parents{{
       objects.home_tray_1, objects.home_tray_2, objects.home_tray_3,
@@ -2760,6 +2818,7 @@ bool initializeLvgl(UiRuntimeInfo& runtimeInfo, rtos::RtosContext& context) {
   FS_LOGI(services::LogComponent::Ui, "Application font applied");
   vTaskDelay(pdMS_TO_TICKS(250));
   bindGeneratedWidgets();
+  applySpoolmanAppState();
   FS_LOGI(services::LogComponent::Ui, "Widgets bound");
   vTaskDelay(pdMS_TO_TICKS(250));
   updateHeaders(currentPrinterId);
@@ -2802,6 +2861,8 @@ void processUiCommand(const rtos::UiCommand& command) {
         const bool canAssign = (command.value & rtos::UI_TAG_CAP_LINK) != 0;
         const bool canRemove =
             (command.value & rtos::UI_TAG_CAP_UNLINK) != 0;
+        currentTagCanAssign = canAssign;
+        currentTagCanRemove = canRemove;
         setLabelButtonAvailable(
             objects.staging_action_link_tag, canAssign, 0x1565C0);
         setLabelButtonAvailable(
@@ -2826,6 +2887,8 @@ void processUiCommand(const rtos::UiCommand& command) {
         const bool canAssign = (command.value & rtos::UI_TAG_CAP_LINK) != 0;
         const bool canRemove =
             (command.value & rtos::UI_TAG_CAP_UNLINK) != 0;
+        currentTagCanAssign = canAssign;
+        currentTagCanRemove = canRemove;
         setLabelButtonAvailable(objects.tag_action_select_spool, canAssign,
                                 0x1565C0);
         setLabelButtonAvailable(objects.tag_action_use_last_spool, canAssign,
@@ -2846,6 +2909,8 @@ void processUiCommand(const rtos::UiCommand& command) {
         const bool canAssign = (command.value & rtos::UI_TAG_CAP_LINK) != 0;
         const bool canRemove =
             (command.value & rtos::UI_TAG_CAP_UNLINK) != 0;
+        currentTagCanAssign = canAssign;
+        currentTagCanRemove = canRemove;
         setLabelButtonAvailable(objects.tag_legacy_select_spool, canAssign,
                                 0x1565C0);
         lv_obj_set_flag(objects.tag_legacy_erase, LV_OBJ_FLAG_CLICKABLE,
@@ -2856,9 +2921,12 @@ void processUiCommand(const rtos::UiCommand& command) {
       } else if (command.screenId == rtos::UiScreenId::TagUnknown &&
                   command.text[0] != '\0') {
         lv_label_set_text(objects.tag_unknown_summary, command.text);
+        currentTagCanAssign =
+            (command.value & rtos::UI_TAG_CAP_LINK) != 0;
+        currentTagCanRemove = false;
         setLabelButtonAvailable(
             objects.tag_unknown_select_spool,
-            (command.value & rtos::UI_TAG_CAP_LINK) != 0, 0x1565C0);
+            currentTagCanAssign, 0x1565C0);
       }
       if (command.screenId == rtos::UiScreenId::TrayDetails ||
           command.screenId == rtos::UiScreenId::TrayActions) {
@@ -2870,6 +2938,7 @@ void processUiCommand(const rtos::UiCommand& command) {
       if (command.screenId == rtos::UiScreenId::SettingsPrinterEdit) {
         loadPrinterUiDraft(command.printerId);
       }
+      applySpoolmanAppState();
       showScreen(command.screenId);
       break;
     case rtos::UiCommandType::UpdateHeader:
@@ -3005,6 +3074,10 @@ void processUiCommand(const rtos::UiCommand& command) {
       lv_label_set_text(objects.wifi_settings_ip, text);
       break;
     }
+    case rtos::UiCommandType::UpdateSpoolmanState:
+      spoolmanAppState = command.spoolmanAppState;
+      applySpoolmanAppState(&command);
+      break;
     case rtos::UiCommandType::UpdateSpoolPicker: {
       if (activeOverlayKind != rtos::UiOverlayKind::SpoolPicker) break;
       if (command.value == -2) {

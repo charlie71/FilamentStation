@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "services/SpoolmanClient.h"
+#include "models/AppState.h"
 #include "services/TagAssignmentPolicy.h"
 
 using filament_station::services::SpoolmanClient;
@@ -250,6 +251,31 @@ void testLegacyMigrationConflictPolicy() {
       legacyMigrationDecision(false, "", "04A211FE428061"));
 }
 
+void testSpoolmanAppStateTransitionsAndPermissions() {
+  using filament_station::models::SpoolmanAppState;
+  using filament_station::models::spoolmanAppState;
+  using filament_station::models::spoolmanOperationsAvailable;
+  using filament_station::models::spoolmanTagOperationsAvailable;
+
+  const auto offline = spoolmanAppState(false, false);
+  TEST_ASSERT_EQUAL(SpoolmanAppState::SpoolmanUnavailable, offline);
+  TEST_ASSERT_FALSE(spoolmanOperationsAvailable(offline));
+  TEST_ASSERT_FALSE(spoolmanTagOperationsAvailable(offline));
+
+  const auto withoutTagField = spoolmanAppState(true, false);
+  TEST_ASSERT_EQUAL(SpoolmanAppState::TagFieldUnavailable, withoutTagField);
+  TEST_ASSERT_TRUE(spoolmanOperationsAvailable(withoutTagField));
+  TEST_ASSERT_FALSE(spoolmanTagOperationsAvailable(withoutTagField));
+
+  const auto ready = spoolmanAppState(true, true);
+  TEST_ASSERT_EQUAL(SpoolmanAppState::SpoolmanReady, ready);
+  TEST_ASSERT_TRUE(spoolmanOperationsAvailable(ready));
+  TEST_ASSERT_TRUE(spoolmanTagOperationsAvailable(ready));
+
+  TEST_ASSERT_EQUAL(SpoolmanAppState::SpoolmanUnavailable,
+                    spoolmanAppState(false, true));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(testEnsureExistingTextField);
@@ -265,5 +291,6 @@ int main(int, char**) {
   RUN_TEST(testOnlineAndExtraFieldRequirements);
   RUN_TEST(testNativePayloadConsistencyDecisions);
   RUN_TEST(testLegacyMigrationConflictPolicy);
+  RUN_TEST(testSpoolmanAppStateTransitionsAndPermissions);
   return UNITY_END();
 }

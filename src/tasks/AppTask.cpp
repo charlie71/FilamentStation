@@ -8,6 +8,7 @@
 #include "config/NfcConfig.h"
 #include "config/ScaleConfig.h"
 #include "nfc/TagWritePolicy.h"
+#include "models/AppState.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/SpoolmanUrl.h"
@@ -29,6 +30,9 @@ rtos::UiOverlayKind pendingOverlay = rtos::UiOverlayKind::None;
 bool wifiPortalRequested = false;
 bool wifiPortalActive = false;
 std::uint32_t wifiPortalRequestId = 0;
+models::SpoolmanAppState currentSpoolmanAppState =
+    models::SpoolmanAppState::SpoolmanUnavailable;
+char currentSpoolmanServerVersion[32] = "-";
 constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;
 constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;
 constexpr std::uint32_t kNfcMappingLoadRequestId = 0x4E464302U;
@@ -835,8 +839,47 @@ constexpr const char* kSpoolmanRequiredMessage =
     "Diese Funktion ben\xC3\xB6tigt eine aktive Spoolman-Verbindung.";
 
 bool spoolmanReady(const rtos::RtosContext& ctx) {
-  return (xEventGroupGetBits(ctx.systemEventGroup) &
-          rtos::EVENT_SPOOLMAN_READY) != 0;
+  (void)ctx;
+  return models::spoolmanOperationsAvailable(currentSpoolmanAppState);
+}
+
+void publishSpoolmanAppState(rtos::RtosContext& ctx,
+                             std::uint32_t requestId,
+                             const char* version = nullptr) {
+  const EventBits_t bits = xEventGroupGetBits(ctx.systemEventGroup);
+  currentSpoolmanAppState = models::spoolmanAppState(
+      (bits & rtos::EVENT_SPOOLMAN_READY) != 0,
+      (bits & rtos::EVENT_SPOOLMAN_TAG_FIELD_READY) != 0);
+  if (version != nullptr && version[0] != '\0') {
+    std::snprintf(currentSpoolmanServerVersion,
+                  sizeof(currentSpoolmanServerVersion), "%s", version);
+  }
+  if (currentSpoolmanAppState ==
+      models::SpoolmanAppState::SpoolmanUnavailable) {
+    std::snprintf(currentSpoolmanServerVersion,
+                  sizeof(currentSpoolmanServerVersion), "-");
+  }
+
+  rtos::UiCommand command{};
+  command.type = rtos::UiCommandType::UpdateSpoolmanState;
+  command.requestId = requestId;
+  command.spoolmanAppState = currentSpoolmanAppState;
+  std::snprintf(command.title, sizeof(command.title), "%s",
+                currentSpoolmanServerVersion);
+  switch (currentSpoolmanAppState) {
+    case models::SpoolmanAppState::SpoolmanReady:
+      std::snprintf(command.text, sizeof(command.text),
+                    "Spoolman: online | NFC-Feld: bereit");
+      break;
+    case models::SpoolmanAppState::TagFieldUnavailable:
+      std::snprintf(command.text, sizeof(command.text),
+                    "Spoolman: online | NFC-Feld: nicht verf\xC3\xBCgbar");
+      break;
+    case models::SpoolmanAppState::SpoolmanUnavailable:
+      std::snprintf(command.text, sizeof(command.text), "Spoolman: offline");
+      break;
+  }
+  sendUiCommand(ctx, command, "AppTask: Spoolman AppState queue overflow");
 }
 
 bool requireSpoolman(rtos::RtosContext& ctx, std::uint32_t requestId,
@@ -2846,6 +2889,15 @@ void appTask(void* parameter) {
       std::snprintf(status.text, sizeof(status.text), "%s", event.text);
       sendUiCommand(ctx, status, "AppTask: WiFi status UI queue overflow");
 
+      if (event.type == rtos::AppEventType::WifiDisconnected ||
+          event.type == rtos::AppEventType::WifiLostIp ||
+          event.type == rtos::AppEventType::WifiCredentialsCleared) {
+        xEventGroupClearBits(ctx.systemEventGroup,
+                             rtos::EVENT_SPOOLMAN_READY |
+                                 rtos::EVENT_SPOOLMAN_TAG_FIELD_READY);
+        publishSpoolmanAppState(ctx, event.requestId);
+      }
+
       if (event.type == rtos::AppEventType::WifiCredentialsCleared) {
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
@@ -3388,22 +3440,7 @@ void appTask(void* parameter) {
         xQueueSend(ctx.appEventQueue, &replay, pdMS_TO_TICKS(1000));
         continue;
       }
-      rtos::UiCommand status{};
-      status.type = rtos::UiCommandType::ShowStatus;
-      status.requestId = event.requestId;
-      status.value = 100;
-      const auto tagFieldStatus =
-          static_cast<services::TagExtraFieldStatus>(event.value);
-      const char* tagFieldText = "nicht verf\xC3\xBCgbar";
-      if (tagFieldStatus == services::TagExtraFieldStatus::Available ||
-          tagFieldStatus == services::TagExtraFieldStatus::Created) {
-        tagFieldText = "bereit";
-      } else if (tagFieldStatus ==
-                 services::TagExtraFieldStatus::Incompatible) {
-        tagFieldText = "falscher Typ";
-      }
-      std::snprintf(status.text, sizeof(status.text),
-                    "Online | NFC-Feld: %s", tagFieldText);
+      char serverVersion[32] = "unbekannt";
       const char* version = std::strstr(event.text, "Version ");
       if (version != nullptr) {
         version += 8;
@@ -3411,16 +3448,16 @@ void appTask(void* parameter) {
         const std::size_t length = end != nullptr
                                        ? static_cast<std::size_t>(end - version)
                                        : std::strlen(version);
-        std::snprintf(status.title, sizeof(status.title), "%.*s",
+        std::snprintf(serverVersion, sizeof(serverVersion), "%.*s",
                       static_cast<int>(length), version);
-      } else {
-        std::snprintf(status.title, sizeof(status.title), "unbekannt");
       }
-      sendUiCommand(ctx, status, "AppTask: Spoolman status queue overflow");
+      publishSpoolmanAppState(ctx, event.requestId, serverVersion);
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                   rtos::UiOverlayKind::Success, event.requestId,
                   "Spoolman verbunden", event.text);
       tryStartLegacyMigration(ctx);
+    } else if (event.type == rtos::AppEventType::SpoolmanTagFieldReady) {
+      publishSpoolmanAppState(ctx, event.requestId);
     } else if (event.type == rtos::AppEventType::SpoolmanError) {
       if ((event.requestId == kLegacyMigrationLookupRequestId ||
            event.requestId == kLegacyMigrationLoadSpoolRequestId ||
@@ -3536,17 +3573,13 @@ void appTask(void* parameter) {
                     "Import fehlgeschlagen", event.text);
         continue;
       }
-      rtos::UiCommand status{};
-      status.type = rtos::UiCommandType::ShowStatus;
-      status.value = 100;
-      std::snprintf(status.text, sizeof(status.text), "Status: offline");
-      std::snprintf(status.title, sizeof(status.title), "-");
-      sendUiCommand(ctx, status, "AppTask: Spoolman error status overflow");
+      publishSpoolmanAppState(ctx, event.requestId);
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                   rtos::UiOverlayKind::Error, event.requestId,
                   "Spoolman nicht erreichbar", event.text);
     } else if (event.type == rtos::AppEventType::UiCommunicationTest) {
       uiStartupReady = true;
+      publishSpoolmanAppState(ctx, event.requestId);
       rtos::UiCommand response{};
       response.type = rtos::UiCommandType::CommunicationTestResponse;
       response.requestId = event.requestId;

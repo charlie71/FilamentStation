@@ -885,12 +885,12 @@ Dieser Unterpunkt darf entfallen, wenn kein RAM-Cache benötigt wird.
 
 ## 7.8.5 AppState
 
-* [ ] `SpoolmanUnavailable`
-* [ ] `SpoolmanReady`
-* [ ] `TagFieldUnavailable`
-* [ ] Buttons entsprechend aktivieren/deaktivieren
-* [ ] Home-Status aktualisieren
-* [ ] Settings weiterhin erreichbar
+* [x] `SpoolmanUnavailable`
+* [x] `SpoolmanReady`
+* [x] `TagFieldUnavailable`
+* [x] Buttons entsprechend aktivieren/deaktivieren
+* [x] Home-Status aktualisieren
+* [x] Settings weiterhin erreichbar
 
 ### Abnahmekriterien 7.8
 

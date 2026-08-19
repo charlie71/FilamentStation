@@ -27,3 +27,20 @@ explizit mit `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT` reserviert. Beim Start wird
 mit `esp_ptr_external_ram()` geprueft, dass beide Adressen tatsaechlich im PSRAM
 liegen. Eine fehlgeschlagene Allokation oder Pruefung setzt den fatalen
 Systemzustand und startet keine scheinbar funktionsfaehige UI.
+
+## Spoolman-Anwendungszustand
+
+Der AppTask bildet die Event-Group-Bits auf genau drei fachliche Zustände ab:
+
+- `SpoolmanUnavailable`: Server nicht verfügbar; alle abhängigen Online-
+  Aktionen sind gesperrt.
+- `SpoolmanReady`: Server und Textfeld `extra.tag` sind bereit; einschließlich
+  NFC-Zuordnung sind alle zulässigen Spoolman-Aktionen verfügbar.
+- `TagFieldUnavailable`: Server ist erreichbar, aber `extra.tag` fehlt oder
+  besitzt einen inkompatiblen Typ; normale Online-Aktionen bleiben möglich,
+  Tag-Zuordnungen sind gesperrt.
+
+Der Zustand wird wertbasiert über die `uiCommandQueue` an den UiTask gesendet.
+Nur der UiTask ändert daraus LVGL-Statusanzeigen und Buttonzustände. WLAN-
+Verlust verwirft die beiden Spoolman-Eventbits unmittelbar. Die Einstellungs-
+Screens bleiben in allen drei Zuständen erreichbar.
