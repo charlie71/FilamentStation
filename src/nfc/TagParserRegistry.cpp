@@ -69,6 +69,17 @@ models::TagReadResult TagParserRegistry::parse(
     result.format = parser->format();
     result.knownFormat = true;
     result.definition = definition;
+    // Block 9 is the authenticated 16-byte Bambu tray UID. Prefer it as the
+    // stable identity; retain the NFC UID when that optional block is absent
+    // or contains no usable identifier.
+    if (result.format == models::TagFormat::BambuLab &&
+        (tag.mifareBlockMask & (1UL << 9)) != 0U) {
+      models::TagIdentity bambuIdentity{};
+      if (services::tagIdentityFromBambuUuid(tag.mifareBlocks[9], 16U,
+                                             bambuIdentity)) {
+        result.identity = bambuIdentity;
+      }
+    }
     // Only native FilamentStation data may inherit the physical tag's write
     // capability. Every foreign format is read-only in version 1.
     result.writable =

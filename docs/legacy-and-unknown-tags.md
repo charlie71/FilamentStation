@@ -38,3 +38,13 @@ Spoolman. Missing files are the expected normal state.
 `/mappings/printer-slots.json` is unrelated to NFC identities. No current
 runtime implementation reads or writes it; it is therefore not retained as an
 NFC mapping source.
+
+## Migration implementation inventory
+
+The three obsolete mapping paths occur only in the transition state machine
+in `AppTask`, the transition-only `LegacyNfcMappingEntry` queue value, and the
+corresponding StorageTask/JSON reader. There is no runtime mapping repository
+or mapping service. Normal tag lookup, assignment, and removal go directly
+from AppTask to SpoolmanTask; the UI has no dependency on mapping files.
+Mapping-shaped JSON tests cover the one-time importer only. Runtime assignment
+tests use `extra.tag` through the Spoolman client.

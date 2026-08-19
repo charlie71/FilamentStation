@@ -36,6 +36,13 @@ keinen Schreib-, Lösch- oder Klonpfad und keine Signaturerzeugung.
 | 5, Byte 4..5 | Nenngewicht in g, uint16 LE | `nominalFilamentWeightG` |
 | 6, Byte 8..9 | maximale Hotendtemperatur, uint16 LE | `nozzleTempMaxC` |
 | 6, Byte 10..11 | minimale Hotendtemperatur, uint16 LE | `nozzleTempMinC` |
+| 9 | Tray UID, 16 Byte | kanonische `TagIdentity` mit Quelle `BambuUuid` |
+
+Die 16 authentifiziert gelesenen Bytes der Tray UID werden als 32-stelliger
+Hexadezimalwert in Großbuchstaben normalisiert. Ist Block 9 nicht lesbar
+oder enthält er nur `00` beziehungsweise `FF`, bleibt die normalisierte
+NFC-UID die Identität. Die einmal gewählte Identität wird im laufenden
+Workflow nicht gewechselt.
 
 Der Hersteller wird für einen erfolgreich authentifizierten und vollständig
 gelesenen Bambu-Datensatz auf `Bambu Lab` normalisiert. Ein Farbname ist im

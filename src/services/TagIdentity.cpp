@@ -63,5 +63,29 @@ bool tagIdentityFromBambuUuid(const char* uuid,
   return true;
 }
 
+bool tagIdentityFromBambuUuid(const std::uint8_t* uuid,
+                              std::size_t uuidLength,
+                              models::TagIdentity& identity) {
+  identity = {};
+  if (uuid == nullptr || uuidLength != 16U) return false;
+
+  bool allZero = true;
+  bool allOnes = true;
+  for (std::size_t index = 0; index < uuidLength; ++index) {
+    allZero = allZero && uuid[index] == 0x00U;
+    allOnes = allOnes && uuid[index] == 0xFFU;
+  }
+  if (allZero || allOnes) return false;
+
+  constexpr char digits[] = "0123456789ABCDEF";
+  for (std::size_t index = 0; index < uuidLength; ++index) {
+    identity.value[index * 2U] = digits[uuid[index] >> 4U];
+    identity.value[index * 2U + 1U] = digits[uuid[index] & 0x0FU];
+  }
+  identity.value[uuidLength * 2U] = '\0';
+  identity.source = models::TagIdentitySource::BambuUuid;
+  return true;
+}
+
 }  // namespace services
 }  // namespace filament_station

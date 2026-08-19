@@ -734,6 +734,51 @@ void test_bambu_uuid_identity_requires_16_bytes_of_hex() {
       "A1B2C3D4", identity));
 }
 
+void test_original_bambu_prefers_authenticated_tray_uuid() {
+  RawTagData raw{};
+  raw.technology = TagTechnology::MifareClassic1K;
+  raw.uid[0] = 0x12;
+  raw.uid[1] = 0x34;
+  raw.uid[2] = 0x56;
+  raw.uid[3] = 0x78;
+  raw.uidLength = 4;
+  raw.mifareBlockMask = (1UL << 2) | (1UL << 4) | (1UL << 5) |
+                        (1UL << 6) | (1UL << 9);
+  std::memcpy(raw.mifareBlocks[2], "PLA", 3);
+  std::memcpy(raw.mifareBlocks[4], "PLA Basic", 9);
+  for (std::uint8_t index = 0; index < 16; ++index)
+    raw.mifareBlocks[9][index] = static_cast<std::uint8_t>(index + 1U);
+
+  const auto result = TagParserRegistry{}.parse(raw);
+  TEST_ASSERT_EQUAL(TagFormat::BambuLab, result.format);
+  TEST_ASSERT_EQUAL(
+      filament_station::models::TagIdentitySource::BambuUuid,
+      result.identity.source);
+  TEST_ASSERT_EQUAL_STRING("0102030405060708090A0B0C0D0E0F10",
+                           result.identity.value);
+}
+
+void test_original_bambu_without_tray_uuid_uses_nfc_uid() {
+  RawTagData raw{};
+  raw.technology = TagTechnology::MifareClassic1K;
+  raw.uid[0] = 0x12;
+  raw.uid[1] = 0x34;
+  raw.uid[2] = 0x56;
+  raw.uid[3] = 0x78;
+  raw.uidLength = 4;
+  raw.mifareBlockMask =
+      (1UL << 2) | (1UL << 4) | (1UL << 5) | (1UL << 6);
+  std::memcpy(raw.mifareBlocks[2], "PLA", 3);
+  std::memcpy(raw.mifareBlocks[4], "PLA Basic", 9);
+
+  const auto result = TagParserRegistry{}.parse(raw);
+  TEST_ASSERT_EQUAL(TagFormat::BambuLab, result.format);
+  TEST_ASSERT_EQUAL(
+      filament_station::models::TagIdentitySource::NfcUid,
+      result.identity.source);
+  TEST_ASSERT_EQUAL_STRING("12345678", result.identity.value);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_spoolman_payload_round_trip);
@@ -773,5 +818,7 @@ int main(int, char**) {
   RUN_TEST(test_uid_identity_is_canonical_and_stored_in_read_result);
   RUN_TEST(test_open_tag_and_unknown_use_nfc_uid_identity);
   RUN_TEST(test_bambu_uuid_identity_requires_16_bytes_of_hex);
+  RUN_TEST(test_original_bambu_prefers_authenticated_tray_uuid);
+  RUN_TEST(test_original_bambu_without_tray_uuid_uses_nfc_uid);
   return UNITY_END();
 }

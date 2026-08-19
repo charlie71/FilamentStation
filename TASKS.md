@@ -647,14 +647,14 @@ Aufgaben:
 
 ## 7.7.1 Bestehende lokale Architektur analysieren
 
-* [ ] alle Zugriffe auf `nfc-spools.json` suchen
-* [ ] alle Zugriffe auf `bambu-tags.json` suchen
-* [ ] alle Zugriffe auf `open-tags.json` suchen
-* [ ] Mapping-Service/Repository identifizieren
-* [ ] StorageCommands für Tag-Mappings identifizieren
-* [ ] AppTask Mappingpfade identifizieren
-* [ ] UI-Abhängigkeiten identifizieren
-* [ ] Tests mit lokalen Mappings identifizieren
+* [x] alle Zugriffe auf `nfc-spools.json` suchen
+* [x] alle Zugriffe auf `bambu-tags.json` suchen
+* [x] alle Zugriffe auf `open-tags.json` suchen
+* [x] Mapping-Service/Repository identifizieren
+* [x] StorageCommands für Tag-Mappings identifizieren
+* [x] AppTask Mappingpfade identifizieren
+* [x] UI-Abhängigkeiten identifizieren
+* [x] Tests mit lokalen Mappings identifizieren
 
 ## 7.7.2 TagIdentity
 
@@ -666,7 +666,7 @@ Aufgaben:
 * [x] NTAG UID normalisieren
 * [x] Unknown UID normalisieren
 * [x] OpenTag UID normalisieren
-* [ ] Bambu UUID verwenden
+* [x] Bambu UUID verwenden
 * [x] Identität während Workflow fixieren
 * [x] Tests
 
@@ -678,8 +678,8 @@ Aufgaben:
 * [x] Typ Text prüfen
 * [x] Feld bei Bedarf automatisch anlegen
 * [x] Fehler bei inkompatiblem Feld behandeln
-* [ ] Status an AppTask melden
-* [ ] Status in Spoolman Settings anzeigen
+* [x] Status an AppTask melden
+* [x] Status in Spoolman Settings anzeigen
 
 ## 7.7.4 SpoolmanClient API
 

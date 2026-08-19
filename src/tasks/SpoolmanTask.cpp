@@ -18,10 +18,12 @@ namespace {
 models::SpoolmanSettings activeSettings{};
 
 void sendResult(rtos::RtosContext& ctx, rtos::AppEventType type,
-                std::uint32_t requestId, const char* text) {
+                std::uint32_t requestId, const char* text,
+                std::int32_t value = 0) {
   rtos::AppEvent event{};
   event.type = type;
   event.requestId = requestId;
+  event.value = value;
   std::snprintf(event.text, sizeof(event.text), "%s", text);
   if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
     FS_LOGW(services::LogComponent::Spoolman,
@@ -1058,7 +1060,7 @@ void healthCheck(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
                 version, tagFieldReady ? "bereit" : "nicht verfuegbar");
   xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_SPOOLMAN_READY);
   sendResult(ctx, rtos::AppEventType::SpoolmanConnected, command.requestId,
-             message);
+             message, static_cast<std::int32_t>(fieldStatus));
 }
 }  // namespace
 

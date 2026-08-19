@@ -3392,10 +3392,30 @@ void appTask(void* parameter) {
       status.type = rtos::UiCommandType::ShowStatus;
       status.requestId = event.requestId;
       status.value = 100;
-      std::snprintf(status.text, sizeof(status.text), "Status: online");
+      const auto tagFieldStatus =
+          static_cast<services::TagExtraFieldStatus>(event.value);
+      const char* tagFieldText = "nicht verf\xC3\xBCgbar";
+      if (tagFieldStatus == services::TagExtraFieldStatus::Available ||
+          tagFieldStatus == services::TagExtraFieldStatus::Created) {
+        tagFieldText = "bereit";
+      } else if (tagFieldStatus ==
+                 services::TagExtraFieldStatus::Incompatible) {
+        tagFieldText = "falscher Typ";
+      }
+      std::snprintf(status.text, sizeof(status.text),
+                    "Online | NFC-Feld: %s", tagFieldText);
       const char* version = std::strstr(event.text, "Version ");
-      std::snprintf(status.title, sizeof(status.title), "%s",
-                    version != nullptr ? version + 8 : "unbekannt");
+      if (version != nullptr) {
+        version += 8;
+        const char* end = std::strstr(version, " | ");
+        const std::size_t length = end != nullptr
+                                       ? static_cast<std::size_t>(end - version)
+                                       : std::strlen(version);
+        std::snprintf(status.title, sizeof(status.title), "%.*s",
+                      static_cast<int>(length), version);
+      } else {
+        std::snprintf(status.title, sizeof(status.title), "unbekannt");
+      }
       sendUiCommand(ctx, status, "AppTask: Spoolman status queue overflow");
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                   rtos::UiOverlayKind::Success, event.requestId,

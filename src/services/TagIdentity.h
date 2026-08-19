@@ -18,5 +18,9 @@ bool tagIdentityFromUid(const std::uint8_t* uid, std::size_t uidLength,
 bool tagIdentityFromBambuUuid(const char* uuid,
                               models::TagIdentity& identity);
 
+bool tagIdentityFromBambuUuid(const std::uint8_t* uuid,
+                              std::size_t uuidLength,
+                              models::TagIdentity& identity);
+
 }  // namespace services
 }  // namespace filament_station
