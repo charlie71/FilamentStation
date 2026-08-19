@@ -1498,6 +1498,11 @@ void applySpoolmanAppState(const rtos::UiCommand* command = nullptr) {
   setLabelButtonAvailable(objects.tag_unknown_select_spool,
                           tagReady && currentTagCanAssign, 0x1565C0);
 
+  // Configuration and navigation must remain available even while Spoolman
+  // is offline or its tag field is incompatible.
+  setLabelButtonAvailable(objects.settings_spoolman, true, 0x1565C0);
+  setLabelButtonAvailable(objects.spoolman_setting_cancel, true, 0x455A64);
+
   if (command != nullptr) {
     lv_label_set_text(objects.home_bottom_status, command->text);
     lv_label_set_text(objects.settings_bottom_status, command->text);

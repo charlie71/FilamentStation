@@ -1220,7 +1220,9 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     }
 
     case rtos::UiActionType::Cancel:
-      if (wifiPortalRequested || wifiPortalActive) {
+      if ((wifiPortalRequested || wifiPortalActive) &&
+          action.value == static_cast<std::int32_t>(
+                              rtos::UiOverlayKind::ConnectionProgress)) {
         rtos::NetworkCommand networkCommand{};
         networkCommand.type = rtos::NetworkCommandType::StopPortal;
         networkCommand.requestId =
@@ -1844,7 +1846,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     }
 
     case rtos::UiActionType::OpenSpoolmanSettings:
-      previousScreen = currentScreen;
       currentScreen = rtos::UiScreenId::SettingsSpoolman;
       command.type = rtos::UiCommandType::ShowScreen;
       command.screenId = currentScreen;
