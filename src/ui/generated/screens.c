@@ -91,7 +91,7 @@ void create_screen_scr_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_LEFT_MID, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
+                    lv_label_set_text_static(obj, "nicht verbunden");
                 }
             }
         }
@@ -192,6 +192,7 @@ void create_screen_scr_home() {
             lv_obj_set_size(obj, 91, 72);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS|LV_OBJ_FLAG_SCROLL_WITH_ARROW);
+            lv_obj_set_style_bg_color(obj, lv_color_hex(0x2196f3), LV_PART_MAIN | LV_STATE_DEFAULT);
             {
                 lv_obj_t *parent_obj = obj;
                 {
@@ -201,7 +202,7 @@ void create_screen_scr_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_BOTTOM_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "Slot 1\nPLA #444\n1000g");
+                    lv_label_set_text_static(obj, "Slot 1\n\n");
                 }
             }
         }
@@ -213,6 +214,7 @@ void create_screen_scr_home() {
             lv_obj_set_size(obj, 91, 72);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS|LV_OBJ_FLAG_SCROLL_WITH_ARROW);
+            lv_obj_set_style_bg_color(obj, lv_color_hex(0x2196f3), LV_PART_MAIN | LV_STATE_DEFAULT);
             {
                 lv_obj_t *parent_obj = obj;
                 {
@@ -222,7 +224,7 @@ void create_screen_scr_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_BOTTOM_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "Slot 2\nPLA");
+                    lv_label_set_text_static(obj, "Slot 2\n\n");
                 }
             }
         }
@@ -234,6 +236,7 @@ void create_screen_scr_home() {
             lv_obj_set_size(obj, 91, 72);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS|LV_OBJ_FLAG_SCROLL_WITH_ARROW);
+            lv_obj_set_style_bg_color(obj, lv_color_hex(0x2196f3), LV_PART_MAIN | LV_STATE_DEFAULT);
             {
                 lv_obj_t *parent_obj = obj;
                 {
@@ -243,7 +246,7 @@ void create_screen_scr_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_BOTTOM_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "Slot 3\nPLA");
+                    lv_label_set_text_static(obj, "Slot 3\n\n");
                 }
             }
         }
@@ -255,6 +258,7 @@ void create_screen_scr_home() {
             lv_obj_set_size(obj, 91, 72);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS|LV_OBJ_FLAG_SCROLL_WITH_ARROW);
+            lv_obj_set_style_bg_color(obj, lv_color_hex(0x2196f3), LV_PART_MAIN | LV_STATE_DEFAULT);
             {
                 lv_obj_t *parent_obj = obj;
                 {
@@ -264,7 +268,7 @@ void create_screen_scr_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_BOTTOM_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "Slot 4\nPLA");
+                    lv_label_set_text_static(obj, "Slot 4\n\n");
                 }
             }
         }
@@ -276,6 +280,7 @@ void create_screen_scr_home() {
             lv_obj_set_size(obj, 92, 72);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS|LV_OBJ_FLAG_SCROLL_WITH_ARROW);
+            lv_obj_set_style_bg_color(obj, lv_color_hex(0x2196f3), LV_PART_MAIN | LV_STATE_DEFAULT);
             {
                 lv_obj_t *parent_obj = obj;
                 {
@@ -285,7 +290,7 @@ void create_screen_scr_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_BOTTOM_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "Extern");
+                    lv_label_set_text_static(obj, "Extern\n\n");
                 }
             }
         }
@@ -306,7 +311,7 @@ void create_screen_scr_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_BOTTOM_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "Staging\nSpule #42");
+                    lv_label_set_text_static(obj, "Staging\n\n\n");
                 }
             }
         }
@@ -600,7 +605,7 @@ void create_screen_scr_settings_home() {
                     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "verbunden | P1S Werkstatt | AMS 1");
+                    lv_label_set_text_static(obj, "nicht verbunden");
                 }
             }
         }

@@ -339,7 +339,7 @@
                   "type": "LVGLLabelWidget",
                   "left": 0,
                   "top": 0,
-                  "width": 246,
+                  "width": 124,
                   "height": 16,
                   "customInputs": [],
                   "customOutputs": [],
@@ -374,7 +374,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "verbunden | P1S Werkstatt | AMS 1",
+                  "text": "nicht verbunden",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -780,7 +780,7 @@
                   "type": "LVGLLabelWidget",
                   "left": -10,
                   "top": 4,
-                  "width": 69,
+                  "width": 37,
                   "height": 48,
                   "customInputs": [],
                   "customOutputs": [],
@@ -815,7 +815,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "Slot 1\\nPLA #444\\n1000g",
+                  "text": "Slot 1\\n\\n",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -830,7 +830,14 @@
               "disabledStateType": "literal",
               "states": "",
               "localStyles": {
-                "objID": "30000000-0047-4000-8000-000000000000"
+                "objID": "30000000-0047-4000-8000-000000000000",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "bg_color": "#2196f3"
+                    }
+                  }
+                }
               },
               "groupIndex": 0
             },
@@ -863,7 +870,7 @@
                   "left": -10,
                   "top": 4,
                   "width": 40,
-                  "height": 32,
+                  "height": 48,
                   "customInputs": [],
                   "customOutputs": [],
                   "style": {
@@ -897,7 +904,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "Slot 2\\nPLA",
+                  "text": "Slot 2\\n\\n",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -912,7 +919,14 @@
               "disabledStateType": "literal",
               "states": "",
               "localStyles": {
-                "objID": "30000000-0054-4000-8000-000000000000"
+                "objID": "30000000-0054-4000-8000-000000000000",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "bg_color": "#2196f3"
+                    }
+                  }
+                }
               },
               "groupIndex": 0
             },
@@ -945,7 +959,7 @@
                   "left": -9,
                   "top": 4,
                   "width": 40,
-                  "height": 32,
+                  "height": 48,
                   "customInputs": [],
                   "customOutputs": [],
                   "style": {
@@ -979,7 +993,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "Slot 3\\nPLA",
+                  "text": "Slot 3\\n\\n",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -994,7 +1008,14 @@
               "disabledStateType": "literal",
               "states": "",
               "localStyles": {
-                "objID": "30000000-0061-4000-8000-000000000000"
+                "objID": "30000000-0061-4000-8000-000000000000",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "bg_color": "#2196f3"
+                    }
+                  }
+                }
               },
               "groupIndex": 0
             },
@@ -1027,7 +1048,7 @@
                   "left": -8,
                   "top": 4,
                   "width": 41,
-                  "height": 32,
+                  "height": 48,
                   "customInputs": [],
                   "customOutputs": [],
                   "style": {
@@ -1061,7 +1082,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "Slot 4\\nPLA",
+                  "text": "Slot 4\\n\\n",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -1076,7 +1097,14 @@
               "disabledStateType": "literal",
               "states": "",
               "localStyles": {
-                "objID": "30000000-0068-4000-8000-000000000000"
+                "objID": "30000000-0068-4000-8000-000000000000",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "bg_color": "#2196f3"
+                    }
+                  }
+                }
               },
               "groupIndex": 0
             },
@@ -1109,7 +1137,7 @@
                   "left": -10,
                   "top": 4,
                   "width": 48,
-                  "height": 16,
+                  "height": 48,
                   "customInputs": [],
                   "customOutputs": [],
                   "style": {
@@ -1143,7 +1171,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "Extern",
+                  "text": "Extern\\n\\n",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -1158,7 +1186,14 @@
               "disabledStateType": "literal",
               "states": "",
               "localStyles": {
-                "objID": "30000000-0075-4000-8000-000000000000"
+                "objID": "30000000-0075-4000-8000-000000000000",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "bg_color": "#2196f3"
+                    }
+                  }
+                }
               },
               "groupIndex": 0
             },
@@ -1190,8 +1225,8 @@
                   "type": "LVGLLabelWidget",
                   "left": -7,
                   "top": 1,
-                  "width": 73,
-                  "height": 32,
+                  "width": 57,
+                  "height": 64,
                   "customInputs": [],
                   "customOutputs": [],
                   "style": {
@@ -1225,7 +1260,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "Staging\\nSpule #42",
+                  "text": "Staging\\n\\n\\n",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -2437,7 +2472,7 @@
                   "type": "LVGLLabelWidget",
                   "left": 0,
                   "top": 0,
-                  "width": 246,
+                  "width": 124,
                   "height": 16,
                   "customInputs": [],
                   "customOutputs": [],
@@ -2472,7 +2507,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "verbunden | P1S Werkstatt | AMS 1",
+                  "text": "nicht verbunden",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -7711,8 +7746,8 @@
               "type": "LVGLImageWidget",
               "left": 8,
               "top": 38,
-              "width": 26,
-              "height": 30,
+              "width": 25,
+              "height": 32,
               "customInputs": [],
               "customOutputs": [],
               "style": {

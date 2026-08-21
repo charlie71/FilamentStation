@@ -1121,13 +1121,43 @@ geflasht.
 
 ## 9.4 OpenPrintTag
 
-* [ ] TagIdentity
-* [ ] extra.tag Lookup
-* [ ] Definition
-* [ ] Match
-* [ ] zuordnen
-* [ ] importieren
-* [ ] Staging
+* [x] TagIdentity
+* [x] extra.tag Lookup
+* [x] Definition
+* [x] Match
+* [x] zuordnen
+* [x] importieren
+* [x] Staging
+
+Hinweis: Wie bereits in 9.3 vermutet, bestand hier exakt derselbe
+Staging-Bug wie beim Bambu-Zweig. TagIdentity/extra.tag Lookup/Definition/
+Match/zuordnen/importieren waren bereits vollständig durch die generische
+Pipeline abgedeckt: OpenPrintTag definiert laut Primärspezifikation
+(docs/openprinttag.md) kein eigenes Identitätsfeld -- `TagParserRegistry`
+verwendet daher konsistent die NFC-UID als Identity
+(`TagIdentitySource::NfcUid`), die generische FindSpoolByTag-Auflösung und
+"Match" (`findImportVendor`/`findImportFilament` in SpoolmanTask.cpp, per
+`test_spoolman_catalog` abgedeckt) arbeiten format-agnostisch über
+`models::TagDefinition`. Zuordnen/Importieren liefen bereits generisch
+über `AssignTag`/`ImportTagDefinition`.
+
+Fix ("Staging"): Der gemeinsame OpenPrintTag/OpenTag3D-Zweig in
+AppTask.cpp (`currentTag.format == OpenPrintTag || OpenTag3D`) hat beim
+Anzeigen von TagResult für eine bereits zugeordnete Spule ebenfalls nie
+`requestStagingSpool()` ausgelöst -- identisch zum Bambu-Bug aus 9.3.
+Behoben mit demselben Muster (`requestStagingSpool` gegen
+`pendingStagingSpoolRequestId == 0` abgesichert). Da OpenPrintTag und
+OpenTag3D denselben Codezweig teilen, behebt dieser Fix strukturell auch
+das "Staging"-Item aus Phase 9.5 mit -- dort aber noch nicht abgehakt, da
+9.5 separat angefordert werden muss.
+
+Unverändert aus Phase 5.7: Der PN532 unterstützt kein ISO 15693/NFC-V, ein
+reales OpenPrintTag-MK1 kann daher mit der aktuellen Hardware nicht
+gelesen werden (dokumentiertes Hardwarelimit, kein Software-Bug).
+
+Build (`pio run`, 0 Warnings) und native Tests (`pio test -e
+native-spoolman-tests`, 44/44) erfolgreich, Firmware auf das Gerät
+geflasht.
 
 ## 9.5 OpenTag3D
 

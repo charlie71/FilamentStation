@@ -3234,6 +3234,15 @@ void appTask(void* parameter) {
             currentScreen = result.screenId;
             sendUiCommand(ctx, result,
                           "AppTask: open tag mapped result overflow");
+
+            // Staging (Phase 9.4): same gap/fix as the Phase 9.3 Bambu path
+            // -- TagResult only carries spoolId/text for display,
+            // stagingActionClicked (Schnell/Erweitert wiegen) reads
+            // stagingState.spoolId/stagingSpoolState, not command.spoolId.
+            if (pendingStagingSpoolRequestId == 0) {
+              if (requestStagingSpool(ctx, event.requestId, mappedSpool))
+                pendingStagingSpoolRequestId = event.requestId;
+            }
           } else {
             char summary[128]{};
             std::snprintf(summary, sizeof(summary),
