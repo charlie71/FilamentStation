@@ -1070,13 +1070,54 @@ transitiv mit.
 
 ## 9.3 Bambu
 
-* [ ] UUID
-* [ ] extra.tag Lookup
-* [ ] Definition
-* [ ] importieren/zuordnen
-* [ ] wiegen
-* [ ] AMS
-* [ ] Originaltag unverändert
+* [x] UUID
+* [x] extra.tag Lookup
+* [x] Definition
+* [x] importieren/zuordnen
+* [x] wiegen
+* [x] AMS
+* [x] Originaltag unverändert
+
+Hinweis: Die generische Tag-Pipeline (TagParserRegistry, TagIdentity,
+TagWritePolicy) deckt UUID/extra.tag Lookup/Definition/importieren/zuordnen/
+Originaltag-Schutz für Bambu-Tags bereits vollständig ab, unabhängig vom
+Tag-Format: `BambuLabTagParser` liest die authentifizierte 16-Byte
+Bambu-Tray-UUID aus Block 9 und `TagParserRegistry::parse` bevorzugt sie
+gegenüber der NFC-UID als Identity (`TagIdentitySource::BambuUuid`), die
+generische FindSpoolByTag-Auflösung nutzt diese Identity transparent für
+alle Formate. `TagWritePolicy::capabilitiesFor` erlaubt für
+`TagFormat::BambuLab` niemals `canWriteFilamentStationPayload`, wodurch
+`assignmentEffect`/`removalEffect` immer `MappingOnly` liefern -- der
+physische Bambu-Tag wird also strukturell nie beschrieben, auch nicht bei
+Zuordnen/Entfernen. Import (`ImportTagDefinition`) und Zuordnen
+(`AssignTag`/Spool-Picker) waren bereits generisch für BambuLab verdrahtet.
+
+Der einzige tatsächliche Bug war "wiegen": Der Bambu-Tag-Zweig in
+AppTask.cpp (currentTag.format == BambuLab, mappedSpool != 0) hat beim
+Anzeigen des TagResult-Screens nur `command.spoolId`/`command.text`
+gesetzt, aber nie die Spule ins Staging geladen. Die Wiege-Buttons auf
+TagResult (`tag_result_quick_weight`/`tag_result_advanced_weight`) hängen
+an `stagingActionClicked`, das ausschließlich `stagingState.spoolId`/
+`stagingSpoolState` liest -- nie `command.spoolId`. Ohne Fix hätte
+"Schnell/Erweitert wiegen" von einem bereits zugeordneten Bambu-Tag aus
+lautlos die zuvor gestagte (falsche) Spule benutzt, oder gar keine. Fix:
+im Bambu-Zweig zusätzlich `requestStagingSpool(ctx, event.requestId,
+mappedSpool)` aufrufen (gegen `pendingStagingSpoolRequestId == 0`
+abgesichert) -- exakt das gleiche Muster wie der Phase-9.2-Fix in
+`showNativeTagAction`. Dadurch wird auch "AMS" (Slot-Zuordnung der
+gestagten Spule via `ConfigureSlotFromStaging`) für zugeordnete
+Bambu-Tags korrekt nutzbar, da diese ebenfalls von `stagingState.spoolId`
+abhängt.
+
+Bekannte, bewusst nicht in diesem Schritt behobene Lücke (nicht
+Bambu-spezifisch, außerhalb 9.3-Scope): derselbe TagResult/Staging-Bug
+besteht strukturell identisch auch für den "mapped spool"-Zweig von
+OpenPrintTag/OpenTag3D (Phase 9.4/9.5) und Unknown (Phase 9.7) -- dort
+noch nicht behoben, da außerhalb der explizit angeforderten Phase 9.3.
+
+Build (`pio run`, 0 Warnings) und native Tests (`pio test -e
+native-spoolman-tests`, 44/44) erfolgreich, Firmware auf das Gerät
+geflasht.
 
 ## 9.4 OpenPrintTag
 

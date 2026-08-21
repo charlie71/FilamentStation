@@ -3182,6 +3182,18 @@ void appTask(void* parameter) {
                           static_cast<unsigned long>(mappedSpool));
             currentScreen = result.screenId;
             sendUiCommand(ctx, result, "AppTask: Bambu mapped result overflow");
+
+            // Staging (Phase 9.3): TagResult only carries spoolId/text for
+            // display -- stagingActionClicked (Schnell/Erweitert wiegen on
+            // this screen) reads stagingState.spoolId/stagingSpoolState, not
+            // command.spoolId. Without loading the resolved spool into
+            // Staging here, "wiegen" from a mapped Bambu tag would silently
+            // act on whatever spool happened to already be staged. Same
+            // pattern as showNativeTagAction's Phase 9.2 fix.
+            if (pendingStagingSpoolRequestId == 0) {
+              if (requestStagingSpool(ctx, event.requestId, mappedSpool))
+                pendingStagingSpoolRequestId = event.requestId;
+            }
           } else {
             char summary[128]{};
             std::snprintf(summary, sizeof(summary),
