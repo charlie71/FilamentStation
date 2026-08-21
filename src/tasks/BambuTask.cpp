@@ -42,10 +42,12 @@ using PrinterConnections =
 
 void publishBambuEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
                        std::uint32_t requestId, rtos::PrinterId printerId,
-                       const models::PrinterState& state, const char* text) {
+                       const models::PrinterState& state, const char* text,
+                       std::int32_t value = 0) {
   rtos::AppEvent event{};
   event.type = type;
   event.requestId = requestId;
+  event.value = value;
   event.printerId = printerId;
   event.printerState = state;
   std::snprintf(event.text, sizeof(event.text), "%s", text);
@@ -76,21 +78,45 @@ PrinterConnection* connectionFor(PrinterConnections& connections,
 
 void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
                          const std::uint8_t* payload, unsigned int length) {
+  FS_LOGT(services::LogComponent::Bambu,
+          "Report message received printer_id=%u topic=\"%s\" bytes=%u",
+          static_cast<unsigned>(conn.config.printerId), conn.reportTopic,
+          length);
   JsonDocument document;
   const DeserializationError parseError =
       deserializeJson(document, payload, length);
   if (parseError) {
     FS_LOGW(services::LogComponent::Bambu,
-            "Report parse failed printer_id=%u bytes=%u",
-            static_cast<unsigned>(conn.config.printerId), length);
+            "Report parse failed printer_id=%u bytes=%u error=\"%s\"",
+            static_cast<unsigned>(conn.config.printerId), length,
+            parseError.c_str());
     return;
   }
   if (!services::bambuApplyReport(document, conn.state)) {
     // Message on the report topic without a "print" object: a different,
     // currently unhandled message type. Not an error (see
     // docs/bambu-protocol.md).
+    FS_LOGD(services::LogComponent::Bambu,
+            "Report message ignored printer_id=%u reason=no_print_object",
+            static_cast<unsigned>(conn.config.printerId));
     return;
   }
+  std::uint8_t presentAmsCount = 0;
+  std::uint8_t occupiedTrayCount = 0;
+  for (const auto& ams : conn.state.amsUnits) {
+    if (!ams.present) continue;
+    ++presentAmsCount;
+    for (const auto& slot : ams.slots)
+      if (slot.state == models::PrinterSlotState::Ready) ++occupiedTrayCount;
+  }
+  FS_LOGD(services::LogComponent::Bambu,
+          "Report applied printer_id=%u ams_reported=%u ams_present=%u "
+          "trays_occupied=%u external_state=%u",
+          static_cast<unsigned>(conn.config.printerId),
+          static_cast<unsigned>(conn.state.amsCount),
+          static_cast<unsigned>(presentAmsCount),
+          static_cast<unsigned>(occupiedTrayCount),
+          static_cast<unsigned>(conn.state.externalSlot.state));
   publishBambuEvent(ctx, rtos::AppEventType::BambuUpdate, 0,
                     conn.config.printerId, conn.state, "Statusbericht empfangen");
 }
@@ -135,7 +161,11 @@ bool doConnect(rtos::RtosContext& ctx, PrinterConnection& conn,
   }
   char request[config::kBambuRequestPayloadCapacity]{};
   if (services::bambuBuildPushAllRequest(request, sizeof(request)) > 0) {
-    conn.mqttClient.publish(conn.requestTopic, request);
+    const bool published = conn.mqttClient.publish(conn.requestTopic, request);
+    FS_LOGD(services::LogComponent::Bambu,
+            "Initial pushall request %s printer_id=%u topic=\"%s\"",
+            published ? "sent" : "failed",
+            static_cast<unsigned>(conn.config.printerId), conn.requestTopic);
   }
 
   conn.state.printerId = conn.config.printerId;
@@ -213,7 +243,8 @@ void handleTestConnection(rtos::RtosContext& ctx,
       ctx, rtos::AppEventType::BambuTestResult, command.requestId,
       command.printerId, models::PrinterState{},
       ok ? "Verbindungstest erfolgreich"
-         : "Verbindungstest fehlgeschlagen");
+         : "Verbindungstest fehlgeschlagen",
+      ok ? 1 : 0);
 }
 
 void handleRequestStatus(rtos::RtosContext& ctx,
@@ -231,7 +262,11 @@ void handleRequestStatus(rtos::RtosContext& ctx,
       !conn->mqttClient.publish(conn->requestTopic, request)) {
     publishBambuError(ctx, command.requestId, command.printerId,
                       "Statusanfrage konnte nicht gesendet werden");
+    return;
   }
+  FS_LOGD(services::LogComponent::Bambu,
+          "Status request sent printer_id=%u topic=\"%s\"",
+          static_cast<unsigned>(command.printerId), conn->requestTopic);
 }
 
 void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,

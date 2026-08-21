@@ -83,9 +83,9 @@ Von `BambuProtocol::bambuApplyReport()` ausgewertete Pfade:
     JSON-String (`"0"` statt `0`); beide Formen werden akzeptiert.
   * `tray[]`: vier Slots je AMS-Einheit, ebenfalls mit `id`.
     * `tray_type`: Materialkuerzel (z. B. `"PLA"`), leer oder fehlend bei
-      leerem Slot.
-    * `tray_color`: RRGGBBAA-Hex-String (aktuell nicht in `PrinterState`
-      abgebildet, aber als bekanntes Feld dokumentiert).
+      leerem Slot. Wird nach `PrinterSlotStateData::material` uebernommen.
+    * `tray_color`: RRGGBBAA-Hex-String. Wird unveraendert (als String, keine
+      Farbkonvertierung) nach `PrinterSlotStateData::colorHex` uebernommen.
 * `print.vt_tray`: externer/manueller Slot (kein AMS), gleiche Feldstruktur
   wie ein Tray-Eintrag. Wird auf `PrinterState::externalSlot` abgebildet.
 

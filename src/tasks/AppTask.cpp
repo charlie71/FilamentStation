@@ -9,6 +9,7 @@
 #include "config/ScaleConfig.h"
 #include "nfc/TagWritePolicy.h"
 #include "models/AppState.h"
+#include "models/BambuPrinterConfig.h"
 #include "models/PrinterState.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
@@ -38,10 +39,20 @@ char currentSpoolmanServerVersion[32] = "-";
 // never discarded on a printer switch (Zustand sichern), so background
 // printers keep their last-known data. `activePrinterId` is the printer
 // currently shown on Home/Header/AMS ("wechseln"); PrinterState::isActive is
-// kept in sync with it. Loading the configured printer roster from
-// bambu.json and auto-connecting are not part of Phase 8.4 and remain open.
+// kept in sync with it. Auto-connecting on switch/boot is not part of Phase
+// 8.4/8.6 and remains open.
 models::PrinterStateCollection printerCollection{};
+// Persisted printer configuration (Phase 8.2 schema, Phase 8.6 CRUD).
+// Distinct from printerCollection above: this is what /config/bambu.json
+// holds (name/host/serialNumber/accessCode/enabled/default/selected), not
+// live connection/AMS status.
+models::BambuConfigCollection printerConfigs{};
+std::uint32_t pendingBambuSaveRequestId = 0;
+bool pendingBambuSaveShowsResult = false;
+rtos::PrinterId pendingBambuSaveNotifyPrinterId = models::kInvalidPrinterId;
+std::uint32_t pendingPrinterTestRequestId = 0;
 constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;
+constexpr std::uint32_t kBambuLoadRequestId = 0x42414D01U;
 constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;
 constexpr std::uint32_t kNfcMappingLoadRequestId = 0x4E464302U;
 constexpr std::uint32_t kOpenMappingLoadRequestId = 0x4E464303U;
@@ -464,29 +475,286 @@ struct PrinterDraft {
 };
 PrinterDraft printerDraft{};
 
+void printerConfigFromDraft(models::BambuPrinterConfig& configOut) {
+  configOut.printerId = printerDraft.id;
+  std::snprintf(configOut.name, sizeof(configOut.name), "%s", printerDraft.name);
+  std::snprintf(configOut.host, sizeof(configOut.host), "%s", printerDraft.host);
+  std::snprintf(configOut.serialNumber, sizeof(configOut.serialNumber), "%s",
+                printerDraft.serial);
+  std::snprintf(configOut.accessCode, sizeof(configOut.accessCode), "%s",
+                printerDraft.accessCode);
+}
+
+void applyPrinterConfigToDraft(const models::BambuPrinterConfig& config) {
+  printerDraft.id = config.printerId;
+  std::snprintf(printerDraft.name, sizeof(printerDraft.name), "%s", config.name);
+  std::snprintf(printerDraft.host, sizeof(printerDraft.host), "%s", config.host);
+  std::snprintf(printerDraft.serial, sizeof(printerDraft.serial), "%s",
+                config.serialNumber);
+  std::snprintf(printerDraft.accessCode, sizeof(printerDraft.accessCode), "%s",
+                config.accessCode);
+}
+
+// Loads an existing printer's persisted configuration into the edit draft,
+// or resets the draft to a blank template for a not-yet-persisted id (Add).
 void loadPrinterDraft(rtos::PrinterId id) {
-  printerDraft.id = id;
-  if (id == 2) {
-    std::snprintf(printerDraft.name, sizeof(printerDraft.name), "X1C Labor");
-    std::snprintf(printerDraft.host, sizeof(printerDraft.host), "192.168.1.51");
-    std::snprintf(printerDraft.serial, sizeof(printerDraft.serial), "00M987654321");
-    std::snprintf(printerDraft.accessCode, sizeof(printerDraft.accessCode), "87654321");
-  } else if (id == 3) {
-    std::snprintf(printerDraft.name, sizeof(printerDraft.name), "A1 Mini Büro");
-    std::snprintf(printerDraft.host, sizeof(printerDraft.host), "192.168.1.52");
-    std::snprintf(printerDraft.serial, sizeof(printerDraft.serial), "030123456789");
-    std::snprintf(printerDraft.accessCode, sizeof(printerDraft.accessCode), "11223344");
-  } else if (id == 4) {
-    std::snprintf(printerDraft.name, sizeof(printerDraft.name), "Neuer Drucker");
-    printerDraft.host[0] = '\0';
-    printerDraft.serial[0] = '\0';
-    printerDraft.accessCode[0] = '\0';
-  } else {
-    std::snprintf(printerDraft.name, sizeof(printerDraft.name), "P1S Werkstatt");
-    std::snprintf(printerDraft.host, sizeof(printerDraft.host), "192.168.1.50");
-    std::snprintf(printerDraft.serial, sizeof(printerDraft.serial), "01P123456789");
-    std::snprintf(printerDraft.accessCode, sizeof(printerDraft.accessCode), "12345678");
+  const models::BambuPrinterConfig* existing =
+      models::findPrinterConfig(printerConfigs, id);
+  if (existing != nullptr) {
+    applyPrinterConfigToDraft(*existing);
+    return;
   }
+  printerDraft.id = id;
+  std::snprintf(printerDraft.name, sizeof(printerDraft.name), "Neuer Drucker");
+  printerDraft.host[0] = '\0';
+  printerDraft.serial[0] = '\0';
+  printerDraft.accessCode[0] = '\0';
+}
+
+// Smallest printerId (1..kMaximumPrinters) not already in printerConfigs, or
+// kInvalidPrinterId if the roster is full.
+rtos::PrinterId allocatePrinterId() {
+  for (rtos::PrinterId candidate = 1; candidate <= models::kMaximumPrinters;
+       ++candidate) {
+    if (models::findPrinterConfig(printerConfigs, candidate) == nullptr)
+      return candidate;
+  }
+  return models::kInvalidPrinterId;
+}
+
+void setDefaultPrinterConfig(rtos::PrinterId id) {
+  const std::size_t count = printerConfigs.printerCount < models::kMaximumPrinters
+                                ? printerConfigs.printerCount
+                                : models::kMaximumPrinters;
+  for (std::size_t index = 0; index < count; ++index)
+    printerConfigs.printers[index].isDefault =
+        printerConfigs.printers[index].printerId == id;
+  printerConfigs.defaultPrinterId = id;
+}
+
+void setSelectedPrinterConfig(rtos::PrinterId id) {
+  const std::size_t count = printerConfigs.printerCount < models::kMaximumPrinters
+                                ? printerConfigs.printerCount
+                                : models::kMaximumPrinters;
+  for (std::size_t index = 0; index < count; ++index)
+    printerConfigs.printers[index].isSelected =
+        printerConfigs.printers[index].printerId == id;
+  printerConfigs.selectedPrinterId = id;
+}
+
+// Finds or inserts a printerConfigs entry. A freshly inserted entry is
+// enabled by default and becomes the default printer if it is the first one
+// (Spoolman-config validity requires exactly one default once printers
+// exist, see models::isValidBambuConfigCollection). Returns nullptr if the
+// roster is already at models::kMaximumPrinters.
+models::BambuPrinterConfig* upsertPrinterConfig(rtos::PrinterId id) {
+  models::BambuPrinterConfig* existing =
+      models::findPrinterConfig(printerConfigs, id);
+  if (existing != nullptr) return existing;
+  if (printerConfigs.printerCount >= models::kMaximumPrinters) return nullptr;
+  const bool wasEmpty = printerConfigs.printerCount == 0;
+  models::BambuPrinterConfig& entry =
+      printerConfigs.printers[printerConfigs.printerCount];
+  entry = models::BambuPrinterConfig{};
+  entry.printerId = id;
+  entry.enabled = true;
+  ++printerConfigs.printerCount;
+  if (wasEmpty) setDefaultPrinterConfig(id);
+  return &entry;
+}
+
+// Removes a printer from printerConfigs, keeping the array compact and the
+// default-printer invariant intact (promotes the first remaining printer if
+// the removed one was the default). A cleared selection is not replaced --
+// Phase 8.2 treats "selected" as optional.
+bool removePrinterConfig(rtos::PrinterId id) {
+  const std::size_t count = printerConfigs.printerCount < models::kMaximumPrinters
+                                ? printerConfigs.printerCount
+                                : models::kMaximumPrinters;
+  std::size_t index = count;
+  for (std::size_t candidate = 0; candidate < count; ++candidate) {
+    if (printerConfigs.printers[candidate].printerId == id) {
+      index = candidate;
+      break;
+    }
+  }
+  if (index == count) return false;
+  const bool wasDefault = printerConfigs.printers[index].isDefault;
+  for (std::size_t shift = index; shift + 1 < count; ++shift)
+    printerConfigs.printers[shift] = printerConfigs.printers[shift + 1];
+  printerConfigs.printers[count - 1] = models::BambuPrinterConfig{};
+  --printerConfigs.printerCount;
+  if (printerConfigs.selectedPrinterId == id)
+    printerConfigs.selectedPrinterId = models::kInvalidPrinterId;
+  if (wasDefault) {
+    printerConfigs.defaultPrinterId = models::kInvalidPrinterId;
+    if (printerConfigs.printerCount > 0)
+      setDefaultPrinterConfig(printerConfigs.printers[0].printerId);
+  }
+  return true;
+}
+
+// Serializes printerConfigs to /config/bambu.json and sends it to
+// StorageTask. `showResult` controls whether the eventual write completion
+// shows a Success dialog (deliberate edit-save) or stays silent unless it
+// fails (quick list toggles: enable/default/active/delete).
+bool persistPrinterConfigs(rtos::RtosContext& ctx, std::uint32_t requestId,
+                           bool showResult, char* errorOut,
+                           std::size_t errorCapacity) {
+  JsonDocument document;
+  document["schemaVersion"] = 1;
+  document["updatedAt"] = "1970-01-01T00:00:00Z";
+  document["documentType"] = "bambu";
+  document["selectedPrinterId"] = printerConfigs.selectedPrinterId;
+  document["defaultPrinterId"] = printerConfigs.defaultPrinterId;
+  JsonArray printers = document["printers"].to<JsonArray>();
+  const std::size_t count = printerConfigs.printerCount < models::kMaximumPrinters
+                                ? printerConfigs.printerCount
+                                : models::kMaximumPrinters;
+  for (std::size_t index = 0; index < count; ++index) {
+    const models::BambuPrinterConfig& source = printerConfigs.printers[index];
+    JsonObject printer = printers.add<JsonObject>();
+    printer["printerId"] = source.printerId;
+    printer["name"] = source.name;
+    printer["host"] = source.host;
+    printer["serialNumber"] = source.serialNumber;
+    printer["accessCode"] = source.accessCode;
+    printer["enabled"] = source.enabled;
+    printer["default"] = source.isDefault;
+    printer["selected"] = source.isSelected;
+  }
+  rtos::StorageCommand storage{};
+  storage.type = rtos::StorageCommandType::SaveJson;
+  storage.requestId = requestId;
+  storage.documentType = rtos::StorageDocumentType::Bambu;
+  std::snprintf(storage.path, sizeof(storage.path), "/config/bambu.json");
+  const std::size_t length =
+      serializeJson(document, storage.json, sizeof(storage.json));
+  if (length == 0 || length >= sizeof(storage.json)) {
+    std::snprintf(errorOut, errorCapacity, "Konfiguration ist zu gro\xC3\x9F.");
+    return false;
+  }
+  storage.jsonLength = static_cast<std::uint16_t>(length);
+  pendingBambuSaveRequestId = requestId;
+  pendingBambuSaveShowsResult = showResult;
+  if (xQueueSend(ctx.storageCommandQueue, &storage, pdMS_TO_TICKS(1000)) !=
+      pdPASS) {
+    pendingBambuSaveRequestId = 0;
+    std::snprintf(errorOut, errorCapacity, "StorageTask ist nicht erreichbar.");
+    return false;
+  }
+  return true;
+}
+
+void requestBambuConfiguration(rtos::RtosContext& ctx) {
+  rtos::StorageCommand command{};
+  command.type = rtos::StorageCommandType::LoadJson;
+  command.requestId = kBambuLoadRequestId;
+  command.documentType = rtos::StorageDocumentType::Bambu;
+  std::snprintf(command.path, sizeof(command.path), "/config/bambu.json");
+  if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
+      pdPASS)
+    FS_LOGW(services::LogComponent::App,
+            "Command enqueue failed queue=storage op=load_bambu_config");
+}
+
+// Pushes one printerConfigs entry to the UI's printer list/header rendering
+// (UiBridge.cpp printerEntries), which used to be a separate, unfed mock.
+// value = 120 + bitmask(enabled=1, isDefault=2, isActive=4); see the
+// matching UpdatePrinterList handler in UiBridge.cpp.
+void syncPrinterEntryToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
+  const models::BambuPrinterConfig* source =
+      models::findPrinterConfig(printerConfigs, printerId);
+  if (source == nullptr) return;
+  rtos::UiCommand command{};
+  command.type = rtos::UiCommandType::UpdatePrinterList;
+  command.printerId = printerId;
+  std::snprintf(command.title, sizeof(command.title), "%s", source->name);
+  const bool isActive = printerId == printerCollection.activePrinterId ||
+                        source->isSelected;
+  // connectionState lives in printerCollection (BambuTask runtime status),
+  // not in printerConfigs (persisted host/serial/accessCode) -- without
+  // this, the UI's connection badge stayed stuck on its Offline default
+  // forever, even once BambuTask actually connected.
+  const models::PrinterState* runtime =
+      models::findPrinter(printerCollection, printerId);
+  const models::PrinterConnectionState connectionState =
+      runtime != nullptr ? runtime->connectionState
+                         : models::PrinterConnectionState::Offline;
+  command.value = 120 + (source->enabled ? 1 : 0) + (source->isDefault ? 2 : 0) +
+                  (isActive ? 4 : 0) +
+                  (static_cast<std::int32_t>(connectionState) << 3);
+  sendUiCommand(ctx, command, "AppTask: printer list sync overflow");
+}
+
+// Pushes real AMS/tray occupancy (from printerCollection, populated by
+// BambuTask's parsed MQTT reports) to the UI's AMS overview/tray rendering,
+// which used to read an unfed static mock (2 fake AMS units always shown,
+// fabricated per-tray material/color/weight). One UpdateAmsOverview command
+// per present AMS unit (trayId=0xFF marks it as a data sync, not a
+// navigation trigger; value = 200 + present(bit0) + occupiedTrayCount<<1),
+// plus one UpdateTrayDetails command per tray (value = 300 + occupied,
+// title = material, text = colorHex).
+void syncAmsToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
+  const models::PrinterState* printer =
+      models::findPrinter(printerCollection, printerId);
+  if (printer == nullptr) return;
+  for (std::uint8_t amsIndex = 0; amsIndex < models::kMaximumAmsPerPrinter;
+       ++amsIndex) {
+    const models::AmsState& ams = printer->amsUnits[amsIndex];
+    const std::uint8_t uiAmsId = static_cast<std::uint8_t>(amsIndex + 1);
+    if (!ams.present) continue;
+
+    std::uint8_t occupied = 0;
+    for (const auto& slot : ams.slots)
+      if (slot.state == models::PrinterSlotState::Ready) ++occupied;
+
+    rtos::UiCommand summary{};
+    summary.type = rtos::UiCommandType::UpdateAmsOverview;
+    summary.printerId = printerId;
+    summary.amsId = uiAmsId;
+    summary.trayId = 0xFF;
+    summary.value = 200 + 1 + (occupied << 1);
+    sendUiCommand(ctx, summary, "AppTask: AMS overview sync overflow");
+
+    for (std::uint8_t trayIndex = 0; trayIndex < models::kSlotsPerAms;
+         ++trayIndex) {
+      const models::PrinterSlotStateData& slot = ams.slots[trayIndex];
+      rtos::UiCommand tray{};
+      tray.type = rtos::UiCommandType::UpdateTrayDetails;
+      tray.printerId = printerId;
+      tray.amsId = uiAmsId;
+      tray.trayId = trayIndex;
+      tray.value =
+          300 + (slot.state == models::PrinterSlotState::Ready ? 1 : 0);
+      std::snprintf(tray.title, sizeof(tray.title), "%s", slot.material);
+      std::snprintf(tray.text, sizeof(tray.text), "%s", slot.colorHex);
+      sendUiCommand(ctx, tray, "AppTask: tray details sync overflow");
+    }
+  }
+
+  rtos::UiCommand external{};
+  external.type = rtos::UiCommandType::UpdateTrayDetails;
+  external.printerId = printerId;
+  external.amsId = 0xFF;
+  external.trayId = 0xFF;
+  external.value = 300 + (printer->externalSlot.state ==
+                                  models::PrinterSlotState::Ready
+                              ? 1
+                              : 0);
+  std::snprintf(external.title, sizeof(external.title), "%s",
+                printer->externalSlot.material);
+  std::snprintf(external.text, sizeof(external.text), "%s",
+                printer->externalSlot.colorHex);
+  sendUiCommand(ctx, external, "AppTask: external tray sync overflow");
+}
+
+void syncAllPrinterEntriesToUi(rtos::RtosContext& ctx) {
+  const std::size_t count = printerConfigs.printerCount < models::kMaximumPrinters
+                                ? printerConfigs.printerCount
+                                : models::kMaximumPrinters;
+  for (std::size_t index = 0; index < count; ++index)
+    syncPrinterEntryToUi(ctx, printerConfigs.printers[index].printerId);
 }
 
 char* printerField(std::int32_t field) {
@@ -618,6 +886,24 @@ void applySpoolmanSettingsToDraft(const models::SpoolmanSettings& settings) {
                 static_cast<unsigned long>(settings.timeoutMs));
 }
 
+// Pushes the current printerDraft field values to the editor UI. Without
+// this, the LVGL editor keeps showing whatever placeholder text it last had
+// (its own local mock draft) instead of the real, just-loaded config, even
+// though AppTask's own printerDraft (and therefore Save/Test) already has
+// the correct values -- confusing and untestable against real hardware.
+// Mirrors EditPrinterField's existing "value = 20 + field" convention, so
+// this reuses the already-working live-edit echo path for the initial load.
+void sendPrinterDraftToUi(rtos::RtosContext& ctx) {
+  for (std::int32_t field = 1; field <= 4; ++field) {
+    rtos::UiCommand command{};
+    command.type = rtos::UiCommandType::UpdateSettings;
+    command.value = 20 + field;
+    command.printerId = printerDraft.id;
+    std::snprintf(command.text, sizeof(command.text), "%s", printerField(field));
+    sendUiCommand(ctx, command, "AppTask: printer settings UI queue overflow");
+  }
+}
+
 void sendSpoolmanDraftToUi(rtos::RtosContext& ctx) {
   for (std::int32_t field = 1; field <= 6; ++field) {
     rtos::UiCommand command{};
@@ -735,6 +1021,40 @@ bool sendBambuCommand(rtos::RtosContext& ctx,
           "Command enqueue failed queue=bambu command=%u",
           static_cast<unsigned>(command.type));
   return false;
+}
+
+// Auto-connect every enabled printer so real status/AMS data is available
+// without requiring an explicit user action first (was an open gap through
+// Phase 8.6: bambu.json was loaded but never actually handed to BambuTask).
+// Called once bambu.json finishes loading and again once WiFi comes up,
+// since either can happen first at boot; BambuCommand::Connect is
+// idempotent (BambuTask::handleConnect), so calling it twice for the same
+// printer is harmless.
+//
+// Requires EVENT_WIFI_CONNECTED: BambuTask's WiFiClientSecure::connect()
+// opens a raw socket via lwIP, which asserts ("Invalid mbox") if the TCP/IP
+// task is not yet running -- a real crash seen when this fired straight off
+// SdMounted, before the network stack was up. Reaching EVENT_WIFI_CONNECTED
+// requires a completed DHCP lease, which guarantees lwIP's tcpip task is
+// already running, so gating on it is a safe, sufficient readiness check.
+void connectAllEnabledPrinters(rtos::RtosContext& ctx) {
+  if ((xEventGroupGetBits(ctx.systemEventGroup) & rtos::EVENT_WIFI_CONNECTED) ==
+      0) {
+    return;
+  }
+  const std::size_t printerCount =
+      printerConfigs.printerCount < models::kMaximumPrinters
+          ? printerConfigs.printerCount
+          : models::kMaximumPrinters;
+  for (std::size_t index = 0; index < printerCount; ++index) {
+    const models::BambuPrinterConfig& source = printerConfigs.printers[index];
+    if (!source.enabled) continue;
+    rtos::BambuCommand connect{};
+    connect.type = rtos::BambuCommandType::Connect;
+    connect.printerId = source.printerId;
+    connect.printerConfig = source;
+    sendBambuCommand(ctx, connect);
+  }
 }
 
 // Looks up printerId in printerCollection, inserting a fresh entry if this
@@ -1659,14 +1979,21 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       target.isActive = true;
       printerCollection.activePrinterId = action.printerId;
 
-      // Best-effort refresh. Harmless no-op today if BambuTask has no
-      // connection for this printer yet: loading printer credentials from
-      // bambu.json and connecting automatically is not part of Phase 8.4.
-      rtos::BambuCommand statusRequest{};
-      statusRequest.type = rtos::BambuCommandType::RequestStatus;
-      statusRequest.requestId = action.requestId;
-      statusRequest.printerId = action.printerId;
-      sendBambuCommand(ctx, statusRequest);
+      // Connect is idempotent (BambuTask refreshes instead of reconnecting
+      // if already connected, see BambuTask::handleConnect), so this both
+      // establishes the connection for a printer never connected this
+      // session and refreshes an already-connected one -- covers switching
+      // to a printer that was never auto-connected at boot.
+      {
+        const models::BambuPrinterConfig* storedConfig =
+            models::findPrinterConfig(printerConfigs, action.printerId);
+        rtos::BambuCommand connect{};
+        connect.type = rtos::BambuCommandType::Connect;
+        connect.requestId = action.requestId;
+        connect.printerId = action.printerId;
+        if (storedConfig != nullptr) connect.printerConfig = *storedConfig;
+        sendBambuCommand(ctx, connect);
+      }
 
       command.type = rtos::UiCommandType::UpdateHeader;
       if (!sendUiCommand(ctx, command,
@@ -1678,6 +2005,10 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       amsCommand.amsId = target.activeAmsId;
       sendUiCommand(ctx, amsCommand,
                     "AppTask: AMS overview command queue overflow");
+      // Push whatever real AMS/tray data is already known immediately; the
+      // RequestStatus above will refresh it further once the response
+      // arrives.
+      syncAmsToUi(ctx, action.printerId);
 
       command.type = rtos::UiCommandType::ShowScreen;
       command.screenId = previousScreen;
@@ -1880,45 +2211,146 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       sendUiCommand(ctx, command, "AppTask: printer settings queue overflow");
       return;
 
-    case rtos::UiActionType::AddPrinter:
-    case rtos::UiActionType::EditPrinter:
-      loadPrinterDraft(action.type == rtos::UiActionType::AddPrinter ? 4 : action.printerId);
+    case rtos::UiActionType::AddPrinter: {
+      const rtos::PrinterId newId = allocatePrinterId();
+      if (!models::isValidPrinterId(newId)) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Drucker hinzuf\xC3\xBCgen",
+                    "Maximale Anzahl Drucker erreicht.");
+        return;
+      }
+      loadPrinterDraft(newId);
       currentScreen = rtos::UiScreenId::SettingsPrinterEdit;
       command.type = rtos::UiCommandType::ShowScreen;
       command.screenId = currentScreen;
       command.printerId = printerDraft.id;
       sendUiCommand(ctx, command, "AppTask: printer editor queue overflow");
+      // Must follow ShowScreen: the editor resets its own placeholder draft
+      // when the screen opens, so the real values are pushed right after to
+      // overwrite it (see sendPrinterDraftToUi).
+      sendPrinterDraftToUi(ctx);
+      return;
+    }
+    case rtos::UiActionType::EditPrinter:
+      loadPrinterDraft(action.printerId);
+      currentScreen = rtos::UiScreenId::SettingsPrinterEdit;
+      command.type = rtos::UiCommandType::ShowScreen;
+      command.screenId = currentScreen;
+      command.printerId = printerDraft.id;
+      sendUiCommand(ctx, command, "AppTask: printer editor queue overflow");
+      sendPrinterDraftToUi(ctx);
       return;
 
-    case rtos::UiActionType::SetActivePrinter:
-      command.type = rtos::UiCommandType::UpdatePrinterList;
-      command.value = 3;
-      sendUiCommand(ctx, command, "AppTask: active printer queue overflow");
+    case rtos::UiActionType::SetActivePrinter: {
+      models::BambuPrinterConfig* target =
+          models::findPrinterConfig(printerConfigs, action.printerId);
+      if (target == nullptr || !target->enabled) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Drucker aktivieren",
+                    "Drucker ist unbekannt oder deaktiviert.");
+        return;
+      }
+      setSelectedPrinterConfig(action.printerId);
+      // Bridges into the Phase 8.4 runtime "currently focused" printer --
+      // same concept, triggered from Settings instead of the Home printer
+      // bar.
+      models::PrinterState* previousActive = models::findPrinter(
+          printerCollection, printerCollection.activePrinterId);
+      if (previousActive != nullptr) previousActive->isActive = false;
+      models::PrinterState& runtimeEntry = printerEntry(action.printerId);
+      runtimeEntry.isActive = true;
+      printerCollection.activePrinterId = action.printerId;
+
+      char error[64]{};
+      if (!persistPrinterConfigs(ctx, action.requestId, false, error,
+                                 sizeof(error))) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Speichern fehlgeschlagen", error);
+        return;
+      }
+      // Replaces the old opcode-based UpdatePrinterList mutation with an
+      // absolute sync from printerConfigs (the real source of truth), and
+      // explicitly refreshes the header the old opcode used to trigger as a
+      // side effect.
+      syncAllPrinterEntriesToUi(ctx);
+      rtos::UiCommand header{};
+      header.type = rtos::UiCommandType::UpdateHeader;
+      header.printerId = action.printerId;
+      sendUiCommand(ctx, header, "AppTask: active printer header overflow");
       return;
-    case rtos::UiActionType::TogglePrinterEnabled:
-      command.type = rtos::UiCommandType::UpdatePrinterList;
-      command.value = 1;
-      sendUiCommand(ctx, command, "AppTask: enabled printer queue overflow");
+    }
+    case rtos::UiActionType::TogglePrinterEnabled: {
+      models::BambuPrinterConfig* target =
+          models::findPrinterConfig(printerConfigs, action.printerId);
+      if (target != nullptr) {
+        target->enabled = !target->enabled;
+        char error[64]{};
+        if (!persistPrinterConfigs(ctx, action.requestId, false, error,
+                                   sizeof(error))) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Speichern fehlgeschlagen", error);
+        }
+      }
+      syncPrinterEntryToUi(ctx, action.printerId);
       return;
-    case rtos::UiActionType::SetDefaultPrinter:
-      command.type = rtos::UiCommandType::UpdatePrinterList;
-      command.value = 2;
-      sendUiCommand(ctx, command, "AppTask: default printer queue overflow");
+    }
+    case rtos::UiActionType::SetDefaultPrinter: {
+      if (models::findPrinterConfig(printerConfigs, action.printerId) !=
+          nullptr) {
+        setDefaultPrinterConfig(action.printerId);
+        char error[64]{};
+        if (!persistPrinterConfigs(ctx, action.requestId, false, error,
+                                   sizeof(error))) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Speichern fehlgeschlagen", error);
+        }
+      }
+      syncAllPrinterEntriesToUi(ctx);
       return;
+    }
     case rtos::UiActionType::SelectManagedPrinter:
       command.type = rtos::UiCommandType::UpdatePrinterList;
       command.value = 0;
       sendUiCommand(ctx, command, "AppTask: printer selection queue overflow");
       return;
-    case rtos::UiActionType::DeletePrinter:
+    case rtos::UiActionType::DeletePrinter: {
+      const bool removed = removePrinterConfig(action.printerId);
+      rtos::BambuCommand reset{};
+      reset.type = rtos::BambuCommandType::Reset;
+      reset.requestId = action.requestId;
+      reset.printerId = action.printerId;
+      sendBambuCommand(ctx, reset);
+      if (printerCollection.activePrinterId == action.printerId) {
+        models::PrinterState* activeEntry = models::findPrinter(
+            printerCollection, printerCollection.activePrinterId);
+        if (activeEntry != nullptr) activeEntry->isActive = false;
+        printerCollection.activePrinterId = models::kInvalidPrinterId;
+      }
+      if (removed) {
+        char error[64]{};
+        if (!persistPrinterConfigs(ctx, action.requestId, false, error,
+                                   sizeof(error))) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "L\xC3\xB6schen fehlgeschlagen", error);
+        }
+      }
       command.type = rtos::UiCommandType::UpdatePrinterList;
       command.value = 4;
       sendUiCommand(ctx, command, "AppTask: delete printer queue overflow");
+      // Default may have been reassigned to a remaining printer.
+      syncAllPrinterEntriesToUi(ctx);
       currentScreen = rtos::UiScreenId::SettingsPrinters;
       command.type = rtos::UiCommandType::ShowScreen;
       command.screenId = currentScreen;
       sendUiCommand(ctx, command, "AppTask: printer return queue overflow");
       return;
+    }
     case rtos::UiActionType::EditPrinterField: {
       char* destination = printerField(action.value);
       const std::size_t capacity = printerFieldCapacity(action.value);
@@ -1938,17 +2370,72 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, action.requestId,
                     "Eingabefehler", error);
-      } else if (action.type == rtos::UiActionType::TestPrinterConnection) {
+        return;
+      }
+      models::BambuPrinterConfig draftConfig{};
+      printerConfigFromDraft(draftConfig);
+
+      if (action.type == rtos::UiActionType::TestPrinterConnection) {
+        if (pendingPrinterTestRequestId != 0) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Bambu-Verbindung",
+                      "Es l\xC3\xA4uft bereits ein Verbindungstest.");
+          return;
+        }
+        rtos::BambuCommand test{};
+        test.type = rtos::BambuCommandType::TestConnection;
+        test.requestId = action.requestId;
+        test.printerId = draftConfig.printerId;
+        test.printerConfig = draftConfig;
+        if (!sendBambuCommand(ctx, test)) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Bambu-Verbindung",
+                      "Der Auftrag konnte nicht an BambuTask gesendet werden.");
+          return;
+        }
+        pendingPrinterTestRequestId = action.requestId;
         sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                     rtos::UiOverlayKind::BambuConnection,
                     action.requestId, "Bambu-Verbindung",
-                    "Verbindung zum gew\xC3\xA4hlten Drucker wird gepr\xC3\xBC" "ft (Mock)." );
-      } else {
-        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Success, action.requestId,
-                    "Einstellungen g\xC3\xBCltig",
-                    "Druckerkonfiguration wurde validiert (Mock)." );
+                    "Verbindung zum gew\xC3\xA4hlten Drucker wird gepr\xC3\xBC" "ft.");
+        return;
       }
+
+      // SavePrinterSettings: enabled/default/selected are owned by the
+      // dedicated list actions (TogglePrinterEnabled/SetDefaultPrinter/
+      // SetActivePrinter), not by this form, so they are preserved across
+      // the overwrite below.
+      models::BambuPrinterConfig* target = upsertPrinterConfig(draftConfig.printerId);
+      if (target == nullptr) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Speichern fehlgeschlagen",
+                    "Maximale Anzahl Drucker erreicht.");
+        return;
+      }
+      const bool wasEnabled = target->enabled;
+      const bool wasDefault = target->isDefault;
+      const bool wasSelected = target->isSelected;
+      *target = draftConfig;
+      target->enabled = wasEnabled;
+      target->isDefault = wasDefault;
+      target->isSelected = wasSelected;
+
+      char saveError[64]{};
+      if (!persistPrinterConfigs(ctx, action.requestId, true, saveError,
+                                 sizeof(saveError))) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Speichern fehlgeschlagen", saveError);
+        return;
+      }
+      pendingBambuSaveNotifyPrinterId = draftConfig.printerId;
+      currentScreen = rtos::UiScreenId::SettingsPrinters;
+      command.type = rtos::UiCommandType::ShowScreen;
+      command.screenId = currentScreen;
+      sendUiCommand(ctx, command, "AppTask: printer return queue overflow");
       return;
     }
 
@@ -3048,6 +3535,12 @@ void appTask(void* parameter) {
       std::snprintf(status.text, sizeof(status.text), "%s", event.text);
       sendUiCommand(ctx, status, "AppTask: WiFi status UI queue overflow");
 
+      if (event.type == rtos::AppEventType::WifiGotIp) {
+        // Retry in case WiFi came up after bambu.json finished loading
+        // (Connect is idempotent, see connectAllEnabledPrinters).
+        connectAllEnabledPrinters(ctx);
+      }
+
       if (event.type == rtos::AppEventType::WifiDisconnected ||
           event.type == rtos::AppEventType::WifiLostIp ||
           event.type == rtos::AppEventType::WifiCredentialsCleared) {
@@ -3856,19 +4349,64 @@ void appTask(void* parameter) {
         continue;
       }
 
+      // testen (Phase 8.6): TestConnection is ephemeral and never touches
+      // printerCollection (see the BambuTestResult exclusion above); its
+      // result is only ever this dialog.
+      if (event.type == rtos::AppEventType::BambuTestResult &&
+          pendingPrinterTestRequestId != 0 &&
+          event.requestId == pendingPrinterTestRequestId) {
+        pendingPrinterTestRequestId = 0;
+        rtos::UiCommand hide{};
+        hide.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, hide, "AppTask: printer test progress close overflow");
+        const bool success = event.value != 0;
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    success ? rtos::UiOverlayKind::Success
+                            : rtos::UiOverlayKind::Error,
+                    event.requestId, "Bambu-Verbindung", event.text);
+        continue;
+      }
+
       if (event.type == rtos::AppEventType::BambuError) {
         // Printer connectivity is routinely absent (LAN-only, not always
         // reachable/configured yet); log for diagnosis instead of an
         // intrusive dialog.
         FS_LOGW(services::LogComponent::App,
-                "Bambu request failed printer_id=%u error=%s",
+                "Bambu request failed printer_id=%u error=\"%s\"",
                 static_cast<unsigned>(event.printerId), event.text);
       } else {
+        const models::PrinterState* runtimeState =
+            models::findPrinter(printerCollection, event.printerId);
+        std::uint8_t presentAmsCount = 0;
+        std::uint8_t occupiedTotal = 0;
+        if (runtimeState != nullptr) {
+          for (const auto& ams : runtimeState->amsUnits) {
+            if (!ams.present) continue;
+            ++presentAmsCount;
+            for (const auto& slot : ams.slots)
+              if (slot.state == models::PrinterSlotState::Ready) ++occupiedTotal;
+          }
+        }
         FS_LOGD(services::LogComponent::App,
-                "Bambu event received type=%u printer_id=%u",
+                "Bambu event received type=%u printer_id=%u "
+                "connection_state=%u ams_present=%u trays_occupied=%u "
+                "external_state=%u focused=%s",
                 static_cast<unsigned>(event.type),
-                static_cast<unsigned>(event.printerId));
+                static_cast<unsigned>(event.printerId),
+                runtimeState != nullptr
+                    ? static_cast<unsigned>(runtimeState->connectionState)
+                    : 0U,
+                static_cast<unsigned>(presentAmsCount),
+                static_cast<unsigned>(occupiedTotal),
+                runtimeState != nullptr
+                    ? static_cast<unsigned>(runtimeState->externalSlot.state)
+                    : 0U,
+                event.printerId == printerCollection.activePrinterId ? "yes"
+                                                                     : "no");
       }
+
+      if (event.type != rtos::AppEventType::BambuTestResult)
+        syncPrinterEntryToUi(ctx, event.printerId);
 
       // Stale Responses: printerCollection above is always kept current for
       // whichever printer the event is about, but the visible Header/AMS
@@ -3886,11 +4424,7 @@ void appTask(void* parameter) {
         header.type = rtos::UiCommandType::UpdateHeader;
         header.printerId = event.printerId;
         sendUiCommand(ctx, header, "AppTask: Bambu header update overflow");
-        rtos::UiCommand amsOverview{};
-        amsOverview.type = rtos::UiCommandType::UpdateAmsOverview;
-        amsOverview.printerId = event.printerId;
-        sendUiCommand(ctx, amsOverview,
-                      "AppTask: Bambu AMS overview update overflow");
+        syncAmsToUi(ctx, event.printerId);
       }
     } else if (event.type == rtos::AppEventType::UiCommunicationTest) {
       uiStartupReady = true;
@@ -4029,6 +4563,43 @@ void appTask(void* parameter) {
                     rtos::UiOverlayKind::Error, event.requestId,
                     "Speichern fehlgeschlagen", event.text);
       } else if (event.type == rtos::AppEventType::StorageReadCompleted &&
+                 event.requestId == kBambuLoadRequestId) {
+        printerConfigs = event.bambuConfigs;
+        // Bridges the persisted selection into the Phase 8.4 runtime
+        // pointer, matching SetActivePrinter's behavior; falls back to the
+        // default printer so Home shows something without an extra tap even
+        // if the user never explicitly selected one.
+        rtos::PrinterId initialFocus = printerConfigs.selectedPrinterId;
+        if (!models::isValidPrinterId(initialFocus))
+          initialFocus = printerConfigs.defaultPrinterId;
+        if (models::isValidPrinterId(initialFocus)) {
+          printerCollection.activePrinterId = initialFocus;
+          printerEntry(initialFocus).isActive = true;
+        }
+        syncAllPrinterEntriesToUi(ctx);
+        connectAllEnabledPrinters(ctx);
+      } else if (pendingBambuSaveRequestId != 0 &&
+                 event.requestId == pendingBambuSaveRequestId &&
+                 event.type == rtos::AppEventType::StorageWriteCompleted) {
+        pendingBambuSaveRequestId = 0;
+        if (pendingBambuSaveShowsResult) {
+          if (models::isValidPrinterId(pendingBambuSaveNotifyPrinterId)) {
+            syncPrinterEntryToUi(ctx, pendingBambuSaveNotifyPrinterId);
+            pendingBambuSaveNotifyPrinterId = models::kInvalidPrinterId;
+          }
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Success, event.requestId,
+                      "Drucker gespeichert",
+                      "Die Druckerkonfiguration wurde gespeichert.");
+        }
+      } else if (pendingBambuSaveRequestId != 0 &&
+                 event.requestId == pendingBambuSaveRequestId &&
+                 event.type == rtos::AppEventType::StorageRequestError) {
+        pendingBambuSaveRequestId = 0;
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Speichern fehlgeschlagen", event.text);
+      } else if (event.type == rtos::AppEventType::StorageReadCompleted &&
           event.requestId == kScaleLoadRequestId) {
         scaleOffsetCounts = event.scaleOffsetCounts;
         scaleFactorCountsPerGram = event.scaleFactorCountsPerGram;
@@ -4053,6 +4624,7 @@ void appTask(void* parameter) {
         storageStartupReady = true;
         requestNetworkConfiguration(ctx);
         requestSpoolmanConfiguration(ctx);
+        requestBambuConfiguration(ctx);
         requestScaleConfiguration(ctx);
         deleteObsoleteStorageFile(
             ctx, kObsoletePendingWeightDeleteRequestId,

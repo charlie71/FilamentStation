@@ -991,13 +991,29 @@ existiert im generierten EEZ-UI noch nicht.
 
 ## 8.6 GUI
 
-* [ ] hinzufügen
-* [ ] bearbeiten
-* [ ] löschen
-* [ ] Default
-* [ ] aktiv
-* [ ] testen
-* [ ] Access Code maskieren
+* [x] hinzufügen
+* [x] bearbeiten
+* [x] löschen
+* [x] Default
+* [x] aktiv
+* [x] testen
+* [x] Access Code maskieren
+
+Hinweis: `AppTask` führt jetzt `printerConfigs`
+(`models::BambuConfigCollection`, Phase-8.2-Schema), lädt es beim SD-Mount
+aus `/config/bambu.json` und persistiert es bei jeder Änderung (Speichern,
+Löschen, Default/Aktiv/Enabled-Umschalten) über `StorageTask`. "Testen"
+sendet jetzt ein echtes `BambuCommand::TestConnection` mit den aktuellen
+Formulardaten. Die Maskierung des Access Codes (`printer_edit_mask`,
+`"********"`) existierte bereits vollständig UI-seitig in
+`UiBridge.cpp` und wurde nicht verändert -- sie funktioniert jetzt mit
+echten statt Mock-Daten weiter. Offen: Der beim Booten geladene
+Druckerbestand wird nicht in die (weiterhin mit drei Mock-Einträgen
+vorbelegte) Listenansicht von `UiBridge.cpp` gespiegelt; nur Aktionen, die
+bereits bestehende UI-Hooks nutzen (Save -> `ShowStatus value=202`,
+Enable/Default/Aktiv/Löschen -> `UpdatePrinterList`), zeigen echte
+Daten. Ein vollständiger Listen-Reload aus `printerConfigs` beim Boot
+ist nicht Teil dieser Phase.
 
 ---
 

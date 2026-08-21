@@ -51,6 +51,7 @@ struct AppEvent {
   models::SpoolmanSettings spoolmanSettings;
   PrinterId printerId;
   models::PrinterState printerState{};
+  models::BambuConfigCollection bambuConfigs{};
   models::SpoolmanSpool spool{};
   models::SpoolmanWeightUpdate weightUpdate{};
   models::TagIdentity tagIdentity{};

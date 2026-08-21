@@ -32,6 +32,9 @@ void applyTrayOccupancy(JsonObjectConst trayJson,
   const char* trayType = trayJson["tray_type"] | "";
   slot.state = trayType[0] != '\0' ? models::PrinterSlotState::Ready
                                    : models::PrinterSlotState::Empty;
+  std::snprintf(slot.material, sizeof(slot.material), "%s", trayType);
+  const char* trayColor = trayJson["tray_color"] | "";
+  std::snprintf(slot.colorHex, sizeof(slot.colorHex), "%s", trayColor);
 }
 
 }  // namespace

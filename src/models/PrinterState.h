@@ -45,6 +45,11 @@ struct PrinterSlotStateData {
   std::uint8_t trayId = 0;
   std::uint32_t spoolId = 0;
   PrinterSlotState state = PrinterSlotState::Unknown;
+  // Printer-reported material/color for this tray (Bambu tray_type/
+  // tray_color), not a Spoolman identity -- the printer has no notion of
+  // Spoolman spool IDs, see docs/bambu-protocol.md.
+  char material[12]{};
+  char colorHex[9]{};
 };
 
 struct AmsState {

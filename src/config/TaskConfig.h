@@ -25,14 +25,19 @@ constexpr TaskSettings kAppTask{"AppTask", 8192, 3, kNoCoreAffinity};
 // former 8 KiB stack reached its canary during that render pass.
 constexpr TaskSettings kUiTask{"UiTask", 16384, 2, kNoCoreAffinity};
 // ScaleTask erzeugt die wertbasierte zentrale AppEvent-Nachricht auf dem
-// Stack. Seit diese auch persistente Service-Konfigurationen transportiert,
-// reichen 3072 Byte nicht mehr mit sicherer Reserve aus.
-constexpr TaskSettings kScaleTask{"ScaleTask", 4096, 2, kNoCoreAffinity};
+// Stack. AppEvent ist seit den Bambu-Phasen (8.4 PrinterState, 8.6
+// BambuConfigCollection) nochmals deutlich gewachsen; 4096 Byte fuehrten zu
+// einem Stack-Overflow-Absturz direkt beim Start. Groessenordnung jetzt
+// analog zu den anderen AppEvent-erzeugenden Tasks (Storage/Spoolman/Bambu).
+constexpr TaskSettings kScaleTask{"ScaleTask", 8192, 2, kNoCoreAffinity};
 // Die Bambu-Erkennung kombiniert MIFARE-Authentifizierung, HKDF-SHA256,
-// Parserdaten und wertbasierte AppEvent-Nachrichten. Der gemessene 8-KiB-Stack
-// reicht fuer diesen Worst Case nicht aus, auch wenn NTAG-Lesevorgaenge damit
-// noch funktionieren.
-constexpr TaskSettings kNfcTask{"NfcTask", 12288, 2, kNoCoreAffinity};
+// Parserdaten und wertbasierte AppEvent-Nachrichten. AppEvent ist seit den
+// Bambu-Phasen (8.4 PrinterState, 8.6 BambuConfigCollection, plus Material/
+// ColorHex je Slot) wiederholt gewachsen; 12288 Byte fuehrten beim Auflegen
+// eines Tags zu einem Stack-Overflow-Absturz in reportTag(). Deutliche
+// Reserve statt einer erneuten knappen Anpassung, da AppEvent absehbar
+// weiterwaechst.
+constexpr TaskSettings kNfcTask{"NfcTask", 16384, 2, kNoCoreAffinity};
 // WiFiManager betreibt waehrend des Captive Portals DNS- und Webserver im
 // NetworkTask. Dafuer wird mehr Stack als fuer das fruehere Queue-Geruest
 // benoetigt.

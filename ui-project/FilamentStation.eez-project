@@ -1635,8 +1635,8 @@
               "type": "LVGLImageWidget",
               "left": 19,
               "top": 277,
-              "width": 26,
-              "height": 30,
+              "width": 25,
+              "height": 32,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -2914,7 +2914,7 @@
                 {
                   "objID": "10000000-0193-4000-8000-000000000000",
                   "type": "LVGLLabelWidget",
-                  "left": 0,
+                  "left": 7,
                   "top": 0,
                   "width": 59,
                   "height": 16,
@@ -3425,8 +3425,8 @@
               "type": "LVGLImageWidget",
               "left": 22,
               "top": 157,
-              "width": 26,
-              "height": 30,
+              "width": 25,
+              "height": 32,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -17525,7 +17525,7 @@
     {
       "objID": "6b83771c-c4d1-475f-bf40-5f1167340969",
       "name": "3D Printer W",
-      "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABoAAAAeCAYAAAAy2w7YAAAACXBIWXMAAAsTAAALEwEAmpwYAAADNUlEQVRIicVVT0hacRz/6nu899zD8L1DlKAXoUNng0QSJs3VwGENQ3NarEPzutpiQSCC1m0eugVCSbnHuq2Dzh0kvKRewtFgsWDRwItD95R4+P7sEI3Y8vneEvaB3+X3/fP5fn7fH98vQI8xNxeaAwCw2+32m/faXhMNDw8PAwC43W73zXukVwQYhmGzs/7ZWu1Hrb+/vx/DMKxYLBav7ei/JKVpmo7HY3GTyWxiWZYFAKAoA9Vut9snJ59POI7jNjc3N+9cPcO8ZSYmHk6oiVHdIwzDMBRF0Uwmm1ETp+jpcBzH/X6/HwCAIAii2Ww15+fn5wEA0ul0muM4Tm3Bf8Hj8Xii0WhUkkTptpNMJpNWq9XaLU/Xp9PpdDqCIIhOdpK8R+I4hqsVcCtomqY7KaIoilKSAx0aGhpyOMYcck4kSZKdbKFQMNRqtVpy8YeHh4fAMAzTqdpeHYZhGI3RaDSOjFhH5CrS6/X6VCqVul1RKMSyTVYuvlQqleTsvyHXI5qmaSU5ej5U/zuRosnAsiw7Pv5gHEEQJJvNZAEAJicfTQqCIFwP1Z4CQRCE59u8IPACgiCqVoziNWE2m8yLi88XC4VCYXd3d1cQBEENkUap48zMzIzT6XQ2Go2GJEkSAIBGA5q9vfTe8fHxsRpS1RgcHBxMJBIJJb6KFQFcDdi1tbU1FEVRAAlqtVpte3tnu1qtVrvFyvbIYrFYpqY8UwaDwZDLfcyJoiA6nfedjUajwXEcV6l8quA4rmhyyyqKRCKRgYGBgb4+fZ/P5/NNTz+Z5vk2r9VqtXp9nz4YfBocHR0dHRtzjFUqlYoSQlmgKIqy7E92dfX16tLSi6VrFQiCIKVSqbS//27/ziQbG+sb5XK5fHDw/sDlcrmudpDh9w5aX4+vn55+Oe1abDeHo6PikShKYjgcDpfL5fKfdoLQEZeXl5fqJXRALvchd37+7fymIpIkybOzr2eJxJuuX1xW0crKq5WLi+8XFGWgbDabLZvNZk0mk8nr9XoxDMcWFp4t8DzPx2Lx2J2IBEEQAoFAQBRFcXn55XI+n88DALjdj931er2+tbW1tbOT2mk2m81uRL8AoSTZ7pgFlrwAAAAASUVORK5CYII=",
+      "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAAgCAYAAADnnNMGAAAACXBIWXMAAAsTAAALEwEAmpwYAAABVklEQVRIie3VsUuVURjH8c8VhxqdAi9ctJup/0BDouIUhAQ1CJKQwZ0iGqMaXATBoaGlSYIKWlpqKQiiBhukxKAlEAIxF8eCBoWehve9cLmgnNu9Fy74/uBZzjnP73ue5xzOKUVEBRelaRefcAFnE3M+i4i5SNfLiBART1rIqfUl7qYtFZACckIhz/AOf7sJ+YhLqGIZP7sBuYs7+IUlDGEWr3DYKcgYHmEPLzCNN7iKCu5hu11IXacwj/e56f3ccxWjmMHXViAH+HbMfBUr2MFrWfvW8aU/wfw71vAc+wnr+3Eljz0sHFXJHzzFJMbxUNaaywmQRpVxrhmyiVsYxCI2cE12qD9ws0UIstJ+47GsJVv5+Hk8wA2c+R/jZsjbPE5jATVModSueSOkLLvX1zHQKeNmyARud8O8rp5+hQtIAekRSCkihmU/W4p28EH2Oo8k5qz/A5GvmnxhihOwAAAAAElFTkSuQmCC",
       "bpp": 32,
       "alwaysBuild": false,
       "lvglBinaryOutputFormat": 3,

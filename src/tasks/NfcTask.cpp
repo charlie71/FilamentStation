@@ -76,7 +76,13 @@ const char* initializationStep(Pn532InitializationResult result) {
   return "unknown";
 }
 
-bool sendEvent(rtos::RtosContext& ctx, rtos::AppEvent event) {
+// Takes AppEvent by reference, not by value: AppEvent has grown considerably
+// across the Bambu phases (PrinterState, BambuConfigCollection, per-slot
+// material/color), and every by-value call site briefly doubled its stack
+// footprint (caller's local plus the parameter copy) on top of an already
+// stack-heavy call chain (MIFARE auth, HKDF-SHA256, tag parsing) -- a real
+// contributor to the stack-overflow crashes this task has hit.
+bool sendEvent(rtos::RtosContext& ctx, const rtos::AppEvent& event) {
   if (xQueueSend(ctx.appEventQueue, &event, 0) == pdPASS) return true;
   FS_LOGW(services::LogComponent::Nfc,
           "Event enqueue failed queue=app_event event=%u",
@@ -86,7 +92,11 @@ bool sendEvent(rtos::RtosContext& ctx, rtos::AppEvent event) {
 
 void sendError(rtos::RtosContext& ctx, std::uint32_t requestId,
                const char* text) {
-  rtos::AppEvent event{};
+  // static, not a task-stack local: see the AppEvent size note on
+  // reportTag()'s `detected`/`read` below -- the same reasoning applies to
+  // every AppEvent this task builds.
+  static rtos::AppEvent event{};
+  event = rtos::AppEvent{};
   event.type = rtos::AppEventType::NfcError;
   event.requestId = requestId;
   std::snprintf(event.text, sizeof(event.text), "%s", text);
@@ -766,7 +776,12 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
   char uid[config::kNfcMaxUidLength * 3]{};
   formatUid(target, uid, sizeof(uid));
 
-  rtos::AppEvent detected{};
+  // static: AppEvent is large and this function's own call chain (MIFARE
+  // auth, HKDF-SHA256, TagParserRegistry::parse) is already stack-heavy;
+  // a stack-local AppEvent here previously caused a canary-triggered crash
+  // once AppEvent grew past the task's stack budget.
+  static rtos::AppEvent detected{};
+  detected = rtos::AppEvent{};
   detected.type = rtos::AppEventType::NfcTagDetected;
   fillTarget(detected, target);
   std::snprintf(detected.text, sizeof(detected.text),
@@ -834,7 +849,8 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
                                          ? result.definition.spoolId
                                          : 0U));
 
-  rtos::AppEvent read{};
+  static rtos::AppEvent read{};
+  read = rtos::AppEvent{};
   read.type = rtos::AppEventType::NfcTagRead;
   fillTarget(read, target);
   read.tagReadResult = result;
@@ -939,7 +955,8 @@ void handleWrite(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
     sendError(ctx, command.requestId, "NFC tag verification failed");
     return;
   }
-  rtos::AppEvent event{};
+  static rtos::AppEvent event{};
+  event = rtos::AppEvent{};
   event.type = rtos::AppEventType::NfcTagWritten;
   event.requestId = command.requestId;
   event.spoolId = command.spoolId;
@@ -983,7 +1000,8 @@ void handleErase(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
     sendError(ctx, command.requestId, "NFC tag erase verification failed");
     return;
   }
-  rtos::AppEvent event{};
+  static rtos::AppEvent event{};
+  event = rtos::AppEvent{};
   event.type = rtos::AppEventType::NfcTagErased;
   event.requestId = command.requestId;
   fillTarget(event, verifiedTarget);
@@ -1032,7 +1050,8 @@ void nfcTask(void* parameter) {
   } else {
     FS_LOGI(services::LogComponent::Nfc, "PN532 ready");
     xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_NFC_READY);
-    rtos::AppEvent event{};
+    static rtos::AppEvent event{};
+    event = rtos::AppEvent{};
     event.type = rtos::AppEventType::NfcInitialized;
     std::snprintf(event.text, sizeof(event.text), "PN532 ready");
     sendEvent(ctx, event);
@@ -1130,7 +1149,8 @@ void nfcTask(void* parameter) {
         continue;
       }
 
-      rtos::AppEvent event{};
+      static rtos::AppEvent event{};
+      event = rtos::AppEvent{};
       event.type = rtos::AppEventType::NfcTagRemoved;
       fillTarget(event, removalCandidate);
       char uid[config::kNfcMaxUidLength * 3]{};

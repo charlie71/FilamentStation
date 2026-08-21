@@ -64,13 +64,34 @@ struct PrinterUiEntry {
   bool isDefault;
   bool isActive;
   bool exists;
+  models::UiConnectionState connectionState = models::UiConnectionState::Offline;
+  std::uint8_t amsCount = 0;
 };
+// Empty by default (matches the empty bambu.json roster, Phase 8.2); real
+// entries arrive from AppTask via UpdatePrinterList (value >= 100, see
+// AppTask::syncPrinterEntryToUi) after boot-load and after every CRUD
+// action, so this no longer pre-seeds fake printers.
 std::array<PrinterUiEntry, 4> printerEntries{{
-    {1, "P1S Werkstatt", true, true, true, true},
-    {2, "X1C Labor", true, false, false, true},
-    {3, "A1 Mini Büro", false, false, false, true},
-    {4, "Neuer Drucker", true, false, false, false},
+    {1, "", true, false, false, false},
+    {2, "", true, false, false, false},
+    {3, "", true, false, false, false},
+    {4, "", true, false, false, false},
 }};
+struct AmsUiEntry {
+  bool present = false;
+  std::uint8_t occupiedTrayCount = 0;
+};
+// Real AMS/tray data synced from AppTask (see AppTask::syncAmsToUi), fed via
+// UpdateAmsOverview/UpdateTrayDetails; empty by default (no AMS present)
+// instead of the former static MockUiDataProvider data.
+std::array<AmsUiEntry, 4> amsEntries{};
+struct TrayUiEntry {
+  bool occupied = false;
+  char material[12]{};
+  char colorHex[9]{};
+};
+std::array<std::array<TrayUiEntry, 4>, 4> trayEntries{};
+TrayUiEntry externalTrayEntry{};
 struct PrinterUiDraft {
   char name[32];
   char host[64];
@@ -1170,6 +1191,26 @@ PrinterUiEntry* printerEntry(rtos::PrinterId id) {
   return nullptr;
 }
 
+TrayUiEntry* trayUiEntry(std::uint8_t amsId, std::uint8_t trayId) {
+  if (amsId == 0xFF && trayId == 0xFF) return &externalTrayEntry;
+  if (amsId < 1 || amsId > trayEntries.size() || trayId >= 4) return nullptr;
+  return &trayEntries[amsId - 1][trayId];
+}
+
+// Parses the leading 6 hex digits of a Bambu tray_color (RRGGBB or
+// RRGGBBAA) into an 0xRRGGBB value; falls back to a neutral grey for
+// missing/malformed input.
+std::uint32_t parseTrayColorHex(const char* colorHex) {
+  constexpr std::uint32_t kFallbackColor = 0x455A64;
+  if (colorHex == nullptr || std::strlen(colorHex) < 6) return kFallbackColor;
+  char buffer[7];
+  std::snprintf(buffer, sizeof(buffer), "%.6s", colorHex);
+  char* end = nullptr;
+  const unsigned long value = std::strtoul(buffer, &end, 16);
+  return (end != nullptr && *end == '\0') ? static_cast<std::uint32_t>(value)
+                                          : kFallbackColor;
+}
+
 const char* printerDraftValue(std::int32_t field) {
   switch (field) {
     case 1: return printerUiDraft.name;
@@ -2153,25 +2194,34 @@ void bindGeneratedWidgets() {
 }
 
 void updatePrinterList() {
-  const auto& printers = models::mock::printers();
+  // select_printer_1/2/3 are bound to fixed printerIds 1/2/3 (see
+  // bindClick calls above), so printerEntries[index] must line up
+  // positionally with printerId == index + 1 -- this renders real data
+  // (Phase 8.6 CRUD, synced via UpdatePrinterList) instead of the former
+  // models::mock::printers().
   const std::array<lv_obj_t*, 3> buttons{{
       objects.select_printer_1,
       objects.select_printer_2,
       objects.select_printer_3,
   }};
 
-  for (std::size_t index = 0; index < printers.size(); ++index) {
-    const auto& printer = printers[index];
+  for (std::size_t index = 0; index < buttons.size(); ++index) {
+    const auto& printer = printerEntries[index];
+    if (!printer.exists) {
+      setButtonText(buttons[index], "+ freier Druckerplatz");
+      setButtonColors(buttons[index], 0x616161);
+      continue;
+    }
     char text[96];
     std::snprintf(
         text, sizeof(text), "%s%s\n%s | %u AMS%s",
-        printer.printerId == currentPrinterId ? "> " : "", printer.name,
+        printer.id == currentPrinterId ? "> " : "", printer.name,
         connectionText(printer.connectionState), printer.amsCount,
         printer.isDefault ? " | Standard" : "");
     setButtonText(buttons[index], text);
 
     const std::uint32_t color =
-        printer.printerId == currentPrinterId
+        printer.id == currentPrinterId
             ? 0x1565C0
             : (printer.connectionState == models::UiConnectionState::Connected
                    ? 0x2E7D32
@@ -2196,28 +2246,32 @@ void updatePrinterList() {
 void updateTrayButton(lv_obj_t* button, rtos::PrinterId printerId,
                       std::uint8_t amsId, std::uint8_t trayId,
                       const char* title, std::size_t colorStripGroup) {
-  const models::UiTraySummary* tray =
-      models::mock::findTray(printerId, amsId, trayId);
+  (void)printerId;  // Real tray data (see AppTask::syncAmsToUi) is only
+                    // ever synced for the printer currently in focus.
+  const TrayUiEntry* tray = trayUiEntry(amsId, trayId);
   char text[64];
-  if (tray == nullptr || tray->state == models::UiTrayState::Empty) {
+  if (tray == nullptr || !tray->occupied) {
     std::snprintf(text, sizeof(text), "%s\nleer", title);
     setButtonColors(button, 0x455A64);
     updateHomeColorStrips(colorStripGroup, {}, 0);
   } else {
-    std::snprintf(text, sizeof(text), "%s\n%s #%lu\n%.0fg", title,
-                  tray->material, static_cast<unsigned long>(tray->spoolId),
-                  static_cast<double>(tray->remainingWeightGrams));
-    setButtonColors(button,
-                    tray->colorCount > 0 ? tray->colorRgb[0] : 0x455A64);
-    updateHomeColorStrips(colorStripGroup, tray->colorRgb, tray->colorCount);
+    // Printer-reported material only; no Spoolman spool identity is known
+    // for physically-loaded spools the app itself did not assign (see
+    // docs/bambu-protocol.md).
+    std::snprintf(text, sizeof(text), "%s\n%s", title,
+                  tray->material[0] != '\0' ? tray->material : "belegt");
+    const std::array<std::uint32_t, models::kMaximumFilamentColors> colors{
+        parseTrayColorHex(tray->colorHex)};
+    const std::uint8_t colorCount = tray->colorHex[0] != '\0' ? 1U : 0U;
+    setButtonColors(button, colorCount > 0 ? colors[0] : 0x455A64);
+    updateHomeColorStrips(colorStripGroup, colors, colorCount);
   }
   setButtonText(button, text);
 }
 
 void updateHomeContent() {
-  const models::UiPrinterSummary* printer =
-      models::mock::findPrinter(currentPrinterId);
-  if (printer == nullptr) {
+  const PrinterUiEntry* printer = printerEntry(currentPrinterId);
+  if (printer == nullptr || !printer->exists) {
     return;
   }
 
@@ -2229,17 +2283,16 @@ void updateHomeContent() {
   }};
   for (std::uint8_t amsId = 1; amsId <= amsButtons.size(); ++amsId) {
     lv_obj_t* button = amsButtons[amsId - 1U];
-    const models::UiAmsSummary* ams =
-        models::mock::findAms(currentPrinterId, amsId);
+    const auto& ams = amsEntries[amsId - 1U];
     char text[32];
-    if (ams == nullptr || ams->trayCount == 0) {
+    if (!ams.present) {
       std::snprintf(text, sizeof(text), "AMS %u --", amsId);
     } else {
-      std::snprintf(text, sizeof(text), "AMS %u  %u/%u", amsId,
-                    ams->occupiedTrayCount, ams->trayCount);
+      std::snprintf(text, sizeof(text), "AMS %u  %u/4", amsId,
+                    ams.occupiedTrayCount);
     }
     setButtonText(button, text);
-    const bool available = ams != nullptr && ams->trayCount > 0;
+    const bool available = ams.present;
     lv_obj_set_state(button, LV_STATE_DISABLED, false);
     lv_obj_set_flag(button, LV_OBJ_FLAG_CLICKABLE, available);
     const std::uint32_t background =
@@ -2410,23 +2463,13 @@ void updateStagingContent() {
   }
 }
 
-const char* trayStateText(models::UiTrayState state) {
-  switch (state) {
-    case models::UiTrayState::Empty: return "leer";
-    case models::UiTrayState::Reading: return "wird gelesen";
-    case models::UiTrayState::Ready: return "bereit";
-    case models::UiTrayState::Loading: return "wird geladen";
-    case models::UiTrayState::Loaded: return "geladen";
-    case models::UiTrayState::Unloading: return "wird entladen";
-    case models::UiTrayState::Error: return "Fehler";
-    case models::UiTrayState::Unknown: return "unbekannt";
-  }
-  return "unbekannt";
-}
-
 void updateTrayDetails() {
-  const models::UiTraySummary* tray = models::mock::findTray(
-      currentPrinterId, selectedTrayAmsId, selectedTrayId);
+  // Real occupancy/material/color from the printer's own MQTT report (see
+  // AppTask::syncAmsToUi); no Spoolman spool identity is known for a slot
+  // unless this app itself assigned it this session (Phase 8.5), so the
+  // Slot/Spool tab distinction the mock used to show is collapsed into one
+  // honest view instead of fabricating a second tab's worth of data.
+  const TrayUiEntry* tray = trayUiEntry(selectedTrayAmsId, selectedTrayId);
   char title[48];
   if (selectedTrayId == 0xFF) {
     std::snprintf(title, sizeof(title), "Externer Slot");
@@ -2437,53 +2480,27 @@ void updateTrayDetails() {
   lv_label_set_text(objects.tray_details_title, title);
 
   std::array<std::array<char, 96>, 6> rows{};
+  const std::uint8_t colorCount =
+      tray != nullptr && tray->occupied && tray->colorHex[0] != '\0' ? 1U : 0U;
+  const std::uint32_t colorRgb =
+      colorCount > 0 ? parseTrayColorHex(tray->colorHex) : 0;
   if (tray == nullptr) {
-    std::snprintf(rows[0].data(), rows[0].size(), "Keine Slotdaten verfügbar");
-  } else if (selectedTrayTab == 0) {
-    std::snprintf(rows[0].data(), rows[0].size(), "Status: %s",
-                  trayStateText(tray->state));
-    std::snprintf(rows[1].data(), rows[1].size(), "Material: %s", tray->material);
-    if (tray->colorCount == 1) {
-      std::snprintf(rows[2].data(), rows[2].size(), "Farben: #%06lX",
-                    static_cast<unsigned long>(tray->colorRgb[0] & 0xFFFFFFU));
-    } else if (tray->colorCount == 2) {
-      std::snprintf(rows[2].data(), rows[2].size(), "Farben: #%06lX / #%06lX",
-                    static_cast<unsigned long>(tray->colorRgb[0] & 0xFFFFFFU),
-                    static_cast<unsigned long>(tray->colorRgb[1] & 0xFFFFFFU));
-    } else {
-      std::snprintf(rows[2].data(), rows[2].size(),
-                    "Farben: #%06lX / #%06lX / #%06lX",
-                    static_cast<unsigned long>(tray->colorRgb[0] & 0xFFFFFFU),
-                    static_cast<unsigned long>(tray->colorRgb[1] & 0xFFFFFFU),
-                    static_cast<unsigned long>(tray->colorRgb[2] & 0xFFFFFFU));
-    }
-    std::snprintf(rows[3].data(), rows[3].size(), "Loaded: %s",
-                  tray->loaded ? "ja" : "nein");
-    std::snprintf(rows[4].data(), rows[4].size(), "In Use: %s",
-                  tray->inUse ? "ja" : "nein");
-    std::snprintf(rows[5].data(), rows[5].size(), "Zuordnung: Spule %lu",
-                  static_cast<unsigned long>(tray->spoolId));
+    std::snprintf(rows[0].data(), rows[0].size(),
+                  "Keine Slotdaten verf\xC3\xBCgbar");
+  } else if (!tray->occupied) {
+    std::snprintf(rows[0].data(), rows[0].size(), "Status: leer");
   } else {
-    std::snprintf(rows[0].data(), rows[0].size(), "Spoolman-ID: %lu",
-                  static_cast<unsigned long>(tray->spoolId));
-    std::snprintf(rows[1].data(), rows[1].size(), "Material: %s", tray->material);
-    if (tray->colorCount == 1) {
-      std::snprintf(rows[2].data(), rows[2].size(), "Farben: #%06lX",
-                    static_cast<unsigned long>(tray->colorRgb[0] & 0xFFFFFFU));
-    } else if (tray->colorCount == 2) {
-      std::snprintf(rows[2].data(), rows[2].size(), "Farben: #%06lX / #%06lX",
-                    static_cast<unsigned long>(tray->colorRgb[0] & 0xFFFFFFU),
-                    static_cast<unsigned long>(tray->colorRgb[1] & 0xFFFFFFU));
+    std::snprintf(rows[0].data(), rows[0].size(), "Status: belegt");
+    std::snprintf(rows[1].data(), rows[1].size(), "Material (Drucker): %s",
+                  tray->material[0] != '\0' ? tray->material : "unbekannt");
+    if (colorCount > 0) {
+      std::snprintf(rows[2].data(), rows[2].size(), "Farbe: #%06lX",
+                    static_cast<unsigned long>(colorRgb));
     } else {
-      std::snprintf(rows[2].data(), rows[2].size(),
-                    "Farben: #%06lX / #%06lX / #%06lX",
-                    static_cast<unsigned long>(tray->colorRgb[0] & 0xFFFFFFU),
-                    static_cast<unsigned long>(tray->colorRgb[1] & 0xFFFFFFU),
-                    static_cast<unsigned long>(tray->colorRgb[2] & 0xFFFFFFU));
+      std::snprintf(rows[2].data(), rows[2].size(), "Farbe: unbekannt");
     }
-    std::snprintf(rows[3].data(), rows[3].size(), "Restgewicht: %.0fg",
-                  static_cast<double>(tray->remainingWeightGrams));
-    std::snprintf(rows[4].data(), rows[4].size(), "Letzte Messung: Mock-Daten");
+    std::snprintf(rows[3].data(), rows[3].size(),
+                  "Spoolman-Zuordnung: nicht bekannt");
   }
   char content[448];
   std::snprintf(content, sizeof(content), "%s\n%s\n%s\n%s\n%s\n%s",
@@ -2496,14 +2513,13 @@ void updateTrayDetails() {
   }};
   for (std::size_t index = 0; index < colorFields.size(); ++index) {
     lv_obj_t* field = colorFields[index];
-    if (tray == nullptr || index >= tray->colorCount) {
+    if (index >= colorCount) {
       lv_obj_add_flag(field, LV_OBJ_FLAG_HIDDEN);
       continue;
     }
     lv_obj_remove_flag(field, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_bg_opa(field, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(field, lv_color_hex(tray->colorRgb[index]),
-                              LV_PART_MAIN);
+    lv_obj_set_style_bg_color(field, lv_color_hex(colorRgb), LV_PART_MAIN);
     lv_obj_set_style_border_width(field, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(field, lv_color_hex(0x101820), LV_PART_MAIN);
     lv_obj_set_style_radius(field, 4, LV_PART_MAIN);
@@ -2536,7 +2552,7 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
       objects.tray_select_ams_3, objects.tray_select_ams_4,
   }};
   for (std::uint8_t id = 1; id <= amsButtons.size(); ++id) {
-    const bool available = models::mock::findAms(currentPrinterId, id) != nullptr;
+    const bool available = amsEntries[id - 1U].present;
     char label[12];
     std::snprintf(label, sizeof(label), "AMS %u", id);
     setControlText(amsButtons[id - 1U], label);
@@ -2554,9 +2570,9 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
   }};
   for (std::uint8_t id = 0; id < slotButtons.size(); ++id) {
     char label[32];
-    const auto* tray = models::mock::findTray(currentPrinterId, currentAmsId, id);
+    const auto* tray = trayUiEntry(currentAmsId, id);
     std::snprintf(label, sizeof(label), "Slot %u\n%s", id + 1U,
-                  tray == nullptr ? "frei" : trayStateText(tray->state));
+                  tray != nullptr && tray->occupied ? "belegt" : "frei");
     setControlText(slotButtons[id], label);
     const bool highlighted = trayTargetSelected && selectedTrayAmsId == currentAmsId &&
                              selectedTrayId == id;
@@ -2615,22 +2631,31 @@ void setAllHeaderTexts(const char* text) {
 }
 
 void updateHeaders(rtos::PrinterId printerId) {
-  const models::UiPrinterSummary* printer = models::mock::findPrinter(printerId);
-  if (printer == nullptr) {
+  // Printer identity comes from printerEntries, AMS presence/occupancy from
+  // amsEntries/trayEntries -- both real, AppTask-synced data (see
+  // AppTask::syncPrinterEntryToUi/syncAmsToUi). currentAmsId is a pure UI
+  // navigation cursor (which AMS the user is currently looking at); it must
+  // NOT be reset here, or every Bambu update would force it back to an
+  // invalid "no AMS" state and the tray buttons would show "leer" forever
+  // regardless of what syncAmsToUi actually reported.
+  const PrinterUiEntry* printer = printerEntry(printerId);
+  if (printer == nullptr || !printer->exists) {
     return;
   }
   currentPrinterId = printerId;
-  currentAmsId = printer->activeAmsId;
 
   char header[64];
-  char ams[24];
-  if (printer->activeAmsId == 0) {
-    std::snprintf(ams, sizeof(ams), "kein AMS");
+  const bool viewingPresentAms = currentAmsId >= 1 &&
+                                 currentAmsId <= amsEntries.size() &&
+                                 amsEntries[currentAmsId - 1].present;
+  if (viewingPresentAms) {
+    std::snprintf(header, sizeof(header), "%s | %s | AMS %u",
+                  connectionText(printer->connectionState), printer->name,
+                  currentAmsId);
   } else {
-    std::snprintf(ams, sizeof(ams), "AMS %u", printer->activeAmsId);
+    std::snprintf(header, sizeof(header), "%s | %s | kein AMS",
+                  connectionText(printer->connectionState), printer->name);
   }
-  std::snprintf(header, sizeof(header), "%s | %s | %s",
-                connectionText(printer->connectionState), printer->name, ams);
 
   setAllHeaderTexts(header);
 
@@ -2643,9 +2668,9 @@ void updateHeaders(rtos::PrinterId printerId) {
 }
 
 void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
-  const models::UiPrinterSummary* printer = models::mock::findPrinter(printerId);
-  if (printerId != currentPrinterId || printer == nullptr ||
-      models::mock::findAms(printerId, amsId) == nullptr) {
+  const PrinterUiEntry* printer = printerEntry(printerId);
+  if (printerId != currentPrinterId || printer == nullptr || !printer->exists ||
+      amsId < 1 || amsId > amsEntries.size() || !amsEntries[amsId - 1].present) {
     return;
   }
   currentAmsId = amsId;
@@ -2950,10 +2975,44 @@ void processUiCommand(const rtos::UiCommand& command) {
       updateHeaders(command.printerId);
       break;
     case rtos::UiCommandType::UpdateAmsOverview:
-      updateAmsOverview(command.printerId, command.amsId);
+      if (command.trayId == 0xFF) {
+        // Sync message from AppTask::syncAmsToUi (real data), not a
+        // navigation trigger -- see the matching encoding comment in
+        // AppTask.cpp's syncAmsToUi.
+        if (command.value >= 200 && command.amsId >= 1 &&
+            command.amsId <= amsEntries.size()) {
+          const std::int32_t flags = command.value - 200;
+          auto& entry = amsEntries[command.amsId - 1];
+          entry.present = (flags & 1) != 0;
+          entry.occupiedTrayCount = static_cast<std::uint8_t>((flags >> 1) & 0x7);
+        }
+        updateHomeContent();
+        if (currentAmsId == command.amsId)
+          updateAmsOverview(command.printerId, command.amsId);
+      } else {
+        updateAmsOverview(command.printerId, command.amsId);
+      }
       break;
     case rtos::UiCommandType::UpdateTrayDetails:
-      if (command.value == 2) {
+      if (command.value >= 300) {
+        // Sync message from AppTask::syncAmsToUi (real data).
+        TrayUiEntry* entry = nullptr;
+        if (command.amsId == 0xFF) {
+          entry = &externalTrayEntry;
+        } else if (command.amsId >= 1 && command.amsId <= 4 &&
+                   command.trayId < 4) {
+          entry = &trayEntries[command.amsId - 1][command.trayId];
+        }
+        if (entry != nullptr) {
+          entry->occupied = ((command.value - 300) & 1) != 0;
+          std::snprintf(entry->material, sizeof(entry->material), "%s",
+                        command.title);
+          std::snprintf(entry->colorHex, sizeof(entry->colorHex), "%s",
+                        command.text);
+        }
+        updateHomeContent();
+        updateTrayDetails();
+      } else if (command.value == 2) {
         selectedTraySpoolId = command.spoolId;
         updateTraySelection(command.printerId, command.amsId, command.trayId,
                             true);
@@ -3148,6 +3207,21 @@ void processUiCommand(const rtos::UiCommand& command) {
           updateHeaders(entry->id);
         }
         if (command.value == 4) entry->exists = false;
+        if (command.value >= 120) {
+          // Absolute sync from AppTask's real printerConfigs/printerCollection
+          // (Phase 8.6), encoded as 120 + bitmask(enabled=1, isDefault=2,
+          // isActive=4) + (connectionState << 3) -- subtracted before
+          // extracting bits so the base value's own bit pattern cannot bleed
+          // into the flags.
+          const std::int32_t flags = command.value - 120;
+          entry->exists = true;
+          std::snprintf(entry->name, sizeof(entry->name), "%s", command.title);
+          entry->enabled = (flags & 1) != 0;
+          entry->isDefault = (flags & 2) != 0;
+          entry->isActive = (flags & 4) != 0;
+          entry->connectionState =
+              static_cast<models::UiConnectionState>((flags >> 3) & 0x7);
+        }
       }
       updatePrinterSettingsList();
       break;

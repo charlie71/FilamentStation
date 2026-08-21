@@ -106,6 +106,11 @@ void testApplyReportParsesAmsTraysWithStringIds() {
                         static_cast<int>(state.amsUnits[0].slots[2].state));
   TEST_ASSERT_EQUAL_INT(static_cast<int>(PrinterSlotState::Empty),
                         static_cast<int>(state.amsUnits[0].slots[3].state));
+  TEST_ASSERT_EQUAL_STRING("PLA", state.amsUnits[0].slots[0].material);
+  TEST_ASSERT_EQUAL_STRING("FFFFFFFF", state.amsUnits[0].slots[0].colorHex);
+  TEST_ASSERT_EQUAL_STRING("", state.amsUnits[0].slots[1].material);
+  TEST_ASSERT_EQUAL_STRING("PETG", state.amsUnits[0].slots[2].material);
+  TEST_ASSERT_EQUAL_STRING("000000FF", state.amsUnits[0].slots[2].colorHex);
 }
 
 void testApplyReportParsesAmsWithNumericIds() {
@@ -145,6 +150,8 @@ void testApplyReportParsesExternalTray() {
   TEST_ASSERT_TRUE(services::bambuApplyReport(document, state));
   TEST_ASSERT_EQUAL_INT(static_cast<int>(PrinterSlotState::Ready),
                         static_cast<int>(state.externalSlot.state));
+  TEST_ASSERT_EQUAL_STRING("PETG", state.externalSlot.material);
+  TEST_ASSERT_EQUAL_STRING("00FF00FF", state.externalSlot.colorHex);
 }
 
 void testApplyReportNeverTouchesSpoolId() {

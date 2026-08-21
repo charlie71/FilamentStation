@@ -8,6 +8,7 @@
 
 #include "config/BoardConfig.h"
 #include "config/NfcConfig.h"
+#include "models/BambuPrinterConfig.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/JsonStorage.h"
@@ -210,6 +211,41 @@ void processLoadCommand(rtos::RtosContext& ctx,
     if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
       FS_LOGW(services::LogComponent::Storage,
               "Event enqueue failed queue=app_event document=spoolman");
+    return;
+  }
+  if (result.ok() && command.documentType == rtos::StorageDocumentType::Bambu) {
+    rtos::AppEvent event{};
+    event.type = rtos::AppEventType::StorageReadCompleted;
+    event.requestId = command.requestId;
+    event.value = static_cast<std::int32_t>(result.bytesProcessed);
+    auto& configs = event.bambuConfigs;
+    configs.selectedPrinterId =
+        document["selectedPrinterId"].as<std::uint16_t>();
+    configs.defaultPrinterId = document["defaultPrinterId"].as<std::uint16_t>();
+    const JsonArrayConst printers = document["printers"].as<JsonArrayConst>();
+    std::uint8_t count = 0;
+    for (const JsonObjectConst printer : printers) {
+      if (count >= models::kMaximumPrinters) break;
+      models::BambuPrinterConfig& destination = configs.printers[count];
+      destination.printerId = printer["printerId"].as<std::uint16_t>();
+      std::snprintf(destination.name, sizeof(destination.name), "%s",
+                    printer["name"].as<const char*>());
+      std::snprintf(destination.host, sizeof(destination.host), "%s",
+                    printer["host"].as<const char*>());
+      std::snprintf(destination.serialNumber, sizeof(destination.serialNumber),
+                    "%s", printer["serialNumber"].as<const char*>());
+      std::snprintf(destination.accessCode, sizeof(destination.accessCode),
+                    "%s", printer["accessCode"].as<const char*>());
+      destination.enabled = printer["enabled"].as<bool>();
+      destination.isDefault = printer["default"].as<bool>();
+      destination.isSelected = printer["selected"].as<bool>();
+      ++count;
+    }
+    configs.printerCount = count;
+    std::snprintf(event.text, sizeof(event.text), "Bambu configuration loaded");
+    if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
+      FS_LOGW(services::LogComponent::Storage,
+              "Event enqueue failed queue=app_event document=bambu");
     return;
   }
   if (result.ok() && command.documentType == rtos::StorageDocumentType::Nfc &&
