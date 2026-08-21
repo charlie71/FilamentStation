@@ -1276,12 +1276,53 @@ geflasht.
 
 ## 9.8 Staging
 
-* [ ] Quick Weight
-* [ ] Advanced Weight
-* [ ] Configure Slot
-* [ ] Clear Staging
-* [ ] Tag zuordnen via Spoolman
-* [ ] Tag-Zuordnung entfernen via Spoolman
+* [x] Quick Weight
+* [x] Advanced Weight
+* [x] Configure Slot
+* [x] Clear Staging
+* [x] Tag zuordnen via Spoolman
+* [x] Tag-Zuordnung entfernen via Spoolman
+
+Hinweis: Quick Weight/Advanced Weight (Waage-Messwert, Bestätigungs-Overlay,
+`SpoolmanCommandType::UpdateWeight`) sowie "Tag zuordnen via
+Spoolman"/"Tag-Zuordnung entfernen via Spoolman" (`staging_action_link_tag`/
+`staging_action_unlink_tag`, generische `AssignTag`/`RemoveTagAssignment`-
+Abläufe) waren bereits vollständig und korrekt implementiert -- inklusive
+korrekter Übergabe von `stagingState.spoolId` als Ziel-Spule über
+`stagingActionClicked`.
+
+Zwei echte Bugs gefunden und behoben:
+
+1. **Configure Slot**: `staging_action_configure` ("Slot konfigurieren")
+   löste bisher denselben `case`-Block wie `ConfigureSlotFromStaging` aus
+   (Fallthrough) und war über einen `action.value == 1`-Zweig auf reine
+   Navigation zum `TraySelect`-Bildschirm angewiesen. Dieser Zweig war aber
+   nie erreichbar: `stagingActionClicked` sendet für `ConfigureSlot`
+   grundsätzlich `value == 0`. Der Button versuchte dadurch, direkt einen
+   Slot mit `amsId == 0`/`trayId == 0` zu committen, statt erst zur
+   Slot-Auswahl zu navigieren. Fix: `ConfigureSlot` und
+   `ConfigureSlotFromStaging` in zwei eigene `case`-Blöcke aufgeteilt --
+   `ConfigureSlot` navigiert jetzt bedingungslos zu `TraySelect`, der
+   eigentliche Commit bleibt exklusiv bei `ConfigureSlotFromStaging` (dem
+   Tap auf einen Slot dort, siehe 9.1).
+
+2. **Clear Staging**: Der Button zeigte bisher nur einen Mock-Dialog
+   ("Diese Mock-Aktion kann eine Zuordnung entfernen. Fortfahren?") ohne
+   jede Funktion -- weder AppTask noch UiBridge verarbeiteten eine
+   Bestätigung. Fix: neues Pending-Flag
+   `pendingClearStagingConfirmation` (gleiches Muster wie
+   `pendingUnlinkConfirmation`), echter Bestätigungstext, und beim
+   Bestätigen wird `UpdateStaging` mit `spoolId = 0` gesendet.
+   `UiBridge::processUiCommand` behandelt `UpdateStaging` mit `spoolId ==
+   0` jetzt als expliziten Leerungsfall (`stagingState`/
+   `stagingSpoolState` auf Default zurückgesetzt, keine
+   Spool-/Gewichts-Parsing-Logik). Spoolman und der NFC-Tag werden dabei
+   bewusst nicht verändert -- es wird nur die lokale Staging-Anzeige
+   geleert.
+
+Build (`pio run`, 0 Warnings) und native Tests (`pio test -e
+native-spoolman-tests`, 44/44) erfolgreich, Firmware auf das Gerät
+geflasht.
 
 ## 9.9 Slot
 

@@ -143,6 +143,7 @@ bool pendingServerReassignmentConfirmation = false;
 models::TagIdentity resolvedTagIdentity{};
 rtos::SpoolId resolvedTagSpoolId = 0;
 bool pendingUnlinkConfirmation = false;
+bool pendingClearStagingConfirmation = false;
 enum class TagRemovalStage : std::uint8_t {
   None,
   LookingUp,
@@ -1645,6 +1646,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         pendingTagAssignment = {};
       pendingServerReassignmentConfirmation = false;
       pendingUnlinkConfirmation = false;
+      pendingClearStagingConfirmation = false;
       if (pendingTagRemoval.stage == TagRemovalStage::AwaitingConfirmation ||
           pendingTagRemoval.stage == TagRemovalStage::LookingUp)
         pendingTagRemoval = {};
@@ -1814,6 +1816,19 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     rtos::UiOverlayKind::SpoolmanRequest, action.requestId,
                     "Tag-Zuordnung wird entfernt",
                     "Das Feld extra.tag der zugeordneten Spule wird geleert und verifiziert.");
+        return;
+      }
+      if (confirmedOverlay == rtos::UiOverlayKind::Confirmation &&
+          pendingClearStagingConfirmation) {
+        pendingClearStagingConfirmation = false;
+        command.type = rtos::UiCommandType::UpdateStaging;
+        command.spoolId = 0;
+        sendUiCommand(ctx, command, "AppTask: clear staging queue overflow");
+        rtos::UiCommand toast{};
+        toast.type = rtos::UiCommandType::ShowToast;
+        toast.requestId = action.requestId;
+        std::snprintf(toast.text, sizeof(toast.text), "Staging geleert");
+        sendUiCommand(ctx, toast, "AppTask: clear staging toast overflow");
         return;
       }
       if (confirmedOverlay == rtos::UiOverlayKind::TagReview) {
@@ -2561,16 +2576,19 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       sendUiCommand(ctx, command, "AppTask: tray command queue overflow");
       return;
 
-    case rtos::UiActionType::ConfigureSlotFromStaging:
     case rtos::UiActionType::ConfigureSlot: {
-      if (action.value == 1) {
-        previousScreen = currentScreen;
-        currentScreen = rtos::UiScreenId::TraySelect;
-        command.type = rtos::UiCommandType::ShowScreen;
-        command.screenId = currentScreen;
-        sendUiCommand(ctx, command, "AppTask: tray-select queue overflow");
-        return;
-      }
+      // "Slot konfigurieren" auf StagingActions navigiert nur zur
+      // Slot-Auswahl; der eigentliche Commit passiert erst beim Antippen
+      // eines Slots dort (ConfigureSlotFromStaging, siehe unten).
+      previousScreen = currentScreen;
+      currentScreen = rtos::UiScreenId::TraySelect;
+      command.type = rtos::UiCommandType::ShowScreen;
+      command.screenId = currentScreen;
+      sendUiCommand(ctx, command, "AppTask: tray-select queue overflow");
+      return;
+    }
+
+    case rtos::UiActionType::ConfigureSlotFromStaging: {
       // Drucker/AMS/Slot/Spoolman-Spule pruefen, bevor irgendetwas gesendet
       // wird.
       if (!models::isValidPrinterId(action.printerId)) {
@@ -2804,10 +2822,17 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       if (action.type == rtos::UiActionType::ClearStaging) {
+        if (action.spoolId == 0) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Staging leeren", "Im Staging ist keine Spule ausgew\xC3\xA4hlt.");
+          return;
+        }
+        pendingClearStagingConfirmation = true;
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Confirmation, action.requestId,
-                    "Aktion best\xC3\xA4tigen",
-                    "Diese Mock-Aktion kann eine Zuordnung entfernen. Fortfahren?");
+                    "Staging leeren",
+                    "Die gestagte Spule wird aus dem Staging entfernt.\nSpoolman und der NFC-Tag werden dabei nicht ver\xC3\xA4ndert.");
         return;
       }
       command.type = rtos::UiCommandType::ShowToast;

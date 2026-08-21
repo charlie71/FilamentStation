@@ -3029,6 +3029,14 @@ void processUiCommand(const rtos::UiCommand& command) {
       }
       break;
     case rtos::UiCommandType::UpdateStaging: {
+      if (command.spoolId == 0) {
+        // Clear Staging (Phase 9.8): reset to the same empty defaults the
+        // struct starts with, no spool/weight data to reload or parse.
+        stagingState = {};
+        stagingSpoolState = {};
+        updateStagingContent();
+        break;
+      }
       stagingState.spoolId = command.spoolId;
       stagingState.state = models::UiStagingState::WeightReady;
       const bool hasReloadedSpool = command.spool.id != 0;
