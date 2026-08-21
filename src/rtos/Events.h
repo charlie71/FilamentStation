@@ -53,7 +53,9 @@ enum class AppEventType : std::uint8_t {
   SpoolmanWeightUpdated,
   SpoolmanError,
   BambuConnected,
+  BambuDisconnected,
   BambuUpdate,
+  BambuTestResult,
   BambuError
 };
 

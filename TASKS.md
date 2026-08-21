@@ -927,18 +927,24 @@ Dieser Unterpunkt darf entfallen, wenn kein RAM-Cache benötigt wird.
 
 ## 8.3 BambuTask
 
-* [ ] Commands mit printerId
-* [ ] Events mit printerId
-* [ ] verbinden
-* [ ] trennen
-* [ ] testen
-* [ ] Status
-* [ ] AMS
-* [ ] Slots
-* [ ] External
-* [ ] Slotdaten schreiben
-* [ ] Reset
-* [ ] Reconnect
+* [x] Commands mit printerId
+* [x] Events mit printerId
+* [x] verbinden
+* [x] trennen
+* [x] testen
+* [x] Status
+* [x] AMS
+* [x] Slots
+* [x] External
+* [x] Slotdaten schreiben
+* [x] Reset
+* [x] Reconnect
+
+Hinweis: Das LAN-MQTT-Protokoll ist Community-Wissen (siehe
+`docs/bambu-protocol.md`) und noch nicht an echter Druckerhardware
+verifiziert. `BambuProtocol` (Parsing/Encoding) ist nativ getestet;
+`BambuTask` (MQTT/TLS-Transport) erfordert einen realen Bambu-Drucker zur
+Verifikation.
 
 ## 8.4 Druckerwechsel
 

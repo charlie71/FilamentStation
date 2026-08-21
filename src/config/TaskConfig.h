@@ -41,7 +41,10 @@ constexpr TaskSettings kNetworkTask{"NetworkTask", 8192, 1, kNoCoreAffinity};
 // responses. Keep enough reserve for parsing without moving large objects
 // through the central AppEvent queue.
 constexpr TaskSettings kSpoolmanTask{"SpoolmanTask", 8192, 1, kNoCoreAffinity};
-constexpr TaskSettings kBambuTask{"BambuTask", 4096, 1, kNoCoreAffinity};
+// TLS-Handshakes (mbedTLS) fuer bis zu vier gleichzeitige MQTT-Verbindungen
+// sowie ArduinoJson-Parsing der Statusberichte benoetigen mehr Reserve als
+// das fruehere Taskgeruest; Groessenordnung analog zu kSpoolmanTask.
+constexpr TaskSettings kBambuTask{"BambuTask", 8192, 1, kNoCoreAffinity};
 
 // Queue-Laengen basieren auf geringer Last der Task-Gerueste und werden nach
 // Messung der maximalen Auslastung in spaeteren Phasen angepasst.

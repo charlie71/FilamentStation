@@ -5,7 +5,9 @@
 #include <type_traits>
 #include "models/TagReadResult.h"
 #include "models/AppState.h"
+#include "models/BambuPrinterConfig.h"
 #include "models/NetworkSettings.h"
+#include "models/PrinterState.h"
 #include "models/SpoolmanSettings.h"
 #include "models/SpoolmanSpool.h"
 #include "models/SpoolmanCatalog.h"
@@ -47,6 +49,8 @@ struct AppEvent {
   std::uint8_t legacyNfcMappingCount;
   models::NetworkSettings networkSettings;
   models::SpoolmanSettings spoolmanSettings;
+  PrinterId printerId;
+  models::PrinterState printerState{};
   models::SpoolmanSpool spool{};
   models::SpoolmanWeightUpdate weightUpdate{};
   models::TagIdentity tagIdentity{};
@@ -140,6 +144,16 @@ struct BambuCommand {
   std::uint8_t amsId;
   std::uint8_t trayId;
   SpoolId spoolId;
+  // Required for Connect/TestConnection: BambuTask has no SD/storage access
+  // of its own, so the caller (AppTask) supplies host/serial/access code.
+  models::BambuPrinterConfig printerConfig{};
+  // Required for AssignTray ("Slotdaten schreiben"). Resolving a Spoolman
+  // spool to filament type/color happens outside BambuTask (Phase 8.5); the
+  // caller supplies the already-resolved values here.
+  char trayType[16]{};
+  char trayColorHex[9]{};
+  std::uint16_t nozzleTempMinC = 0;
+  std::uint16_t nozzleTempMaxC = 0;
 };
 
 static_assert(std::is_trivially_copyable_v<AppEvent>);
@@ -148,5 +162,6 @@ static_assert(std::is_trivially_copyable_v<UiAction>);
 static_assert(std::is_trivially_copyable_v<StorageCommand>);
 static_assert(std::is_trivially_copyable_v<NetworkCommand>);
 static_assert(std::is_trivially_copyable_v<SpoolmanCommand>);
+static_assert(std::is_trivially_copyable_v<BambuCommand>);
 
 }  // namespace filament_station::rtos

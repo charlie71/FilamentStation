@@ -240,6 +240,14 @@ enum class SpoolmanSearchFilter : std::uint8_t {
   Vendor,
   Id,
 };
-enum class BambuCommandType : std::uint8_t { Connect, Disconnect, RequestStatus, AssignTray };
+enum class BambuCommandType : std::uint8_t {
+  Connect,
+  Disconnect,
+  TestConnection,
+  RequestStatus,
+  AssignTray,
+  Reset,
+  Reconnect,
+};
 
 }  // namespace filament_station::rtos
