@@ -1048,14 +1048,25 @@ existiert (siehe docs/bambu-protocol.md).
 
 ## 9.2 Native Tags
 
-* [ ] UID
-* [ ] extra.tag Lookup
-* [ ] NDEF-Konsistenz
-* [ ] Spule
-* [ ] Staging
-* [ ] wiegen
-* [ ] aktualisieren
-* [ ] AMS
+* [x] UID
+* [x] extra.tag Lookup
+* [x] NDEF-Konsistenz
+* [x] Spule
+* [x] Staging
+* [x] wiegen
+* [x] aktualisieren
+* [x] AMS
+
+Hinweis: UID/extra.tag-Lookup/NDEF-Konsistenz/Spule-Auflösung waren bereits
+aus Phase 5.x/7.7 vollständig vorhanden. Die einzige echte Lücke war
+"Staging": Das Lesen eines bereits zugeordneten Tags navigierte immer nur
+zum `TagActionSelect`-Bildschirm ("Tag zuordnen"/"Tag-Zuordnung
+entfernen"/"Löschen") – es gab keinen Pfad, der die aufgelöste Spule
+tatsächlich ins Staging lud. `showNativeTagAction()` löst jetzt zusätzlich
+`requestStagingSpool()` aus, sobald eine Spule aufgelöst ist. "wiegen"/
+"aktualisieren"/"AMS" liefen bereits generisch über die vorhandene
+Staging-Infrastruktur (Phase 4.x/7.5/8.5) und funktionieren dadurch jetzt
+transitiv mit.
 
 ## 9.3 Bambu
 

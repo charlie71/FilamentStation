@@ -297,6 +297,8 @@ void applyTagUiState(rtos::UiCommand& command) {
 
 bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
                    const char* failureMessage);
+bool requestStagingSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
+                         rtos::SpoolId spoolId);
 
 void showNativeTagAction(rtos::RtosContext& ctx, std::uint32_t requestId,
                          rtos::SpoolId authoritativeSpoolId,
@@ -324,6 +326,18 @@ void showNativeTagAction(rtos::RtosContext& ctx, std::uint32_t requestId,
                     "AppTask: native NFC action screen queue overflow")) {
     previousScreen = currentScreen;
     currentScreen = navigation.screenId;
+  }
+
+  // Staging (Phase 9.2): a native tag that already resolves to a known
+  // Spoolman spool must be usable, not just show "Tag zuordnen"/"Tag-
+  // Zuordnung entfernen" -- load it into Staging so it is immediately ready
+  // to weigh/update/assign to an AMS slot. Skipped if a staging load is
+  // already in flight (single pending-request slot, see
+  // pendingStagingSpoolRequestId) to avoid clobbering an unrelated manual
+  // spool selection.
+  if (authoritativeSpoolId != 0 && pendingStagingSpoolRequestId == 0) {
+    if (requestStagingSpool(ctx, requestId, authoritativeSpoolId))
+      pendingStagingSpoolRequestId = requestId;
   }
 }
 
