@@ -170,6 +170,26 @@ struct PendingTagResolution {
 };
 PendingTagResolution pendingTagResolution{};
 
+// Phase 8.5 AMS-Zuordnung: assigns the staged Spoolman spule to a printer's
+// AMS slot. AppTask does not retain resolved spool data after staging (see
+// requestStagingSpool), so the spool is re-loaded here (LoadingSpool) before
+// its material/color are sent to the printer via BambuCommand::AssignTray
+// (WritingSlot).
+enum class SlotAssignmentStage : std::uint8_t {
+  None,
+  LoadingSpool,
+  WritingSlot,
+};
+struct PendingSlotAssignment {
+  SlotAssignmentStage stage = SlotAssignmentStage::None;
+  std::uint32_t requestId = 0;
+  rtos::PrinterId printerId = 0;
+  std::uint8_t amsId = 0;
+  std::uint8_t trayId = 0;
+  rtos::SpoolId spoolId = 0;
+};
+PendingSlotAssignment pendingSlotAssignment{};
+
 struct LegacyMappingFile {
   const char* path = nullptr;
   std::uint32_t loadRequestId = 0;
@@ -2041,13 +2061,64 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       return;
 
     case rtos::UiActionType::ConfigureSlotFromStaging:
-    case rtos::UiActionType::ConfigureSlot:
-      previousScreen = currentScreen;
-      currentScreen = rtos::UiScreenId::TraySelect;
-      command.type = rtos::UiCommandType::ShowScreen;
-      command.screenId = currentScreen;
-      sendUiCommand(ctx, command, "AppTask: tray-select queue overflow");
+    case rtos::UiActionType::ConfigureSlot: {
+      if (action.value == 1) {
+        previousScreen = currentScreen;
+        currentScreen = rtos::UiScreenId::TraySelect;
+        command.type = rtos::UiCommandType::ShowScreen;
+        command.screenId = currentScreen;
+        sendUiCommand(ctx, command, "AppTask: tray-select queue overflow");
+        return;
+      }
+      // Drucker/AMS/Slot/Spoolman-Spule pruefen, bevor irgendetwas gesendet
+      // wird.
+      if (!models::isValidPrinterId(action.printerId)) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Slot konfigurieren", "Kein Drucker ausgew\xC3\xA4hlt.");
+        return;
+      }
+      if (action.amsId >= models::kMaximumAmsPerPrinter ||
+          action.trayId >= models::kSlotsPerAms) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Slot konfigurieren", "Ung\xC3\xBCltiger AMS-Slot.");
+        return;
+      }
+      if (action.spoolId == 0) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Slot konfigurieren", "Keine Spule ausgew\xC3\xA4hlt.");
+        return;
+      }
+      if (pendingSlotAssignment.stage != SlotAssignmentStage::None) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Slot konfigurieren",
+                    "Es l\xC3\xA4uft bereits eine Slot-Zuordnung.");
+        return;
+      }
+      // Spoolman-Spule/Daten: AppTask behaelt aufgeloeste Spulendaten nach
+      // dem Staging nicht, daher hier erneut anfragen, um material/color
+      // verbindlich zu bekommen.
+      if (!requestStagingSpool(ctx, action.requestId, action.spoolId)) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Slot konfigurieren",
+                    "Spulendaten konnten nicht angefragt werden.");
+        return;
+      }
+      pendingSlotAssignment.stage = SlotAssignmentStage::LoadingSpool;
+      pendingSlotAssignment.requestId = action.requestId;
+      pendingSlotAssignment.printerId = action.printerId;
+      pendingSlotAssignment.amsId = action.amsId;
+      pendingSlotAssignment.trayId = action.trayId;
+      pendingSlotAssignment.spoolId = action.spoolId;
+      sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                  rtos::UiOverlayKind::SpoolmanRequest, action.requestId,
+                  "Slot konfigurieren", "Spulendaten werden geladen.");
       return;
+    }
 
     case rtos::UiActionType::ResetSlot:
     case rtos::UiActionType::UntagSlot:
@@ -3202,6 +3273,55 @@ void appTask(void* parameter) {
                   "Mehrdeutige Tag-Zuordnung",
                   "Diese Tag-ID ist mehreren Spulen in Spoolman zugeordnet. Bitte die Spoolman-Daten korrigieren.");
       continue;
+    } else if (event.type == rtos::AppEventType::SpoolmanResponse &&
+               pendingSlotAssignment.stage ==
+                   SlotAssignmentStage::LoadingSpool &&
+               event.requestId == pendingSlotAssignment.requestId) {
+      rtos::UiCommand hide{};
+      hide.type = rtos::UiCommandType::HideProgress;
+      sendUiCommand(ctx, hide,
+                    "AppTask: slot assignment progress close overflow");
+      if (event.value < 0 || event.spool.id == 0) {
+        pendingSlotAssignment = {};
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Slot nicht konfiguriert",
+                    "Spulendaten konnten nicht geladen werden.");
+        continue;
+      }
+      // Daten: material/color aus der aufgeloesten Spule; Bambu erwartet
+      // trayColorHex als RRGGBB(AA)-Hexstring, colorHex[0] liefert genau das.
+      rtos::BambuCommand assignTray{};
+      assignTray.type = rtos::BambuCommandType::AssignTray;
+      assignTray.requestId = event.requestId;
+      assignTray.printerId = pendingSlotAssignment.printerId;
+      assignTray.amsId = pendingSlotAssignment.amsId;
+      assignTray.trayId = pendingSlotAssignment.trayId;
+      assignTray.spoolId = event.spool.id;
+      std::snprintf(assignTray.trayType, sizeof(assignTray.trayType), "%s",
+                    event.spool.material);
+      std::snprintf(assignTray.trayColorHex, sizeof(assignTray.trayColorHex),
+                    "%s",
+                    event.spool.colorCount > 0 ? event.spool.colorHex[0] : "");
+      // Command: an BambuTask senden. Nozzle-Temperaturen bleiben 0/unbekannt
+      // -- Spoolman liefert dem Staging-Endpunkt keine Temperaturdaten (nur
+      // der separate Filament-Katalog kennt einen einzelnen Temperaturwert,
+      // siehe docs/bambu-protocol.md); hier wird nichts erfunden.
+      if (!sendBambuCommand(ctx, assignTray)) {
+        pendingSlotAssignment = {};
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Slot nicht konfiguriert",
+                    "Der Auftrag konnte nicht an den Drucker gesendet werden.");
+        continue;
+      }
+      pendingSlotAssignment.stage = SlotAssignmentStage::WritingSlot;
+      pendingSlotAssignment.spoolId = event.spool.id;
+      sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                  rtos::UiOverlayKind::BambuConnection, event.requestId,
+                  "Slot konfigurieren",
+                  "Slotdaten werden an den Drucker gesendet.");
+      continue;
     } else if (event.type == rtos::AppEventType::SpoolmanResponse) {
       if (pendingStagingSpoolRequestId != 0 &&
           event.requestId == pendingStagingSpoolRequestId) {
@@ -3654,6 +3774,17 @@ void appTask(void* parameter) {
                     "Spule konnte nicht geladen werden", event.text);
         continue;
       }
+      if (pendingSlotAssignment.stage == SlotAssignmentStage::LoadingSpool &&
+          event.requestId == pendingSlotAssignment.requestId) {
+        pendingSlotAssignment = {};
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Slot nicht konfiguriert",
+                    event.text[0] != '\0'
+                        ? event.text
+                        : "Spulendaten konnten nicht geladen werden.");
+        continue;
+      }
       if (currentScreen == rtos::UiScreenId::TagDefinitionImport ||
           currentScreen == rtos::UiScreenId::TagLegacy) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
@@ -3685,6 +3816,44 @@ void appTask(void* parameter) {
           entry.printerId = event.printerId;
           entry.isActive = wasActive;
         }
+      }
+
+      // Antwort/Reload/Ergebnis: the AssignTray outcome for a pending slot
+      // assignment is shown regardless of which printer is currently in
+      // focus (the user is explicitly waiting on this one operation).
+      if (pendingSlotAssignment.stage == SlotAssignmentStage::WritingSlot &&
+          event.requestId == pendingSlotAssignment.requestId &&
+          (event.type == rtos::AppEventType::BambuUpdate ||
+           event.type == rtos::AppEventType::BambuError)) {
+        const bool success = event.type == rtos::AppEventType::BambuUpdate;
+        const rtos::PrinterId assignedPrinterId = pendingSlotAssignment.printerId;
+        pendingSlotAssignment = {};
+        rtos::UiCommand hide{};
+        hide.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, hide,
+                      "AppTask: slot assignment progress close overflow");
+        if (success) {
+          // Reload: the printer's own status report is authoritative for
+          // trayType/color, so request a fresh pull instead of waiting for
+          // the next periodic push.
+          rtos::BambuCommand statusRequest{};
+          statusRequest.type = rtos::BambuCommandType::RequestStatus;
+          statusRequest.printerId = assignedPrinterId;
+          sendBambuCommand(ctx, statusRequest);
+        }
+        sendOverlay(
+            ctx,
+            rtos::UiCommandType::ShowDialog,
+            success ? rtos::UiOverlayKind::Success
+                    : rtos::UiOverlayKind::Error,
+            event.requestId,
+            success ? "Slot konfiguriert" : "Slot nicht konfiguriert",
+            success ? "Die Spule wurde dem AMS-Slot zugeordnet und an den "
+                      "Drucker \xC3\xBC" "bertragen."
+                    : (event.text[0] != '\0'
+                           ? event.text
+                           : "Der Drucker hat die Slotdaten nicht angenommen."));
+        continue;
       }
 
       if (event.type == rtos::AppEventType::BambuError) {

@@ -966,16 +966,28 @@ verwendet für Header/AMS-Anzeige weiterhin ihre eigenen Mock-Daten.
 
 ## 8.5 AMS-Zuordnung
 
-* [ ] Staging
-* [ ] Drucker
-* [ ] AMS
-* [ ] Slot
-* [ ] Spoolman-Spule
-* [ ] Daten
-* [ ] Command
-* [ ] Antwort
-* [ ] Reload
-* [ ] Ergebnis
+* [x] Staging
+* [x] Drucker
+* [x] AMS
+* [x] Slot
+* [x] Spoolman-Spule
+* [x] Daten
+* [x] Command
+* [x] Antwort
+* [x] Reload
+* [x] Ergebnis
+
+Hinweis: `ConfigureSlot`/`ConfigureSlotFromStaging` validieren jetzt
+Drucker/AMS/Slot/Spule, laden die Spule erneut (`pendingSlotAssignment`,
+Stage `LoadingSpool`), senden `BambuCommand::AssignTray` mit
+material/colorHex (Stage `WritingSlot`) und zeigen nach der Antwort einen
+Reload (`RequestStatus`) plus Erfolg/Fehler-Dialog. Offen: Spoolman liefert
+dem Staging-Endpunkt keine Nozzle-Temperaturen (nur der separate
+Filament-Katalog kennt einen einzelnen Wert), daher bleiben
+`nozzleTempMinC/MaxC` bei 0 -- es wurden bewusst keine Temperaturwerte
+erfunden. Der tatsächliche Auslöser auf dem TraySelect-Bildschirm
+(Bestätigen der Drucker-/AMS-/Slot-Auswahl) ist erst Phase 9.9 und
+existiert im generierten EEZ-UI noch nicht.
 
 ## 8.6 GUI
 
