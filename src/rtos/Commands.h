@@ -170,8 +170,8 @@ constexpr bool requiresOnlineSpoolman(UiActionType type) {
     case UiActionType::SaveMeasurement:
     case UiActionType::QuickWeight:
     case UiActionType::AdvancedWeight:
-    case UiActionType::ConfigureSlot:
     case UiActionType::ConfigureSlotFromStaging:
+    case UiActionType::ReapplySlot:
       return true;
     default:
       return false;

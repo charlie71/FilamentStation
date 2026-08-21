@@ -189,6 +189,7 @@ PendingTagResolution pendingTagResolution{};
 // (WritingSlot).
 enum class SlotAssignmentStage : std::uint8_t {
   None,
+  SelectingSpool,
   LoadingSpool,
   WritingSlot,
 };
@@ -742,6 +743,7 @@ void syncAmsToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
       tray.trayId = trayIndex;
       tray.value =
           300 + (slot.state == models::PrinterSlotState::Ready ? 1 : 0);
+      tray.spoolId = slot.spoolId;
       std::snprintf(tray.title, sizeof(tray.title), "%s", slot.material);
       std::snprintf(tray.text, sizeof(tray.text), "%s", slot.colorHex);
       sendUiCommand(ctx, tray, "AppTask: tray details sync overflow");
@@ -757,6 +759,7 @@ void syncAmsToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
                                   models::PrinterSlotState::Ready
                               ? 1
                               : 0);
+  external.spoolId = printer->externalSlot.spoolId;
   std::snprintf(external.title, sizeof(external.title), "%s",
                 printer->externalSlot.material);
   std::snprintf(external.text, sizeof(external.text), "%s",
@@ -2588,6 +2591,11 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       return;
     }
 
+    case rtos::UiActionType::ReapplySlot:
+    // "Erneut anwenden" sendet dieselbe Zuordnung wie ConfigureSlotFromStaging,
+    // nur ausgehend von der bereits im Slot bekannten Spule
+    // (trayActionClicked fuellt action.spoolId mit selectedTraySpoolId statt
+    // stagingState.spoolId) -- daher derselbe Commit-Pfad ohne Duplizierung.
     case rtos::UiActionType::ConfigureSlotFromStaging: {
       // Drucker/AMS/Slot/Spoolman-Spule pruefen, bevor irgendetwas gesendet
       // wird.
@@ -2640,15 +2648,101 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     }
 
     case rtos::UiActionType::ResetSlot:
-    case rtos::UiActionType::UntagSlot:
-    case rtos::UiActionType::ReapplySlot:
-    case rtos::UiActionType::RefreshSlot:
+    case rtos::UiActionType::UntagSlot: {
+      // Reset: physischen Slot am Drucker leeren (leeres trayType/Farbe,
+      // spoolId 0). Untag: nur die lokale Spoolman-Zuordnung entfernen, der
+      // physische Slot-Inhalt (trayType/Farbe) bleibt wie zuletzt vom
+      // Drucker berichtet unveraendert -- beides teilt sich denselben
+      // AssignTray-Commit-Pfad wie ConfigureSlotFromStaging (siehe dortige
+      // Erfolgs-/Fehlerbehandlung), nur ohne Spoolman-Spule zu laden.
+      if (!models::isValidPrinterId(action.printerId)) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Slot konfigurieren", "Kein Drucker ausgew\xC3\xA4hlt.");
+        return;
+      }
+      if (action.amsId >= models::kMaximumAmsPerPrinter ||
+          action.trayId >= models::kSlotsPerAms) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Slot konfigurieren", "Ung\xC3\xBCltiger AMS-Slot.");
+        return;
+      }
+      if (pendingSlotAssignment.stage != SlotAssignmentStage::None) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Slot konfigurieren",
+                    "Es l\xC3\xA4uft bereits eine Slot-Zuordnung.");
+        return;
+      }
+      rtos::BambuCommand clearTray{};
+      clearTray.type = rtos::BambuCommandType::AssignTray;
+      clearTray.requestId = action.requestId;
+      clearTray.printerId = action.printerId;
+      clearTray.amsId = action.amsId;
+      clearTray.trayId = action.trayId;
+      clearTray.spoolId = 0;
+      if (action.type == rtos::UiActionType::UntagSlot) {
+        const models::PrinterSlotStateData* slot =
+            models::findSlot(printerEntry(action.printerId), action.amsId,
+                             action.trayId);
+        if (slot != nullptr) {
+          std::snprintf(clearTray.trayType, sizeof(clearTray.trayType), "%s",
+                        slot->material);
+          std::snprintf(clearTray.trayColorHex,
+                        sizeof(clearTray.trayColorHex), "%s", slot->colorHex);
+        }
+      }
+      // ResetSlot laesst trayType/trayColorHex bewusst leer (Slot ohne
+      // Filament); UntagSlot sendet oben die unveraendert uebernommenen
+      // aktuellen Werte, damit der physische Slot-Inhalt erhalten bleibt.
+      if (!sendBambuCommand(ctx, clearTray)) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Slot konfigurieren",
+                    "Der Auftrag konnte nicht an den Drucker gesendet werden.");
+        return;
+      }
+      pendingSlotAssignment = {};
+      pendingSlotAssignment.stage = SlotAssignmentStage::WritingSlot;
+      pendingSlotAssignment.requestId = action.requestId;
+      pendingSlotAssignment.printerId = action.printerId;
+      pendingSlotAssignment.amsId = action.amsId;
+      pendingSlotAssignment.trayId = action.trayId;
+      pendingSlotAssignment.spoolId = 0;
+      sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                  rtos::UiOverlayKind::BambuConnection, action.requestId,
+                  action.type == rtos::UiActionType::ResetSlot
+                      ? "Slot zur\xC3\xBC" "cksetzen"
+                      : "Zuordnung entfernen",
+                  "Wird an den Drucker \xC3\xBC" "bertragen.");
+      return;
+    }
+
+    case rtos::UiActionType::RefreshSlot: {
+      if (!models::isValidPrinterId(action.printerId)) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Slot aktualisieren", "Kein Drucker ausgew\xC3\xA4hlt.");
+        return;
+      }
+      rtos::BambuCommand statusRequest{};
+      statusRequest.type = rtos::BambuCommandType::RequestStatus;
+      statusRequest.requestId = action.requestId;
+      statusRequest.printerId = action.printerId;
+      if (!sendBambuCommand(ctx, statusRequest)) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Slot aktualisieren",
+                    "Die Statusanfrage konnte nicht gesendet werden.");
+        return;
+      }
       command.type = rtos::UiCommandType::ShowToast;
       std::snprintf(command.text, sizeof(command.text),
-                    "Slot-Aktion vorgemerkt (%u/%u)", action.amsId,
-                    action.trayId);
-      sendUiCommand(ctx, command, "AppTask: slot action queue overflow");
+                    "Status wird aktualisiert");
+      sendUiCommand(ctx, command, "AppTask: refresh slot toast overflow");
       return;
+    }
 
     case rtos::UiActionType::SelectStaging:
       previousScreen = action.value == 1 ? rtos::UiScreenId::StagingDetails
@@ -2697,6 +2791,68 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::ClearStaging:
     case rtos::UiActionType::SearchSpool:
     case rtos::UiActionType::SelectSpool:
+      // Configure Manually (Phase 9.9): "Manuell" auf TrayActions oeffnet
+      // den Spoolman-Spulenpicker fuer genau diesen Slot; die Auswahl commit-
+      // tet ueber denselben Pfad wie ConfigureSlotFromStaging.
+      // pendingSlotAssignment merkt sich amsId/trayId/printerId waehrend der
+      // Picker offen ist (der generische Picker traegt selbst keinen
+      // Slot-Kontext).
+      if (action.type == rtos::UiActionType::SelectSpool &&
+          pendingSlotAssignment.stage == SlotAssignmentStage::SelectingSpool) {
+        if (action.spoolId == 0) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Zuordnung fehlgeschlagen",
+                      "Keine g\xC3\xBCltige Spule ausgew\xC3\xA4hlt.");
+          pendingSlotAssignment = {};
+          return;
+        }
+        command.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, command,
+                      "AppTask: manual slot picker close overflow");
+        rtos::UiAction commit = action;
+        commit.type = rtos::UiActionType::ConfigureSlotFromStaging;
+        commit.printerId = pendingSlotAssignment.printerId;
+        commit.amsId = pendingSlotAssignment.amsId;
+        commit.trayId = pendingSlotAssignment.trayId;
+        commit.spoolId = action.spoolId;
+        pendingSlotAssignment = {};
+        handleUiAction(ctx, commit);
+        return;
+      }
+      if (action.type == rtos::UiActionType::SelectSpool &&
+          currentScreen == rtos::UiScreenId::TrayActions &&
+          pendingSlotAssignment.stage == SlotAssignmentStage::None) {
+        if (!models::isValidPrinterId(action.printerId)) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Slot konfigurieren", "Kein Drucker ausgew\xC3\xA4hlt.");
+          return;
+        }
+        if (action.amsId >= models::kMaximumAmsPerPrinter ||
+            action.trayId >= models::kSlotsPerAms) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Slot konfigurieren", "Ung\xC3\xBCltiger AMS-Slot.");
+          return;
+        }
+        pendingSlotAssignment = {};
+        pendingSlotAssignment.stage = SlotAssignmentStage::SelectingSpool;
+        pendingSlotAssignment.printerId = action.printerId;
+        pendingSlotAssignment.amsId = action.amsId;
+        pendingSlotAssignment.trayId = action.trayId;
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::SpoolPicker, action.requestId,
+                    "Spoolman-Spule ausw\xC3\xA4hlen", "");
+        if (!requestSpoolSearch(ctx, action.requestId)) {
+          pendingSlotAssignment = {};
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Spoolman-Suche",
+                      "Die Spulenauswahl konnte nicht geladen werden.");
+        }
+        return;
+      }
       if (action.type == rtos::UiActionType::SelectSpool &&
           currentScreen == rtos::UiScreenId::StagingActions) {
         if (!pendingStagingSpoolSelection) {
@@ -4389,6 +4545,10 @@ void appTask(void* parameter) {
            event.type == rtos::AppEventType::BambuError)) {
         const bool success = event.type == rtos::AppEventType::BambuUpdate;
         const rtos::PrinterId assignedPrinterId = pendingSlotAssignment.printerId;
+        // ResetSlot/UntagSlot (Phase 9.9) run through this same AssignTray
+        // completion path with spoolId == 0 -- distinguish the dialog
+        // wording without adding a second pending-state machine.
+        const bool wasClearing = pendingSlotAssignment.spoolId == 0;
         pendingSlotAssignment = {};
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
@@ -4409,9 +4569,14 @@ void appTask(void* parameter) {
             success ? rtos::UiOverlayKind::Success
                     : rtos::UiOverlayKind::Error,
             event.requestId,
-            success ? "Slot konfiguriert" : "Slot nicht konfiguriert",
-            success ? "Die Spule wurde dem AMS-Slot zugeordnet und an den "
-                      "Drucker \xC3\xBC" "bertragen."
+            success ? (wasClearing ? "Slot zur\xC3\xBC" "ckgesetzt"
+                                   : "Slot konfiguriert")
+                    : "Slot nicht konfiguriert",
+            success ? (wasClearing
+                           ? "Der Slot wurde geleert und an den Drucker "
+                             "\xC3\xBC" "bertragen."
+                           : "Die Spule wurde dem AMS-Slot zugeordnet und an den "
+                             "Drucker \xC3\xBC" "bertragen.")
                     : (event.text[0] != '\0'
                            ? event.text
                            : "Der Drucker hat die Slotdaten nicht angenommen."));

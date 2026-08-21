@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/3",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/1",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/0",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
     "selectedFontObject": "[FilamentStation.eez-project]:/fonts/0",
@@ -194,17 +194,17 @@
             {
               "type": "tabset",
               "id": "EDITORS",
-              "weight": 68.3503524692951,
+              "weight": 59.71986827926012,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
                 {
                   "type": "tab",
                   "id": "#051b045d-2570-4e8b-b12b-6f479be1e665",
-                  "name": "SCR_SETTINGS_HOME",
+                  "name": "SCR_HOME",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/3",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/1",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -237,7 +237,7 @@
             {
               "type": "row",
               "id": "#c9759a35-4104-4443-bbaa-5163c4e2a827",
-              "weight": 14.024536808806888,
+              "weight": 22.655020998841902,
               "children": [
                 {
                   "type": "tabset",
@@ -1163,7 +1163,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.75
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1176,6 +1176,11 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
+          "0": {
+            "0": {
+              "$selected": true
+            }
+          },
           "1": {},
           "3": {},
           "4": {},
@@ -1528,7 +1533,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.75
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -2008,8 +2013,8 @@
   "lvglState": "DEFAULT",
   "lvglExpandedPropertiesGroup": [
     "MISCELLANEOUS",
-    "IMAGE",
-    "TEXT"
+    "TEXT",
+    "BACKGROUND"
   ],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,

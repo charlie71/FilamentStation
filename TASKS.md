@@ -1326,14 +1326,90 @@ geflasht.
 
 ## 9.9 Slot
 
-* [ ] Details
-* [ ] Spule
-* [ ] Configure from Staging
-* [ ] Configure Manually
-* [ ] Untag Slot
-* [ ] Reset
-* [ ] Reapply
-* [ ] Refresh
+* [x] Details
+* [x] Spule
+* [x] Configure from Staging
+* [x] Configure Manually
+* [x] Untag Slot
+* [x] Reset
+* [x] Reapply
+* [x] Refresh
+
+Hinweis: Fünf echte Lücken/Bugs gefunden und behoben.
+
+1. **Details**: unverändert bereits vollständig (Slot-Tab: Status/Material/
+   Farbe direkt aus dem MQTT-Report, siehe Phase 8.3/9.3-Vorarbeit).
+
+2. **Spule**: Der "Spule"-Tab auf `TrayDetails` zeigte bisher hartkodiert
+   "Spoolman-Zuordnung: nicht bekannt" -- mit dem (zum Zeitpunkt korrekten)
+   Kommentar, AppTask halte keine Spoolman-Identität pro Slot vor. Das ist
+   inzwischen falsch: `BambuTask::handleAssignTray` speichert die
+   Spoolman-`spoolId` bereits seit Phase 8.5 dauerhaft in
+   `conn->state.amsUnits[amsId].slots[trayId].spoolId` (von
+   `bambuApplyReport()` nie angefasst, siehe docs/bambu-protocol.md), nur
+   wurde dieser Wert nie bis zur UI durchgereicht. Fix: `spoolId` in
+   `PrinterSlotStateData` -> `AppTask::syncAmsToUi` (`UpdateTrayDetails`,
+   neues `command.spoolId`) -> `TrayUiEntry.spoolId` (neues Feld) ->
+   `updateTrayDetails()` durchgezogen; der Spule-Tab zeigt jetzt die echte
+   Spoolman-ID, wenn diese Sitzung eine Zuordnung erfolgte. Bewusst nicht
+   ergänzt: ein Live-Abruf von Hersteller/Material/Restgewicht für diesen
+   Tab (bräuchte einen eigenen Spoolman-Request-Zyklus) -- nur die
+   tatsächlich bekannte ID wird gezeigt, nichts erfunden.
+
+3. **Configure from Staging**: Der Button "Aus Staging" auf
+   `TrayActions` sendete `selectedTraySpoolId` (die aktuell im Slot
+   gemeldete Spule) statt `stagingState.spoolId` (die im Staging bereit
+   liegende Spule) an `ConfigureSlotFromStaging` -- er hätte also
+   bestenfalls die bereits vorhandene Zuordnung erneut gesendet, nie die
+   tatsächlich gestagte Spule. In UiBridge.cpp behoben: `trayActionClicked`
+   (gemeinsamer Handler für alle `tray_action_*`-Buttons) verwendet jetzt
+   für `ConfigureSlotFromStaging` gezielt `stagingState.spoolId`, während
+   Reapply/Reset/Untag/Refresh weiterhin `selectedTraySpoolId` (die
+   aktuell im Slot bekannte Spule) nutzen -- beide Quellen bleiben pro
+   Aktion korrekt getrennt, keine Bindung geändert.
+
+4. **Configure Manually**: Der Button "Manuell" sendete `SelectSpool` mit
+   Slot-Kontext, aber es gab dafür überhaupt keinen Verarbeitungspfad --
+   der Klick landete im generischen Mock-Fallback
+   ("Staging-Aktion vorgemerkt"). Fix: neue `SlotAssignmentStage::
+   SelectingSpool`-Stufe in `pendingSlotAssignment` merkt sich
+   amsId/trayId/printerId, während der generische Spoolman-Spulenpicker
+   offen ist (der Picker selbst trägt keinen Slot-Kontext); die Auswahl
+   committet über denselben Pfad wie `ConfigureSlotFromStaging`.
+
+5. **Untag/Reset/Reapply/Refresh Slot**: alle vier waren reine
+   Mock-Stubs ("Slot-Aktion vorgemerkt"). Fix, jeweils ohne neue
+   MQTT-Nachrichtenformen (nur die bereits verifizierten `ams_filament_
+   setting`/`pushall`-Kommandos aus docs/bambu-protocol.md):
+   - **Reapply** ("Erneut anwenden") teilt sich jetzt den `case`-Block mit
+     `ConfigureSlotFromStaging` -- `trayActionClicked` liefert dafür
+     bereits `selectedTraySpoolId` (die aktuell im Slot bekannte Spule),
+     wodurch derselbe Commit-Pfad genau das gewünschte "erneut senden"
+     ergibt.
+   - **Reset** ("Slot zurücksetzen") sendet `AssignTray` mit leerem
+     `trayType`/`trayColorHex` und `spoolId = 0` -- Slot wird am Drucker
+     als leer markiert, lokale Spoolman-Zuordnung ebenfalls entfernt.
+   - **Untag** ("Zuordnung entfernen") sendet ebenfalls `AssignTray` mit
+     `spoolId = 0`, aber mit dem aktuell vom Drucker gemeldeten
+     `trayType`/`trayColorHex` unverändert übernommen -- nur die
+     Spoolman-Zuordnung wird entfernt, der physische Slot-Inhalt bleibt
+     wie zuletzt berichtet.
+   - **Refresh** ("Slot aktualisieren") sendet `BambuCommandType::
+     RequestStatus` für den aktuellen Drucker (bereits verifiziertes
+     "pushall").
+   Die AssignTray-Erfolgs-/Fehlermeldung unterscheidet jetzt "Slot
+   konfiguriert" (Spule zugeordnet) von "Slot zurückgesetzt" (spoolId ==
+   0 bei Reset/Untag).
+
+Zusätzlich in `rtos::requiresOnlineSpoolman` (Commands.h) korrigiert:
+`ConfigureSlot` navigiert seit dem 9.8-Fix nur noch zur Slot-Auswahl (kein
+Spoolman-Zugriff mehr) und wurde aus der Liste entfernt, `ReapplySlot`
+(neu: lädt eine Spoolman-Spule wie `ConfigureSlotFromStaging`) wurde
+ergänzt.
+
+Build (`pio run`, 0 Warnings) und native Tests (`pio test -e
+native-spoolman-tests`, 44/44) erfolgreich, Firmware auf das Gerät
+geflasht.
 
 ## 9.10 Zustandsautomat
 

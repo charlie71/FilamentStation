@@ -89,6 +89,7 @@ struct TrayUiEntry {
   bool occupied = false;
   char material[12]{};
   char colorHex[9]{};
+  rtos::SpoolId spoolId = 0;
 };
 std::array<std::array<TrayUiEntry, 4>, 4> trayEntries{};
 TrayUiEntry externalTrayEntry{};
@@ -1398,8 +1399,16 @@ void trayDetailsClicked(lv_event_t* event) {
 void trayActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  // "Aus Staging" (ConfigureSlotFromStaging) must commit the spool that is
+  // actually staged, not whatever this slot currently reports -- every
+  // other slot action here (Reapply/Reset/Untag/Refresh) intentionally
+  // keeps using the slot's own current spool (Phase 9.9).
+  const rtos::SpoolId spoolId =
+      type == rtos::UiActionType::ConfigureSlotFromStaging
+          ? stagingState.spoolId
+          : selectedTraySpoolId;
   sendAction(type, currentPrinterId, selectedTrayAmsId, selectedTrayId, 0,
-             selectedTraySpoolId);
+             spoolId);
 }
 
 void trayTargetClicked(lv_event_t* event) {
@@ -2471,11 +2480,13 @@ void updateStagingContent() {
 }
 
 void updateTrayDetails() {
-  // Real occupancy/material/color from the printer's own MQTT report (see
-  // AppTask::syncAmsToUi); no Spoolman spool identity is known for a slot
-  // unless this app itself assigned it this session (Phase 8.5), so the
-  // Slot/Spool tab distinction the mock used to show is collapsed into one
-  // honest view instead of fabricating a second tab's worth of data.
+  // "Slot"-Tab: Belegung/Material/Farbe direkt aus dem MQTT-Report des
+  // Druckers (AppTask::syncAmsToUi). "Spule"-Tab: die Spoolman-ID, die
+  // diese Anwendung selbst beim Zuordnen (Phase 8.5/9.1/9.9) gesetzt hat --
+  // der Drucker kennt keine Spoolman-IDs (docs/bambu-protocol.md), daher
+  // gibt es hier bewusst keine Herstellername/Restgewicht-Anzeige ohne
+  // zusaetzlichen Spoolman-Abruf; nur die bekannte ID wird gezeigt, nichts
+  // erfunden.
   const TrayUiEntry* tray = trayUiEntry(selectedTrayAmsId, selectedTrayId);
   char title[48];
   if (selectedTrayId == 0xFF) {
@@ -2487,8 +2498,11 @@ void updateTrayDetails() {
   lv_label_set_text(objects.tray_details_title, title);
 
   std::array<std::array<char, 96>, 6> rows{};
-  const std::uint8_t colorCount =
-      tray != nullptr && tray->occupied && tray->colorHex[0] != '\0' ? 1U : 0U;
+  const std::uint8_t colorCount = selectedTrayTab == 0 && tray != nullptr &&
+                                          tray->occupied &&
+                                          tray->colorHex[0] != '\0'
+                                      ? 1U
+                                      : 0U;
   const std::uint32_t colorRgb =
       colorCount > 0 ? parseTrayColorHex(tray->colorHex) : 0;
   if (tray == nullptr) {
@@ -2496,7 +2510,7 @@ void updateTrayDetails() {
                   "Keine Slotdaten verf\xC3\xBCgbar");
   } else if (!tray->occupied) {
     std::snprintf(rows[0].data(), rows[0].size(), "Status: leer");
-  } else {
+  } else if (selectedTrayTab == 0) {
     std::snprintf(rows[0].data(), rows[0].size(), "Status: belegt");
     std::snprintf(rows[1].data(), rows[1].size(), "Material (Drucker): %s",
                   tray->material[0] != '\0' ? tray->material : "unbekannt");
@@ -2506,8 +2520,17 @@ void updateTrayDetails() {
     } else {
       std::snprintf(rows[2].data(), rows[2].size(), "Farbe: unbekannt");
     }
-    std::snprintf(rows[3].data(), rows[3].size(),
-                  "Spoolman-Zuordnung: nicht bekannt");
+  } else {
+    std::snprintf(rows[0].data(), rows[0].size(), "Status: belegt");
+    if (tray->spoolId != 0) {
+      std::snprintf(rows[1].data(), rows[1].size(), "Spoolman-ID: #%lu",
+                    static_cast<unsigned long>(tray->spoolId));
+    } else {
+      std::snprintf(rows[1].data(), rows[1].size(),
+                    "Keine Spoolman-Zuordnung bekannt");
+      std::snprintf(rows[2].data(), rows[2].size(),
+                    "(z. B. am Drucker manuell best\xC3\xBC" "ckt)");
+    }
   }
   char content[448];
   std::snprintf(content, sizeof(content), "%s\n%s\n%s\n%s\n%s\n%s",
@@ -3012,6 +3035,7 @@ void processUiCommand(const rtos::UiCommand& command) {
         }
         if (entry != nullptr) {
           entry->occupied = ((command.value - 300) & 1) != 0;
+          entry->spoolId = command.spoolId;
           std::snprintf(entry->material, sizeof(entry->material), "%s",
                         command.title);
           std::snprintf(entry->colorHex, sizeof(entry->colorHex), "%s",
