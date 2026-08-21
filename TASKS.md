@@ -916,14 +916,14 @@ Dieser Unterpunkt darf entfallen, wenn kein RAM-Cache benötigt wird.
 
 ## 8.2 Konfiguration
 
-* [ ] bambu.json
-* [ ] Name
-* [ ] Host
-* [ ] Seriennummer
-* [ ] LAN Access Code
-* [ ] enabled
-* [ ] Default
-* [ ] selected
+* [x] bambu.json
+* [x] Name
+* [x] Host
+* [x] Seriennummer
+* [x] LAN Access Code
+* [x] enabled
+* [x] Default
+* [x] selected
 
 ## 8.3 BambuTask
 

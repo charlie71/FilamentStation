@@ -3,6 +3,8 @@
 #include <cctype>
 #include <cstring>
 
+#include "models/BambuPrinterConfig.h"
+
 namespace filament_station::services {
 namespace {
 
@@ -179,6 +181,100 @@ void applySpoolmanDefaults(JsonDocument& document) {
   if (document["timeoutMs"].isNull()) document["timeoutMs"] = 5000;
 }
 
+void applyBambuDefaults(JsonDocument& document) {
+  if (document["selectedPrinterId"].isNull())
+    document["selectedPrinterId"] = 0;
+  if (document["defaultPrinterId"].isNull()) document["defaultPrinterId"] = 0;
+  if (!document["printers"].is<JsonArrayConst>())
+    document["printers"].to<JsonArray>();
+}
+
+bool isValidBambuHost(const char* value) {
+  return isValidHostname(value) || isValidIpv4(value, false);
+}
+
+// Serial numbers and LAN access codes are opaque Bambu-assigned strings;
+// only bounded, non-empty, printable content is enforced here, not an
+// invented length or character pattern for the external protocol.
+bool isValidBambuIdentifier(const JsonVariantConst value,
+                            std::size_t maxLength) {
+  if (!isNonEmptyString(value)) return false;
+  const char* text = value.as<const char*>();
+  const std::size_t length = std::strlen(text);
+  if (length >= maxLength) return false;
+  for (std::size_t index = 0; index < length; ++index) {
+    if (!std::isprint(static_cast<unsigned char>(text[index]))) return false;
+  }
+  return true;
+}
+
+JsonStorageError validateBambuPrinters(const JsonDocument& document) {
+  if (!document["selectedPrinterId"].is<std::uint16_t>() ||
+      !document["defaultPrinterId"].is<std::uint16_t>() ||
+      !document["printers"].is<JsonArrayConst>()) {
+    return JsonStorageError::InvalidDocumentField;
+  }
+
+  const JsonArrayConst printers = document["printers"].as<JsonArrayConst>();
+  if (printers.size() > models::kMaximumPrinters) {
+    return JsonStorageError::InvalidDocumentField;
+  }
+
+  const auto selectedPrinterId =
+      document["selectedPrinterId"].as<std::uint16_t>();
+  const auto defaultPrinterId =
+      document["defaultPrinterId"].as<std::uint16_t>();
+
+  if (printers.size() == 0) {
+    return selectedPrinterId == 0 && defaultPrinterId == 0
+               ? JsonStorageError::Ok
+               : JsonStorageError::InvalidDocumentField;
+  }
+
+  std::size_t defaultCount = 0;
+  std::size_t selectedCount = 0;
+  for (std::size_t index = 0; index < printers.size(); ++index) {
+    const JsonObjectConst printer = printers[index].as<JsonObjectConst>();
+    if (!printer["printerId"].is<std::uint16_t>() ||
+        printer["printerId"].as<std::uint16_t>() == 0 ||
+        !isValidBambuIdentifier(printer["name"], 32U) ||
+        !isValidBambuHost(printer["host"] | static_cast<const char*>(nullptr)) ||
+        !isValidBambuIdentifier(printer["serialNumber"], 24U) ||
+        !isValidBambuIdentifier(printer["accessCode"], 24U) ||
+        !printer["enabled"].is<bool>() ||
+        !printer["default"].is<bool>() ||
+        !printer["selected"].is<bool>()) {
+      return JsonStorageError::InvalidDocumentField;
+    }
+
+    const auto printerId = printer["printerId"].as<std::uint16_t>();
+    for (std::size_t other = 0; other < index; ++other) {
+      if (printers[other]["printerId"].as<std::uint16_t>() == printerId) {
+        return JsonStorageError::InvalidDocumentField;
+      }
+    }
+
+    const bool isDefault = printer["default"].as<bool>();
+    const bool isSelected = printer["selected"].as<bool>();
+    if (isDefault) {
+      ++defaultCount;
+      if (printerId != defaultPrinterId) return JsonStorageError::InvalidDocumentField;
+    }
+    if (isSelected) {
+      ++selectedCount;
+      if (printerId != selectedPrinterId) return JsonStorageError::InvalidDocumentField;
+    }
+  }
+
+  if (defaultCount != 1) return JsonStorageError::InvalidDocumentField;
+  if (selectedPrinterId == 0) {
+    if (selectedCount != 0) return JsonStorageError::InvalidDocumentField;
+  } else if (selectedCount != 1) {
+    return JsonStorageError::InvalidDocumentField;
+  }
+  return JsonStorageError::Ok;
+}
+
 }  // namespace
 
 std::size_t JsonStorage::maxSizeFor(
@@ -247,6 +343,10 @@ JsonStorageResult JsonStorage::load(
   if (error == JsonStorageError::Ok &&
       documentType == rtos::StorageDocumentType::Spoolman) {
     applySpoolmanDefaults(document);
+  }
+  if (error == JsonStorageError::Ok &&
+      documentType == rtos::StorageDocumentType::Bambu) {
+    applyBambuDefaults(document);
   }
   if (error == JsonStorageError::Ok) {
     error = validate(document, documentType);
@@ -464,11 +564,7 @@ JsonStorageError JsonStorage::validate(
       }
       return JsonStorageError::Ok;
     case rtos::StorageDocumentType::Bambu:
-      return document["selectedPrinterId"].is<std::uint16_t>() &&
-                     document["defaultPrinterId"].is<std::uint16_t>() &&
-                     document["printers"].is<JsonArrayConst>()
-                 ? JsonStorageError::Ok
-                 : JsonStorageError::InvalidDocumentField;
+      return validateBambuPrinters(document);
     case rtos::StorageDocumentType::Diagnostics:
       return JsonStorageError::Ok;
   }

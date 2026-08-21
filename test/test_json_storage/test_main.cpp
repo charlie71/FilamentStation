@@ -120,6 +120,159 @@ void test_bambu_defaults_support_multiple_printers() {
   TEST_ASSERT_EQUAL_UINT32(0, document["printers"].size());
 }
 
+JsonObject addBambuPrinter(JsonDocument& document, std::uint16_t printerId,
+                           const char* name, const char* host,
+                           const char* serialNumber, const char* accessCode,
+                           bool enabled, bool isDefault, bool isSelected) {
+  JsonArray printers = document["printers"].as<JsonArray>();
+  JsonObject printer = printers.add<JsonObject>();
+  printer["printerId"] = printerId;
+  printer["name"] = name;
+  printer["host"] = host;
+  printer["serialNumber"] = serialNumber;
+  printer["accessCode"] = accessCode;
+  printer["enabled"] = enabled;
+  printer["default"] = isDefault;
+  printer["selected"] = isSelected;
+  return printer;
+}
+
+void test_bambu_single_printer_document_is_valid() {
+  JsonDocument document;
+  JsonStorage::createDefault(StorageDocumentType::Bambu, document);
+  addBambuPrinter(document, 1, "Drucker 1", "192.168.10.50", "01P00A123456789",
+                  "12345678", true, true, true);
+  document["defaultPrinterId"] = 1;
+  document["selectedPrinterId"] = 1;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::Ok),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Bambu)));
+}
+
+void test_bambu_printer_without_selection_is_valid() {
+  JsonDocument document;
+  JsonStorage::createDefault(StorageDocumentType::Bambu, document);
+  addBambuPrinter(document, 1, "Drucker 1", "192.168.10.50", "01P00A123456789",
+                  "12345678", true, true, false);
+  document["defaultPrinterId"] = 1;
+  document["selectedPrinterId"] = 0;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::Ok),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Bambu)));
+}
+
+void test_bambu_duplicate_printer_id_is_rejected() {
+  JsonDocument document;
+  JsonStorage::createDefault(StorageDocumentType::Bambu, document);
+  addBambuPrinter(document, 1, "Drucker 1", "192.168.10.50", "01P00A123456789",
+                  "12345678", true, true, false);
+  addBambuPrinter(document, 1, "Drucker 2", "192.168.10.51", "01P00A987654321",
+                  "87654321", true, false, false);
+  document["defaultPrinterId"] = 1;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Bambu)));
+}
+
+void test_bambu_missing_default_is_rejected() {
+  JsonDocument document;
+  JsonStorage::createDefault(StorageDocumentType::Bambu, document);
+  addBambuPrinter(document, 1, "Drucker 1", "192.168.10.50", "01P00A123456789",
+                  "12345678", true, false, false);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Bambu)));
+}
+
+void test_bambu_multiple_defaults_is_rejected() {
+  JsonDocument document;
+  JsonStorage::createDefault(StorageDocumentType::Bambu, document);
+  addBambuPrinter(document, 1, "Drucker 1", "192.168.10.50", "01P00A123456789",
+                  "12345678", true, true, false);
+  addBambuPrinter(document, 2, "Drucker 2", "192.168.10.51", "01P00A987654321",
+                  "87654321", true, true, false);
+  document["defaultPrinterId"] = 1;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Bambu)));
+}
+
+void test_bambu_selected_printer_must_match_flag_and_id() {
+  JsonDocument document;
+  JsonStorage::createDefault(StorageDocumentType::Bambu, document);
+  addBambuPrinter(document, 1, "Drucker 1", "192.168.10.50", "01P00A123456789",
+                  "12345678", true, true, false);
+  document["defaultPrinterId"] = 1;
+  document["selectedPrinterId"] = 1;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Bambu)));
+
+  document["printers"][0]["selected"] = true;
+  document["selectedPrinterId"] = 2;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Bambu)));
+}
+
+void test_bambu_printer_count_exceeds_maximum_is_rejected() {
+  JsonDocument document;
+  JsonStorage::createDefault(StorageDocumentType::Bambu, document);
+  for (std::uint16_t index = 1; index <= 5; ++index) {
+    addBambuPrinter(document, index, "Drucker", "192.168.10.50",
+                    "01P00A123456789", "12345678", true, index == 1, false);
+  }
+  document["defaultPrinterId"] = 1;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Bambu)));
+}
+
+void test_bambu_empty_fields_are_rejected() {
+  JsonDocument document;
+  JsonStorage::createDefault(StorageDocumentType::Bambu, document);
+  addBambuPrinter(document, 1, "", "192.168.10.50", "01P00A123456789",
+                  "12345678", true, true, false);
+  document["defaultPrinterId"] = 1;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Bambu)));
+
+  document["printers"][0]["name"] = "Drucker 1";
+  document["printers"][0]["host"] = "";
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Bambu)));
+}
+
+void test_bambu_host_accepts_ipv4_and_hostname() {
+  JsonDocument document;
+  JsonStorage::createDefault(StorageDocumentType::Bambu, document);
+  addBambuPrinter(document, 1, "Drucker 1", "bambu-x1", "01P00A123456789",
+                  "12345678", true, true, false);
+  document["defaultPrinterId"] = 1;
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::Ok),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Bambu)));
+
+  document["printers"][0]["host"] = "999.1.1.1";
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(JsonStorageError::InvalidDocumentField),
+      static_cast<int>(
+          JsonStorage::validate(document, StorageDocumentType::Bambu)));
+}
+
 void test_scale_defaults_and_calibration_validation() {
   JsonDocument document;
   TEST_ASSERT_EQUAL_INT(
@@ -242,6 +395,15 @@ void setup() {
   RUN_TEST(test_valid_document_serializes);
   RUN_TEST(test_initial_document_defaults_validate);
   RUN_TEST(test_bambu_defaults_support_multiple_printers);
+  RUN_TEST(test_bambu_single_printer_document_is_valid);
+  RUN_TEST(test_bambu_printer_without_selection_is_valid);
+  RUN_TEST(test_bambu_duplicate_printer_id_is_rejected);
+  RUN_TEST(test_bambu_missing_default_is_rejected);
+  RUN_TEST(test_bambu_multiple_defaults_is_rejected);
+  RUN_TEST(test_bambu_selected_printer_must_match_flag_and_id);
+  RUN_TEST(test_bambu_printer_count_exceeds_maximum_is_rejected);
+  RUN_TEST(test_bambu_empty_fields_are_rejected);
+  RUN_TEST(test_bambu_host_accepts_ipv4_and_hostname);
   RUN_TEST(test_scale_defaults_and_calibration_validation);
   RUN_TEST(test_network_defaults_are_complete_and_valid);
   RUN_TEST(test_static_network_configuration_validates_ipv4_fields);
