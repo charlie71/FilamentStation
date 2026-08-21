@@ -1193,12 +1193,54 @@ bereits in Phase 9.4 verifizierten Stand (`pio run` 0 Warnings, `pio test
 
 ## 9.6 Legacy
 
-* [ ] TagIdentity
-* [ ] extra.tag Lookup
-* [ ] Definition
-* [ ] importieren
-* [ ] zuordnen
-* [ ] sichere physische Migration optional
+* [x] TagIdentity
+* [x] extra.tag Lookup
+* [x] Definition
+* [x] importieren
+* [x] zuordnen
+* [x] sichere physische Migration optional
+
+Hinweis: Keine Codeänderung nötig, reine Verifikation -- anders als bei
+9.3/9.4 gab es hier keinen Staging/wiegen-Bug zu beheben, da der
+`TagLegacy`-Bildschirm (im Gegensatz zu `TagResult`) ohnehin keine
+Wiege-Buttons besitzt; das Checklist-Item "Staging"/"wiegen" existiert für
+9.6 bewusst nicht.
+
+TagIdentity/extra.tag Lookup: Legacy-Tags sind mangels eigenem
+Identitätsfeld UID-basiert (generische `TagIdentitySource::NfcUid`über
+`TagParserRegistry`); der `TagFormat::Legacy`-Zweig in AppTask.cpp
+(`currentTag.format == models::TagFormat::Legacy`, Zeile ~3269) ist nicht
+"nativ" (nur `EmptyNdef`/`FilamentStation` gelten als `nativeFormat`),
+durchläuft daher korrekt die generische `FindSpoolByTag`-Auflösung und
+zeigt das Ergebnis auf dem eigenen `TagLegacy`-Bildschirm.
+
+Definition: `LegacyTagParser` (aus Phase 5.9) parst das dokumentierte
+`spool:<id>`-Klartextformat.
+
+importieren/zuordnen: laufen bereits generisch über
+`ImportTagDefinition`/`AssignTag` (Legacy ist in beiden Whitelists
+enthalten).
+
+Sichere physische Migration (optional): bereits vollständig über die
+bestehende Schreib-Pipeline abgedeckt, ohne eigene Aktion. In
+`TagParsers.cpp` setzt `LegacyTagParser::parse` bei erkanntem
+`spool:<id>`-Payload `safeToRewriteAsFilamentStation = true` -- die einzige
+aktuell verifizierte, sicher ersetzbare Legacy-Darstellung. Zusammen mit
+`TagWritePolicy::capabilitiesFor` (`canWriteFilamentStationPayload` für
+Legacy nur bei beschreibbarem nativem NTAG *und*
+`safeToRewriteAsFilamentStation`) liefert `assignmentEffect()` dann
+`MappingAndPayload`, wodurch der reguläre `AssignTag`-Ablauf ("zuordnen")
+den physischen Tag automatisch und sicher auf `spoolman:<id>` migriert --
+kein separater Button/Screen nötig. Der in der EEZ-UI vorhandene, aber
+bewusst unverdrahtete und ausgeblendete `tag_legacy_migrate`-Button ist
+dadurch obsolet (Migration passiert transparent als Teil von "zuordnen"),
+nicht vergessen. Ist die Hardwarevoraussetzung nicht erfüllt (kein
+beschreibbarer nativer NTAG), bleibt es bei `MappingOnly`
+(`extra.tag`-Zuordnung ohne physisches Schreiben) -- daher "optional".
+
+Build/Tests/Flash entsprechen unverändert dem in Phase 9.4 verifizierten
+Stand (`pio run` 0 Warnings, `pio test -e native-spoolman-tests` 44/44,
+Firmware bereits auf dem Gerät).
 
 ## 9.7 Unknown
 
