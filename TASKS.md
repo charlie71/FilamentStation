@@ -1021,17 +1021,30 @@ ist nicht Teil dieser Phase.
 
 ## 9.1 Hauptworkflow
 
-* [ ] Spoolman-Verbindung prüfen
-* [ ] Drucker auswählen
-* [ ] AMS auswählen
-* [ ] NFC/RFID lesen
-* [ ] `extra.tag` Lookup
-* [ ] Staging
-* [ ] Gewicht
-* [ ] Spoolman aktualisieren
-* [ ] Slot auswählen
-* [ ] Bambu konfigurieren
-* [ ] Ergebnis
+* [x] Spoolman-Verbindung prüfen
+* [x] Drucker auswählen
+* [x] AMS auswählen
+* [x] NFC/RFID lesen
+* [x] `extra.tag` Lookup
+* [x] Staging
+* [x] Gewicht
+* [x] Spoolman aktualisieren
+* [x] Slot auswählen
+* [x] Bambu konfigurieren
+* [x] Ergebnis
+
+Hinweis: Die meisten Teilschritte waren bereits aus früheren Phasen
+vollständig (Spoolman-Gate, Druckerwechsel 8.4, NFC 5.x, `extra.tag` 7.7,
+Staging/Gewicht 3.10/4.x/7.5, AssignTray-Backend 8.5). Die einzige echte
+Lücke im Hauptworkflow war "Slot auswählen" → "Bambu konfigurieren": Der
+`TraySelect`-Bildschirm hat im EEZ-Design keinen eigenen
+Bestätigen-Button, daher tat Antippen eines Slots bisher nur eine
+vorläufige, nie committete Auswahl. `trayTargetClicked` löst jetzt direkt
+`ConfigureSlotFromStaging` aus (Tap = Auswahl + Commit, analog zur
+Drucker-Auswahl anderswo in der App). Die Zuordnung zum externen Slot
+("Extern"-Taste) wird von `AppTask`/`BambuTask` weiterhin korrekt
+abgelehnt, da für den externen Slot kein verifiziertes Bambu-Kommando
+existiert (siehe docs/bambu-protocol.md).
 
 ## 9.2 Native Tags
 

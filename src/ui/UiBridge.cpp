@@ -168,6 +168,8 @@ bool sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
                 std::int32_t value = 0, rtos::SpoolId spoolId = 0,
                 const char* text = nullptr);
 void updateWeightDisplays();
+void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
+                         std::uint8_t trayId, bool selected);
 
 constexpr const char* kAdvancedNumberMap[] = {
     "1", "2", "3", "Entf.", "\n", "4", "5", "6", "Abbr.", "\n",
@@ -1401,11 +1403,16 @@ void trayActionClicked(lv_event_t* event) {
 }
 
 void trayTargetClicked(lv_event_t* event) {
+  // TraySelect has no separate confirm control in the EEZ design (only
+  // Cancel) -- tapping a slot both highlights it (optimistic, local) and
+  // commits it (ConfigureSlotFromStaging, AppTask-side), matching how
+  // e.g. the printer picker commits on tap elsewhere in this app.
   const auto trayId = static_cast<std::uint8_t>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   const std::uint8_t amsId = trayId == 0xFF ? 0xFF : currentAmsId;
-  sendAction(rtos::UiActionType::SelectTray, currentPrinterId, amsId, trayId,
-             2, stagingState.spoolId);
+  updateTraySelection(currentPrinterId, amsId, trayId, true);
+  sendAction(rtos::UiActionType::ConfigureSlotFromStaging, currentPrinterId,
+             amsId, trayId, 0, stagingState.spoolId);
 }
 
 void tagActionClicked(lv_event_t* event) {
