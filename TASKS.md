@@ -1244,10 +1244,35 @@ Firmware bereits auf dem Gerät).
 
 ## 9.7 Unknown
 
-* [ ] UID
-* [ ] extra.tag Lookup
-* [ ] zuordnen
-* [ ] physischer Tag unverändert
+* [x] UID
+* [x] extra.tag Lookup
+* [x] zuordnen
+* [x] physischer Tag unverändert
+
+Hinweis: UID/extra.tag Lookup/zuordnen/Schreibschutz waren bereits
+generisch abgedeckt -- Unknown definiert kein eigenes Identitätsfeld
+(UID-basierte `TagIdentitySource::NfcUid`), durchläuft die generische
+`FindSpoolByTag`-Auflösung (nicht "nativ") und nutzt für "zuordnen"
+(`TagUnknown`-Bildschirm, unzugeordneter Fall) den generischen
+`AssignTag`-Ablauf. `TagWritePolicy::capabilitiesFor` setzt für
+`TagFormat::Unknown` keine Schreib-/Löschfähigkeit, wodurch
+`assignmentEffect`/`removalEffect` immer `MappingOnly` liefern -- der
+physische Tag bleibt also strukturell garantiert unverändert.
+
+Wie in 9.3 angekündigt bestand aber auch hier der identische
+Staging-Bug: Der `Unknown`-Zweig in AppTask.cpp zeigt für einen bereits
+per UID zugeordneten Tag ebenfalls `TagResult` an (mit
+Quick/Advanced-Wiegen-Buttons), hat die aufgelöste Spule aber nie mit
+`requestStagingSpool()` ins Staging geladen. Obwohl die Checkliste für
+9.7 kein eigenes "Staging"/"wiegen"-Item führt, ist dieser Zweig Teil des
+"Unknown"-Workflows und wurde mit demselben Muster wie 9.3/9.4 behoben
+(`requestStagingSpool` gegen `pendingStagingSpoolRequestId == 0`
+abgesichert), da ein kaputter Wiege-Pfad sonst keinen echten
+Hardware-Test des zugeordneten Falls erlaubt hätte.
+
+Build (`pio run`, 0 Warnings) und native Tests (`pio test -e
+native-spoolman-tests`, 44/44) erfolgreich, Firmware auf das Gerät
+geflasht.
 
 ## 9.8 Staging
 

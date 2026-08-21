@@ -3298,6 +3298,15 @@ void appTask(void* parameter) {
             previousScreen = currentScreen;
             currentScreen = result.screenId;
             sendUiCommand(ctx, result, "AppTask: unknown mapped result overflow");
+
+            // Staging (Phase 9.7): same gap/fix as the Phase 9.3/9.4 mapped-
+            // spool TagResult paths -- stagingActionClicked (Schnell/
+            // Erweitert wiegen) reads stagingState.spoolId/
+            // stagingSpoolState, not command.spoolId.
+            if (pendingStagingSpoolRequestId == 0) {
+              if (requestStagingSpool(ctx, event.requestId, mappedSpool))
+                pendingStagingSpoolRequestId = event.requestId;
+            }
           } else {
             char uid[32]{};
             formatTagUid(currentTag, uid, sizeof(uid));
