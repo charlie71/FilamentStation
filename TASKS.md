@@ -1413,17 +1413,66 @@ geflasht.
 
 ## 9.10 Zustandsautomat
 
-* [ ] Spoolman Required
-* [ ] Screens
-* [ ] Übergänge
-* [ ] Zurück
-* [ ] Abbruch
-* [ ] requestId
-* [ ] printerId
-* [ ] stale Responses
-* [ ] doppelte Aktionen
-* [ ] Tag entfernt
-* [ ] TagIdentity geändert
+* [x] Spoolman Required
+* [x] Screens
+* [x] Übergänge
+* [x] Zurück
+* [x] Abbruch
+* [x] requestId
+* [x] printerId
+* [x] stale Responses
+* [x] doppelte Aktionen
+* [x] Tag entfernt
+* [x] TagIdentity geändert
+
+Hinweis: Verifikations-/Härtungsphase über den gesamten in 9.1-9.9
+gebauten Zustandsautomaten (`pendingTagAssignment`, `pendingTagRemoval`,
+`pendingSlotAssignment`, `pendingStagingSpool*`, die diversen
+`pending*Confirmation`-Flags), kein Neubau. Ergebnis, Punkt für Punkt:
+
+* **requestId/printerId/stale Responses**: `nextRequestId` (UiBridge.cpp)
+  ist ein einziger, für die gesamte App durchlaufender Zähler -- jede
+  Antwort wird ausschließlich über `event.requestId ==
+  pending*.requestId` zugeordnet, das schließt Kreuz-Drucker-Verwechslungen
+  strukturell mit aus (eine andere Anfrage hat immer eine andere
+  requestId). Für Bambu-Events zusätzlich der schon in 8.3/9.1 gebaute
+  Fokus-Gate (`event.printerId != printerCollection.activePrinterId`) für
+  Header/AMS-Sync, während Slot-Zuordnungsergebnisse bewusst unabhängig
+  vom fokussierten Drucker angezeigt werden (Kommentar an Ort und Stelle:
+  der Nutzer wartet explizit auf genau diesen Vorgang).
+* **doppelte Aktionen**: alle Start-Punkte (`AssignTag`,
+  `RemoveTagAssignment`, `ConfigureSlotFromStaging`/`ReapplySlot`,
+  `ResetSlot`/`UntagSlot`, die neue `SelectingSpool`-Stufe für "Manuell")
+  prüfen `stage != None`, bevor sie eine neue Anfrage öffnen.
+* **Tag entfernt / TagIdentity geändert**: bereits aus Phase 7.7 sehr
+  gründlich abgedeckt -- `NfcTagRemoved` unterscheidet nach exaktem
+  Pending-Stage, welche Teil-Rückmeldung (Mapping/Payload) noch zu retten
+  ist; `assignmentTagMatches`/`removalTagMatches` werden unmittelbar vor
+  jedem physischen Schreib-/Löschvorgang erneut geprüft und fangen damit
+  auch den Fall ab, dass zwischenzeitlich ein anderer Tag aufgelegt wurde,
+  ohne dass ein sauberes Removed-Event dazwischen kam (`currentTag` wird
+  bei jedem `NfcTagRead` unbedingt überschrieben).
+* **Abbruch**: hierbei die einzige echte Lücke gefunden und behoben. Der
+  generische `Cancel`-Handler (der auch den gemeinsamen
+  `overlayCancel`-Button aller ShowDialog-Overlays inkl. Spoolman-
+  Spulenpicker bedient) setzte `pendingStagingSpoolSelection` nie zurück
+  -- ein Abbruch des Staging-Spulenpickers ließ das Flag auf `true`
+  stehen, wodurch der "Spule auswählen"-Button danach dauerhaft
+  wirkungslos blieb (der nächste Tastendruck hielt den Picker
+  fälschlich für bereits offen und tat mangels ausgewählter Spule gar
+  nichts). Derselbe Fehler bestand strukturell für die neue
+  `pendingSlotAssignment`-Stufe `SelectingSpool` (Phase 9.9 "Manuell").
+  Beide jetzt im `Cancel`-Handler zurückgesetzt.
+* **Screens/Übergänge/Zurück**: stichprobenartig für die neuen 9.9-Flows
+  geprüft (Slot-Ergebnisdialoge bleiben bewusst auf `TrayActions`, kein
+  Screen-Wechsel nötig; der Picker-Overlay-Backdrop blockiert Klicks auf
+  darunterliegende Screen-Buttons, wodurch `Back` waehrend eines offenen
+  Pickers ohnehin nicht erreichbar ist) -- keine weiteren Lücken
+  gefunden.
+
+Build (`pio run`, 0 Warnings) und native Tests (`pio test -e
+native-spoolman-tests`, 44/44) erfolgreich, Firmware auf das Gerät
+geflasht.
 
 ---
 

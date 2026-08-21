@@ -1650,6 +1650,14 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       pendingServerReassignmentConfirmation = false;
       pendingUnlinkConfirmation = false;
       pendingClearStagingConfirmation = false;
+      // Zustandsautomat (Phase 9.10): beide Picker-Flags haengen nur an
+      // einem UI-seitigen Overlay ohne eigene Netzwerkanfrage in Flug --
+      // ein Abbruch muss sie zuruecksetzen, sonst bleibt der jeweilige
+      // Button danach dauerhaft wirkungslos (naechster Tastendruck haelt
+      // den Picker faelschlich fuer bereits offen).
+      pendingStagingSpoolSelection = false;
+      if (pendingSlotAssignment.stage == SlotAssignmentStage::SelectingSpool)
+        pendingSlotAssignment = {};
       if (pendingTagRemoval.stage == TagRemovalStage::AwaitingConfirmation ||
           pendingTagRemoval.stage == TagRemovalStage::LookingUp)
         pendingTagRemoval = {};
