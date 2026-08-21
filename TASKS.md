@@ -948,13 +948,21 @@ Verifikation.
 
 ## 8.4 Druckerwechsel
 
-* [ ] Zustand sichern
-* [ ] wechseln
-* [ ] Header
-* [ ] AMS
-* [ ] Staging erhalten
-* [ ] stale Responses
-* [ ] printerId prüfen
+* [x] Zustand sichern
+* [x] wechseln
+* [x] Header
+* [x] AMS
+* [x] Staging erhalten
+* [x] stale Responses
+* [x] printerId prüfen
+
+Hinweis: `AppTask` führt jetzt eine echte `printerCollection`
+(`models::PrinterStateCollection`), aktualisiert sie aus den Bambu-Events aus
+Phase 8.3 und blendet Header/AMS-Updates für nicht mehr fokussierte Drucker
+aus (stale Responses). Das Laden des Druckerbestands aus `bambu.json` sowie
+automatisches Verbinden beim Wechsel sind nicht Teil von Phase 8.4 und bleiben
+offen (Settings-GUI/Workflow-Phasen). Die UI-Rendering-Seite (`UiBridge.cpp`)
+verwendet für Header/AMS-Anzeige weiterhin ihre eigenen Mock-Daten.
 
 ## 8.5 AMS-Zuordnung
 

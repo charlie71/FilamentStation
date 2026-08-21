@@ -9,6 +9,7 @@
 #include "config/ScaleConfig.h"
 #include "nfc/TagWritePolicy.h"
 #include "models/AppState.h"
+#include "models/PrinterState.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/SpoolmanUrl.h"
@@ -33,6 +34,13 @@ std::uint32_t wifiPortalRequestId = 0;
 models::SpoolmanAppState currentSpoolmanAppState =
     models::SpoolmanAppState::SpoolmanUnavailable;
 char currentSpoolmanServerVersion[32] = "-";
+// Runtime Bambu printer state (Phase 8.4). Keyed by printerId; entries are
+// never discarded on a printer switch (Zustand sichern), so background
+// printers keep their last-known data. `activePrinterId` is the printer
+// currently shown on Home/Header/AMS ("wechseln"); PrinterState::isActive is
+// kept in sync with it. Loading the configured printer roster from
+// bambu.json and auto-connecting are not part of Phase 8.4 and remain open.
+models::PrinterStateCollection printerCollection{};
 constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;
 constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;
 constexpr std::uint32_t kNfcMappingLoadRequestId = 0x4E464302U;
@@ -695,6 +703,47 @@ bool sendNetworkCommand(rtos::RtosContext& ctx,
           "Command enqueue failed queue=network command=%u",
           static_cast<unsigned>(command.type));
   return false;
+}
+
+bool sendBambuCommand(rtos::RtosContext& ctx,
+                      const rtos::BambuCommand& command) {
+  if (xQueueSend(ctx.bambuCommandQueue, &command, pdMS_TO_TICKS(1000)) ==
+      pdPASS) {
+    return true;
+  }
+  FS_LOGW(services::LogComponent::App,
+          "Command enqueue failed queue=bambu command=%u",
+          static_cast<unsigned>(command.type));
+  return false;
+}
+
+// Looks up printerId in printerCollection, inserting a fresh entry if this
+// is the first time this printer has been seen. Never removes entries, so
+// callers rely on this to keep background printers' state across a switch.
+models::PrinterState& printerEntry(rtos::PrinterId printerId) {
+  models::PrinterState* existing =
+      models::findPrinter(printerCollection, printerId);
+  if (existing != nullptr) return *existing;
+
+  if (printerCollection.printerCount >= models::kMaximumPrinters) {
+    // Defensive fallback; not expected with the current kMaximumPrinters
+    // cap of 4 concurrent printers (Phase 8.1/8.3).
+    FS_LOGW(services::LogComponent::App,
+            "Printer collection full; reusing last slot printer_id=%u",
+            static_cast<unsigned>(printerId));
+    models::PrinterState& reused =
+        printerCollection.printers[models::kMaximumPrinters - 1];
+    reused = models::PrinterState{};
+    reused.printerId = printerId;
+    return reused;
+  }
+
+  models::PrinterState& entry =
+      printerCollection.printers[printerCollection.printerCount];
+  entry = models::PrinterState{};
+  entry.printerId = printerId;
+  ++printerCollection.printerCount;
+  return entry;
 }
 
 void sendScaleUiState(rtos::RtosContext& ctx, std::uint32_t requestId = 0) {
@@ -1558,7 +1607,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       return;
     }
 
-    case rtos::UiActionType::SelectPrinter:
+    case rtos::UiActionType::SelectPrinter: {
       if (action.value == 1) {
         previousScreen = currentScreen;
         currentScreen = rtos::UiScreenId::PrinterSelect;
@@ -1568,17 +1617,55 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                       "AppTask: printer-select command queue overflow");
         return;
       }
+      // printerId pruefen: the printer roster itself is not yet loaded into
+      // AppTask (open gap, see printerCollection comment above), so this is
+      // limited to rejecting the invalid-id sentinel.
+      if (!models::isValidPrinterId(action.printerId)) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Drucker w\xC3\xA4hlen", "Ung\xC3\xBCltige Drucker-ID.");
+        return;
+      }
+
+      // wechseln + Zustand sichern: printerCollection keeps every printer's
+      // last-known state keyed by id; switching only moves which entry is
+      // marked active, it never clears or overwrites another printer's
+      // data. Staging/Quick-/Advanced-Weight state below is likewise left
+      // untouched on purpose (Staging erhalten).
+      models::PrinterState* previousActive = models::findPrinter(
+          printerCollection, printerCollection.activePrinterId);
+      if (previousActive != nullptr) previousActive->isActive = false;
+      models::PrinterState& target = printerEntry(action.printerId);
+      target.isActive = true;
+      printerCollection.activePrinterId = action.printerId;
+
+      // Best-effort refresh. Harmless no-op today if BambuTask has no
+      // connection for this printer yet: loading printer credentials from
+      // bambu.json and connecting automatically is not part of Phase 8.4.
+      rtos::BambuCommand statusRequest{};
+      statusRequest.type = rtos::BambuCommandType::RequestStatus;
+      statusRequest.requestId = action.requestId;
+      statusRequest.printerId = action.printerId;
+      sendBambuCommand(ctx, statusRequest);
+
       command.type = rtos::UiCommandType::UpdateHeader;
       if (!sendUiCommand(ctx, command,
                          "AppTask: header update command queue overflow")) {
         return;
       }
+      rtos::UiCommand amsCommand = command;
+      amsCommand.type = rtos::UiCommandType::UpdateAmsOverview;
+      amsCommand.amsId = target.activeAmsId;
+      sendUiCommand(ctx, amsCommand,
+                    "AppTask: AMS overview command queue overflow");
+
       command.type = rtos::UiCommandType::ShowScreen;
       command.screenId = previousScreen;
       currentScreen = previousScreen;
       sendUiCommand(ctx, command,
                     "AppTask: printer return command queue overflow");
       return;
+    }
 
     case rtos::UiActionType::OpenSettings:
       if (currentScreen == rtos::UiScreenId::SettingsHome) {
@@ -3578,6 +3665,64 @@ void appTask(void* parameter) {
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                   rtos::UiOverlayKind::Error, event.requestId,
                   "Spoolman nicht erreichbar", event.text);
+    } else if (event.type == rtos::AppEventType::BambuConnected ||
+               event.type == rtos::AppEventType::BambuDisconnected ||
+               event.type == rtos::AppEventType::BambuUpdate ||
+               event.type == rtos::AppEventType::BambuTestResult ||
+               event.type == rtos::AppEventType::BambuError) {
+      // BambuTestResult carries an empty PrinterState (ephemeral connection
+      // test, see BambuTask::handleTestConnection) and must not overwrite a
+      // tracked printer's live data.
+      if (event.type != rtos::AppEventType::BambuTestResult &&
+          models::isValidPrinterId(event.printerId)) {
+        models::PrinterState& entry = printerEntry(event.printerId);
+        if (event.type == rtos::AppEventType::BambuError) {
+          entry.connectionState = models::PrinterConnectionState::Error;
+        } else {
+          const bool wasActive =
+              printerCollection.activePrinterId == event.printerId;
+          entry = event.printerState;
+          entry.printerId = event.printerId;
+          entry.isActive = wasActive;
+        }
+      }
+
+      if (event.type == rtos::AppEventType::BambuError) {
+        // Printer connectivity is routinely absent (LAN-only, not always
+        // reachable/configured yet); log for diagnosis instead of an
+        // intrusive dialog.
+        FS_LOGW(services::LogComponent::App,
+                "Bambu request failed printer_id=%u error=%s",
+                static_cast<unsigned>(event.printerId), event.text);
+      } else {
+        FS_LOGD(services::LogComponent::App,
+                "Bambu event received type=%u printer_id=%u",
+                static_cast<unsigned>(event.type),
+                static_cast<unsigned>(event.printerId));
+      }
+
+      // Stale Responses: printerCollection above is always kept current for
+      // whichever printer the event is about, but the visible Header/AMS
+      // overview only refreshes if that printer is still the one in focus;
+      // otherwise this is a background update about a printer the user has
+      // since switched away from.
+      if (event.type == rtos::AppEventType::BambuTestResult ||
+          event.printerId != printerCollection.activePrinterId) {
+        continue;
+      }
+      if (event.type == rtos::AppEventType::BambuConnected ||
+          event.type == rtos::AppEventType::BambuUpdate ||
+          event.type == rtos::AppEventType::BambuDisconnected) {
+        rtos::UiCommand header{};
+        header.type = rtos::UiCommandType::UpdateHeader;
+        header.printerId = event.printerId;
+        sendUiCommand(ctx, header, "AppTask: Bambu header update overflow");
+        rtos::UiCommand amsOverview{};
+        amsOverview.type = rtos::UiCommandType::UpdateAmsOverview;
+        amsOverview.printerId = event.printerId;
+        sendUiCommand(ctx, amsOverview,
+                      "AppTask: Bambu AMS overview update overflow");
+      }
     } else if (event.type == rtos::AppEventType::UiCommunicationTest) {
       uiStartupReady = true;
       publishSpoolmanAppState(ctx, event.requestId);
