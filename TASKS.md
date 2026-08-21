@@ -1161,13 +1161,35 @@ geflasht.
 
 ## 9.5 OpenTag3D
 
-* [ ] TagIdentity
-* [ ] extra.tag Lookup
-* [ ] Definition
-* [ ] Match
-* [ ] zuordnen
-* [ ] importieren
-* [ ] Staging
+* [x] TagIdentity
+* [x] extra.tag Lookup
+* [x] Definition
+* [x] Match
+* [x] zuordnen
+* [x] importieren
+* [x] Staging
+
+Hinweis: Kein Code-Bug mehr offen, reine Verifikation. OpenTag3D teilt
+in AppTask.cpp denselben Codezweig wie OpenPrintTag
+(`currentTag.format == OpenPrintTag || OpenTag3D`), daher wurde der
+Staging-Fix aus 9.4 (`requestStagingSpool()` beim Anzeigen von TagResult
+für eine bereits zugeordnete Spule) strukturell bereits mit erledigt.
+TagIdentity/extra.tag Lookup/Match/zuordnen/importieren laufen ebenfalls
+über dieselbe generische, formatunabhängige Pipeline wie bei OpenPrintTag:
+Laut Primärspezifikation (docs/opentag3d.md) definiert OpenTag3D kein
+eigenes Identitätsfeld, `TagParserRegistry` verwendet daher konsequent die
+NFC-UID als Identity. Definition-Parsing (`OpenTag3D.cpp`, Core/Extended
+Felder, Byte-Layout aus `spec.json`) stammt bereits vollständig aus Phase
+5.x und ist durch den nativen Testvektor abgedeckt.
+
+Unverändert aus Phase 5.x: Der PN532 unterstützt nur ISO/IEC 14443A
+(NTAG213/215/216, Core-Format); die SLIX2-Variante für Extended-Felder
+(ISO/IEC 15693) kann mit der aktuellen Hardware nicht gelesen werden
+(dokumentiertes Hardwarelimit, kein Software-Bug).
+
+Keine Codeänderung in diesem Schritt -- Build/Tests/Flash entsprechen dem
+bereits in Phase 9.4 verifizierten Stand (`pio run` 0 Warnings, `pio test
+-e native-spoolman-tests` 44/44, Firmware bereits auf dem Gerät).
 
 ## 9.6 Legacy
 
