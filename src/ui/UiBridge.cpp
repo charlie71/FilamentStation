@@ -163,6 +163,7 @@ filament_station::models::SpoolmanAppState spoolmanAppState =
     filament_station::models::SpoolmanAppState::SpoolmanUnavailable;
 bool currentTagCanAssign = false;
 bool currentTagCanRemove = false;
+bool diagnosticsRefreshedThisSession = false;
 
 bool sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
                 std::uint8_t amsId = 0, std::uint8_t trayId = 0,
@@ -2777,12 +2778,22 @@ void showScreen(rtos::UiScreenId screenId) {
       break;
     case rtos::UiScreenId::SettingsDiagnostics: {
       char text[72];
-      std::snprintf(text, sizeof(text), "Heap: %lu Bytes frei",
-                    static_cast<unsigned long>(ESP.getFreeHeap()));
+      std::snprintf(text, sizeof(text), "Heap: %lu B frei (min. %lu B)",
+                    static_cast<unsigned long>(ESP.getFreeHeap()),
+                    static_cast<unsigned long>(ESP.getMinFreeHeap()));
       lv_label_set_text(objects.diagnostics_settings_heap, text);
-      std::snprintf(text, sizeof(text), "PSRAM: %lu Bytes frei",
-                    static_cast<unsigned long>(ESP.getFreePsram()));
+      std::snprintf(text, sizeof(text), "PSRAM: %lu B frei (min. %lu B)",
+                    static_cast<unsigned long>(ESP.getFreePsram()),
+                    static_cast<unsigned long>(ESP.getMinFreePsram()));
       lv_label_set_text(objects.diagnostics_settings_psram, text);
+      // Task/Queue/Event-Bit-Diagnose kommt nur ueber den echten AppTask-
+      // Roundtrip (siehe UpdateSettings/RefreshDiagnostics-Handling unten);
+      // ohne bisherigen Roundtrip diese Sitzung neutralen Hinweis statt der
+      // frueheren "Mock"-Platzhalterbeschriftung zeigen.
+      if (!diagnosticsRefreshedThisSession) {
+        lv_label_set_text(objects.diagnostics_settings_tasks,
+                          "Aktualisieren antippen f\xC3\xBCr Task-Diagnose");
+      }
       loadScreen(SCREEN_ID_SCR_SETTINGS_DIAGNOSTICS);
       break;
     }
@@ -3305,14 +3316,20 @@ void processUiCommand(const rtos::UiCommand& command) {
       } else if (command.value == 300 + static_cast<std::int32_t>(
                                             rtos::UiActionType::RefreshDiagnostics)) {
         char text[72];
-        std::snprintf(text, sizeof(text), "Heap: %lu Bytes frei",
-                      static_cast<unsigned long>(ESP.getFreeHeap()));
+        std::snprintf(text, sizeof(text), "Heap: %lu B frei (min. %lu B)",
+                      static_cast<unsigned long>(ESP.getFreeHeap()),
+                      static_cast<unsigned long>(ESP.getMinFreeHeap()));
         lv_label_set_text(objects.diagnostics_settings_heap, text);
-        std::snprintf(text, sizeof(text), "PSRAM: %lu Bytes frei",
-                      static_cast<unsigned long>(ESP.getFreePsram()));
+        std::snprintf(text, sizeof(text), "PSRAM: %lu B frei (min. %lu B)",
+                      static_cast<unsigned long>(ESP.getFreePsram()),
+                      static_cast<unsigned long>(ESP.getMinFreePsram()));
         lv_label_set_text(objects.diagnostics_settings_psram, text);
-        lv_label_set_text(objects.diagnostics_settings_tasks,
-                          "Tasks: 8 | Diagnose aktualisiert");
+        // Vollstaendiger Bericht (Stack/Runtime-Status je Task, Queues,
+        // Event-Bits) steht als strukturierte Zeilen im Log (siehe
+        // AppTask::logTaskDiagnostics, Phase 10.1); command.text traegt nur
+        // die Kurzzusammenfassung fuer dieses kleine Label.
+        lv_label_set_text(objects.diagnostics_settings_tasks, command.text);
+        diagnosticsRefreshedThisSession = true;
       } else if (command.value == 300 + static_cast<std::int32_t>(
                                             rtos::UiActionType::CheckFirmwareUpdate)) {
         lv_label_set_text(objects.firmware_settings_status, command.text);

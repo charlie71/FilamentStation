@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <array>
+#include <Arduino.h>
 #include <ArduinoJson.h>
 #include "config/NfcConfig.h"
 #include "config/ScaleConfig.h"
@@ -1496,6 +1497,139 @@ void showHomeWhenStartupReady(rtos::RtosContext& ctx) {
   }
 }
 
+const char* taskDiagnosticStateName(eTaskState state) {
+  switch (state) {
+    case eRunning: return "running";
+    case eReady: return "ready";
+    case eBlocked: return "blocked";
+    case eSuspended: return "suspended";
+    case eDeleted: return "deleted";
+    default: return "invalid";
+  }
+}
+
+struct DiagnosticsSummary {
+  std::uint32_t worstStackFreeBytes = UINT32_MAX;
+  char worstStackTaskName[16]{};
+  UBaseType_t worstQueueWaiting = 0;
+  UBaseType_t worstQueueCapacity = 0;
+  char worstQueueName[16]{};
+  EventBits_t eventBits = 0;
+};
+
+// Task-Diagnose (Phase 10.1): das EEZ-Layout hat nur ein einzelnes,
+// 464x40px kleines Label fuer diese Daten -- zu wenig fuer eine
+// detaillierte Aufschluesselung aller 9 Tasks/9 Queues. Der vollstaendige
+// Bericht (jede Task/Queue einzeln, alle Event-Bits) geht daher als
+// strukturierte Logzeilen an FS_LOGI (per Seriell/Logdatei einsehbar,
+// gleiches Muster wie die erweiterte Bambu-Kommunikationsprotokollierung);
+// die Rueckgabe liefert nur die fuer die Bildschirmanzeige relevante
+// Zusammenfassung (jeweils der knappste Task/die vollste Queue).
+DiagnosticsSummary logTaskDiagnostics(rtos::RtosContext& ctx) {
+  // static: AppTask processes exactly one UI action at a time (single
+  // FreeRTOS consumer loop, never re-entrant), so these locals do not need
+  // per-call stack storage -- kept off AppTask's stack for the same reason
+  // ScaleTask/NfcTask's AppEvent locals were made static earlier this
+  // project (repeated stack-overflow crashes from deeply nested,
+  // moderately large call-local data).
+  static DiagnosticsSummary summary{};
+  summary = {};
+
+  struct TaskEntry {
+    const char* name;
+    TaskHandle_t handle;
+    std::uint32_t configuredStackBytes;
+  };
+  static const std::array<TaskEntry, 9> tasks{{
+      {"LoggingTask", ctx.loggingTask, config::kLoggingTask.stackSize},
+      {"UiTask", ctx.uiTask, config::kUiTask.stackSize},
+      {"AppTask", ctx.appTask, config::kAppTask.stackSize},
+      {"ScaleTask", ctx.scaleTask, config::kScaleTask.stackSize},
+      {"NfcTask", ctx.nfcTask, config::kNfcTask.stackSize},
+      {"StorageTask", ctx.storageTask, config::kStorageTask.stackSize},
+      {"NetworkTask", ctx.networkTask, config::kNetworkTask.stackSize},
+      {"SpoolmanTask", ctx.spoolmanTask, config::kSpoolmanTask.stackSize},
+      {"BambuTask", ctx.bambuTask, config::kBambuTask.stackSize},
+  }};
+  for (const auto& task : tasks) {
+    if (task.handle == nullptr) continue;
+    // uxTaskGetStackHighWaterMark() liefert auf dem ESP32-Xtensa-Port Bytes,
+    // da StackType_t dort uint8_t ist (anders als auf vielen 32-Bit-Ports,
+    // wo es Worte sind) -- keine Umrechnung noetig.
+    const std::uint32_t freeBytes =
+        static_cast<std::uint32_t>(uxTaskGetStackHighWaterMark(task.handle));
+    const eTaskState state = eTaskGetState(task.handle);
+    FS_LOGI(services::LogComponent::Rtos,
+            "Task diagnostics name=%s state=%s stack_free_bytes=%lu "
+            "stack_configured_bytes=%lu",
+            task.name, taskDiagnosticStateName(state),
+            static_cast<unsigned long>(freeBytes),
+            static_cast<unsigned long>(task.configuredStackBytes));
+    if (freeBytes < summary.worstStackFreeBytes) {
+      summary.worstStackFreeBytes = freeBytes;
+      std::snprintf(summary.worstStackTaskName,
+                    sizeof(summary.worstStackTaskName), "%s", task.name);
+    }
+  }
+
+  struct QueueEntry {
+    const char* name;
+    QueueHandle_t handle;
+    UBaseType_t configuredLength;
+  };
+  static const std::array<QueueEntry, 9> queues{{
+      {"AppEvent", ctx.appEventQueue, config::kAppEventQueueLength},
+      {"UiCommand", ctx.uiCommandQueue, config::kUiCommandQueueLength},
+      {"Scale", ctx.scaleCommandQueue, config::kServiceCommandQueueLength},
+      {"Nfc", ctx.nfcCommandQueue, config::kServiceCommandQueueLength},
+      {"Storage", ctx.storageCommandQueue, config::kStorageCommandQueueLength},
+      {"Network", ctx.networkCommandQueue, config::kServiceCommandQueueLength},
+      {"Spoolman", ctx.spoolmanCommandQueue, config::kServiceCommandQueueLength},
+      {"Bambu", ctx.bambuCommandQueue, config::kServiceCommandQueueLength},
+      {"Log", ctx.logQueue, config::kLogQueueLength},
+  }};
+  for (const auto& queue : queues) {
+    if (queue.handle == nullptr) continue;
+    const UBaseType_t waiting = uxQueueMessagesWaiting(queue.handle);
+    FS_LOGI(services::LogComponent::Rtos,
+            "Queue diagnostics name=%s waiting=%u capacity=%u", queue.name,
+            static_cast<unsigned>(waiting),
+            static_cast<unsigned>(queue.configuredLength));
+    if (waiting > summary.worstQueueWaiting) {
+      summary.worstQueueWaiting = waiting;
+      summary.worstQueueCapacity = queue.configuredLength;
+      std::snprintf(summary.worstQueueName, sizeof(summary.worstQueueName),
+                    "%s", queue.name);
+    }
+  }
+
+  summary.eventBits = xEventGroupGetBits(ctx.systemEventGroup);
+  FS_LOGI(services::LogComponent::Rtos,
+          "Event bit diagnostics bits=0x%03lX ui_ready=%d sd_ready=%d "
+          "scale_ready=%d nfc_ready=%d wifi_connected=%d spoolman_ready=%d "
+          "bambu_ready=%d fatal_error=%d spoolman_tag_field_ready=%d",
+          static_cast<unsigned long>(summary.eventBits),
+          (summary.eventBits & rtos::EVENT_UI_READY) != 0,
+          (summary.eventBits & rtos::EVENT_SD_READY) != 0,
+          (summary.eventBits & rtos::EVENT_SCALE_READY) != 0,
+          (summary.eventBits & rtos::EVENT_NFC_READY) != 0,
+          (summary.eventBits & rtos::EVENT_WIFI_CONNECTED) != 0,
+          (summary.eventBits & rtos::EVENT_SPOOLMAN_READY) != 0,
+          (summary.eventBits & rtos::EVENT_BAMBU_READY) != 0,
+          (summary.eventBits & rtos::EVENT_FATAL_ERROR) != 0,
+          (summary.eventBits & rtos::EVENT_SPOOLMAN_TAG_FIELD_READY) != 0);
+
+  FS_LOGI(services::LogComponent::Rtos,
+          "Memory diagnostics heap_free=%lu heap_min_free=%lu "
+          "psram_free=%lu psram_min_free=%lu",
+          static_cast<unsigned long>(ESP.getFreeHeap()),
+          static_cast<unsigned long>(ESP.getMinFreeHeap()),
+          static_cast<unsigned long>(ESP.getFreePsram()),
+          static_cast<unsigned long>(ESP.getMinFreePsram()));
+
+  return summary;
+}
+
 void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
   rtos::UiCommand command{};
   command.requestId = action.requestId;
@@ -2175,10 +2309,26 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       return;
     }
 
+    case rtos::UiActionType::RefreshDiagnostics: {
+      const DiagnosticsSummary summary = logTaskDiagnostics(ctx);
+      command.type = rtos::UiCommandType::ShowToast;
+      command.value = 300 + static_cast<std::int32_t>(action.type);
+      std::snprintf(
+          command.text, sizeof(command.text),
+          "Min. Stack: %s %lu B | Volltste Queue: %s %u/%u | Bits: 0x%03lX",
+          summary.worstStackTaskName,
+          static_cast<unsigned long>(summary.worstStackFreeBytes),
+          summary.worstQueueName[0] != '\0' ? summary.worstQueueName : "-",
+          static_cast<unsigned>(summary.worstQueueWaiting),
+          static_cast<unsigned>(summary.worstQueueCapacity),
+          static_cast<unsigned long>(summary.eventBits));
+      sendUiCommand(ctx, command, "AppTask: diagnostics refresh queue overflow");
+      return;
+    }
+
     case rtos::UiActionType::StartWifiPortal:
     case rtos::UiActionType::ResetWifiCredentials:
     case rtos::UiActionType::PrepareRestart:
-    case rtos::UiActionType::RefreshDiagnostics:
     case rtos::UiActionType::CheckFirmwareUpdate: {
       if (action.type == rtos::UiActionType::StartWifiPortal) {
         rtos::NetworkCommand networkCommand{};
@@ -2219,7 +2369,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       if (action.type == rtos::UiActionType::StartWifiPortal) text = "WLAN-Konfiguration vorgemerkt";
       else if (action.type == rtos::UiActionType::ResetWifiCredentials) text = "WLAN-Zugangsdaten nicht zur\xC3\xBC" "ckgesetzt (Mock)";
       else if (action.type == rtos::UiActionType::PrepareRestart) text = "Neustart nicht ausgeführt (Mock)";
-      else if (action.type == rtos::UiActionType::RefreshDiagnostics) text = "Diagnose aktualisiert";
       else if (action.type == rtos::UiActionType::CheckFirmwareUpdate) text = "Update-Prüfung nicht ausgeführt (Mock)";
       std::snprintf(command.text, sizeof(command.text), "%s", text);
       sendUiCommand(ctx, command, "AppTask: settings mock action queue overflow");
@@ -4386,9 +4535,17 @@ void appTask(void* parameter) {
                       static_cast<int>(length), version);
       }
       publishSpoolmanAppState(ctx, event.requestId, serverVersion);
-      sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                  rtos::UiOverlayKind::Success, event.requestId,
-                  "Spoolman verbunden", event.text);
+      // The silent boot-time/apply-configuration health check (see
+      // SpoolmanTask::ApplyConfiguration) reuses this exact event type so
+      // EVENT_SPOOLMAN_READY/EVENT_SPOOLMAN_TAG_FIELD_READY get set without
+      // requiring the user to press "Verbindung testen" after every
+      // restart -- but it must not pop an unprompted "Spoolman verbunden"
+      // dialog on every startup the way a manual test intentionally does.
+      if (event.requestId != kSpoolmanLoadRequestId) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Success, event.requestId,
+                    "Spoolman verbunden", event.text);
+      }
       tryStartLegacyMigration(ctx);
     } else if (event.type == rtos::AppEventType::SpoolmanTagFieldReady) {
       publishSpoolmanAppState(ctx, event.requestId);
@@ -4519,9 +4676,16 @@ void appTask(void* parameter) {
         continue;
       }
       publishSpoolmanAppState(ctx, event.requestId);
-      sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                  rtos::UiOverlayKind::Error, event.requestId,
-                  "Spoolman nicht erreichbar", event.text);
+      // Silent boot-time/apply-configuration health check (see the matching
+      // guard in the SpoolmanConnected branch above) -- a failed automatic
+      // check must not pop an error dialog on every offline startup; the
+      // status bar/Settings screen already reflect "Spoolman: offline" via
+      // publishSpoolmanAppState().
+      if (event.requestId != kSpoolmanLoadRequestId) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Spoolman nicht erreichbar", event.text);
+      }
     } else if (event.type == rtos::AppEventType::BambuConnected ||
                event.type == rtos::AppEventType::BambuDisconnected ||
                event.type == rtos::AppEventType::BambuUpdate ||

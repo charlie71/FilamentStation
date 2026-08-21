@@ -20,7 +20,15 @@ models::SpoolmanSettings activeSettings{};
 void sendResult(rtos::RtosContext& ctx, rtos::AppEventType type,
                 std::uint32_t requestId, const char* text,
                 std::int32_t value = 0) {
-  rtos::AppEvent event{};
+  // static: AppEvent is a large (~3KB), single-threaded, non-reentrant
+  // message struct (SpoolmanTask processes exactly one command at a time).
+  // Kept off this task's stack for the same reason NfcTask/ScaleTask/
+  // AppTask's AppEvent locals were made static earlier this project --
+  // healthCheck() (called from ApplyConfiguration since the Spoolman
+  // auto-connect fix, i.e. on every boot now, not just on a rare manual
+  // "Verbindung testen") triggered a real stack-overflow reboot loop here.
+  static rtos::AppEvent event{};
+  event = rtos::AppEvent{};
   event.type = type;
   event.requestId = requestId;
   event.value = value;
@@ -327,7 +335,8 @@ bool catalogAvailable(rtos::RtosContext& ctx,
 void sendCatalogItem(rtos::RtosContext& ctx, rtos::AppEventType type,
                      std::uint32_t requestId, std::int32_t index,
                      std::uint32_t id, const char* text) {
-  rtos::AppEvent event{};
+  static rtos::AppEvent event{};
+  event = rtos::AppEvent{};
   event.type = type;
   event.requestId = requestId;
   event.value = index;
@@ -748,7 +757,8 @@ void importTagDefinition(rtos::RtosContext& ctx,
                "Spulenantwort enthaelt keine ID");
     return;
   }
-  rtos::AppEvent completed{};
+  static rtos::AppEvent completed{};
+  completed = rtos::AppEvent{};
   completed.type = rtos::AppEventType::SpoolmanImportCompleted;
   completed.requestId = command.requestId;
   completed.spoolId = spoolId;
@@ -770,7 +780,8 @@ void importTagDefinition(rtos::RtosContext& ctx,
 
 void sendSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
                std::int32_t index, const models::SpoolmanSpool& spool) {
-  rtos::AppEvent event{};
+  static rtos::AppEvent event{};
+  event = rtos::AppEvent{};
   event.type = rtos::AppEventType::SpoolmanResponse;
   event.requestId = requestId;
   event.value = index;
@@ -849,7 +860,8 @@ void loadSpools(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
       if (parseSpool(item, spool)) sendSpool(ctx, command.requestId, count++, spool);
     }
   }
-  rtos::AppEvent completed{};
+  static rtos::AppEvent completed{};
+  completed = rtos::AppEvent{};
   completed.type = rtos::AppEventType::SpoolmanResponse;
   completed.requestId = command.requestId;
   completed.value = -1;
@@ -887,7 +899,8 @@ void updateWeight(rtos::RtosContext& ctx,
   char error[128]{};
   if (!patchJson(url, settings.timeoutMs, request, response, error,
                  sizeof(error))) {
-    rtos::AppEvent failed{};
+    static rtos::AppEvent failed{};
+    failed = rtos::AppEvent{};
     failed.type = rtos::AppEventType::SpoolmanError;
     failed.requestId = command.requestId;
     failed.spoolId = update.spoolId;
@@ -908,7 +921,8 @@ void updateWeight(rtos::RtosContext& ctx,
       return;
     }
   }
-  rtos::AppEvent completed{};
+  static rtos::AppEvent completed{};
+  completed = rtos::AppEvent{};
   completed.type = rtos::AppEventType::SpoolmanWeightUpdated;
   completed.requestId = command.requestId;
   completed.spoolId = spool.id;
@@ -937,7 +951,8 @@ void executeTagClientCommand(rtos::RtosContext& ctx,
   if (!catalogAvailable(ctx, settings, command.requestId)) return;
   TaskSpoolmanTransport transport(settings);
   services::SpoolmanClient client(transport);
-  rtos::AppEvent event{};
+  static rtos::AppEvent event{};
+  event = rtos::AppEvent{};
   event.requestId = command.requestId;
   event.tagIdentity = command.tagIdentity;
 
@@ -1072,9 +1087,21 @@ void spoolmanTask(void* parameter) {
       continue;
     if (command.type == rtos::SpoolmanCommandType::ApplyConfiguration) {
       activeSettings = command.settings;
-      if (!activeSettings.enabled)
+      if (!activeSettings.enabled) {
         xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SPOOLMAN_READY |
                                                        rtos::EVENT_SPOOLMAN_TAG_FIELD_READY);
+      } else {
+        // Ohne diesen Aufruf blieben EVENT_SPOOLMAN_READY/
+        // EVENT_SPOOLMAN_TAG_FIELD_READY nach jedem Neustart ungesetzt, bis
+        // der Nutzer manuell "Verbindung testen" in den Einstellungen
+        // drueckt -- alle Tag-Zuordnungsaktionen blieben bis dahin
+        // faelschlich deaktiviert, obwohl Spoolman laengst erreichbar war.
+        // ApplyConfiguration wird sowohl beim Start (gespeicherte
+        // Einstellungen) als auch nach dem Speichern neuer Einstellungen
+        // gesendet -- healthCheck() nutzt dieselben command.settings/
+        // command.requestId wie ein manueller Verbindungstest.
+        healthCheck(ctx, command);
+      }
     } else if (command.type == rtos::SpoolmanCommandType::HealthCheck) {
       healthCheck(ctx, command);
     } else if (command.type == rtos::SpoolmanCommandType::EnsureTagExtraField ||

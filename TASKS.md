@@ -1480,12 +1480,60 @@ geflasht.
 
 ## 10.1 Task-Diagnose
 
-* [ ] Stack
-* [ ] Runtime
-* [ ] Queues
-* [ ] Event Bits
-* [ ] Heap
-* [ ] PSRAM
+* [x] Stack
+* [x] Runtime
+* [x] Queues
+* [x] Event Bits
+* [x] Heap
+* [x] PSRAM
+
+Hinweis: Der "Aktualisieren"-Button auf dem Diagnose-Bildschirm sendete
+`RefreshDiagnostics`, das in AppTask.cpp bisher im generischen
+Mock-Aktions-Block landete; das `diagnostics_settings_tasks`-Label zeigte
+immer den hartkodierten Text "Tasks: 8 | Diagnose aktualisiert". Fix:
+neue Funktion `logTaskDiagnostics()` in AppTask.cpp, die für alle 9 Tasks
+(`RtosContext` haelt bereits jedes `TaskHandle_t`) `uxTaskGetStackHighWaterMark`
+(Stack) und `eTaskGetState` (Runtime/Status: running/ready/blocked/
+suspended) ausliest, für alle 9 Queues `uxQueueMessagesWaiting` gegen die
+konfigurierte Laenge (Queues), sowie `xEventGroupGetBits` mit allen 9
+bekannten Bits einzeln decodiert (Event Bits), zusaetzlich Heap/PSRAM
+inkl. Minimalwert seit Boot (`ESP.getMinFreeHeap()`/`getMinFreePsram()`).
+
+Das EEZ-Layout hat für diese Daten nur ein einzelnes 464x40px-Label --
+zu wenig für eine Aufschlüsselung aller Tasks/Queues auf dem Bildschirm.
+Der vollständige Bericht (jede Task/Queue einzeln, alle Event-Bits,
+Speicher) geht daher als strukturierte `FS_LOGI`-Zeilen aus
+(`LogComponent::Rtos`, per Seriell/Logdatei einsehbar -- gleiches Muster
+wie die zuvor erweiterte Bambu-Kommunikationsprotokollierung); das kleine
+Label zeigt nur die für den Bildschirm relevante Kurzzusammenfassung
+(knappster Task-Stack + vollste Queue + Event-Bits als Hex). Wichtiges
+Detail: `uxTaskGetStackHighWaterMark()` liefert auf dem ESP32-Xtensa-Port
+Bytes (nicht Worte wie auf manchen anderen 32-Bit-Ports, da
+`StackType_t` dort `uint8_t` ist) -- verifiziert, keine falsche
+Umrechnung.
+
+Zusätzlich Heap/PSRAM-Labels um den Minimalwert seit Boot ergänzt (real,
+kein neuer Roundtrip nötig) und die veraltete "Mock bereit"-Platzhalter-
+beschriftung beim ersten Öffnen des Bildschirms durch einen neutralen
+Hinweis ersetzt, solange diese Sitzung noch nicht aktualisiert wurde.
+
+Build (`pio run`, 0 Warnings) und native Tests (`pio test -e
+native-spoolman-tests`, 44/44) erfolgreich, Firmware auf das Gerät
+geflasht.
+
+Nachtrag (Hardware-Test): mehrfaches, schnelles Drücken von
+"Aktualisieren" führte auf echter Hardware zu einem Stack-Overflow-Absturz
+in AppTask. `handleUiAction` ist eine sehr große, tief verzweigte
+Funktion; der zusätzliche Aufruf-Frame von `logTaskDiagnostics()` (zwei
+`std::array`-Locals + `DiagnosticsSummary`) hat einen bereits knappen
+Spitzenwert überschritten -- dasselbe Bugmuster wie die früheren
+ScaleTask-/NfcTask-Abstürze dieser Session. Fix: die drei Locals in
+`logTaskDiagnostics()` sind jetzt `static` (AppTask verarbeitet ohnehin
+nur eine UI-Aktion seriell, nie parallel/rekursiv, dieselbe Begründung
+wie beim ScaleTask/NfcTask-AppEvent-Fix), zusätzlich `kAppTask` in
+TaskConfig.h von 8192 auf 12288 Byte angehoben als Sicherheitsmarge.
+Build/Tests erneut erfolgreich, Firmware geflasht; Bestätigung durch
+erneuten Hardware-Test (mehrfaches Drücken) steht noch aus.
 
 ## 10.2 Speicher
 

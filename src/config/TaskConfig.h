@@ -18,8 +18,12 @@ constexpr BaseType_t kNoCoreAffinity = tskNO_AFFINITY;
 constexpr TaskSettings kStorageTask{"StorageTask", 8192, 2, kNoCoreAffinity};
 constexpr TaskSettings kLoggingTask{"LoggingTask", 2048, 1, kNoCoreAffinity};
 // AppEvent contains NFC parsing results and persisted UID mappings by value;
-// UI workflows additionally create fixed-size UiCommand objects.
-constexpr TaskSettings kAppTask{"AppTask", 8192, 3, kNoCoreAffinity};
+// UI workflows additionally create fixed-size UiCommand objects. Bumped from
+// 8192 after a real stack-overflow crash triggered by repeatedly pressing
+// the diagnostics "Aktualisieren" button (Phase 10.1): handleUiAction is a
+// very large, deeply branching function, and the added
+// logTaskDiagnostics() call frame pushed a marginal peak over the edge.
+constexpr TaskSettings kAppTask{"AppTask", 12288, 3, kNoCoreAffinity};
 // A 20-row spool picker makes LVGL's rounded-rectangle mask renderer recurse
 // more deeply while the scrollable result list is laid out and drawn. The
 // former 8 KiB stack reached its canary during that render pass.
@@ -44,8 +48,14 @@ constexpr TaskSettings kNfcTask{"NfcTask", 16384, 2, kNoCoreAffinity};
 constexpr TaskSettings kNetworkTask{"NetworkTask", 8192, 1, kNoCoreAffinity};
 // HTTPClient, TLS and ArduinoJson are used together for nested Spoolman spool
 // responses. Keep enough reserve for parsing without moving large objects
-// through the central AppEvent queue.
-constexpr TaskSettings kSpoolmanTask{"SpoolmanTask", 8192, 1, kNoCoreAffinity};
+// through the central AppEvent queue. Bumped from 8192 after a real
+// stack-overflow reboot loop in healthCheck()/sendResult(): the Spoolman
+// auto-connect fix made ApplyConfiguration call healthCheck() on every
+// boot (previously only a rare manual "Verbindung testen"), and several
+// stack-local rtos::AppEvent locals in this file (now made static, see
+// the matching AppTask/ScaleTask/NfcTask fixes) pushed the already-tight
+// HTTP+TLS+JSON peak over the edge.
+constexpr TaskSettings kSpoolmanTask{"SpoolmanTask", 10240, 1, kNoCoreAffinity};
 // TLS-Handshakes (mbedTLS) fuer bis zu vier gleichzeitige MQTT-Verbindungen
 // sowie ArduinoJson-Parsing der Statusberichte benoetigen mehr Reserve als
 // das fruehere Taskgeruest; Groessenordnung analog zu kSpoolmanTask.
