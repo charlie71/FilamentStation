@@ -908,11 +908,12 @@ void backClicked(lv_event_t*) {
 }
 
 void stagingClicked(lv_event_t*) {
-  const auto& staging = stagingState;
-  const rtos::SpoolId spoolId =
-      staging.printerId == currentPrinterId ? staging.spoolId : 0;
+  // Staging ist druckerunabhaengig -- siehe die gleiche Korrektur in
+  // updateHomeContent(); stagingState.printerId wird nirgends gesetzt und
+  // war dadurch immer 0, sodass hier immer spoolId=0 gesendet wurde statt
+  // der tatsaechlich gestagten Spule.
   sendAction(rtos::UiActionType::SelectStaging, currentPrinterId, 0, 0, 0,
-             spoolId);
+             stagingState.spoolId);
 }
 
 void amsClicked(lv_event_t* event) {
@@ -2337,7 +2338,14 @@ void updateHomeContent() {
 
   const auto& staging = stagingState;
   char stagingText[64];
-  if (staging.printerId == currentPrinterId && staging.spoolId != 0) {
+  // Staging ist druckerunabhaengig (die AMS-Zuordnung eines gestagten Spools
+  // erfolgt separat ueber ConfigureSlotFromStaging mit explizitem
+  // printerId) -- stagingState.printerId wird nirgends gesetzt und war
+  // dadurch strukturell immer 0, waehrend currentPrinterId nach der
+  // Druckerkonfiguration ungleich 0 ist. Der Vergleich war folglich immer
+  // falsch und zeigte den Staging-Button auf Home immer als leer an, auch
+  // wenn tatsaechlich eine Spule gestagt war.
+  if (staging.spoolId != 0) {
     std::snprintf(stagingText, sizeof(stagingText), "Staging\n%s #%lu\n%.0fg",
                   staging.material, static_cast<unsigned long>(staging.spoolId),
                   static_cast<double>(staging.remainingWeightGrams));

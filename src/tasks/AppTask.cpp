@@ -1076,6 +1076,33 @@ void connectAllEnabledPrinters(rtos::RtosContext& ctx) {
   }
 }
 
+// Spoolman auto-connect fix: SpoolmanTask::healthCheck() bails out
+// immediately with "Keine WLAN-Verbindung" if it runs before
+// EVENT_WIFI_CONNECTED is set -- a real, observed race at boot (Storage
+// can finish loading Spoolman settings, triggering the initial
+// ApplyConfiguration-driven health check, before WiFi finishes
+// connecting). Without a retry here that first failed attempt would be
+// the only one ever made, leaving every tag-assignment action disabled
+// for the rest of the session even though Spoolman is genuinely
+// reachable. HealthCheck is naturally idempotent (same as
+// connectAllEnabledPrinters above), so retrying on every later
+// WifiGotIp is safe; the EVENT_SPOOLMAN_READY guard stops retrying once
+// a check has actually succeeded.
+void retrySpoolmanHealthCheckIfNeeded(rtos::RtosContext& ctx) {
+  if ((xEventGroupGetBits(ctx.systemEventGroup) & rtos::EVENT_SPOOLMAN_READY) !=
+      0) {
+    return;
+  }
+  models::SpoolmanSettings settings{};
+  if (!spoolmanSettingsFromDraft(settings) || settings.serverUrl[0] == '\0')
+    return;
+  rtos::SpoolmanCommand spoolman{};
+  spoolman.type = rtos::SpoolmanCommandType::HealthCheck;
+  spoolman.requestId = kSpoolmanLoadRequestId;
+  spoolman.settings = settings;
+  xQueueSend(ctx.spoolmanCommandQueue, &spoolman, pdMS_TO_TICKS(1000));
+}
+
 // Looks up printerId in printerCollection, inserting a fresh entry if this
 // is the first time this printer has been seen. Never removes entries, so
 // callers rely on this to keep background printers' state across a switch.
@@ -3921,6 +3948,7 @@ void appTask(void* parameter) {
         // Retry in case WiFi came up after bambu.json finished loading
         // (Connect is idempotent, see connectAllEnabledPrinters).
         connectAllEnabledPrinters(ctx);
+        retrySpoolmanHealthCheckIfNeeded(ctx);
       }
 
       if (event.type == rtos::AppEventType::WifiDisconnected ||
