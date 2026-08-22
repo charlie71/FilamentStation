@@ -27,6 +27,14 @@ void bambuReportTopic(const char* serialNumber, char* output,
 void bambuRequestTopic(const char* serialNumber, char* output,
                        std::size_t outputCapacity);
 
+// Normalizes a Spoolman-style 6-digit RRGGBB color to the wire's 8-digit
+// RRGGBBAA form (alpha always FF per docs/bambu-protocol.md); an
+// already-8-digit input passes through unchanged. Shared by
+// bambuBuildAmsFilamentSetting() and BambuTask's pending-assignment
+// confirmation check, so both compute the exact same expected value.
+// `output` must have room for 9 bytes (8 hex digits + terminator).
+void bambuNormalizeTrayColorHex(const char* input, char* output);
+
 // sequenceId is sent as "print.sequence_id" (a string on the wire). The
 // community reference (OpenBambuAPI) documents it as "incremented by 1 on
 // each command"; this project used a hardcoded "0" for every request until

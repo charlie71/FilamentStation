@@ -25,6 +25,23 @@
 namespace filament_station::tasks {
 namespace {
 
+// publish() succeeding only confirms the MQTT broker accepted the packet,
+// not that the printer applied it (a rejected/unsigned command looks
+// identical on the wire, see docs/bambu-protocol.md). An AssignTray is
+// therefore tracked as pending until either a subsequent report's tray
+// telemetry matches what was sent, or kBambuAssignConfirmTimeoutMs elapses.
+struct PendingTrayAssignment {
+  bool active = false;
+  std::uint32_t requestId = 0;
+  std::uint8_t amsId = 0;
+  std::uint8_t trayId = 0;
+  rtos::SpoolId spoolId = 0;
+  // Empty expectedTrayType means "confirm the slot becomes empty" (Reset).
+  char expectedTrayType[16]{};
+  char expectedColorHex[9]{};
+  TickType_t startedAtTicks = 0;
+};
+
 struct PrinterConnection {
   bool inUse = false;
   bool reportedConnected = false;
@@ -39,6 +56,7 @@ struct PrinterConnection {
   // incrementing by 1 per command. Reset to 1 on every (re)connect, a fresh
   // MQTT session.
   std::uint32_t nextSequenceId = 1;
+  PendingTrayAssignment pending{};
 };
 
 using PrinterConnections =
@@ -104,6 +122,41 @@ PrinterConnection* connectionFor(PrinterConnections& connections,
     if (!conn.inUse) return &conn;
   }
   return nullptr;
+}
+
+// Compares a pending AssignTray's expected tray_type/tray_color against
+// what the printer's own telemetry now reports for that slot; on a match,
+// commits the Spoolman association and reports success to AppTask. Called
+// after every successfully applied report -- multiple reports may pass
+// before the printer's telemetry catches up (or never does, see the
+// timeout check in serviceConnections()).
+void checkPendingTrayAssignment(rtos::RtosContext& ctx,
+                                PrinterConnection& conn) {
+  if (!conn.pending.active) return;
+  const models::PrinterSlotStateData* slot =
+      models::findSlot(conn.state, conn.pending.amsId, conn.pending.trayId);
+  if (slot == nullptr) return;
+  const bool clearing = conn.pending.expectedTrayType[0] == '\0';
+  const bool matches =
+      clearing
+          ? slot->material[0] == '\0'
+          : std::strcmp(slot->material, conn.pending.expectedTrayType) == 0 &&
+                std::strcmp(slot->colorHex, conn.pending.expectedColorHex) ==
+                    0;
+  if (!matches) return;
+
+  const std::uint32_t requestId = conn.pending.requestId;
+  const std::uint8_t amsId = conn.pending.amsId;
+  const std::uint8_t trayId = conn.pending.trayId;
+  conn.state.amsUnits[amsId].slots[trayId].spoolId = conn.pending.spoolId;
+  conn.pending = {};
+  FS_LOGI(services::LogComponent::Bambu,
+          "AssignTray confirmed printer_id=%u ams_id=%u tray_id=%u",
+          static_cast<unsigned>(conn.config.printerId),
+          static_cast<unsigned>(amsId), static_cast<unsigned>(trayId));
+  publishBambuEvent(ctx, rtos::AppEventType::BambuUpdate, requestId,
+                    conn.config.printerId, conn.state,
+                    "Slot vom Drucker best\xC3\xA4tigt");
 }
 
 void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
@@ -196,6 +249,7 @@ void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
               slot.colorHex, static_cast<unsigned long>(slot.spoolId));
     }
   }
+  checkPendingTrayAssignment(ctx, conn);
   publishBambuEvent(ctx, rtos::AppEventType::BambuUpdate, 0,
                     conn.config.printerId, conn.state, "Statusbericht empfangen");
 }
@@ -239,6 +293,10 @@ bool doConnect(rtos::RtosContext& ctx, PrinterConnection& conn,
             static_cast<unsigned>(conn.config.printerId), conn.reportTopic);
   }
   conn.nextSequenceId = 1;
+  // Defensive reset: every caller already clears this via disconnectPrinter()
+  // before reaching here, but a fresh MQTT session has no pending
+  // confirmation to track regardless.
+  conn.pending = {};
   char request[config::kBambuRequestPayloadCapacity]{};
   if (services::bambuBuildPushAllRequest(conn.nextSequenceId++, request,
                                          sizeof(request)) > 0) {
@@ -259,10 +317,23 @@ bool doConnect(rtos::RtosContext& ctx, PrinterConnection& conn,
   return true;
 }
 
-void disconnectPrinter(PrinterConnection& conn) {
+// A pending AssignTray confirmation left dangling (disconnect/reconnect
+// before the printer's telemetry confirmed or timed it out) would strand
+// AppTask's progress dialog on that requestId forever -- fail it explicitly
+// instead of silently dropping it.
+void failPendingAssignment(rtos::RtosContext& ctx, PrinterConnection& conn,
+                           const char* reason) {
+  if (!conn.pending.active) return;
+  const std::uint32_t requestId = conn.pending.requestId;
+  conn.pending = {};
+  publishBambuError(ctx, requestId, conn.config.printerId, reason);
+}
+
+void disconnectPrinter(rtos::RtosContext& ctx, PrinterConnection& conn) {
   if (conn.mqttClient.connected()) conn.mqttClient.disconnect();
   conn.reportedConnected = false;
   conn.state.connectionState = models::PrinterConnectionState::Offline;
+  failPendingAssignment(ctx, conn, "Verbindung getrennt");
 }
 
 void handleConnect(rtos::RtosContext& ctx, PrinterConnections& connections,
@@ -300,7 +371,7 @@ void handleDisconnect(rtos::RtosContext& ctx, PrinterConnections& connections,
                       "Drucker ist nicht verbunden");
     return;
   }
-  disconnectPrinter(*conn);
+  disconnectPrinter(ctx, *conn);
   conn->inUse = false;
   FS_LOGI(services::LogComponent::Bambu, "Disconnected printer_id=%u",
           static_cast<unsigned>(command.printerId));
@@ -316,7 +387,7 @@ void handleTestConnection(rtos::RtosContext& ctx,
   PrinterConnection probe{};
   probe.config = command.printerConfig;
   const bool ok = doConnect(ctx, probe, 0);
-  if (ok) disconnectPrinter(probe);
+  if (ok) disconnectPrinter(ctx, probe);
   publishBambuEvent(
       ctx, rtos::AppEventType::BambuTestResult, command.requestId,
       command.printerId, models::PrinterState{},
@@ -402,16 +473,35 @@ void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
             static_cast<unsigned>(command.trayId));
   }
 
-  // The printer itself does not know Spoolman IDs; this is the one place
-  // BambuTask records the application-side association, distinct from
-  // bambuApplyReport() which never touches spoolId (see
-  // docs/bambu-protocol.md).
-  conn->state.amsUnits[command.amsId].slots[command.trayId].spoolId =
-      command.spoolId;
+  // publish() succeeding only means the MQTT broker accepted the packet --
+  // not that the printer applied it (a rejected/unsigned command looks
+  // identical on the wire, see docs/bambu-protocol.md). Report success to
+  // AppTask only once the printer's own telemetry confirms the change
+  // (checkPendingTrayAssignment(), called from handleReportPayload()), or
+  // fail it after kBambuAssignConfirmTimeoutMs (serviceConnections()). The
+  // Spoolman association (spoolId) is likewise committed only on
+  // confirmation, not here -- see checkPendingTrayAssignment(). A still-
+  // active previous pending (shouldn't normally happen, AppTask serializes
+  // slot assignments) is failed first rather than silently dropped, so its
+  // requestId doesn't strand a progress dialog forever.
+  failPendingAssignment(ctx, *conn,
+                        "\xC3\x9C" "berholt durch neue Slot-Zuordnung");
+  conn->pending.active = true;
+  conn->pending.requestId = command.requestId;
+  conn->pending.amsId = command.amsId;
+  conn->pending.trayId = command.trayId;
+  conn->pending.spoolId = command.spoolId;
+  std::snprintf(conn->pending.expectedTrayType,
+               sizeof(conn->pending.expectedTrayType), "%s",
+               filament.trayType);
+  services::bambuNormalizeTrayColorHex(filament.trayColorHex,
+                                       conn->pending.expectedColorHex);
+  conn->pending.startedAtTicks = xTaskGetTickCount();
+
   FS_LOGI(services::LogComponent::Bambu,
-          "Tray filament setting sent printer_id=%u ams_id=%u tray_id=%u "
-          "tray_info_idx=\"%s\" tray_type=\"%s\" tray_color=\"%s\" "
-          "nozzle_temp_min=%d nozzle_temp_max=%d",
+          "Tray filament setting sent, awaiting confirmation printer_id=%u "
+          "ams_id=%u tray_id=%u tray_info_idx=\"%s\" tray_type=\"%s\" "
+          "tray_color=\"%s\" nozzle_temp_min=%d nozzle_temp_max=%d",
           static_cast<unsigned>(command.printerId),
           static_cast<unsigned>(command.amsId),
           static_cast<unsigned>(command.trayId),
@@ -420,8 +510,6 @@ void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
           static_cast<int>(filament.nozzleTempMinC),
           static_cast<int>(filament.nozzleTempMaxC));
   // Raw wire payload already logged by publishBambuRequest() above.
-  publishBambuEvent(ctx, rtos::AppEventType::BambuUpdate, command.requestId,
-                    command.printerId, conn->state, "Slotdaten gesendet");
 }
 
 void handleReset(rtos::RtosContext& ctx, PrinterConnections& connections,
@@ -435,7 +523,7 @@ void handleReset(rtos::RtosContext& ctx, PrinterConnections& connections,
                       models::PrinterState{}, "Zustand zur\xC3\xBC" "ckgesetzt");
     return;
   }
-  disconnectPrinter(*conn);
+  disconnectPrinter(ctx, *conn);
   conn->inUse = false;
   conn->state = models::PrinterState{};
   FS_LOGI(services::LogComponent::Bambu, "Reset printer_id=%u",
@@ -454,7 +542,7 @@ void handleReconnect(rtos::RtosContext& ctx, PrinterConnections& connections,
                       "Kein bekannter Drucker; zuerst verbinden");
     return;
   }
-  if (conn->mqttClient.connected()) disconnectPrinter(*conn);
+  if (conn->mqttClient.connected()) disconnectPrinter(ctx, *conn);
   doConnect(ctx, *conn, command.requestId);
 }
 
@@ -495,6 +583,20 @@ void serviceConnections(rtos::RtosContext& ctx, PrinterConnections& connections)
     if (!conn.inUse) continue;
     if (conn.mqttClient.connected()) {
       conn.mqttClient.loop();
+      if (conn.pending.active &&
+          static_cast<TickType_t>(xTaskGetTickCount() -
+                                  conn.pending.startedAtTicks) >=
+              pdMS_TO_TICKS(config::kBambuAssignConfirmTimeoutMs)) {
+        FS_LOGW(services::LogComponent::Bambu,
+                "AssignTray confirmation timeout printer_id=%u ams_id=%u "
+                "tray_id=%u",
+                static_cast<unsigned>(conn.config.printerId),
+                static_cast<unsigned>(conn.pending.amsId),
+                static_cast<unsigned>(conn.pending.trayId));
+        failPendingAssignment(
+            ctx, conn,
+            "Drucker hat die Slot\xC3\xA4nderung nicht best\xC3\xA4tigt");
+      }
       continue;
     }
     if (conn.reportedConnected) {
@@ -502,6 +604,7 @@ void serviceConnections(rtos::RtosContext& ctx, PrinterConnections& connections)
       conn.state.connectionState = models::PrinterConnectionState::Offline;
       FS_LOGW(services::LogComponent::Bambu, "Connection lost printer_id=%u",
               static_cast<unsigned>(conn.config.printerId));
+      failPendingAssignment(ctx, conn, "Verbindung verloren");
       publishBambuEvent(ctx, rtos::AppEventType::BambuDisconnected, 0,
                         conn.config.printerId, conn.state,
                         "Verbindung verloren");

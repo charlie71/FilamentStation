@@ -89,6 +89,18 @@ void testAmsFilamentSettingAppendsAlphaToSixDigitColor() {
       "00AE42FF", document["print"]["tray_color"].as<const char*>());
 }
 
+void testNormalizeTrayColorHexAppendsAlpha() {
+  char output[9]{};
+  services::bambuNormalizeTrayColorHex("00AE42", output);
+  TEST_ASSERT_EQUAL_STRING("00AE42FF", output);
+}
+
+void testNormalizeTrayColorHexPassesThroughEightDigits() {
+  char output[9]{};
+  services::bambuNormalizeTrayColorHex("00AE42FF", output);
+  TEST_ASSERT_EQUAL_STRING("00AE42FF", output);
+}
+
 void testExtrusionCaliSelPayload() {
   char payload[256]{};
   const std::size_t length = services::bambuBuildExtrusionCaliSel(
@@ -269,6 +281,8 @@ int main(int, char**) {
   RUN_TEST(testPushAllRequestRejectsTooSmallBuffer);
   RUN_TEST(testAmsFilamentSettingPayload);
   RUN_TEST(testAmsFilamentSettingAppendsAlphaToSixDigitColor);
+  RUN_TEST(testNormalizeTrayColorHexAppendsAlpha);
+  RUN_TEST(testNormalizeTrayColorHexPassesThroughEightDigits);
   RUN_TEST(testExtrusionCaliSelPayload);
   RUN_TEST(testExtrusionCaliSelUsesGlobalTrayIdForSecondAms);
   RUN_TEST(testGenericTrayInfoIdxMapping);

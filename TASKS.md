@@ -1027,7 +1027,18 @@ unabhängige Fehler behoben: fehlendes Diagnose-Logging für
 unsichtbar, `BambuTask::handleReportPayload()`), und ein
 Adressierungsfehler in `bambuBuildExtrusionCaliSel()` (`tray_id` muss der
 globale Index über alle AMS-Einheiten sein, nicht der lokale -- wirkte sich
-bei nur einer AMS-Einheit nicht aus). Details siehe docs/bambu-protocol.md.
+bei nur einer AMS-Einheit nicht aus).
+
+Dritter Punkt derselben Zweitmeinung ebenfalls umgesetzt: `AssignTray`
+meldete bisher direkt nach erfolgreichem `publish()` Erfolg, obwohl das nur
+bestätigt, dass der MQTT-Broker das Paket angenommen hat, nicht dass der
+Drucker es anwendete. Neu: `PrinterConnection::pending`
+(`PendingTrayAssignment`) verzögert Erfolgsmeldung und
+Spoolman-Zuordnung (`spoolId`), bis eine nachfolgende Drucker-Telemetrie
+die erwarteten `tray_type`/`tray_color`-Werte bestätigt
+(`checkPendingTrayAssignment()`, aus `handleReportPayload()`), oder meldet
+nach `kBambuAssignConfirmTimeoutMs` (8s) explizit einen Fehler
+(`serviceConnections()`). Details siehe docs/bambu-protocol.md.
 
 ## 8.6 GUI
 

@@ -306,6 +306,49 @@ unabhängig vom eigentlichen Fix behoben:
   == lokal), war für Mehr-AMS-Setups aber falsch. `slot_id` bleibt der
   lokale Wert.
 
+### AssignTray-Best\xC3\xA4tigung ueber Drucker-Telemetrie statt `publish()==true` (2026-08-22)
+
+Ein dritter, von derselben Zweitmeinung aufgezeigter Punkt: `publish()`
+liefert nur zurueck, ob der MQTT-Broker das Paket angenommen hat, nicht ob
+der Drucker es tatsaechlich angewendet hat -- eine Ablehnung (z. B. die oben
+beschriebene Command-Verification ohne Developer Mode) sieht auf
+MQTT-Ebene identisch aus wie eine Annahme. `BambuTask::handleAssignTray()`
+meldete bisher direkt nach erfolgreichem `publish()` beider Kommandos
+Erfolg an `AppTask` ("Slotdaten gesendet") und uebernahm die
+Spoolman-Zuordnung (`spoolId`) sofort ins eigene `PrinterState` --
+unabhaengig davon, ob der Drucker die \xC3\x84nderung je best\xC3\xA4tigte.
+
+Neuer Ablauf: `PrinterConnection::pending` (`PendingTrayAssignment`) merkt
+sich nach dem Senden die erwarteten Werte (`expectedTrayType`,
+`expectedColorHex` -- ueber dieselbe `bambuNormalizeTrayColorHex()`-Funktion
+normalisiert, die auch der Payload-Builder nutzt, damit beide exakt
+denselben Wert vergleichen) statt sofort Erfolg zu melden.
+
+* `checkPendingTrayAssignment()` (aufgerufen aus `handleReportPayload()`
+  nach jedem erfolgreich angewendeten Report) vergleicht die
+  Drucker-Telemetrie fuer den betroffenen Slot (`material`/`colorHex`)
+  gegen die erwarteten Werte. Bei einer Uebereinstimmung wird die
+  Spoolman-Zuordnung erst jetzt committet und `AppEventType::BambuUpdate`
+  mit der urspruenglichen `requestId` an `AppTask` gemeldet ("Slot vom
+  Drucker best\xC3\xA4tigt").
+* Bleibt die Best\xC3\xA4tigung nach `kBambuAssignConfirmTimeoutMs` (8000\xC2\xA0ms,
+  `config/BambuConfig.h`) aus, meldet `serviceConnections()`
+  `AppEventType::BambuError` ("Drucker hat die Slot\xC3\xA4nderung nicht
+  best\xC3\xA4tigt") -- sichtbar als Fehlerdialog statt eines falschen
+  Erfolgs.
+* Ein noch offenes Pending wird zusaetzlich explizit fehlgeschlagen
+  (`failPendingAssignment()`), statt kommentarlos verworfen zu werden, bei:
+  Verbindungsabbruch (`disconnectPrinter()`, jetzt mit `RtosContext&`-
+  Parameter), Verbindungsverlust (`serviceConnections()`), und einer neuen
+  `AssignTray` waehrend eine vorherige Best\xC3\xA4tigung noch aussteht --
+  ansonsten wuerde die Fortschrittsanzeige in der UI unter der jeweiligen
+  `requestId` unbegrenzt haengen bleiben.
+* Best\xC3\xA4tigungskriterium ist bewusst nur `tray_type`/`tray_color` (das,
+  was `bambuApplyReport()` bereits aus Reports parst), nicht
+  `tray_info_idx` oder Duesentemperaturen -- Letztere werden aktuell nicht
+  aus Reports geparst; eine Erweiterung waere bei Bedarf in
+  `BambuProtocol::bambuApplyReport()`/`PrinterSlotStateData` nachzuziehen.
+
 ## Statusberichte (Drucker -> Client)
 
 Berichte auf dem Report-Topic sind JSON-Objekte mit einem `print`-Schluessel.

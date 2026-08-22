@@ -94,6 +94,15 @@ void bambuRequestTopic(const char* serialNumber, char* output,
   std::snprintf(output, outputCapacity, "device/%s/request", serialNumber);
 }
 
+void bambuNormalizeTrayColorHex(const char* input, char* output) {
+  std::snprintf(output, 9, "%s", input != nullptr ? input : "");
+  if (std::strlen(output) == 6) {
+    output[6] = 'F';
+    output[7] = 'F';
+    output[8] = '\0';
+  }
+}
+
 std::size_t bambuBuildPushAllRequest(std::uint32_t sequenceId, char* output,
                                      std::size_t outputCapacity) {
   const int written = std::snprintf(
@@ -126,13 +135,7 @@ std::size_t bambuBuildAmsFilamentSetting(std::uint32_t sequenceId,
   // color get a 6-char string here -- append the alpha byte rather than
   // sending a malformed field.
   char colorWithAlpha[9]{};
-  std::snprintf(colorWithAlpha, sizeof(colorWithAlpha), "%s",
-               filament.trayColorHex);
-  if (std::strlen(colorWithAlpha) == 6) {
-    colorWithAlpha[6] = 'F';
-    colorWithAlpha[7] = 'F';
-    colorWithAlpha[8] = '\0';
-  }
+  bambuNormalizeTrayColorHex(filament.trayColorHex, colorWithAlpha);
 
   char sequenceIdText[12]{};
   std::snprintf(sequenceIdText, sizeof(sequenceIdText), "%lu",
