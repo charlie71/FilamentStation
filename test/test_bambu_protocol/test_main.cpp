@@ -109,6 +109,24 @@ void testExtrusionCaliSelPayload() {
   TEST_ASSERT_EQUAL_STRING("5", print["sequence_id"].as<const char*>());
 }
 
+void testExtrusionCaliSelUsesGlobalTrayIdForSecondAms() {
+  // Unlike ams_filament_setting, extrusion_cali_sel's wire "tray_id" is the
+  // global index across all AMS units (amsId * kSlotsPerAms + local slot),
+  // not the local per-AMS slot index -- confirmed against yanshay/spoolease.
+  // AMS 1 (second unit), local slot 2 -> global tray_id 1*4+2=6.
+  char payload[256]{};
+  const std::size_t length = services::bambuBuildExtrusionCaliSel(
+      1, 1, 2, "GFL99", "0.4", -1, payload, sizeof(payload));
+  TEST_ASSERT_GREATER_THAN_UINT32(0, length);
+
+  JsonDocument document;
+  TEST_ASSERT_FALSE(deserializeJson(document, payload, length));
+  const JsonObjectConst print = document["print"];
+  TEST_ASSERT_EQUAL_UINT32(1, print["ams_id"].as<std::uint32_t>());
+  TEST_ASSERT_EQUAL_UINT32(6, print["tray_id"].as<std::uint32_t>());
+  TEST_ASSERT_EQUAL_UINT32(2, print["slot_id"].as<std::uint32_t>());
+}
+
 void testGenericTrayInfoIdxMapping() {
   // Composite ("-CF") variants must win over their plain base material.
   TEST_ASSERT_EQUAL_STRING("GFL98",
@@ -252,6 +270,7 @@ int main(int, char**) {
   RUN_TEST(testAmsFilamentSettingPayload);
   RUN_TEST(testAmsFilamentSettingAppendsAlphaToSixDigitColor);
   RUN_TEST(testExtrusionCaliSelPayload);
+  RUN_TEST(testExtrusionCaliSelUsesGlobalTrayIdForSecondAms);
   RUN_TEST(testGenericTrayInfoIdxMapping);
   RUN_TEST(testApplyReportRejectsPayloadWithoutPrintObject);
   RUN_TEST(testApplyReportParsesAmsTraysWithStringIds);

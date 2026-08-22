@@ -175,6 +175,17 @@ std::size_t bambuBuildExtrusionCaliSel(std::uint32_t sequenceId,
   std::snprintf(sequenceIdText, sizeof(sequenceIdText), "%lu",
                static_cast<unsigned long>(sequenceId));
 
+  // Unlike ams_filament_setting, extrusion_cali_sel's "tray_id" is the
+  // *global* tray index across all AMS units of this printer (amsId *
+  // kSlotsPerAms + local slot index), not the local per-AMS index --
+  // confirmed against yanshay/spoolease's reverse-engineered driver
+  // (get_quad_for_set_filament_from_tray_id() passes "original_tray_id",
+  // the un-split global index, as this command's tray_id, while slot_id
+  // stays local). Doesn't affect a single-AMS printer (global == local for
+  // ams_id 0), see docs/bambu-protocol.md.
+  const std::uint8_t globalTrayId = static_cast<std::uint8_t>(
+      amsId * models::kSlotsPerAms + trayId);
+
   JsonDocument document;
   JsonObject print = document["print"].to<JsonObject>();
   print["command"] = "extrusion_cali_sel";
@@ -182,7 +193,7 @@ std::size_t bambuBuildExtrusionCaliSel(std::uint32_t sequenceId,
   print["filament_id"] = trayInfoIdx;
   print["nozzle_diameter"] = nozzleDiameter;
   print["ams_id"] = amsId;
-  print["tray_id"] = trayId;
+  print["tray_id"] = globalTrayId;
   print["slot_id"] = trayId;
   print["sequence_id"] = sequenceIdText;
 

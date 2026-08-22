@@ -112,6 +112,15 @@ void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
           "Report message received printer_id=%u topic=\"%s\" bytes=%u",
           static_cast<unsigned>(conn.config.printerId), conn.reportTopic,
           length);
+  // Own log line (own kLogMessageCapacity-bounded line, same reasoning as
+  // publishBambuRequest()) so a command rejection is visible even when
+  // bambuApplyReport() below has no field for it -- payload is not
+  // null-terminated, hence "%.*s" with the explicit length.
+  FS_LOGD(services::LogComponent::Bambu,
+          "Report raw payload printer_id=%u payload=%.*s",
+          static_cast<unsigned>(conn.config.printerId),
+          static_cast<int>(length), reinterpret_cast<const char*>(payload));
+
   JsonDocument document;
   const DeserializationError parseError =
       deserializeJson(document, payload, length);
@@ -122,6 +131,28 @@ void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
             parseError.c_str());
     return;
   }
+
+  if (document["print"].is<JsonObjectConst>()) {
+    // Command replies (e.g. after ams_filament_setting/extrusion_cali_sel)
+    // carry "result"/"reason"/"err_code" on rejection -- the printer's own
+    // MQTT command verification (Developer Mode requirement) rejects
+    // unsigned commands exactly this way. bambuApplyReport() below never
+    // looks at these fields, so a rejection was previously invisible; only
+    // the (unchanged) tray telemetry hinted at it afterwards.
+    const JsonObjectConst print = document["print"].as<JsonObjectConst>();
+    const char* command = print["command"] | "";
+    if (command[0] != '\0') {
+      const char* result = print["result"] | "";
+      const char* reason = print["reason"] | "";
+      const long errCode = print["err_code"] | 0L;
+      FS_LOGI(services::LogComponent::Bambu,
+              "MQTT command reply printer_id=%u command=\"%s\" result=\"%s\" "
+              "reason=\"%s\" err_code=%ld",
+              static_cast<unsigned>(conn.config.printerId), command, result,
+              reason, errCode);
+    }
+  }
+
   if (!services::bambuApplyReport(document, conn.state)) {
     // Message on the report topic without a "print" object: a different,
     // currently unhandled message type. Not an error (see

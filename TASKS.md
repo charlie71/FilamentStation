@@ -1012,8 +1012,22 @@ verwirft. Beide Fixes implementiert (`BambuProtocol::bambuBuildAmsFilamentSettin
 neu `bambuBuildExtrusionCaliSel()`, aufgerufen aus
 `BambuTask::handleAssignTray()`); `PrinterState::nozzleDiameter` neu aus
 `print.nozzle_diameter` in Statusberichten gelesen (Pflichtfeld für das
-neue Kommando). Noch nicht auf echter Hardware verifiziert. Details siehe
-docs/bambu-protocol.md.
+neue Kommando).
+
+Update (2026-08-22, tatsächliche Ursache gefunden): auch mit beiden obigen
+Fixes reagierte der Drucker weiterhin nicht. Externe Zweitmeinung
+identifizierte die tatsächliche Ursache: aktuelle P1S-Firmware verlangt bei
+Cloud-Kopplung eine kryptografische Kommandoverifikation, die ein reiner
+`bblp`+Access-Code-MQTT-Client nicht erfüllt -- Lesen funktioniert, Schreiben
+wird abgelehnt (`HMS_0500_0500_0001_0007`). **Fix: Developer Mode am Drucker
+aktiviert** (kein Code-Fix). Per Hardwaretest bestätigt: Slot-Zuordnung
+funktioniert jetzt. Zusätzlich zwei von derselben Zweitmeinung gefundene,
+unabhängige Fehler behoben: fehlendes Diagnose-Logging für
+`command`/`result`/`reason`/`err_code` in Kommando-Antworten (bisher
+unsichtbar, `BambuTask::handleReportPayload()`), und ein
+Adressierungsfehler in `bambuBuildExtrusionCaliSel()` (`tray_id` muss der
+globale Index über alle AMS-Einheiten sein, nicht der lokale -- wirkte sich
+bei nur einer AMS-Einheit nicht aus). Details siehe docs/bambu-protocol.md.
 
 ## 8.6 GUI
 

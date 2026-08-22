@@ -57,7 +57,7 @@ void create_screen_scr_boot() {
             lv_obj_set_size(obj, 230, 150);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
-            lv_label_set_text_static(obj, "SD-Karte: bereit\nDisplay: bereit\nWaage: bereit\nNFC: bereit\nSpoolman: bereit\nBambu: mock");
+            lv_label_set_text_static(obj, "SD-Karte: bereit\nDisplay: bereit\nWaage: bereit\nNFC: bereit\nSpoolman: bereit\nBambu: bereit");
         }
     }
     

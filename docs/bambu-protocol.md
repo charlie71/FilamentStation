@@ -204,7 +204,12 @@ und Bambu Studio seine Anzeige nachweislich aus MQTT-Reports des Druckers
 bezieht (keine lokale Optimistic-UI), muss der Drucker Bambu Studios
 Kommando **anders** verarbeiten als unseres.
 
-### Ursache gefunden (2026-08-22): fehlendes `extrusion_cali_sel`-Folgekommando
+### Zusätzlich behobene Payload-Lücke (2026-08-22): fehlendes `extrusion_cali_sel`-Folgekommando
+
+(War zum Zeitpunkt dieses Fixes der aussichtsreichste Kandidat, hat das
+Problem allein aber noch nicht gelöst -- die tatsächliche Ursache war
+Developer Mode, siehe weiter unten. Das Kommando bleibt trotzdem korrekt
+und nötig, siehe Referenzimplementierung.)
 
 Zweiter Projektvergleich, auf Nutzerhinweis: `yanshay/spoolease`, eine
 weitere ESP32-Firmware (Rust), die das gleiche LAN-Mode-Protokoll direkt
@@ -257,7 +262,49 @@ Felder:
 Implementiert in `BambuProtocol::bambuBuildExtrusionCaliSel()`; wird von
 `BambuTask::handleAssignTray()` unmittelbar nach einem erfolgreich
 gesendeten `ams_filament_setting` ausgel\xC3\xB6st (gleiche fortlaufende
-`sequence_id`). Noch nicht auf echter Hardware verifiziert.
+`sequence_id`).
+
+### Tatsächliche Ursache (2026-08-22): Developer Mode / MQTT Command Verification
+
+Der obige `extrusion_cali_sel`-Fix allein löste das Problem noch nicht.
+Externe Zweitmeinung fand die tatsächliche Ursache: aktuelle P1S-Firmware
+prüft Steuerkommandos (nicht Lesezugriffe) kryptografisch, sobald der
+Drucker regulär mit der Bambu-Cloud gekoppelt ist. Ein reiner
+`bblp`+Access-Code-Login reicht dann zum Abonnieren/Lesen, aber nicht mehr
+zum Schreiben -- der Drucker lehnt das Kommando ab (`HMS_0500_0500_0001_0007`,
+"MQTT command verification failed"), ohne dass unser bisheriger Report-Parser
+das sichtbar gemacht hätte (siehe unten). **Fix: Developer Mode am Drucker
+selbst aktivieren** (WLAN/LAN-Einstellungen -> LAN Only/LAN Mode -> Developer
+Mode); danach akzeptiert der Drucker normale LAN-Mode-MQTT-Schreibkommandos
+wieder. Kein ESP32-seitiger Fix möglich/nötig -- eine Signaturmechanik
+nachzubauen würde private Slicer-Zertifikate erfordern. **Bestätigt durch
+Hardwaretest: mit aktiviertem Developer Mode funktioniert die
+Slot-Zuordnung.**
+
+### Nachträglich behobene Diagnose-/Adressierungsfehler (2026-08-22)
+
+Zwei weitere, von der externen Zweitmeinung gefundene Punkte wurden
+unabhängig vom eigentlichen Fix behoben:
+
+* **Fehlendes Diagnose-Logging**: `bambuApplyReport()` wertet nur `ams`,
+  `vt_tray` und `nozzle_diameter` aus; `command`/`result`/`reason`/
+  `err_code` einer Kommando-Antwort (z. B. die obige Ablehnung) wurden
+  bisher nirgends geloggt -- der Report wurde trotzdem klaglos als
+  "Statusbericht empfangen" verarbeitet. `BambuTask::handleReportPayload()`
+  loggt jetzt zusätzlich den kompletten rohen Eingangs-Payload (`%.*s`,
+  Debug-Level) sowie, falls `print.command` gesetzt ist,
+  `command`/`result`/`reason`/`err_code` separat (Info-Level) -- noch bevor
+  `bambuApplyReport()` aufgerufen wird.
+* **`extrusion_cali_sel`-Adressierungsfehler**: das Feld `tray_id` ist bei
+  diesem Kommando (anders als bei `ams_filament_setting`) der **globale**
+  Tray-Index über alle AMS-Einheiten (`ams_id * kSlotsPerAms + lokaler
+  Slot-Index`), nicht der lokale Index innerhalb der AMS-Einheit. Verifiziert
+  gegen `yanshay/spoolease`s `get_quad_for_set_filament_from_tray_id()`, die
+  für `ExtrusionCaliSelCommand::new()` explizit den ungeteilten globalen
+  Index übergibt, für `AmsFilamentSettingCommand::new()` dagegen den lokalen.
+  Wirkt sich bei einer einzelnen AMS-Einheit (`ams_id=0`) nicht aus (global
+  == lokal), war für Mehr-AMS-Setups aber falsch. `slot_id` bleibt der
+  lokale Wert.
 
 ## Statusberichte (Drucker -> Client)
 

@@ -54,6 +54,11 @@ std::size_t bambuBuildAmsFilamentSetting(std::uint32_t sequenceId,
 // a specific calibration profile). `nozzleDiameter` is the wire string
 // (e.g. "0.4") read from the printer's own status report
 // (`PrinterState::nozzleDiameter`); pass "0.4" if no report has arrived yet.
+// `trayId` is the *local* slot index within `amsId` (0..kSlotsPerAms-1),
+// same as bambuBuildAmsFilamentSetting()'s trayId -- this function encodes
+// the wire's "tray_id" field as the *global* index (amsId * kSlotsPerAms +
+// trayId) internally, since that command uses global addressing unlike
+// ams_filament_setting (see the .cpp for the source of this distinction).
 std::size_t bambuBuildExtrusionCaliSel(std::uint32_t sequenceId,
                                        std::uint8_t amsId,
                                        std::uint8_t trayId,
