@@ -696,6 +696,12 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
   }
   if (progress) {
     lv_obj_remove_flag(overlayProgress, LV_OBJ_FLAG_HIDDEN);
+    // Fresh start every time -- overlayProgress is shared across every kind
+    // of progress dialog (WiFi, Spoolman, NFC, ...), so without this it
+    // shows whatever value a previous, unrelated dialog last animated it
+    // to. Only the AssignTray wait (see UpdateProgress below) actually
+    // animates it further; every other progress dialog just stays full.
+    lv_bar_set_value(overlayProgress, 100, LV_ANIM_OFF);
     lv_obj_remove_flag(overlayCancel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
     lv_label_set_text(
@@ -2952,6 +2958,18 @@ void processUiCommand(const rtos::UiCommand& command) {
     case rtos::UiCommandType::ShowProgress:
       showOverlay(command, true);
       break;
+    case rtos::UiCommandType::UpdateProgress:
+      // Only touch the overlay if it's still the one this update was meant
+      // for -- the user may have closed/cancelled it, or a stale event for
+      // an already-superseded request could still be in flight.
+      if (activeOverlayKind != rtos::UiOverlayKind::None &&
+          activeOverlayRequestId == command.requestId) {
+        const std::int32_t clamped =
+            command.value < 0 ? 0 : (command.value > 100 ? 100 : command.value);
+        lv_bar_set_value(overlayProgress, clamped, LV_ANIM_ON);
+        if (command.text[0] != '\0') lv_label_set_text(overlayText, command.text);
+      }
+      break;
     case rtos::UiCommandType::ShowDialog:
       showOverlay(command, false);
       break;
@@ -3101,6 +3119,11 @@ void processUiCommand(const rtos::UiCommand& command) {
         stagingState = {};
         stagingSpoolState = {};
         updateStagingContent();
+        // Home's staging widget (objects.home_staging) is only repainted by
+        // updateHomeContent(); without this call it stayed stale until some
+        // unrelated event happened to redraw Home, even after navigating
+        // back there.
+        updateHomeContent();
         break;
       }
       stagingState.spoolId = command.spoolId;
@@ -3176,6 +3199,8 @@ void processUiCommand(const rtos::UiCommand& command) {
         ++stagingSpoolState.colorCount;
       }
       updateStagingContent();
+      // See the matching comment on the clear-staging branch above.
+      updateHomeContent();
       break;
     }
     case rtos::UiCommandType::UpdateWeight:

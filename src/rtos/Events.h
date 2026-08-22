@@ -56,7 +56,11 @@ enum class AppEventType : std::uint8_t {
   BambuDisconnected,
   BambuUpdate,
   BambuTestResult,
-  BambuError
+  BambuError,
+  // Periodic (throttled to ~1/s) remaining-time update while an AssignTray
+  // awaits the printer's telemetry confirmation, see BambuTask::
+  // serviceConnections(). "value" carries the remaining milliseconds.
+  BambuAssignProgress
 };
 
 constexpr EventBits_t EVENT_UI_READY = BIT0;

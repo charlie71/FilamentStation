@@ -349,6 +349,23 @@ denselben Wert vergleichen) statt sofort Erfolg zu melden.
   aus Reports geparst; eine Erweiterung waere bei Bedarf in
   `BambuProtocol::bambuApplyReport()`/`PrinterSlotStateData` nachzuziehen.
 
+### Fortschrittsanzeige mit Countdown fuer die Best\xC3\xA4tigungswartezeit (2026-08-22)
+
+Die 8-Sekunden-Wartezeit auf die Drucker-Best\xC3\xA4tigung (siehe oben) war
+zuvor nur ein statischer "Wird an den Drucker \xC3\xBCbertragen"-Text ohne
+Zeitangabe. `BambuTask::serviceConnections()` sendet jetzt zusaetzlich, auf
+einmal pro Sekunde gedrosselt (`PendingTrayAssignment::
+lastReportedRemainingSeconds`), ein `AppEventType::BambuAssignProgress`
+mit der verbleibenden Zeit in Millisekunden (`AppEvent::value`).
+`AppTask` leitet das nur weiter, solange `pendingSlotAssignment.stage ==
+WritingSlot` und die `requestId` noch aktuell ist, als neuen
+`UiCommandType::UpdateProgress` (Prozentwert + Text "Warte auf
+Best\xC3\xA4tigung vom Drucker \xE2\x80\x93 noch N s") an `UiTask`.
+`UiBridge::processUiCommand()` aktualisiert damit den bereits vorhandenen,
+zuvor nie tats\xC3\xA4chlich bewegten `overlayProgress`-Balken (fr\xC3\xBCher
+dekorativ fix auf 60 %) -- nur solange der Dialog noch fuer dieselbe
+`requestId` offen ist.
+
 ## Statusberichte (Drucker -> Client)
 
 Berichte auf dem Report-Topic sind JSON-Objekte mit einem `print`-Schluessel.

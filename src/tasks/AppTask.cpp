@@ -6,6 +6,7 @@
 #include <array>
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include "config/BambuConfig.h"
 #include "config/NfcConfig.h"
 #include "config/ScaleConfig.h"
 #include "nfc/TagWritePolicy.h"
@@ -119,6 +120,12 @@ struct WeightUpdateState {
 WeightUpdateState weightUpdate{};
 bool pendingStagingSpoolSelection = false;
 std::uint32_t pendingStagingSpoolRequestId = 0;
+// AppTask's own authoritative mirror of "is a spool currently staged",
+// kept in sync at every point staging content changes (see the three
+// UpdateStaging call sites). Lets navigation decisions (SelectStaging,
+// Back from StagingActions) skip the empty-staging status screen without
+// round-tripping through UiTask's stagingState first.
+rtos::SpoolId stagingSpoolId = 0;
 enum class PendingTagOperation : std::uint8_t { None, Write, Erase };
 PendingTagOperation pendingTagOperation = PendingTagOperation::None;
 models::TagReadResult currentTag{};
@@ -2040,6 +2047,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       if (confirmedOverlay == rtos::UiOverlayKind::Confirmation &&
           pendingClearStagingConfirmation) {
         pendingClearStagingConfirmation = false;
+        stagingSpoolId = 0;
         command.type = rtos::UiCommandType::UpdateStaging;
         command.spoolId = 0;
         sendUiCommand(ctx, command, "AppTask: clear staging queue overflow");
@@ -2282,8 +2290,12 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::Close:
       command.type = rtos::UiCommandType::ShowScreen;
       if (currentScreen == rtos::UiScreenId::StagingActions) {
-        command.screenId = rtos::UiScreenId::StagingDetails;
-        currentScreen = rtos::UiScreenId::StagingDetails;
+        // Leeres Staging: der Status-Screen wurde beim Reingehen
+        // uebersprungen (siehe SelectStaging oben) -- "Zur\xC3\xBCck" geht
+        // dann ebenso direkt zu Home statt zu StagingDetails.
+        command.screenId = stagingSpoolId == 0 ? rtos::UiScreenId::Home
+                                               : rtos::UiScreenId::StagingDetails;
+        currentScreen = command.screenId;
         previousScreen = rtos::UiScreenId::Home;
       } else if (currentScreen == rtos::UiScreenId::StagingDetails) {
         command.screenId = rtos::UiScreenId::Home;
@@ -2984,10 +2996,22 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     }
 
     case rtos::UiActionType::SelectStaging:
-      previousScreen = action.value == 1 ? rtos::UiScreenId::StagingDetails
-                                         : currentScreen;
-      currentScreen = action.value == 1 ? rtos::UiScreenId::StagingActions
-                                        : rtos::UiScreenId::StagingDetails;
+      if (action.value == 1) {
+        // Explizite Weiterleitung (z. B. von StagingDetails) direkt zu
+        // StagingActions.
+        previousScreen = rtos::UiScreenId::StagingDetails;
+        currentScreen = rtos::UiScreenId::StagingActions;
+      } else if (stagingSpoolId == 0) {
+        // Leeres Staging: der Status-Screen (StagingDetails) haette nichts
+        // anzuzeigen -- direkt zu StagingActions springen. "Zur\xC3\xBCck"
+        // geht dann zu Home statt zum uebersprungenen Status-Screen (siehe
+        // die passende Anpassung im Back-Handler unten).
+        previousScreen = rtos::UiScreenId::Home;
+        currentScreen = rtos::UiScreenId::StagingActions;
+      } else {
+        previousScreen = currentScreen;
+        currentScreen = rtos::UiScreenId::StagingDetails;
+      }
       command.type = rtos::UiCommandType::ShowScreen;
       command.screenId = currentScreen;
       if (currentScreen == rtos::UiScreenId::StagingActions)
@@ -4112,6 +4136,7 @@ void appTask(void* parameter) {
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: weight progress close overflow");
+      stagingSpoolId = event.spoolId;
       rtos::UiCommand staging{};
       staging.type = rtos::UiCommandType::UpdateStaging;
       staging.requestId = event.requestId;
@@ -4317,6 +4342,7 @@ void appTask(void* parameter) {
           event.requestId == pendingStagingSpoolRequestId) {
         if (event.value >= 0 && event.spool.id != 0) {
           pendingStagingSpoolRequestId = 0;
+          stagingSpoolId = event.spool.id;
           rtos::UiCommand hide{};
           hide.type = rtos::UiCommandType::HideProgress;
           sendUiCommand(ctx, hide, "AppTask: staging load close overflow");
@@ -4800,6 +4826,29 @@ void appTask(void* parameter) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, event.requestId,
                     "Spoolman nicht erreichbar", event.text);
+      }
+    } else if (event.type == rtos::AppEventType::BambuAssignProgress) {
+      // Countdown feedback for the "Wird an den Drucker uebertragen"
+      // progress overlay while AppTask waits for BambuTask's telemetry
+      // confirmation (see PendingTrayAssignment in BambuTask.cpp). Ignored
+      // if the user has since left/cancelled that wait (dialog closed,
+      // stage no longer WritingSlot) or this is a stale event for an
+      // already-superseded request.
+      if (pendingSlotAssignment.stage == SlotAssignmentStage::WritingSlot &&
+          event.requestId == pendingSlotAssignment.requestId) {
+        const std::int32_t remainingMs = event.value;
+        const std::int32_t remainingSeconds = (remainingMs + 999) / 1000;
+        rtos::UiCommand progress{};
+        progress.type = rtos::UiCommandType::UpdateProgress;
+        progress.requestId = event.requestId;
+        progress.value = static_cast<std::int32_t>(
+            (static_cast<std::int64_t>(remainingMs) * 100) /
+            static_cast<std::int64_t>(config::kBambuAssignConfirmTimeoutMs));
+        std::snprintf(
+            progress.text, sizeof(progress.text),
+            "Warte auf Best\xC3\xA4tigung vom Drucker \xE2\x80\x93 noch %ld s",
+            static_cast<long>(remainingSeconds));
+        sendUiCommand(ctx, progress, "AppTask: assign progress overflow");
       }
     } else if (event.type == rtos::AppEventType::BambuConnected ||
                event.type == rtos::AppEventType::BambuDisconnected ||

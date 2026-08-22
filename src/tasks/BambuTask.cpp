@@ -40,6 +40,11 @@ struct PendingTrayAssignment {
   char expectedTrayType[16]{};
   char expectedColorHex[9]{};
   TickType_t startedAtTicks = 0;
+  // Throttles BambuAssignProgress events to once per whole second of
+  // remaining time instead of every ~200ms serviceConnections() tick; -1
+  // never matches a real remaining-seconds value, so the first tick always
+  // sends.
+  std::int32_t lastReportedRemainingSeconds = -1;
 };
 
 struct PrinterConnection {
@@ -583,19 +588,36 @@ void serviceConnections(rtos::RtosContext& ctx, PrinterConnections& connections)
     if (!conn.inUse) continue;
     if (conn.mqttClient.connected()) {
       conn.mqttClient.loop();
-      if (conn.pending.active &&
-          static_cast<TickType_t>(xTaskGetTickCount() -
-                                  conn.pending.startedAtTicks) >=
-              pdMS_TO_TICKS(config::kBambuAssignConfirmTimeoutMs)) {
-        FS_LOGW(services::LogComponent::Bambu,
-                "AssignTray confirmation timeout printer_id=%u ams_id=%u "
-                "tray_id=%u",
-                static_cast<unsigned>(conn.config.printerId),
-                static_cast<unsigned>(conn.pending.amsId),
-                static_cast<unsigned>(conn.pending.trayId));
-        failPendingAssignment(
-            ctx, conn,
-            "Drucker hat die Slot\xC3\xA4nderung nicht best\xC3\xA4tigt");
+      if (conn.pending.active) {
+        const std::uint32_t elapsedMs = pdTICKS_TO_MS(static_cast<TickType_t>(
+            xTaskGetTickCount() - conn.pending.startedAtTicks));
+        if (elapsedMs >= config::kBambuAssignConfirmTimeoutMs) {
+          FS_LOGW(services::LogComponent::Bambu,
+                  "AssignTray confirmation timeout printer_id=%u ams_id=%u "
+                  "tray_id=%u",
+                  static_cast<unsigned>(conn.config.printerId),
+                  static_cast<unsigned>(conn.pending.amsId),
+                  static_cast<unsigned>(conn.pending.trayId));
+          failPendingAssignment(
+              ctx, conn,
+              "Drucker hat die Slot\xC3\xA4nderung nicht best\xC3\xA4tigt");
+        } else {
+          // Progress feedback for the UI's wait dialog (see AppTask's
+          // BambuAssignProgress handling): remaining time until the
+          // timeout above fires, throttled to once per whole second so
+          // this doesn't flood the AppEvent queue every 200ms tick.
+          const std::uint32_t remainingMs =
+              config::kBambuAssignConfirmTimeoutMs - elapsedMs;
+          const std::int32_t remainingSeconds =
+              static_cast<std::int32_t>((remainingMs + 999) / 1000);
+          if (remainingSeconds != conn.pending.lastReportedRemainingSeconds) {
+            conn.pending.lastReportedRemainingSeconds = remainingSeconds;
+            publishBambuEvent(ctx, rtos::AppEventType::BambuAssignProgress,
+                              conn.pending.requestId, conn.config.printerId,
+                              conn.state, "",
+                              static_cast<std::int32_t>(remainingMs));
+          }
+        }
       }
       continue;
     }

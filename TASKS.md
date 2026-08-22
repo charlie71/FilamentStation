@@ -1040,6 +1040,14 @@ die erwarteten `tray_type`/`tray_color`-Werte bestätigt
 nach `kBambuAssignConfirmTimeoutMs` (8s) explizit einen Fehler
 (`serviceConnections()`). Details siehe docs/bambu-protocol.md.
 
+Nachtrag (2026-08-22, Nutzerwunsch): die Wartezeit auf diese
+Drucker-Bestätigung zeigte bisher nur einen statischen Text ohne
+Zeitangabe. Neuer, auf 1/s gedrosselter `AppEventType::BambuAssignProgress`
+(`BambuTask::serviceConnections()`) treibt jetzt einen echten Countdown im
+bereits vorhandenen, zuvor nie bewegten Fortschrittsbalken
+(`overlayProgress`) sowie einen "noch N s"-Text. Details siehe
+docs/bambu-protocol.md.
+
 ## 8.6 GUI
 
 * [x] hinzufügen
@@ -1096,6 +1104,23 @@ Drucker-Auswahl anderswo in der App). Die Zuordnung zum externen Slot
 ("Extern"-Taste) wird von `AppTask`/`BambuTask` weiterhin korrekt
 abgelehnt, da für den externen Slot kein verifiziertes Bambu-Kommando
 existiert (siehe docs/bambu-protocol.md).
+
+Nachtrag (2026-08-22, zwei Nutzer-gemeldete Bugs behoben):
+
+* Der Home-Screen aktualisierte sein Staging-Widget (`objects.home_staging`)
+  nicht sofort, wenn eine Spule per "Spule auswählen" ins Staging
+  übernommen wurde. `UiBridge::processUiCommand()`s `UpdateStaging`-Handler
+  rief bisher nur `updateStagingContent()` auf, nie `updateHomeContent()` --
+  Home blieb dadurch veraltet, bis irgendein unabhängiges Ereignis es zufällig
+  neu zeichnete. Beide `UpdateStaging`-Zweige (leeren und befüllen) rufen
+  jetzt zusätzlich `updateHomeContent()` auf.
+* Klick auf "Staging" bei leerem Staging navigierte immer erst zum
+  Status-Screen (`StagingDetails`), der dort nichts anzuzeigen hatte.
+  `AppTask` verfolgt jetzt mit `stagingSpoolId` (aktualisiert an allen drei
+  Stellen, die `UpdateStaging` senden) eigenständig, ob eine Spule gestagt
+  ist, und überspringt `StagingDetails` bei leerem Staging direkt zu
+  `StagingActions` -- "Zurück" von dort geht dann ebenso direkt zu Home
+  statt zum übersprungenen Status-Screen.
 
 ## 9.2 Native Tags
 

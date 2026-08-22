@@ -48,6 +48,7 @@ enum class UiCommandType : std::uint8_t {
   ShowScreen,
   ShowDialog,
   ShowProgress,
+  UpdateProgress,
   HideProgress,
   UpdateHeader,
   UpdatePrinterList,
