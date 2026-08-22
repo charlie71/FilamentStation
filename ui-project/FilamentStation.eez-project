@@ -254,7 +254,7 @@
                 "objID": "30000000-0009-4000-8000-000000000000"
               },
               "groupIndex": 0,
-              "text": "SD-Karte: bereit\\nDisplay: bereit\\nWaage: bereit\\nNFC: bereit\\nSpoolman: bereit\\nBambu: mock",
+              "text": "SD-Karte: bereit\\nDisplay: bereit\\nWaage: bereit\\nNFC: bereit\\nSpoolman: bereit\\nBambu: bereit",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false,
@@ -456,7 +456,7 @@
                   "type": "LVGLLabelWidget",
                   "left": 0,
                   "top": 0,
-                  "width": 41,
+                  "width": 55,
                   "height": 16,
                   "customInputs": [],
                   "customOutputs": [],
@@ -491,7 +491,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "AMS 1",
+                  "text": "AMS 1 --",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -538,7 +538,7 @@
                   "type": "LVGLLabelWidget",
                   "left": 0,
                   "top": 0,
-                  "width": 44,
+                  "width": 58,
                   "height": 16,
                   "customInputs": [],
                   "customOutputs": [],
@@ -573,7 +573,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "AMS 2",
+                  "text": "AMS 2 --",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -620,7 +620,7 @@
                   "type": "LVGLLabelWidget",
                   "left": 0,
                   "top": 0,
-                  "width": 44,
+                  "width": 58,
                   "height": 16,
                   "customInputs": [],
                   "customOutputs": [],
@@ -654,7 +654,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "AMS 3",
+                  "text": "AMS 3 --",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "useStaticText": true
@@ -700,7 +700,7 @@
                   "type": "LVGLLabelWidget",
                   "left": 0,
                   "top": 0,
-                  "width": 45,
+                  "width": 59,
                   "height": 16,
                   "customInputs": [],
                   "customOutputs": [],
@@ -734,7 +734,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "AMS 4",
+                  "text": "AMS 4 --",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "useStaticText": true
@@ -1389,7 +1389,7 @@
                   "type": "LVGLLabelWidget",
                   "left": 0,
                   "top": 0,
-                  "width": 163,
+                  "width": 91,
                   "height": 48,
                   "customInputs": [],
                   "customOutputs": [],
@@ -1424,7 +1424,7 @@
                     }
                   },
                   "groupIndex": 0,
-                  "text": "NFC: bereit\\nSpoolman: verbunden\\nWLAN: verbunden",
+                  "text": "NFC: --\\nSpoolman: --\\nWLAN: --",
                   "textType": "literal",
                   "longMode": "WRAP",
                   "recolor": false,
@@ -1845,7 +1845,14 @@
               "disabledStateType": "literal",
               "states": "",
               "localStyles": {
-                "objID": "30000000-0113-4000-8000-000000000000"
+                "objID": "30000000-0113-4000-8000-000000000000",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "bg_color": "#2196f3"
+                    }
+                  }
+                }
               },
               "groupIndex": 0
             },
@@ -2526,7 +2533,7 @@
                 "definition": {
                   "MAIN": {
                     "DEFAULT": {
-                      "bg_color": "#1565C0"
+                      "bg_color": "#2196f3"
                     }
                   }
                 }
@@ -2738,7 +2745,7 @@
                 "definition": {
                   "MAIN": {
                     "DEFAULT": {
-                      "bg_color": "#1565C0"
+                      "bg_color": "#2196f3"
                     }
                   }
                 }
@@ -2827,7 +2834,7 @@
                 "definition": {
                   "MAIN": {
                     "DEFAULT": {
-                      "bg_color": "#1565C0"
+                      "bg_color": "#2196f3"
                     }
                   }
                 }
@@ -2916,7 +2923,7 @@
                 "definition": {
                   "MAIN": {
                     "DEFAULT": {
-                      "bg_color": "#1565C0"
+                      "bg_color": "#2196f3"
                     }
                   }
                 }
@@ -3005,7 +3012,7 @@
                 "definition": {
                   "MAIN": {
                     "DEFAULT": {
-                      "bg_color": "#1565C0"
+                      "bg_color": "#2196f3"
                     }
                   }
                 }
@@ -3094,7 +3101,7 @@
                 "definition": {
                   "MAIN": {
                     "DEFAULT": {
-                      "bg_color": "#1565C0"
+                      "bg_color": "#2196f3"
                     }
                   }
                 }
@@ -3183,7 +3190,7 @@
                 "definition": {
                   "MAIN": {
                     "DEFAULT": {
-                      "bg_color": "#1565C0"
+                      "bg_color": "#2196f3"
                     }
                   }
                 }
@@ -3269,7 +3276,7 @@
                 "definition": {
                   "MAIN": {
                     "DEFAULT": {
-                      "bg_color": "#1565C0"
+                      "bg_color": "#2196f3"
                     }
                   }
                 }
@@ -3358,7 +3365,7 @@
                 "definition": {
                   "MAIN": {
                     "DEFAULT": {
-                      "bg_color": "#1565C0"
+                      "bg_color": "#2196f3"
                     }
                   }
                 }

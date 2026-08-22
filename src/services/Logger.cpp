@@ -21,7 +21,8 @@ void Logger::log(LogLevel level, LogComponent component, const char* format,
                  ...) {
   // Logging may block briefly while enqueueing and is therefore forbidden in
   // interrupt context. ISRs must notify a task which performs the log instead.
-  if (xPortInIsrContext() || !enabled(level) || format == nullptr) return;
+  if (xPortInIsrContext() || !enabled(level, component) || format == nullptr)
+    return;
 
   char message[config::kLogMessageCapacity]{};
   va_list arguments;

@@ -35,6 +35,10 @@ struct PrinterConnection {
   char reportTopic[config::kBambuTopicCapacity]{};
   char requestTopic[config::kBambuTopicCapacity]{};
   char clientId[32]{};
+  // "print.sequence_id" on the wire; community docs (OpenBambuAPI) call for
+  // incrementing by 1 per command. Reset to 1 on every (re)connect, a fresh
+  // MQTT session.
+  std::uint32_t nextSequenceId = 1;
 };
 
 using PrinterConnections =
@@ -44,7 +48,14 @@ void publishBambuEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
                        std::uint32_t requestId, rtos::PrinterId printerId,
                        const models::PrinterState& state, const char* text,
                        std::int32_t value = 0) {
-  rtos::AppEvent event{};
+  // static: BambuTask processes exactly one command/report at a time
+  // (single FreeRTOS consumer, never re-entrant); this large (~3KB)
+  // AppEvent was a stack-local here, the same latent bug pattern already
+  // fixed in AppTask/ScaleTask/NfcTask/SpoolmanTask this session, just
+  // never triggered yet because this function's own call depth stayed
+  // shallow enough until now.
+  static rtos::AppEvent event{};
+  event = rtos::AppEvent{};
   event.type = type;
   event.requestId = requestId;
   event.value = value;
@@ -62,6 +73,25 @@ void publishBambuError(rtos::RtosContext& ctx, std::uint32_t requestId,
                        rtos::PrinterId printerId, const char* text) {
   publishBambuEvent(ctx, rtos::AppEventType::BambuError, requestId, printerId,
                     models::PrinterState{}, text);
+}
+
+// Single choke point for every outgoing MQTT publish so the exact bytes
+// sent to the printer are always visible in the log, not just for the one
+// command that happened to have ad-hoc logging added -- own log line with
+// minimal prefix (see kLogMessageCapacity, TaskConfig.h) so the payload is
+// never truncated.
+bool publishBambuRequest(PrinterConnection& conn, rtos::PrinterId printerId,
+                         const char* payload) {
+  FS_LOGD(services::LogComponent::Bambu,
+          "MQTT publish printer_id=%u topic=\"%s\" payload=%s",
+          static_cast<unsigned>(printerId), conn.requestTopic, payload);
+  const bool published = conn.mqttClient.publish(conn.requestTopic, payload);
+  if (!published) {
+    FS_LOGW(services::LogComponent::Bambu,
+            "MQTT publish failed printer_id=%u topic=\"%s\"",
+            static_cast<unsigned>(printerId), conn.requestTopic);
+  }
+  return published;
 }
 
 PrinterConnection* connectionFor(PrinterConnections& connections,
@@ -117,6 +147,24 @@ void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
           static_cast<unsigned>(presentAmsCount),
           static_cast<unsigned>(occupiedTrayCount),
           static_cast<unsigned>(conn.state.externalSlot.state));
+  // Per-tray detail (diagnostic): confirms whether a just-sent
+  // ams_filament_setting actually changed what the printer reports back,
+  // versus the app only assuming success from the MQTT publish result.
+  for (std::uint8_t amsId = 0; amsId < models::kMaximumAmsPerPrinter;
+       ++amsId) {
+    const auto& ams = conn.state.amsUnits[amsId];
+    if (!ams.present) continue;
+    for (std::uint8_t trayId = 0; trayId < models::kSlotsPerAms; ++trayId) {
+      const auto& slot = ams.slots[trayId];
+      FS_LOGD(services::LogComponent::Bambu,
+              "Report tray detail printer_id=%u ams_id=%u tray_id=%u "
+              "state=%u material=\"%s\" color=\"%s\" spool_id=%lu",
+              static_cast<unsigned>(conn.config.printerId),
+              static_cast<unsigned>(amsId), static_cast<unsigned>(trayId),
+              static_cast<unsigned>(slot.state), slot.material,
+              slot.colorHex, static_cast<unsigned long>(slot.spoolId));
+    }
+  }
   publishBambuEvent(ctx, rtos::AppEventType::BambuUpdate, 0,
                     conn.config.printerId, conn.state, "Statusbericht empfangen");
 }
@@ -159,13 +207,11 @@ bool doConnect(rtos::RtosContext& ctx, PrinterConnection& conn,
             "Report subscription failed printer_id=%u topic=\"%s\"",
             static_cast<unsigned>(conn.config.printerId), conn.reportTopic);
   }
+  conn.nextSequenceId = 1;
   char request[config::kBambuRequestPayloadCapacity]{};
-  if (services::bambuBuildPushAllRequest(request, sizeof(request)) > 0) {
-    const bool published = conn.mqttClient.publish(conn.requestTopic, request);
-    FS_LOGD(services::LogComponent::Bambu,
-            "Initial pushall request %s printer_id=%u topic=\"%s\"",
-            published ? "sent" : "failed",
-            static_cast<unsigned>(conn.config.printerId), conn.requestTopic);
+  if (services::bambuBuildPushAllRequest(conn.nextSequenceId++, request,
+                                         sizeof(request)) > 0) {
+    publishBambuRequest(conn, conn.config.printerId, request);
   }
 
   conn.state.printerId = conn.config.printerId;
@@ -202,8 +248,9 @@ void handleConnect(rtos::RtosContext& ctx, PrinterConnections& connections,
     // Already connected to this printerId: idempotent refresh instead of a
     // full reconnect (mirrors the AssignTag idempotency pattern).
     char request[config::kBambuRequestPayloadCapacity]{};
-    if (services::bambuBuildPushAllRequest(request, sizeof(request)) > 0) {
-      conn->mqttClient.publish(conn->requestTopic, request);
+    if (services::bambuBuildPushAllRequest(conn->nextSequenceId++, request,
+                                           sizeof(request)) > 0) {
+      publishBambuRequest(*conn, conn->config.printerId, request);
     }
     publishBambuEvent(ctx, rtos::AppEventType::BambuConnected,
                       command.requestId, conn->config.printerId, conn->state,
@@ -258,15 +305,13 @@ void handleRequestStatus(rtos::RtosContext& ctx,
     return;
   }
   char request[config::kBambuRequestPayloadCapacity]{};
-  if (services::bambuBuildPushAllRequest(request, sizeof(request)) == 0 ||
-      !conn->mqttClient.publish(conn->requestTopic, request)) {
+  if (services::bambuBuildPushAllRequest(conn->nextSequenceId++, request,
+                                         sizeof(request)) == 0 ||
+      !publishBambuRequest(*conn, command.printerId, request)) {
     publishBambuError(ctx, command.requestId, command.printerId,
                       "Statusanfrage konnte nicht gesendet werden");
     return;
   }
-  FS_LOGD(services::LogComponent::Bambu,
-          "Status request sent printer_id=%u topic=\"%s\"",
-          static_cast<unsigned>(command.printerId), conn->requestTopic);
 }
 
 void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
@@ -295,11 +340,35 @@ void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
 
   char payload[config::kBambuRequestPayloadCapacity]{};
   const std::size_t length = services::bambuBuildAmsFilamentSetting(
-      command.amsId, command.trayId, filament, payload, sizeof(payload));
-  if (length == 0 || !conn->mqttClient.publish(conn->requestTopic, payload)) {
+      conn->nextSequenceId++, command.amsId, command.trayId, filament,
+      payload, sizeof(payload));
+  if (length == 0 || !publishBambuRequest(*conn, command.printerId, payload)) {
     publishBambuError(ctx, command.requestId, command.printerId,
                       "Slotdaten konnten nicht gesendet werden");
     return;
+  }
+
+  // "ams_filament_setting" alone leaves the printer treating the change as
+  // provisional; a follow-up "extrusion_cali_sel" is what actually commits
+  // it (see the doc comment on bambuBuildExtrusionCaliSel() and
+  // docs/bambu-protocol.md). caliIdx -1: no specific flow/pressure-advance
+  // calibration is tracked per Spoolman spool yet.
+  const char* trayInfoIdx = services::bambuGenericTrayInfoIdx(filament.trayType);
+  const char* nozzleDiameter =
+      conn->state.nozzleDiameter[0] != '\0' ? conn->state.nozzleDiameter : "0.4";
+  char caliSelPayload[config::kBambuRequestPayloadCapacity]{};
+  const std::size_t caliSelLength = services::bambuBuildExtrusionCaliSel(
+      conn->nextSequenceId++, command.amsId, command.trayId, trayInfoIdx,
+      nozzleDiameter, -1, caliSelPayload, sizeof(caliSelPayload));
+  if (caliSelLength == 0 ||
+      !publishBambuRequest(*conn, command.printerId, caliSelPayload)) {
+    FS_LOGW(services::LogComponent::Bambu,
+            "extrusion_cali_sel send failed printer_id=%u ams_id=%u "
+            "tray_id=%u -- Zuordnung wird m\xC3\xB6glicherweise nicht "
+            "dauerhaft \xC3\xBC" "bernommen",
+            static_cast<unsigned>(command.printerId),
+            static_cast<unsigned>(command.amsId),
+            static_cast<unsigned>(command.trayId));
   }
 
   // The printer itself does not know Spoolman IDs; this is the one place
@@ -309,10 +378,17 @@ void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
   conn->state.amsUnits[command.amsId].slots[command.trayId].spoolId =
       command.spoolId;
   FS_LOGI(services::LogComponent::Bambu,
-          "Tray filament setting sent printer_id=%u ams_id=%u tray_id=%u",
+          "Tray filament setting sent printer_id=%u ams_id=%u tray_id=%u "
+          "tray_info_idx=\"%s\" tray_type=\"%s\" tray_color=\"%s\" "
+          "nozzle_temp_min=%d nozzle_temp_max=%d",
           static_cast<unsigned>(command.printerId),
           static_cast<unsigned>(command.amsId),
-          static_cast<unsigned>(command.trayId));
+          static_cast<unsigned>(command.trayId),
+          services::bambuGenericTrayInfoIdx(filament.trayType),
+          filament.trayType, filament.trayColorHex,
+          static_cast<int>(filament.nozzleTempMinC),
+          static_cast<int>(filament.nozzleTempMaxC));
+  // Raw wire payload already logged by publishBambuRequest() above.
   publishBambuEvent(ctx, rtos::AppEventType::BambuUpdate, command.requestId,
                     command.printerId, conn->state, "Slotdaten gesendet");
 }

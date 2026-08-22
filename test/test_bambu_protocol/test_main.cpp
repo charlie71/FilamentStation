@@ -26,18 +26,20 @@ void testTopicsUseSerialNumber() {
 void testPushAllRequestPayload() {
   char payload[128]{};
   const std::size_t length =
-      services::bambuBuildPushAllRequest(payload, sizeof(payload));
+      services::bambuBuildPushAllRequest(7, payload, sizeof(payload));
   TEST_ASSERT_GREATER_THAN_UINT32(0, length);
   JsonDocument document;
   TEST_ASSERT_FALSE(deserializeJson(document, payload, length));
   TEST_ASSERT_EQUAL_STRING("pushall",
                            document["pushing"]["command"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING(
+      "7", document["pushing"]["sequence_id"].as<const char*>());
 }
 
 void testPushAllRequestRejectsTooSmallBuffer() {
   char payload[4]{};
   TEST_ASSERT_EQUAL_UINT32(
-      0, services::bambuBuildPushAllRequest(payload, sizeof(payload)));
+      0, services::bambuBuildPushAllRequest(1, payload, sizeof(payload)));
 }
 
 void testAmsFilamentSettingPayload() {
@@ -50,7 +52,7 @@ void testAmsFilamentSettingPayload() {
 
   char payload[256]{};
   const std::size_t length = services::bambuBuildAmsFilamentSetting(
-      1, 2, filament, payload, sizeof(payload));
+      42, 1, 2, filament, payload, sizeof(payload));
   TEST_ASSERT_GREATER_THAN_UINT32(0, length);
 
   JsonDocument document;
@@ -58,12 +60,77 @@ void testAmsFilamentSettingPayload() {
   const JsonObjectConst print = document["print"];
   TEST_ASSERT_EQUAL_STRING("ams_filament_setting",
                            print["command"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("42",
+                           print["sequence_id"].as<const char*>());
   TEST_ASSERT_EQUAL_UINT32(1, print["ams_id"].as<std::uint32_t>());
   TEST_ASSERT_EQUAL_UINT32(2, print["tray_id"].as<std::uint32_t>());
+  TEST_ASSERT_EQUAL_UINT32(2, print["slot_id"].as<std::uint32_t>());
   TEST_ASSERT_EQUAL_STRING("PLA", print["tray_type"].as<const char*>());
   TEST_ASSERT_EQUAL_STRING("FFFFFFFF", print["tray_color"].as<const char*>());
   TEST_ASSERT_EQUAL_UINT32(190, print["nozzle_temp_min"].as<std::uint32_t>());
   TEST_ASSERT_EQUAL_UINT32(240, print["nozzle_temp_max"].as<std::uint32_t>());
+  TEST_ASSERT_EQUAL_STRING("GFL99", print["tray_info_idx"].as<const char*>());
+}
+
+void testAmsFilamentSettingAppendsAlphaToSixDigitColor() {
+  // Spoolman's color_hex is 6-digit RRGGBB (no alpha); the wire protocol
+  // requires 8-digit RRGGBBAA with alpha always FF.
+  services::BambuTrayFilament filament{};
+  std::snprintf(filament.trayType, sizeof(filament.trayType), "PETG");
+  std::snprintf(filament.trayColorHex, sizeof(filament.trayColorHex),
+               "00AE42");
+  char payload[256]{};
+  const std::size_t length = services::bambuBuildAmsFilamentSetting(
+      1, 0, 0, filament, payload, sizeof(payload));
+  TEST_ASSERT_GREATER_THAN_UINT32(0, length);
+  JsonDocument document;
+  TEST_ASSERT_FALSE(deserializeJson(document, payload, length));
+  TEST_ASSERT_EQUAL_STRING(
+      "00AE42FF", document["print"]["tray_color"].as<const char*>());
+}
+
+void testExtrusionCaliSelPayload() {
+  char payload[256]{};
+  const std::size_t length = services::bambuBuildExtrusionCaliSel(
+      5, 0, 2, "GFL99", "0.4", -1, payload, sizeof(payload));
+  TEST_ASSERT_GREATER_THAN_UINT32(0, length);
+
+  JsonDocument document;
+  TEST_ASSERT_FALSE(deserializeJson(document, payload, length));
+  const JsonObjectConst print = document["print"];
+  TEST_ASSERT_EQUAL_STRING("extrusion_cali_sel",
+                           print["command"].as<const char*>());
+  TEST_ASSERT_EQUAL_INT32(-1, print["cali_idx"].as<std::int32_t>());
+  TEST_ASSERT_EQUAL_STRING("GFL99", print["filament_id"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("0.4", print["nozzle_diameter"].as<const char*>());
+  TEST_ASSERT_EQUAL_UINT32(0, print["ams_id"].as<std::uint32_t>());
+  TEST_ASSERT_EQUAL_UINT32(2, print["tray_id"].as<std::uint32_t>());
+  TEST_ASSERT_EQUAL_UINT32(2, print["slot_id"].as<std::uint32_t>());
+  TEST_ASSERT_EQUAL_STRING("5", print["sequence_id"].as<const char*>());
+}
+
+void testGenericTrayInfoIdxMapping() {
+  // Composite ("-CF") variants must win over their plain base material.
+  TEST_ASSERT_EQUAL_STRING("GFL98",
+                           services::bambuGenericTrayInfoIdx("PLA-CF"));
+  TEST_ASSERT_EQUAL_STRING("GFN98",
+                           services::bambuGenericTrayInfoIdx("PA-CF"));
+  TEST_ASSERT_EQUAL_STRING("GFL99", services::bambuGenericTrayInfoIdx("PLA"));
+  // Free-text Spoolman material strings (e.g. "PLA Basic") still match on
+  // the material family prefix.
+  TEST_ASSERT_EQUAL_STRING("GFL99",
+                           services::bambuGenericTrayInfoIdx("PLA Basic"));
+  TEST_ASSERT_EQUAL_STRING("GFG99", services::bambuGenericTrayInfoIdx("PETG"));
+  TEST_ASSERT_EQUAL_STRING("GFB98", services::bambuGenericTrayInfoIdx("ASA"));
+  TEST_ASSERT_EQUAL_STRING("GFB99", services::bambuGenericTrayInfoIdx("ABS"));
+  TEST_ASSERT_EQUAL_STRING("GFU99", services::bambuGenericTrayInfoIdx("TPU"));
+  TEST_ASSERT_EQUAL_STRING("GFS99", services::bambuGenericTrayInfoIdx("PVA"));
+  TEST_ASSERT_EQUAL_STRING("GFC99", services::bambuGenericTrayInfoIdx("PC"));
+  TEST_ASSERT_EQUAL_STRING("GFN99", services::bambuGenericTrayInfoIdx("PA"));
+  // Unknown/empty material: no invented id.
+  TEST_ASSERT_EQUAL_STRING("", services::bambuGenericTrayInfoIdx("Wood"));
+  TEST_ASSERT_EQUAL_STRING("", services::bambuGenericTrayInfoIdx(""));
+  TEST_ASSERT_EQUAL_STRING("", services::bambuGenericTrayInfoIdx(nullptr));
 }
 
 void testApplyReportRejectsPayloadWithoutPrintObject() {
@@ -154,6 +221,16 @@ void testApplyReportParsesExternalTray() {
   TEST_ASSERT_EQUAL_STRING("00FF00FF", state.externalSlot.colorHex);
 }
 
+void testApplyReportParsesNozzleDiameter() {
+  JsonDocument document;
+  deserializeJson(document, R"({
+    "print": {"nozzle_diameter": "0.4"}
+  })");
+  PrinterState state{};
+  TEST_ASSERT_TRUE(services::bambuApplyReport(document, state));
+  TEST_ASSERT_EQUAL_STRING("0.4", state.nozzleDiameter);
+}
+
 void testApplyReportNeverTouchesSpoolId() {
   JsonDocument document;
   deserializeJson(document, R"({
@@ -173,11 +250,15 @@ int main(int, char**) {
   RUN_TEST(testPushAllRequestPayload);
   RUN_TEST(testPushAllRequestRejectsTooSmallBuffer);
   RUN_TEST(testAmsFilamentSettingPayload);
+  RUN_TEST(testAmsFilamentSettingAppendsAlphaToSixDigitColor);
+  RUN_TEST(testExtrusionCaliSelPayload);
+  RUN_TEST(testGenericTrayInfoIdxMapping);
   RUN_TEST(testApplyReportRejectsPayloadWithoutPrintObject);
   RUN_TEST(testApplyReportParsesAmsTraysWithStringIds);
   RUN_TEST(testApplyReportParsesAmsWithNumericIds);
   RUN_TEST(testApplyReportIgnoresOutOfRangeIds);
   RUN_TEST(testApplyReportParsesExternalTray);
+  RUN_TEST(testApplyReportParsesNozzleDiameter);
   RUN_TEST(testApplyReportNeverTouchesSpoolId);
   return UNITY_END();
 }

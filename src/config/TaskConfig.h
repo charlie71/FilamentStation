@@ -68,6 +68,11 @@ constexpr UBaseType_t kUiCommandQueueLength = 8;
 constexpr UBaseType_t kServiceCommandQueueLength = 8;
 constexpr UBaseType_t kStorageCommandQueueLength = 8;
 constexpr UBaseType_t kLogQueueLength = 32;
-constexpr std::size_t kLogMessageCapacity = 256;
+// Bumped from 256: BambuTask logs the full ams_filament_setting MQTT
+// payload (up to kBambuRequestPayloadCapacity=256 bytes JSON) for
+// diagnosing why a printer accepts-then-reverts a slot reassignment; 256
+// left no room for the "I [BAMBU] ..." prefix/label plus the JSON without
+// truncating it, which is exactly the data that needed to be visible.
+constexpr std::size_t kLogMessageCapacity = 320;
 
 }  // namespace filament_station::config

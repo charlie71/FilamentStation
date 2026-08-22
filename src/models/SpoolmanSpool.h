@@ -20,6 +20,14 @@ struct SpoolmanSpool {
   float emptyWeightGrams = 0.0F;
   float remainingWeightGrams = 0.0F;
   bool archived = false;
+  // Bambu-Duesentemperaturbereich aus den Spoolman-Filament-Extra-Feldern
+  // "bambu_temp_min"/"bambu_temp_max" (siehe SpoolmanClient::
+  // decodeNumberExtraField). Nicht von Spoolman selbst vorgegeben --
+  // projektspezifische Extra-Felder, die der Nutzer selbst anlegt.
+  bool bambuTempFieldsPresent = false;
+  bool bambuTempFieldsValid = false;
+  std::uint16_t bambuTempMinC = 0;
+  std::uint16_t bambuTempMaxC = 0;
 };
 
 }  // namespace models

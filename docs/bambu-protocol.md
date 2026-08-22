@@ -42,21 +42,24 @@ oder fehlende Felder werden ignoriert statt einen Fehler auszuloesen.
 ### Vollstaendigen Status anfordern ("pushall")
 
 ```json
-{"pushing":{"sequence_id":"0","command":"pushall"}}
+{"pushing":{"sequence_id":"1","command":"pushall"}}
 ```
 
 Wird bei `verbinden` und bei `RequestStatus` auf das Request-Topic
-veroeffentlicht.
+veroeffentlicht. `sequence_id` beginnt bei 1 je (Re-)Connect und steigt mit
+jedem Kommando (siehe naechster Abschnitt).
 
 ### AMS-/Slot-Filamentdaten schreiben ("ams_filament_setting")
 
 ```json
 {
   "print": {
-    "sequence_id": "0",
+    "sequence_id": "42",
     "command": "ams_filament_setting",
     "ams_id": 0,
     "tray_id": 0,
+    "slot_id": 0,
+    "tray_info_idx": "GFL99",
     "tray_type": "PLA",
     "tray_color": "FFFFFFFF",
     "nozzle_temp_min": 190,
@@ -65,10 +68,196 @@ veroeffentlicht.
 }
 ```
 
-`tray_color` ist ein 8-stelliger Hex-String (RRGGBBAA). Diese Nutzlast wird
-von `AssignTray`/"Slotdaten schreiben" gesendet; die Zuordnung
-Spoolman-Spule -> Filamenttyp/-farbe erfolgt in einer spaeteren Phase
-(8.5, AMS-Zuordnung) und wird `BambuTask` fertig aufbereitet uebergeben.
+`slot_id` dupliziert `tray_id` (Slot-Index innerhalb dieser AMS-Einheit).
+Community-Referenz `yanshay/spoolease` (siehe unten) sendet beide Felder auf
+diesem Kommando.
+
+`sequence_id` wird pro `PrinterConnection` fortlaufend gezaehlt (Start bei 1,
+zurueckgesetzt bei jedem (Re-)Connect -- eine frische MQTT-Session) und bei
+jedem gesendeten Kommando (auch "pushall") um 1 erhoeht, statt wie zuvor
+immer als fixe `"0"` gesendet zu werden. Grund: OpenBambuAPI (community-
+Referenz) dokumentiert das Feld explizit als "incremented by 1 on each
+command"; nachdem selbst nach dem `tray_info_idx`-Fix ein bereits belegter
+AMS-Slot die Zuordnung nach 3-5 Sekunden wieder zuruecksetzte (siehe unten),
+ist ein durchgaengig gleichbleibendes `sequence_id` ein weiterer Kandidat --
+noch unverifiziert, ob es die eigentliche Ursache ist.
+
+`tray_color` ist ein 8-stelliger Hex-String (RRGGBBAA, Alpha immer `FF`).
+Spoolmans `color_hex` liefert nur 6-stelliges RRGGBB ohne Alpha;
+`BambuProtocol::bambuBuildAmsFilamentSetting()` haengt das Alpha-Byte `FF`
+automatisch an ein 6-stelliges `trayColorHex` an, statt einen laut
+Spezifikation ungueltigen 6-stelligen Wert zu senden.
+
+Diese Nutzlast wird von `AssignTray`/"Slotdaten schreiben" gesendet; die
+Zuordnung Spoolman-Spule -> Filamenttyp/-farbe erfolgt in einer spaeteren
+Phase (8.5, AMS-Zuordnung) und wird `BambuTask` fertig aufbereitet
+uebergeben.
+
+`nozzle_temp_min`/`nozzle_temp_max` stammen aus den projektspezifischen
+Spoolman-Filament-Extra-Feldern `bambu_temp_min`/`bambu_temp_max` (vom
+Nutzer selbst in Spoolman angelegt, kein Standardfeld). Fehlen diese Felder
+oder sind sie nicht als gueltige, positive Zahl mit `min <= max` dekodierbar,
+bleiben beide Werte `0` und die App zeigt einen Hinweis im
+Ergebnisdialog -- es wird keine Temperatur erfunden.
+
+`tray_info_idx` referenziert Bambus intern hinterlegte Filament-Profil-ID
+("setting_id"). Ein erster Hardwaretest ohne dieses Feld (nur tray_type/
+tray_color/nozzle_temp_*) hat den physischen Slot-Inhalt eines bereits
+belegten Slots **nicht** geaendert, obwohl der Befehl mit korrekter
+Adressierung ankam -- ein starkes Indiz, dass echte Firmware das Feld fuer
+diesen Vorgang braucht. `BambuProtocol::bambuGenericTrayInfoIdx()` bildet
+den freien Spoolman-Materialtext (z. B. `PLA`, `PETG`, `PLA-CF`) auf Bambu
+Studios eingebaute *generische* (nicht markenspezifische) Profil-IDs ab --
+community-dokumentiert ueber `Bambu-Research-Group/RFID-Tag-Guide` und die
+WolfWithSword Home-Assistant-Bambu-Lab-Integration, nicht von Bambu Lab
+selbst. Bekannte Zuordnungen: PLA→GFL99, PLA-CF→GFL98, PETG→GFG99,
+ASA→GFB98, ABS→GFB99, TPU→GFU99, PVA→GFS99, PC→GFC99, PA→GFN99,
+PA-CF→GFN98. Ein nicht zuordenbares Material liefert einen leeren String
+(kein erfundener Wert) -- ob der Drucker `tray_info_idx: ""` akzeptiert
+oder ebenfalls verwirft, ist noch unverifiziert.
+
+### Unter Untersuchung: Ueberschreiben eines bereits belegten Slots wird zurueckgesetzt
+
+Mit `tray_info_idx` und gueltiger Duesentemperatur, aber weiterhin fixem
+`sequence_id: "0"` und 6-stelligem `tray_color` (ohne Alpha), nimmt der
+Drucker die Zuordnung sichtbar an -- das neue Filament erscheint fuer ca.
+3-5 Sekunden im AMS-Status --, wird danach aber automatisch wieder auf den
+vorherigen Wert zurueckgesetzt. Per Hardwaretest bestaetigt (2026-08-22):
+derselbe Effekt trat zu diesem Zeitpunkt identisch in Bambu Studio
+(offizieller Client) auf. Das deutete zunaechst auf eine reine Drucker-/
+AMS-Firmware-Ursache hin -- **aber** derselbe Test hatte zwei inzwischen
+behobene Payload-Abweichungen von der Spezifikation: `sequence_id` wurde
+nie erhoeht (OpenBambuAPI dokumentiert "incremented by 1 on each command")
+und `tray_color` war nur 6-stellig statt der spezifizierten 8-stelligen
+RRGGBBAA-Form. Ob eine dieser Abweichungen die eigentliche Ursache war, ist
+nach diesen Fixes noch nicht erneut auf echter Hardware getestet. Ein
+leerer Slot kann nicht getestet werden, da der Drucker fuer eine
+Filamentanzeige eine physisch eingelegte Spule voraussetzt.
+
+Weiterer Verdacht (Nutzer-Diagnose, 2026-08-22): `AppTask` hat bisher nach
+jedem erfolgreichen `AssignTray` sofort ein `RequestStatus`/`pushall`
+ausgeloest. Das fragt den Drucker ab, noch bevor dieser die neuen
+AMS-Werte intern fertig verarbeitet und gespeichert hat -- der Drucker
+sendet nach einer erfolgreichen Parameteraenderung ueblicherweise von sich
+aus ein Status-Update an alle Clients, ein sofortiges Nachfragen ist daher
+unnoetig und koennte die interne Verarbeitung stoeren. Fix: dieses
+sofortige `RequestStatus` wurde ersatzlos entfernt; Home aktualisiert sich
+stattdessen ueber den naechsten ohnehin periodisch eintreffenden
+Statusbericht. Noch nicht auf echter Hardware verifiziert, ob dies (statt
+oder zusaetzlich zu `sequence_id`/`tray_color`) die eigentliche Ursache
+des Zuruecksetzens war.
+
+### Vergleich mit FilaMan-System (2026-08-22)
+
+Auf Nutzerwunsch wurde das vergleichbare Open-Source-Projekt
+[Fire-Devils/filaman-system](https://github.com/Fire-Devils/filaman-system)
+untersucht, konkret dessen tatsaechlicher Bambu-MQTT-Treiber im separaten
+Repo `Fire-Devils/filaman-bambulab-plugin` (`bambulab/driver.py`). Dieser
+Treiber sendet `ams_filament_setting` nicht selbst von Hand, sondern
+delegiert an die Drittanbieter-Bibliothek `BambuTools/bambulabs_api`
+(`mqtt_client.py::set_printer_filament()`), die in Produktivsystemen
+nachweislich funktioniert. Feld-fuer-Feld-Vergleich mit
+`BambuProtocol::bambuBuildAmsFilamentSetting()`:
+
+* **Kein `sequence_id`-Feld.** `bambulabs_api` sendet bei
+  `ams_filament_setting` (und auch bei `pushall`) ueberhaupt kein
+  `sequence_id` im ausgehenden Payload -- `get_sequence_id()` liest den
+  Wert dort nur aus eingehenden Statusberichten des Druckers, schreibt ihn
+  nie zurueck. Das relativiert die eigene `sequence_id`-Theorie: eine
+  nachweislich funktionierende Implementierung kommt komplett ohne dieses
+  Feld aus. Unser fortlaufender Zaehler bleibt vorerst bestehen (zusaetzes
+  Feld, vermutlich vom Drucker ignoriert), gilt aber nicht mehr als
+  wahrscheinliche Ursache.
+* **`tray_color`**: identisch -- 6-stelliger RRGGBB-Input, Bibliothek
+  haengt `FF` an (`f"{colour.upper()}FF"`), genau wie unser Fix.
+  `assert len(colour) == 6` bestaetigt zusaetzlich, dass der Drucker den
+  8-stelligen Wert erwartet.
+* **`tray_info_idx`**: identisch enthalten, kommt aus einer eigenen
+  Materialtabelle (`AMSFilamentSettings`/`Filament`-Enum), analog zu
+  unserem `bambuGenericTrayInfoIdx()`.
+* **`ams_id`/`tray_id`**: als einfache Ganzzahlen 0-basiert (Default fuer
+  den externen Slot: `ams_id=255`, `tray_id=254`) -- keine zusaetzliche
+  Adress-Transformation, deckt sich mit unserer 0-basierten Zaehlung.
+* **Keine weiteren Felder**: kein `cali_idx`, kein `setting_id` im
+  ausgehenden Kommando (beide werden in FilaMan nur beim *Auswerten*
+  eingehender Statusberichte verwendet, nie beim Senden).
+* **Kein Folgebefehl.** Der manuelle Zuweisungspfad
+  (`send_filament_to_tray()`) sendet ausschliesslich
+  `ams_filament_setting` -- kein `pushall`, kein `ams_change_filament`
+  ("Filament laden") danach. Das deckt sich mit unserem bereits
+  umgesetzten, aber noch nicht auf Hardware verifizierten
+  Pushall-Entfernungs-Fix oben.
+
+**Ergebnis:** Der aktuelle FilamentStation-Payload (nach den bisherigen
+Fixes: `tray_info_idx`, temperaturen, 8-stelliges `tray_color`, entfernter
+Pushall) stimmt strukturell mit einer nachweislich funktionierenden
+Referenzimplementierung ueberein -- bis auf das zusaetzliche, vermutlich
+harmlose `sequence_id`-Feld liefert der Vergleich **keinen Hinweis auf ein
+fehlendes oder falsches Feld**.
+
+Ein Hardwaretest (2026-08-22, nach diesem Vergleich) bestaetigte jedoch:
+der Drucker sendet **zu keinem Zeitpunkt** -- auch nicht kurzzeitig -- einen
+Report mit dem neuen Material; jeder Report ab 567ms nach dem Senden zeigt
+durchgehend den alten Wert. Bambu Studio zeigt bei der gleichen Aktion das
+neue Filament fuer 3-5 Sekunden an; da der P1S kein eigenes Display besitzt
+und Bambu Studio seine Anzeige nachweislich aus MQTT-Reports des Druckers
+bezieht (keine lokale Optimistic-UI), muss der Drucker Bambu Studios
+Kommando **anders** verarbeiten als unseres.
+
+### Ursache gefunden (2026-08-22): fehlendes `extrusion_cali_sel`-Folgekommando
+
+Zweiter Projektvergleich, auf Nutzerhinweis: `yanshay/spoolease`, eine
+weitere ESP32-Firmware (Rust), die das gleiche LAN-Mode-Protokoll direkt
+implementiert (kein Umweg ueber eine Drittanbieter-Bibliothek wie bei
+FilaMan). Deren `core/src/bambu.rs::set_tray_filament()` sendet fuer eine
+manuelle Slot-Zuweisung **zwei** Kommandos nacheinander, nicht nur eins:
+
+1. `ams_filament_setting` (wie oben, inkl. `slot_id`).
+2. **`extrusion_cali_sel`** ("Extrusions-Kalibrierung ausw\xC3\xA4hlen"):
+
+```json
+{
+  "print": {
+    "command": "extrusion_cali_sel",
+    "cali_idx": -1,
+    "filament_id": "GFL99",
+    "nozzle_diameter": "0.4",
+    "ams_id": 0,
+    "tray_id": 0,
+    "slot_id": 0,
+    "sequence_id": "2"
+  }
+}
+```
+
+Quellcode-Kommentar in spoolease dazu (sinngem\xC3\xA4\xC3\x9F): das Setzen der
+Filamentinfo allein reicht nicht aus, damit der Drucker sie \xC3\xBCbernimmt --
+`extrusion_cali_sel` ist die zus\xC3\xA4tzlich erforderliche Best\xC3\xA4tigung/Auswahl
+der zugeh\xC3\xB6rigen Extrusions-Kalibrierung (Flow-Ratio/Pressure-Advance) f\xC3\xBCr
+diesen Slot. Ohne dieses Kommando bleibt die \xC3\x84nderung offenbar provisorisch
+und wird vom Drucker nach kurzer Zeit verworfen -- exakt das beobachtete
+Verhalten (Report zeigt nie den neuen Wert, weder transient noch dauerhaft).
+
+Felder:
+
+* `cali_idx`: Index eines bekannten Kalibrierungsprofils; `-1` wenn keines
+  bekannt ist (spoolease-Kommentar: "If we don't [have one] we send None
+  and it seems to work" -- der Standardfall, da FilamentStation aktuell
+  keine Spoolman-Kalibrierungsdaten je Spule verfolgt).
+* `filament_id`: derselbe Wert wie `tray_info_idx` im ersten Kommando
+  (z. B. `"GFL99"`), hier nur unter anderem Feldnamen.
+* `nozzle_diameter`: String (z. B. `"0.4"`), aus dem Statusbericht-Feld
+  `print.nozzle_diameter` des Druckers selbst -- neu in `PrinterState`
+  (`nozzleDiameter`) nachgezogen. Ist noch kein Bericht mit diesem Feld
+  eingetroffen, wird der Standardwert `"0.4"` verwendet (Standarddüse aller
+  Bambu-AMS-kompatiblen Modelle) statt eine leere Zeichenkette zu senden.
+* `ams_id`/`tray_id`/`slot_id`: identisch zum vorausgehenden
+  `ams_filament_setting`.
+
+Implementiert in `BambuProtocol::bambuBuildExtrusionCaliSel()`; wird von
+`BambuTask::handleAssignTray()` unmittelbar nach einem erfolgreich
+gesendeten `ams_filament_setting` ausgel\xC3\xB6st (gleiche fortlaufende
+`sequence_id`). Noch nicht auf echter Hardware verifiziert.
 
 ## Statusberichte (Drucker -> Client)
 
@@ -88,6 +277,9 @@ Von `BambuProtocol::bambuApplyReport()` ausgewertete Pfade:
       Farbkonvertierung) nach `PrinterSlotStateData::colorHex` uebernommen.
 * `print.vt_tray`: externer/manueller Slot (kein AMS), gleiche Feldstruktur
   wie ein Tray-Eintrag. Wird auf `PrinterState::externalSlot` abgebildet.
+* `print.nozzle_diameter`: String (z. B. `"0.4"`), wird nach
+  `PrinterState::nozzleDiameter` uebernommen -- benoetigt fuer das
+  `extrusion_cali_sel`-Kommando (siehe oben).
 
 **Bewusst nicht ausgewertet:** `spoolId` je Slot. Der Drucker kennt keine
 Spoolman-IDs; welche Spoolman-Spule einem Slot zugeordnet ist, verwaltet die

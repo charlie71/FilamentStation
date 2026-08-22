@@ -164,6 +164,13 @@ filament_station::models::SpoolmanAppState spoolmanAppState =
 bool currentTagCanAssign = false;
 bool currentTagCanRemove = false;
 bool diagnosticsRefreshedThisSession = false;
+// Real WLAN/NFC connection status for the Home status summary -- previously
+// this read from models::mock::settings() (always hardcoded "Connected")
+// for WLAN/Spoolman, and stagingState.nfcStatus (never written anywhere)
+// for NFC, so the whole summary was either fake or blank regardless of
+// actual state.
+rtos::UiNetworkState currentNetworkState = rtos::UiNetworkState::Offline;
+char currentNfcStatusText[48] = "wird initialisiert";
 
 bool sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
                 std::uint8_t amsId = 0, std::uint8_t trayId = 0,
@@ -269,6 +276,7 @@ lv_obj_t* createSpoolPickerButton(const char* text, std::int32_t y,
   lv_obj_set_style_bg_color(label, lv_color_hex(0x101820), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(label, LV_OPA_70, LV_PART_MAIN);
   lv_obj_set_style_radius(label, 5, LV_PART_MAIN);
+  lv_obj_set_style_pad_left(label, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_left(label, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_right(label, 6, LV_PART_MAIN);
   lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
@@ -2361,12 +2369,27 @@ void updateHomeContent() {
 
   updateWeightDisplays();
 
-  const auto& settings = models::mock::settings();
+  const char* spoolmanStatusText =
+      spoolmanAppState == filament_station::models::SpoolmanAppState::SpoolmanReady
+          ? "online"
+      : spoolmanAppState ==
+                filament_station::models::SpoolmanAppState::TagFieldUnavailable
+          ? "online, Tag-Feld fehlt"
+          : "offline";
+  const char* wifiStatusText =
+      currentNetworkState == rtos::UiNetworkState::Online
+          ? "online"
+      : currentNetworkState == rtos::UiNetworkState::Connecting
+          ? "verbindet"
+      : currentNetworkState == rtos::UiNetworkState::PortalActive
+          ? "Portal aktiv"
+      : currentNetworkState == rtos::UiNetworkState::CredentialsCleared
+          ? "Zugangsdaten gel\xC3\xB6scht"
+          : "offline";
   char statusText[96];
   std::snprintf(statusText, sizeof(statusText),
-                "NFC: %s\nSpoolman: %s\nWLAN: %s", staging.nfcStatus,
-                connectionText(settings.spoolmanState),
-                connectionText(settings.wifiState));
+                "NFC: %s\nSpoolman: %s\nWLAN: %s", currentNfcStatusText,
+                spoolmanStatusText, wifiStatusText);
   setButtonText(objects.home_status, statusText);
 }
 
@@ -2462,7 +2485,7 @@ void updateStagingContent() {
                 static_cast<double>(staging.remainingWeightGrams),
                 static_cast<double>(remainingPercent));
   lv_label_set_text(stagingTableRows[6], rowText);
-  std::snprintf(rowText, sizeof(rowText), "NFC: %s", staging.nfcStatus);
+  std::snprintf(rowText, sizeof(rowText), "NFC: %s", currentNfcStatusText);
   lv_label_set_text(stagingTableRows[7], rowText);
 
   const std::array<lv_obj_t*, models::kMaximumFilamentColors> colorFields{{
@@ -3166,6 +3189,7 @@ void processUiCommand(const rtos::UiCommand& command) {
       updateWeightDisplays();
       break;
     case rtos::UiCommandType::UpdateNetworkStatus: {
+      currentNetworkState = command.networkState;
       const char* statusText = "Offline";
       if (command.networkState == rtos::UiNetworkState::Connecting)
         statusText = "Verbunden, IP-Adresse wird bezogen";
@@ -3286,6 +3310,11 @@ void processUiCommand(const rtos::UiCommand& command) {
     }
     case rtos::UiCommandType::ShowStatus:
     case rtos::UiCommandType::ShowToast:
+      if (command.type == rtos::UiCommandType::ShowStatus &&
+          std::strcmp(command.title, "NFC") == 0 && command.text[0] != '\0') {
+        std::snprintf(currentNfcStatusText, sizeof(currentNfcStatusText), "%s",
+                      command.text);
+      }
       lv_label_set_text(objects.home_bottom_status, command.text);
       lv_label_set_text(objects.settings_bottom_status, command.text);
       if (command.value >= 100) {

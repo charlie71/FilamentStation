@@ -117,6 +117,26 @@ void testDecodeTextExtraField() {
       response["extra"]["tag"], decoded, sizeof(decoded)));
 }
 
+void testDecodeNumberExtraField() {
+  // Spoolman number extra fields are stored the same way as text fields --
+  // the outer JSON value is a string whose *content* is itself JSON (here
+  // a bare number, not a quoted string like the tag field).
+  JsonDocument response;
+  deserializeJson(response,
+                  R"({"extra":{"bambu_temp_min":"190","bambu_temp_max":"220.5","bogus":"\"not-a-number\""}})");
+  float value = 0.0F;
+  TEST_ASSERT_TRUE(SpoolmanClient::decodeNumberExtraField(
+      response["extra"]["bambu_temp_min"], value));
+  TEST_ASSERT_EQUAL_FLOAT(190.0F, value);
+  TEST_ASSERT_TRUE(SpoolmanClient::decodeNumberExtraField(
+      response["extra"]["bambu_temp_max"], value));
+  TEST_ASSERT_EQUAL_FLOAT(220.5F, value);
+  TEST_ASSERT_FALSE(SpoolmanClient::decodeNumberExtraField(
+      response["extra"]["bogus"], value));
+  TEST_ASSERT_FALSE(SpoolmanClient::decodeNumberExtraField(
+      response["extra"]["missing"], value));
+}
+
 void testFindSpoolByTagStatuses() {
   MockTransport transport;
   SpoolmanClient client(transport);
@@ -282,6 +302,7 @@ int main(int, char**) {
   RUN_TEST(testEnsureCreatesMissingField);
   RUN_TEST(testEnsureRejectsWrongTypeAndReportsTransportError);
   RUN_TEST(testDecodeTextExtraField);
+  RUN_TEST(testDecodeNumberExtraField);
   RUN_TEST(testFindSpoolByTagStatuses);
   RUN_TEST(testFindRejectsInvalidIdentityAndHttpFailure);
   RUN_TEST(testSetAndClearSpoolTagEncodingAndVerification);

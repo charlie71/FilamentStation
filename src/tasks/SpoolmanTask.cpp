@@ -280,6 +280,27 @@ bool parseSpool(JsonVariantConst source, models::SpoolmanSpool& spool) {
       !spool.extraTagPresent || services::SpoolmanClient::decodeTextExtraField(
                                     extraTag, spool.extraTag,
                                     sizeof(spool.extraTag));
+  // Bambu-Duesentemperatur: projektspezifische Extra-Felder auf
+  // Filamentebene (nicht am Spool selbst, da die Temperatur eine
+  // Materialeigenschaft ist, siehe docs/bambu-protocol.md). Beide Felder
+  // muessen vorhanden und als Zahl > 0 dekodierbar sein, sonst bleibt
+  // bambuTempFieldsValid false und der Aufrufer zeigt einen Hinweis statt
+  // eine erfundene Temperatur zu senden.
+  const JsonVariantConst extraTempMin = filament["extra"]["bambu_temp_min"];
+  const JsonVariantConst extraTempMax = filament["extra"]["bambu_temp_max"];
+  spool.bambuTempFieldsPresent =
+      !extraTempMin.isNull() && !extraTempMax.isNull();
+  float tempMin = 0.0F;
+  float tempMax = 0.0F;
+  spool.bambuTempFieldsValid =
+      spool.bambuTempFieldsPresent &&
+      services::SpoolmanClient::decodeNumberExtraField(extraTempMin, tempMin) &&
+      services::SpoolmanClient::decodeNumberExtraField(extraTempMax, tempMax) &&
+      tempMin > 0.0F && tempMax > 0.0F && tempMin <= tempMax;
+  if (spool.bambuTempFieldsValid) {
+    spool.bambuTempMinC = static_cast<std::uint16_t>(tempMin);
+    spool.bambuTempMaxC = static_cast<std::uint16_t>(tempMax);
+  }
   return spool.id != 0;
 }
 

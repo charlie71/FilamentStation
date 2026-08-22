@@ -98,6 +98,16 @@ bool SpoolmanClient::decodeTextExtraField(JsonVariantConst encoded,
   return true;
 }
 
+bool SpoolmanClient::decodeNumberExtraField(JsonVariantConst encoded,
+                                            float& output) {
+  if (!encoded.is<const char*>()) return false;
+  JsonDocument decoded;
+  if (deserializeJson(decoded, encoded.as<const char*>())) return false;
+  if (!decoded.is<float>()) return false;
+  output = decoded.as<float>();
+  return true;
+}
+
 TagLookupResult SpoolmanClient::findSpoolByTag(const char* tagIdentity) {
   TagLookupResult result{};
   if (!validIdentity(tagIdentity)) {

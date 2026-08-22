@@ -70,6 +70,11 @@ struct PrinterState {
   std::uint8_t amsCount = 0;
   std::array<AmsState, kMaximumAmsPerPrinter> amsUnits{};
   PrinterSlotStateData externalSlot{};
+  // Printer-reported nozzle diameter (e.g. "0.4"), from "print.nozzle_diameter"
+  // in status reports. Empty until the first report with that field arrives;
+  // required (as a string) by the "extrusion_cali_sel" wire command, see
+  // docs/bambu-protocol.md.
+  char nozzleDiameter[8]{};
 };
 
 struct PrinterStateCollection {

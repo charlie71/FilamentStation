@@ -61,6 +61,13 @@ class SpoolmanClient {
   static bool decodeTextExtraField(JsonVariantConst encoded, char* output,
                                    std::size_t outputCapacity);
 
+  // Spoolman-Extra-Felder sind immer JSON-kodierte Strings, auch fuer
+  // Zahlen (z. B. "bambu_temp_min": "\"220\"" oder "\"220.0\""). Liefert
+  // false, wenn das Feld fehlt oder nicht als Zahl dekodierbar ist; ein
+  // negativer oder Null-Wert wird bewusst NICHT hier abgelehnt (das
+  // entscheidet der Aufrufer), nur das Dekodieren selbst wird gemeldet.
+  static bool decodeNumberExtraField(JsonVariantConst encoded, float& output);
+
  private:
   SpoolmanOperationResult updateSpoolTag(std::uint32_t spoolId,
                                          const char* tagIdentity,

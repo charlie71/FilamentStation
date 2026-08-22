@@ -1,11 +1,29 @@
 #include "services/BambuProtocol.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace filament_station {
 namespace services {
 namespace {
+
+// Case-insensitive "does material start with prefix" check. Spoolman
+// material strings are free text (e.g. "PLA", "PLA Basic", "PETG-CF"), so
+// this matches on the material family prefix rather than requiring an
+// exact string.
+bool materialStartsWithCaseInsensitive(const char* material,
+                                       const char* prefix) {
+  std::size_t index = 0;
+  for (; prefix[index] != '\0'; ++index) {
+    if (material[index] == '\0') return false;
+    if (std::toupper(static_cast<unsigned char>(material[index])) !=
+        std::toupper(static_cast<unsigned char>(prefix[index])))
+      return false;
+  }
+  return true;
+}
 
 bool parseTrayIndex(JsonVariantConst value, std::uint8_t maxExclusive,
                     std::uint8_t& out) {
@@ -26,6 +44,33 @@ bool parseTrayIndex(JsonVariantConst value, std::uint8_t maxExclusive,
   }
   return false;
 }
+
+struct GenericMaterialMapping {
+  const char* material;
+  const char* trayInfoIdx;
+};
+
+// Bambu Studio's built-in *generic* (non-brand) filament profile ids,
+// community-documented via Bambu-Research-Group/RFID-Tag-Guide and the
+// WolfWithSword Home Assistant Bambu Lab integration (see
+// docs/bambu-protocol.md) -- not from Bambu Lab directly. Composite
+// materials ("-CF" carbon-fiber variants) are listed before their plain
+// base material so the longer prefix matches first.
+constexpr GenericMaterialMapping kGenericMaterialMappings[] = {
+    {"PLA-CF", "GFL98"}, //Generic PLA CF
+    {"PLACF", "GFL98"},
+    {"PA-CF", "GFN98"}, 
+    {"PACF", "GFN98"},
+    {"PLA", "GFL99"}, //Generic PLA
+    {"PETG", "GFG99"},//Generic PETG
+    {"ASA", "GFB98"}, //Generic ASA
+    {"ABS", "GFB99"}, //Generic ABS
+    {"TPU", "GFU99"}, //Generic TPU
+    {"PVA", "GFS99"}, //Generic Support
+    {"PC", "GFC99"}, //Generic PC
+    {"PA", "GFN99"}, //Generic PA (Nylon)
+    
+};
 
 void applyTrayOccupancy(JsonObjectConst trayJson,
                         models::PrinterSlotStateData& slot) {
@@ -49,31 +94,97 @@ void bambuRequestTopic(const char* serialNumber, char* output,
   std::snprintf(output, outputCapacity, "device/%s/request", serialNumber);
 }
 
-std::size_t bambuBuildPushAllRequest(char* output,
+std::size_t bambuBuildPushAllRequest(std::uint32_t sequenceId, char* output,
                                      std::size_t outputCapacity) {
   const int written = std::snprintf(
       output, outputCapacity,
-      R"({"pushing":{"sequence_id":"0","command":"pushall"}})");
+      R"({"pushing":{"sequence_id":"%lu","command":"pushall"}})",
+      static_cast<unsigned long>(sequenceId));
   if (written < 0 || static_cast<std::size_t>(written) >= outputCapacity)
     return 0;
   return static_cast<std::size_t>(written);
 }
 
-std::size_t bambuBuildAmsFilamentSetting(std::uint8_t amsId,
+const char* bambuGenericTrayInfoIdx(const char* material) {
+  if (material == nullptr || material[0] == '\0') return "";
+  for (const auto& mapping : kGenericMaterialMappings) {
+    if (materialStartsWithCaseInsensitive(material, mapping.material))
+      return mapping.trayInfoIdx;
+  }
+  return "";
+}
+
+std::size_t bambuBuildAmsFilamentSetting(std::uint32_t sequenceId,
+                                         std::uint8_t amsId,
                                          std::uint8_t trayId,
                                          const BambuTrayFilament& filament,
                                          char* output,
                                          std::size_t outputCapacity) {
+  // tray_color must be an 8-digit RRGGBBAA hex string (alpha always FF per
+  // docs/bambu-protocol.md); Spoolman's color_hex is 6-digit RRGGBB with no
+  // alpha, so callers building BambuTrayFilament straight from a Spoolman
+  // color get a 6-char string here -- append the alpha byte rather than
+  // sending a malformed field.
+  char colorWithAlpha[9]{};
+  std::snprintf(colorWithAlpha, sizeof(colorWithAlpha), "%s",
+               filament.trayColorHex);
+  if (std::strlen(colorWithAlpha) == 6) {
+    colorWithAlpha[6] = 'F';
+    colorWithAlpha[7] = 'F';
+    colorWithAlpha[8] = '\0';
+  }
+
+  char sequenceIdText[12]{};
+  std::snprintf(sequenceIdText, sizeof(sequenceIdText), "%lu",
+               static_cast<unsigned long>(sequenceId));
+
   JsonDocument document;
   JsonObject print = document["print"].to<JsonObject>();
-  print["sequence_id"] = "0";
+  print["sequence_id"] = sequenceIdText;
   print["command"] = "ams_filament_setting";
   print["ams_id"] = amsId;
   print["tray_id"] = trayId;
+  // "slot_id" duplicates tray_id (the slot's index within this AMS unit);
+  // yanshay/spoolease's reverse-engineered driver sends both fields on this
+  // command, see docs/bambu-protocol.md.
+  print["slot_id"] = trayId;
+  // Community-reverse-engineered payloads (see docs/bambu-protocol.md) list
+  // tray_info_idx alongside tray_type/tray_color/nozzle_temp_*; omitting it
+  // is a likely reason a real printer silently ignores a filament change
+  // on an already-occupied slot even though the other fields are correct.
+  print["tray_info_idx"] = bambuGenericTrayInfoIdx(filament.trayType);
   print["tray_type"] = filament.trayType;
-  print["tray_color"] = filament.trayColorHex;
+  print["tray_color"] = colorWithAlpha;
   print["nozzle_temp_min"] = filament.nozzleTempMinC;
   print["nozzle_temp_max"] = filament.nozzleTempMaxC;
+
+  const std::size_t written = serializeJson(document, output, outputCapacity);
+  if (written == 0 || written >= outputCapacity) return 0;
+  return written;
+}
+
+std::size_t bambuBuildExtrusionCaliSel(std::uint32_t sequenceId,
+                                       std::uint8_t amsId,
+                                       std::uint8_t trayId,
+                                       const char* trayInfoIdx,
+                                       const char* nozzleDiameter,
+                                       std::int32_t caliIdx,
+                                       char* output,
+                                       std::size_t outputCapacity) {
+  char sequenceIdText[12]{};
+  std::snprintf(sequenceIdText, sizeof(sequenceIdText), "%lu",
+               static_cast<unsigned long>(sequenceId));
+
+  JsonDocument document;
+  JsonObject print = document["print"].to<JsonObject>();
+  print["command"] = "extrusion_cali_sel";
+  print["cali_idx"] = caliIdx;
+  print["filament_id"] = trayInfoIdx;
+  print["nozzle_diameter"] = nozzleDiameter;
+  print["ams_id"] = amsId;
+  print["tray_id"] = trayId;
+  print["slot_id"] = trayId;
+  print["sequence_id"] = sequenceIdText;
 
   const std::size_t written = serializeJson(document, output, outputCapacity);
   if (written == 0 || written >= outputCapacity) return 0;
@@ -113,6 +224,11 @@ bool bambuApplyReport(const JsonDocument& document,
   if (print["vt_tray"].is<JsonObjectConst>()) {
     applyTrayOccupancy(print["vt_tray"].as<JsonObjectConst>(),
                        state.externalSlot);
+  }
+
+  if (print["nozzle_diameter"].is<const char*>()) {
+    std::snprintf(state.nozzleDiameter, sizeof(state.nozzleDiameter), "%s",
+                 print["nozzle_diameter"].as<const char*>());
   }
   return true;
 }

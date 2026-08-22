@@ -989,6 +989,32 @@ erfunden. Der tatsächliche Auslöser auf dem TraySelect-Bildschirm
 (Bestätigen der Drucker-/AMS-/Slot-Auswahl) ist erst Phase 9.9 und
 existiert im generierten EEZ-UI noch nicht.
 
+Nachtrag (Hardware-Test, 2026-08-22, nach Phase 9.9): mehrere reale Bugs
+beim Zuordnen auf einen bereits belegten AMS-Slot gefunden und behoben --
+(1) AMS-Nummer wurde 1-basiert (UI) statt 0-basiert (Bambu-Protokoll) an
+den Drucker gesendet, sodass der Befehl eine nicht existierende AMS-Einheit
+adressierte; (2) `nozzleTempMinC/MaxC` werden jetzt aus den
+Spoolman-Filament-Extra-Feldern `bambu_temp_min`/`bambu_temp_max` gelesen
+(Hinweis im Dialog, falls diese fehlen, statt weiter bei 0 zu bleiben);
+(3) das bisher fehlende Feld `tray_info_idx` (Bambus interne
+Filament-Profil-ID) wird jetzt aus dem Material abgeleitet gesendet, siehe
+`BambuProtocol::bambuGenericTrayInfoIdx()`. Mit allen drei Fixes nimmt der
+Drucker die Zuordnung sichtbar an.
+
+Update (2026-08-22, weitere Untersuchung): die zunächst als "Drucker-
+Firmware-Limitation" eingestufte Rücksetzung nach 3-5 Sekunden ist doch ein
+behebbarer Fehler dieser App. Vergleich mit zwei Referenzprojekten
+(Fire-Devils/filaman-bambulab-plugin, yanshay/spoolease) zeigte: unser
+`ams_filament_setting`-Payload fehlte (a) das Feld `slot_id` und (b) ein
+komplettes zweites Folgekommando `extrusion_cali_sel`, ohne das der
+Drucker die Änderung offenbar nur provisorisch übernimmt und wieder
+verwirft. Beide Fixes implementiert (`BambuProtocol::bambuBuildAmsFilamentSetting()`,
+neu `bambuBuildExtrusionCaliSel()`, aufgerufen aus
+`BambuTask::handleAssignTray()`); `PrinterState::nozzleDiameter` neu aus
+`print.nozzle_diameter` in Statusberichten gelesen (Pflichtfeld für das
+neue Kommando). Noch nicht auf echter Hardware verifiziert. Details siehe
+docs/bambu-protocol.md.
+
 ## 8.6 GUI
 
 * [x] hinzufügen

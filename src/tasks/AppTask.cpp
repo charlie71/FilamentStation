@@ -29,6 +29,15 @@ rtos::UiScreenId printerSettingsReturnScreen = rtos::UiScreenId::SettingsHome;
 bool uiStartupReady = false;
 bool storageStartupReady = false;
 bool startupNavigationSent = false;
+// Boot progress (real subsystem status, not just the single static
+// "SD-Karte und Konfiguration werden geprueft" message the overlay used to
+// show for its entire visible lifetime): each slot is filled in as its
+// event actually arrives and refreshBootProgress() re-sends the combined
+// text, so the boot overlay grows to reflect whichever early subsystems
+// (SD, NFC, Waage) finish before Home is shown.
+char bootSdStatus[32]{};
+char bootNfcStatus[32]{};
+char bootScaleStatus[32]{};
 rtos::UiOverlayKind pendingOverlay = rtos::UiOverlayKind::None;
 bool wifiPortalRequested = false;
 bool wifiPortalActive = false;
@@ -201,6 +210,11 @@ struct PendingSlotAssignment {
   std::uint8_t amsId = 0;
   std::uint8_t trayId = 0;
   rtos::SpoolId spoolId = 0;
+  // Set when the resolved spool's Spoolman filament has no usable
+  // bambu_temp_min/bambu_temp_max extra fields, so the completion dialog
+  // can tell the user the printer only received material/color, not a
+  // temperature range (see requestStagingSpool's SpoolmanResponse handler).
+  bool tempFieldsMissing = false;
 };
 PendingSlotAssignment pendingSlotAssignment{};
 
@@ -1014,7 +1028,18 @@ bool sendScaleCommand(rtos::RtosContext& ctx,
             static_cast<unsigned>(command.type));
     return false;
   }
-  xTaskNotifyGive(ctx.scaleTask);
+  // Startup race (real crash seen on hardware): AppTask is created before
+  // ScaleTask in RtosContext::createServiceTasks() and can be scheduled on
+  // the other core immediately, so it is possible for AppTask to process
+  // SdMounted -> requestScaleConfiguration -> this call before
+  // xTaskCreatePinnedToCore() for ScaleTask has returned and populated
+  // ctx.scaleTask. xTaskNotifyGive() on a null handle hits FreeRTOS's
+  // configASSERT(xTaskToNotify) and aborts. Safe to just skip the notify
+  // in that case: ScaleTask's loop wakes on a bounded timeout
+  // (kHx711ReadyTimeoutMs) regardless and drains the whole queue every
+  // time, so the command already sitting in scaleCommandQueue is still
+  // picked up shortly, just not instantly.
+  if (ctx.scaleTask != nullptr) xTaskNotifyGive(ctx.scaleTask);
   return true;
 }
 
@@ -1508,6 +1533,28 @@ void reportAssignmentWriteFailure(rtos::RtosContext& ctx,
       userMessage != nullptr
           ? userMessage
           : "Tag wurde zugeordnet.\nDie Zuordnung konnte jedoch nicht auf dem Tag gespeichert werden.\nEin erneuter Versuch ist m\xC3\xB6glich.");
+}
+
+// Re-sends the BootProgress overlay with whichever of bootSdStatus/
+// bootNfcStatus/bootScaleStatus have actually been filled in so far. A
+// no-op once Home has already been shown (startupNavigationSent) --
+// updating the overlay after HideProgress fired would never be seen.
+void refreshBootProgress(rtos::RtosContext& ctx, std::uint32_t requestId) {
+  if (startupNavigationSent) return;
+  char text[192];
+  std::size_t used = static_cast<std::size_t>(
+      std::snprintf(text, sizeof(text), "Display bereit."));
+  const std::array<const char*, 3> lines{
+      {bootSdStatus, bootNfcStatus, bootScaleStatus}};
+  for (const char* line : lines) {
+    if (line[0] == '\0' || used >= sizeof(text)) continue;
+    const int written =
+        std::snprintf(text + used, sizeof(text) - used, "\n%s", line);
+    if (written > 0) used += static_cast<std::size_t>(written);
+  }
+  sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+              rtos::UiOverlayKind::BootProgress, requestId,
+              "FilamentStation startet", text);
 }
 
 void showHomeWhenStartupReady(rtos::RtosContext& ctx) {
@@ -2789,7 +2836,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Slot konfigurieren", "Kein Drucker ausgew\xC3\xA4hlt.");
         return;
       }
-      if (action.amsId >= models::kMaximumAmsPerPrinter ||
+      if (action.amsId == 0 ||
+          action.amsId > models::kMaximumAmsPerPrinter ||
           action.trayId >= models::kSlotsPerAms) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, action.requestId,
@@ -2845,7 +2893,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Slot konfigurieren", "Kein Drucker ausgew\xC3\xA4hlt.");
         return;
       }
-      if (action.amsId >= models::kMaximumAmsPerPrinter ||
+      if (action.amsId == 0 ||
+          action.amsId > models::kMaximumAmsPerPrinter ||
           action.trayId >= models::kSlotsPerAms) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, action.requestId,
@@ -2859,17 +2908,23 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Es l\xC3\xA4uft bereits eine Slot-Zuordnung.");
         return;
       }
+      // action.amsId ist die UI-seitige 1-basierte AMS-Nummer ("AMS 1"..
+      // "AMS 4"); das Bambu-Protokoll zaehlt AMS-Einheiten dagegen 0-basiert
+      // (siehe docs/bambu-protocol.md und PrinterState::amsUnits) -- ohne
+      // diese Umrechnung zielte AssignTray auf eine am Drucker nicht
+      // existierende AMS-Einheit und wurde stillschweigend ignoriert.
+      const std::uint8_t amsIndex =
+          static_cast<std::uint8_t>(action.amsId - 1U);
       rtos::BambuCommand clearTray{};
       clearTray.type = rtos::BambuCommandType::AssignTray;
       clearTray.requestId = action.requestId;
       clearTray.printerId = action.printerId;
-      clearTray.amsId = action.amsId;
+      clearTray.amsId = amsIndex;
       clearTray.trayId = action.trayId;
       clearTray.spoolId = 0;
       if (action.type == rtos::UiActionType::UntagSlot) {
-        const models::PrinterSlotStateData* slot =
-            models::findSlot(printerEntry(action.printerId), action.amsId,
-                             action.trayId);
+        const models::PrinterSlotStateData* slot = models::findSlot(
+            printerEntry(action.printerId), amsIndex, action.trayId);
         if (slot != nullptr) {
           std::snprintf(clearTray.trayType, sizeof(clearTray.trayType), "%s",
                         slot->material);
@@ -3013,7 +3068,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                       "Slot konfigurieren", "Kein Drucker ausgew\xC3\xA4hlt.");
           return;
         }
-        if (action.amsId >= models::kMaximumAmsPerPrinter ||
+        if (action.amsId == 0 ||
+            action.amsId > models::kMaximumAmsPerPrinter ||
             action.trayId >= models::kSlotsPerAms) {
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
@@ -3435,6 +3491,17 @@ void appTask(void* parameter) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, event.requestId,
                     "Waagenaktion fehlgeschlagen", event.text);
+      }
+      // ScaleReady repeats on every measurement (not a one-shot init
+      // signal like NfcInitialized), so only the first occurrence updates
+      // the boot overlay -- otherwise every live weight reading would
+      // needlessly re-send it.
+      if (bootScaleStatus[0] == '\0') {
+        std::snprintf(bootScaleStatus, sizeof(bootScaleStatus),
+                      event.type == rtos::AppEventType::ScaleReady
+                          ? "Waage: bereit"
+                          : "Waage: Fehler");
+        refreshBootProgress(ctx, event.requestId);
       }
     } else if (event.type == rtos::AppEventType::NfcInitialized ||
                event.type == rtos::AppEventType::NfcTagDetected ||
@@ -3907,6 +3974,14 @@ void appTask(void* parameter) {
       std::snprintf(status.title, sizeof(status.title), "NFC");
       std::snprintf(status.text, sizeof(status.text), "%s", event.text);
       sendUiCommand(ctx, status, "AppTask: NFC status UI queue overflow");
+      if (event.type == rtos::AppEventType::NfcInitialized) {
+        std::snprintf(bootNfcStatus, sizeof(bootNfcStatus), "NFC: bereit");
+        refreshBootProgress(ctx, event.requestId);
+      } else if (event.type == rtos::AppEventType::NfcError &&
+                 bootNfcStatus[0] == '\0') {
+        std::snprintf(bootNfcStatus, sizeof(bootNfcStatus), "NFC: Fehler");
+        refreshBootProgress(ctx, event.requestId);
+      }
     } else if (event.type == rtos::AppEventType::WifiStationConnected ||
                event.type == rtos::AppEventType::WifiGotIp ||
                event.type == rtos::AppEventType::WifiDisconnected ||
@@ -4198,7 +4273,12 @@ void appTask(void* parameter) {
       assignTray.type = rtos::BambuCommandType::AssignTray;
       assignTray.requestId = event.requestId;
       assignTray.printerId = pendingSlotAssignment.printerId;
-      assignTray.amsId = pendingSlotAssignment.amsId;
+      // pendingSlotAssignment.amsId is the UI-side 1-based AMS number
+      // (validated as 1..kMaximumAmsPerPrinter at the ConfigureSlotFromStaging/
+      // ReapplySlot entry point); the wire protocol counts AMS units 0-based
+      // (see the matching conversion/comment at ResetSlot/UntagSlot above).
+      assignTray.amsId =
+          static_cast<std::uint8_t>(pendingSlotAssignment.amsId - 1U);
       assignTray.trayId = pendingSlotAssignment.trayId;
       assignTray.spoolId = event.spool.id;
       std::snprintf(assignTray.trayType, sizeof(assignTray.trayType), "%s",
@@ -4206,10 +4286,17 @@ void appTask(void* parameter) {
       std::snprintf(assignTray.trayColorHex, sizeof(assignTray.trayColorHex),
                     "%s",
                     event.spool.colorCount > 0 ? event.spool.colorHex[0] : "");
-      // Command: an BambuTask senden. Nozzle-Temperaturen bleiben 0/unbekannt
-      // -- Spoolman liefert dem Staging-Endpunkt keine Temperaturdaten (nur
-      // der separate Filament-Katalog kennt einen einzelnen Temperaturwert,
-      // siehe docs/bambu-protocol.md); hier wird nichts erfunden.
+      // Duesentemperatur aus den Spoolman-Filament-Extra-Feldern
+      // bambu_temp_min/bambu_temp_max (siehe SpoolmanTask::parseSpool);
+      // bleiben 0, wenn diese fehlen oder ungueltig sind -- der Nutzer wird
+      // darauf per Hinweis im Ergebnisdialog aufmerksam gemacht (siehe die
+      // BambuUpdate/BambuError-Behandlung fuer SlotAssignmentStage::
+      // WritingSlot), es wird keine Temperatur erfunden.
+      pendingSlotAssignment.tempFieldsMissing = !event.spool.bambuTempFieldsValid;
+      if (event.spool.bambuTempFieldsValid) {
+        assignTray.nozzleTempMinC = event.spool.bambuTempMinC;
+        assignTray.nozzleTempMaxC = event.spool.bambuTempMaxC;
+      }
       if (!sendBambuCommand(ctx, assignTray)) {
         pendingSlotAssignment = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
@@ -4744,24 +4831,64 @@ void appTask(void* parameter) {
           (event.type == rtos::AppEventType::BambuUpdate ||
            event.type == rtos::AppEventType::BambuError)) {
         const bool success = event.type == rtos::AppEventType::BambuUpdate;
-        const rtos::PrinterId assignedPrinterId = pendingSlotAssignment.printerId;
         // ResetSlot/UntagSlot (Phase 9.9) run through this same AssignTray
         // completion path with spoolId == 0 -- distinguish the dialog
         // wording without adding a second pending-state machine.
         const bool wasClearing = pendingSlotAssignment.spoolId == 0;
+        const bool tempFieldsMissing = pendingSlotAssignment.tempFieldsMissing;
         pendingSlotAssignment = {};
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
         sendUiCommand(ctx, hide,
                       "AppTask: slot assignment progress close overflow");
         if (success) {
-          // Reload: the printer's own status report is authoritative for
-          // trayType/color, so request a fresh pull instead of waiting for
-          // the next periodic push.
-          rtos::BambuCommand statusRequest{};
-          statusRequest.type = rtos::BambuCommandType::RequestStatus;
-          statusRequest.printerId = assignedPrinterId;
-          sendBambuCommand(ctx, statusRequest);
+          // Kein sofortiges RequestStatus/pushall mehr direkt nach
+          // AssignTray: das hat eine Statusabfrage ausgeloest, noch bevor
+          // der Drucker die neuen AMS-Werte intern fertig verarbeitet und
+          // gespeichert hatte, und dadurch vermutlich zum Zuruecksetzen der
+          // Zuordnung nach 4-6 Sekunden beigetragen (Nutzer-Diagnose,
+          // 2026-08-22). Der Drucker sendet nach einer erfolgreichen
+          // Parameteraenderung von sich aus ein Status-Update; die naechste
+          // periodische Push-Nachricht (alle paar Sekunden, siehe
+          // BambuTask::doConnect-Subscription) aktualisiert Home von
+          // alleine, ganz ohne diesen Befehl.
+          // Navigate back to Home underneath the confirmation dialog rather
+          // than leaving the user stranded on TraySelect/TrayActions after
+          // dismissing it -- the slot action is complete, there is nothing
+          // more to do on that screen.
+          rtos::UiCommand home{};
+          home.type = rtos::UiCommandType::ShowScreen;
+          home.screenId = rtos::UiScreenId::Home;
+          currentScreen = home.screenId;
+          previousScreen = home.screenId;
+          sendUiCommand(ctx, home,
+                        "AppTask: slot assignment home navigation overflow");
+        }
+        char resultText[192];
+        if (success) {
+          std::snprintf(
+              resultText, sizeof(resultText), "%s",
+              wasClearing
+                  ? "Der Slot wurde geleert und an den Drucker \xC3\xBC"
+                    "bertragen."
+                  : "Die Spule wurde dem AMS-Slot zugeordnet und an den "
+                    "Drucker \xC3\xBC" "bertragen.");
+          // Ohne bambu_temp_min/bambu_temp_max in Spoolman (Filament-Extra-
+          // Felder) wurden nur Material/Farbe uebertragen, keine
+          // Duesentemperatur -- Hinweis statt erfundener Werte.
+          if (!wasClearing && tempFieldsMissing) {
+            const std::size_t used = std::strlen(resultText);
+            std::snprintf(
+                resultText + used, sizeof(resultText) - used,
+                "\nHinweis: Keine g\xC3\xBCltige Bambu-Duesentemperatur in "
+                "Spoolman (Filament-Extra-Felder bambu_temp_min/"
+                "bambu_temp_max fehlen oder sind ung\xC3\xBCltig).");
+          }
+        } else {
+          std::snprintf(resultText, sizeof(resultText), "%s",
+                        event.text[0] != '\0'
+                            ? event.text
+                            : "Der Drucker hat die Slotdaten nicht angenommen.");
         }
         sendOverlay(
             ctx,
@@ -4772,14 +4899,7 @@ void appTask(void* parameter) {
             success ? (wasClearing ? "Slot zur\xC3\xBC" "ckgesetzt"
                                    : "Slot konfiguriert")
                     : "Slot nicht konfiguriert",
-            success ? (wasClearing
-                           ? "Der Slot wurde geleert und an den Drucker "
-                             "\xC3\xBC" "bertragen."
-                           : "Die Spule wurde dem AMS-Slot zugeordnet und an den "
-                             "Drucker \xC3\xBC" "bertragen.")
-                    : (event.text[0] != '\0'
-                           ? event.text
-                           : "Der Drucker hat die Slotdaten nicht angenommen."));
+            resultText);
         continue;
       }
 
@@ -4874,10 +4994,7 @@ void appTask(void* parameter) {
                 "Communication test response sent request_id=%lu",
                 static_cast<unsigned long>(response.requestId));
       }
-      sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                  rtos::UiOverlayKind::BootProgress, event.requestId,
-                  "FilamentStation startet",
-                  "Display bereit. SD-Karte und Konfiguration werden gepr\xC3\xBC" "ft." );
+      refreshBootProgress(ctx, event.requestId);
       showHomeWhenStartupReady(ctx);
     } else if (event.type == rtos::AppEventType::SdMounted ||
                event.type == rtos::AppEventType::SdRemoved ||
@@ -5055,6 +5172,8 @@ void appTask(void* parameter) {
       sendUiCommand(ctx, status,
                     "AppTask: storage status UI queue timeout/overflow");
       if (event.type == rtos::AppEventType::SdMounted) {
+        std::snprintf(bootSdStatus, sizeof(bootSdStatus), "SD-Karte: bereit");
+        refreshBootProgress(ctx, event.requestId);
         storageStartupReady = true;
         requestNetworkConfiguration(ctx);
         requestSpoolmanConfiguration(ctx);
