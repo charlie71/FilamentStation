@@ -1,8 +1,10 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/1",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/8",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/0",
+    "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/0",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
+    "selectedThemeColorObject": "[FilamentStation.eez-project]:/colors/1",
     "selectedFontObject": "[FilamentStation.eez-project]:/fonts/0",
     "selectedBitmapObject": "[FilamentStation.eez-project]:/bitmaps/2",
     "subnavigationSelectedItems": {
@@ -27,8 +29,7 @@
           },
           {
             "type": "border",
-            "selected": 0,
-            "size": 150.53390884399414,
+            "size": 128.44739532470703,
             "location": "right",
             "children": [
               {
@@ -194,17 +195,17 @@
             {
               "type": "tabset",
               "id": "EDITORS",
-              "weight": 59.71986827926012,
+              "weight": 51.1316146479781,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
                 {
                   "type": "tab",
                   "id": "#051b045d-2570-4e8b-b12b-6f479be1e665",
-                  "name": "SCR_HOME",
+                  "name": "SCR_TRAY_SELECT",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/1",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/8",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -237,12 +238,12 @@
             {
               "type": "row",
               "id": "#c9759a35-4104-4443-bbaa-5163c4e2a827",
-              "weight": 22.655020998841902,
+              "weight": 31.243274630123896,
               "children": [
                 {
                   "type": "tabset",
                   "id": "#8fc83b6d-d897-440a-9268-8f396ec9bf38",
-                  "weight": 1.8930232558139535,
+                  "weight": 2.191666666666667,
                   "children": [
                     {
                       "type": "tab",
@@ -257,7 +258,7 @@
                 {
                   "type": "tabset",
                   "id": "#e71c0f4f-48e2-4bc8-b0de-fb71705bceb5",
-                  "weight": 1.1069767441860465,
+                  "weight": 0.8083333333333333,
                   "children": [
                     {
                       "type": "tab",
@@ -871,7 +872,8 @@
                       "component": "styles",
                       "enableClose": false
                     }
-                  ]
+                  ],
+                  "active": true
                 },
                 {
                   "type": "tabset",
@@ -929,8 +931,7 @@
                       "component": "themes",
                       "enableClose": false
                     }
-                  ],
-                  "active": true
+                  ]
                 },
                 {
                   "type": "tabset",
@@ -946,7 +947,8 @@
                       "component": "colors",
                       "enableClose": false
                     }
-                  ]
+                  ],
+                  "active": true
                 }
               ]
             }
@@ -1110,10 +1112,10 @@
       "selectionBack": {
         "0": {
           "0": {
-            "0": {}
+            "0": {},
+            "$selected": true
           },
           "1": {},
-          "2": {},
           "3": {},
           "4": {},
           "5": {},
@@ -1133,10 +1135,10 @@
       },
       "transform": {
         "translate": {
-          "x": -107.77550159839961,
-          "y": -157.85407912906922
+          "x": -200.50593886721774,
+          "y": -121.22093483456015
         },
-        "scale": 1.1
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1150,22 +1152,26 @@
       "selectionBack": {
         "0": {
           "0": {
+            "0": {},
             "$selected": true
           },
           "1": {},
+          "3": {},
+          "4": {},
           "5": {
             "0": {}
           },
           "6": {},
-          "7": {}
+          "7": {},
+          "10": {}
         }
       },
       "transform": {
         "translate": {
-          "x": -240,
-          "y": -160
+          "x": -106.08837745743568,
+          "y": -99.20798851860894
         },
-        "scale": 1.1
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1179,7 +1185,8 @@
       "selectionBack": {
         "0": {
           "0": {
-            "0": {}
+            "0": {},
+            "$selected": true
           },
           "1": {},
           "3": {},
@@ -1192,7 +1199,8 @@
           },
           "11": {},
           "16": {},
-          "17": {}
+          "17": {},
+          "18": {}
         }
       },
       "transform": {
@@ -1200,7 +1208,7 @@
           "x": -215.39830571534583,
           "y": -307.82566939377114
         },
-        "scale": 1.1
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1217,7 +1225,7 @@
           "x": -240,
           "y": 1139.9999590156506
         },
-        "scale": 1.1
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1240,7 +1248,7 @@
           "x": -258,
           "y": -38
         },
-        "scale": 1.1
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1520,12 +1528,13 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
+          "0": {},
           "7": {},
-          "9": {},
-          "10": {},
-          "11": {
+          "9": {
             "$selected": true
-          }
+          },
+          "10": {},
+          "11": {}
         }
       },
       "transform": {
@@ -1546,10 +1555,11 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "1": {},
-          "10": {
+          "0": {
             "$selected": true
           },
+          "1": {},
+          "10": {},
           "12": {},
           "13": {}
         }
@@ -1572,11 +1582,12 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
+          "0": {
+            "$selected": true
+          },
           "1": {},
           "9": {},
-          "10": {
-            "$selected": true
-          }
+          "10": {}
         }
       },
       "transform": {
@@ -1596,14 +1607,19 @@
     "[FilamentStation.eez-project]:/userPages/8[flow-state]": {
       "selectionFront": {},
       "selectionBack": {
-        "0": {}
+        "0": {
+          "0": {},
+          "10": {
+            "$selected": true
+          }
+        }
       },
       "transform": {
         "translate": {
           "x": -240,
           "y": -160
         },
-        "scale": 1.1
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1616,10 +1632,11 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "1": {},
-          "15": {
+          "0": {
             "$selected": true
-          }
+          },
+          "1": {},
+          "15": {}
         }
       },
       "transform": {
@@ -1640,11 +1657,12 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
+          "0": {
+            "$selected": true
+          },
           "1": {},
           "9": {},
-          "14": {
-            "$selected": true
-          }
+          "14": {}
         }
       },
       "transform": {
@@ -1665,10 +1683,11 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "1": {},
-          "14": {
+          "0": {
             "$selected": true
           },
+          "1": {},
+          "14": {},
           "16": {}
         }
       },
@@ -1690,12 +1709,12 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {},
-          "1": {},
-          "9": {},
-          "10": {
+          "0": {
             "$selected": true
           },
+          "1": {},
+          "9": {},
+          "10": {},
           "11": {}
         }
       },
@@ -1717,11 +1736,12 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
+          "0": {
+            "$selected": true
+          },
           "1": {},
           "3": {},
-          "11": {
-            "$selected": true
-          }
+          "11": {}
         }
       },
       "transform": {
@@ -1742,10 +1762,11 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "1": {},
-          "9": {
+          "0": {
             "$selected": true
-          }
+          },
+          "1": {},
+          "9": {}
         }
       },
       "transform": {
@@ -1766,10 +1787,11 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "1": {},
-          "9": {
+          "0": {
             "$selected": true
           },
+          "1": {},
+          "9": {},
           "10": {}
         }
       },
@@ -1791,10 +1813,11 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "1": {},
-          "9": {
+          "0": {
             "$selected": true
-          }
+          },
+          "1": {},
+          "9": {}
         }
       },
       "transform": {
@@ -1815,12 +1838,13 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
+          "0": {
+            "$selected": true
+          },
           "1": {},
           "2": {},
           "9": {},
-          "11": {
-            "$selected": true
-          }
+          "11": {}
         }
       },
       "transform": {
@@ -1858,9 +1882,11 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "1": {
+          "0": {
             "$selected": true
           },
+          "1": {},
+          "3": {},
           "6": {}
         }
       },
@@ -1882,6 +1908,9 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
+          "0": {
+            "$selected": true
+          },
           "1": {},
           "7": {}
         }
@@ -1904,9 +1933,10 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "1": {
+          "0": {
             "$selected": true
           },
+          "1": {},
           "9": {}
         }
       },
@@ -1928,9 +1958,10 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "1": {
+          "0": {
             "$selected": true
           },
+          "1": {},
           "2": {}
         }
       },
@@ -1952,9 +1983,10 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "1": {
+          "0": {
             "$selected": true
           },
+          "1": {},
           "5": {}
         }
       },
@@ -1976,9 +2008,10 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "1": {
+          "0": {
             "$selected": true
           },
+          "1": {},
           "9": {}
         }
       },
@@ -1994,6 +2027,11 @@
         "position": 0,
         "secondToPx": 200,
         "scrollLeft": 0
+      }
+    },
+    "[FilamentStation.eez-project]:/lvglStyles/styles[tree-state]": {
+      "0": {
+        "$selected": true
       }
     }
   },
@@ -2012,13 +2050,15 @@
   "lvglPart": "MAIN",
   "lvglState": "DEFAULT",
   "lvglExpandedPropertiesGroup": [
-    "MISCELLANEOUS",
-    "TEXT",
+    "POSITION AND SIZE",
+    "LAYOUT",
+    "PADDING",
+    "MARGIN",
     "BACKGROUND"
   ],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,
-  "flowZoom": 1.1,
+  "flowZoom": 1,
   "implementationLanguage": "C",
   "openDialogDefaultPath": "C:\\VSCode\\Projects\\FilamentStation\\ui-project\\images\\bambu-lab_W.png"
 }
