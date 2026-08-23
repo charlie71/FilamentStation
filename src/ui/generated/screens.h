@@ -108,11 +108,12 @@ typedef struct _objects_t {
     lv_obj_t *home_tray_3_1;
     lv_obj_t *home_tray_3_2;
     lv_obj_t *home_tray_4_1;
-    lv_obj_t *home_tray4_2;
+    lv_obj_t *home_tray_4_2;
     lv_obj_t *home_external_1;
     lv_obj_t *home_external_2;
     lv_obj_t *home_staging_1;
     lv_obj_t *home_staging_2;
+    lv_obj_t *obj0;
     lv_obj_t *select_header;
     lv_obj_t *select_header_spoolman;
     lv_obj_t *select_header_wifi;

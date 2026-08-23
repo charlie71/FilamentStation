@@ -1383,13 +1383,49 @@ Warnungen) + 52 native Tests danach gruen, generierte `screens.c` per Grep
 verifiziert (`select_printer_4`/`tag_action_settings` jetzt `lv_button_create`),
 geflasht.
 
+Nachtrag (2026-08-23, Home-Screen Multicolor-Filamentanzeige, Nutzerwunsch
+erledigt): Farbe 1 eines Filaments faerbt weiterhin den Button selbst
+(`home_tray_1..4`/`home_external`/`home_staging`, unveraendert), Farbe 2 und
+3 bekommen jetzt je einen eigenen kleinen Container-Swatch daneben statt wie
+bisher verloren zu gehen -- analog zu den vier AMS-Slot-Farbcontainern.
+
+Der Nutzer hatte dafuer bereits 11 von 12 benoetigten Containern
+(`home_tray_1_1/_2` ... `home_staging_1/_2`) selbst in EEZ Studio angelegt
+(screen-level Geschwister von SCR_HOME, exakt wie die AMS-Container, nicht
+in den Button verschachtelt); nur `home_tray_4_2` fehlte (Copy-Paste-
+Versehen). Per Skript ergaenzt (`scripts/add_missing_home_tray_4_2.py`,
+Klon von `home_tray_4_1` inkl. Position). Dabei kollidierte der Nutzer's
+parallele eigene Ergaenzung desselben Objekts mit dem Skript-Lauf (gleiches
+bekanntes Muster wie bei frueheren Merge-Konflikten in dieser Session) --
+`home_tray_4_2` existierte kurzzeitig doppelt im Export
+(`duplicate member` Compilerfehler), Duplikat identifiziert und entfernt.
+
+`createHomeColorStrips()`/`updateHomeColorStrips()` (Laufzeit-Overlay-Kreise,
+bei jedem Refresh neu positioniert) ersatzlos entfernt, durch
+`updateHomeColorSwatches()` ersetzt (direktes `lv_obj_set_style_bg_color()`
+auf den EEZ-Containern, wie beim AMS-Vorbild). `updateTrayButton()` nimmt
+jetzt die zwei Swatch-Objekte als Parameter statt eines Gruppenindexes.
+
+**Bekannte Einschraenkung:** `TrayUiEntry::colorHex` ist ein einzelnes
+Hex-Feld (Bambu-Protokoll liefert pro AMS-Fach nur eine Farbe) -- die neuen
+Swatches bleiben bei `home_tray_1..4`/`home_external` deshalb vorerst leer
+(transparent), bis echte Mehrfarb-AMS-Daten verfuegbar sind. Bei
+`home_staging` funktioniert es sofort, da `stagingState.colorRgb`/
+`colorCount` (Spoolman-Spulendaten) bereits bis zu 3 Farben tragen.
+
+`project validate` durchgehend `"valid": true`. Re-Export durch Nutzer
+bestaetigt (zweimal, wegen der Duplikat-Kollision), Build (0 Warnungen) +
+52 native Tests danach gruen, geflasht.
+
 **Noch offen / nächste Schritte:**
 * Zweite Theme-Zeile (Dark) + Umschalt-UI + Persistierung
   (`StorageDocumentType::Ui`, `/config/ui.json` existiert bereits als
   Ablageort).
-* Verbleibende dynamische Layout-Funktionen (`createHomeColorStrips()` fuer
-  Tray/Staging, `createStagingTableDecoration()`) durch echte EEZ-Objekte
-  ersetzen, analog zu den AMS-Containern.
+* Verbleibende dynamische Layout-Funktion `createStagingTableDecoration()`
+  durch echte EEZ-Objekte ersetzen, analog zu den AMS-Containern.
+* Mehrfarb-AMS-Daten vom Bambu-Protokoll (`tray->colorHex` derzeit nur 1
+  Farbe) waeren Voraussetzung dafuer, dass die neuen
+  `home_tray_*_1/_2`-Swatches bei echten AMS-Faechern sichtbar werden.
 
 ## 9.2 Native Tags
 

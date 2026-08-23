@@ -151,10 +151,6 @@ models::UiStagingSummary stagingState{};
 models::UiSpoolSummary stagingSpoolState{};
 lv_obj_t* calibrationEditor = nullptr;
 lv_obj_t* calibrationKeyboard = nullptr;
-constexpr std::size_t kHomeColorStripGroups = 6;
-std::array<std::array<lv_obj_t*, models::kMaximumFilamentColors>,
-           kHomeColorStripGroups>
-    homeColorStrips{};
 std::array<lv_obj_t*, 8> stagingTableRows{};
 bool touchWasPressed = false;
 std::size_t touchMarkerColorIndex = 0;
@@ -1609,70 +1605,26 @@ void applySpoolmanAppState(const rtos::UiCommand* command = nullptr) {
   }
 }
 
-void createHomeColorStrips() {
-  const std::array<lv_obj_t*, kHomeColorStripGroups> parents{{
-      objects.home_tray_1, objects.home_tray_2, objects.home_tray_3,
-      objects.home_tray_4, objects.home_external, objects.home_staging,
-  }};
-  constexpr lv_coord_t kColorDiameter = 10;
-  constexpr lv_coord_t kColorSpacing = 2;
-  lv_obj_update_layout(objects.scr_home);
-  for (std::size_t group = 0; group < parents.size(); ++group) {
-    const lv_coord_t parentX = lv_obj_get_x(parents[group]);
-    const lv_coord_t parentY = lv_obj_get_y(parents[group]);
-    const lv_coord_t parentWidth = lv_obj_get_width(parents[group]);
-    for (std::size_t color = 0; color < models::kMaximumFilamentColors;
-         ++color) {
-      lv_obj_t* strip = lv_obj_create(objects.scr_home);
-      homeColorStrips[group][color] = strip;
-      lv_obj_set_pos(
-          strip,
-          parentX + parentWidth - kColorDiameter -
-              static_cast<lv_coord_t>(color * (kColorDiameter + kColorSpacing)) -
-              3,
-          parentY + 4);
-      lv_obj_set_size(strip, kColorDiameter, kColorDiameter);
-      lv_obj_remove_flag(strip, LV_OBJ_FLAG_SCROLLABLE);
-      lv_obj_remove_flag(strip, LV_OBJ_FLAG_CLICKABLE);
-      lv_obj_add_flag(strip, LV_OBJ_FLAG_HIDDEN);
-      lv_obj_set_style_border_width(strip, 1, LV_PART_MAIN);
-      lv_obj_set_style_border_color(strip, lv_color_hex(kColorTextWhite), LV_PART_MAIN);
-      lv_obj_set_style_radius(strip, LV_RADIUS_CIRCLE, LV_PART_MAIN);
-      lv_obj_set_style_pad_all(strip, 0, LV_PART_MAIN);
-      vTaskDelay(pdMS_TO_TICKS(5));
-    }
-  }
-}
-
-void updateHomeColorStrips(
-    std::size_t group,
+// Multicolor-Filament-Anzeige (Nutzerwunsch 2026-08-23): Farbe 1 faerbt den
+// Button selbst (siehe setButtonColors()-Aufrufe an den Call-Sites), Farbe 2
+// und 3 faerben je einen vom Nutzer im EEZ-Projekt angelegten
+// Container-Swatch daneben (home_<button>_1/_2) -- analog zu den vier
+// AMS-Slot-Farbcontainern in updateHomeContent(), nicht mehr ueber
+// dynamisch zur Laufzeit erzeugte Overlay-Kreise.
+void updateHomeColorSwatches(
+    lv_obj_t* swatch1, lv_obj_t* swatch2,
     const std::array<std::uint32_t, models::kMaximumFilamentColors>& colors,
     std::uint8_t colorCount) {
-  const std::uint8_t visibleColorCount = colorCount > 1 ? colorCount : 0;
-  for (std::size_t index = 0; index < models::kMaximumFilamentColors; ++index) {
-    lv_obj_t* strip = homeColorStrips[group][index];
-    if (index >= visibleColorCount) {
-      lv_obj_add_flag(strip, LV_OBJ_FLAG_HIDDEN);
+  const std::array<lv_obj_t*, 2> swatches{{swatch1, swatch2}};
+  for (std::size_t index = 0; index < swatches.size(); ++index) {
+    const std::size_t colorIndex = index + 1;  // colors[0] -> button itself
+    if (colorIndex >= colorCount) {
+      lv_obj_set_style_bg_opa(swatches[index], LV_OPA_TRANSP, LV_PART_MAIN);
       continue;
     }
-    lv_obj_remove_flag(strip, LV_OBJ_FLAG_HIDDEN);
-    constexpr lv_coord_t kColorDiameter = 10;
-    constexpr lv_coord_t kColorSpacing = 2;
-    const std::array<lv_obj_t*, kHomeColorStripGroups> parents{{
-        objects.home_tray_1, objects.home_tray_2, objects.home_tray_3,
-        objects.home_tray_4, objects.home_external, objects.home_staging,
-    }};
-    lv_obj_t* parent = parents[group];
-    lv_obj_set_pos(
-        strip,
-        lv_obj_get_x(parent) + lv_obj_get_width(parent) - kColorDiameter -
-            static_cast<lv_coord_t>(index * (kColorDiameter + kColorSpacing)) -
-            3,
-        lv_obj_get_y(parent) + 4);
-    lv_obj_set_size(strip, kColorDiameter, kColorDiameter);
-    lv_obj_set_style_bg_opa(strip, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(strip, lv_color_hex(colors[index]), LV_PART_MAIN);
-    lv_obj_move_foreground(strip);
+    lv_obj_set_style_bg_opa(swatches[index], LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(swatches[index], lv_color_hex(colors[colorIndex]),
+                              LV_PART_MAIN);
   }
 }
 
@@ -2247,8 +2199,6 @@ void bindGeneratedWidgets() {
   // dadurch ins Leere und lv_obj_get_style_text_font(nullptr, ...) hing die
   // UI-Task auf (Watchdog-Reboot). Block ersatzlos entfernt.
   vTaskDelay(pdMS_TO_TICKS(250));
-  createHomeColorStrips();
-  vTaskDelay(pdMS_TO_TICKS(250));
   createStagingTableDecoration();
   vTaskDelay(pdMS_TO_TICKS(250));
   createTrayDetailsDecoration();
@@ -2294,9 +2244,10 @@ void updatePrinterList() {
   setControlText(objects.select_bottom_status, "Drucker verwalten");
 }
 
-void updateTrayButton(lv_obj_t* button, rtos::PrinterId printerId,
+void updateTrayButton(lv_obj_t* button, lv_obj_t* swatch1, lv_obj_t* swatch2,
+                      rtos::PrinterId printerId,
                       std::uint8_t amsId, std::uint8_t trayId,
-                      const char* title, std::size_t colorStripGroup) {
+                      const char* title) {
   (void)printerId;  // Real tray data (see AppTask::syncAmsToUi) is only
                     // ever synced for the printer currently in focus.
   (void)title;  // Nutzerwunsch (2026-08-22): kein "Slot N"/"Extern"-Titel
@@ -2308,7 +2259,7 @@ void updateTrayButton(lv_obj_t* button, rtos::PrinterId printerId,
   if (tray == nullptr || !tray->occupied) {
     std::snprintf(text, sizeof(text), "leer");
     setButtonColors(button, kColorNeutralGrey);
-    updateHomeColorStrips(colorStripGroup, {}, 0);
+    updateHomeColorSwatches(swatch1, swatch2, {}, 0);
   } else {
     // Material kommt real vom Drucker (tray->material). Restgewicht,
     // Spoolman-ID und K-Faktor sind auf Nutzerwunsch vorerst Mockdaten:
@@ -2340,7 +2291,7 @@ void updateTrayButton(lv_obj_t* button, rtos::PrinterId printerId,
         parseTrayColorHex(tray->colorHex)};
     const std::uint8_t colorCount = tray->colorHex[0] != '\0' ? 1U : 0U;
     setButtonColors(button, colorCount > 0 ? colors[0] : kColorNeutralGrey);
-    updateHomeColorStrips(colorStripGroup, colors, colorCount);
+    updateHomeColorSwatches(swatch1, swatch2, colors, colorCount);
   }
   setButtonText(button, text);
 }
@@ -2398,16 +2349,21 @@ void updateHomeContent() {
     }
   }
 
-  updateTrayButton(objects.home_tray_1, currentPrinterId, currentAmsId, 0,
-                   "Slot 1", 0);
-  updateTrayButton(objects.home_tray_2, currentPrinterId, currentAmsId, 1,
-                   "Slot 2", 1);
-  updateTrayButton(objects.home_tray_3, currentPrinterId, currentAmsId, 2,
-                   "Slot 3", 2);
-  updateTrayButton(objects.home_tray_4, currentPrinterId, currentAmsId, 3,
-                   "Slot 4", 3);
-  updateTrayButton(objects.home_external, currentPrinterId, 0xFF, 0xFF,
-                   "Extern", 4);
+  updateTrayButton(objects.home_tray_1, objects.home_tray_1_1,
+                   objects.home_tray_1_2, currentPrinterId, currentAmsId, 0,
+                   "Slot 1");
+  updateTrayButton(objects.home_tray_2, objects.home_tray_2_1,
+                   objects.home_tray_2_2, currentPrinterId, currentAmsId, 1,
+                   "Slot 2");
+  updateTrayButton(objects.home_tray_3, objects.home_tray_3_1,
+                   objects.home_tray_3_2, currentPrinterId, currentAmsId, 2,
+                   "Slot 3");
+  updateTrayButton(objects.home_tray_4, objects.home_tray_4_1,
+                   objects.home_tray_4_2, currentPrinterId, currentAmsId, 3,
+                   "Slot 4");
+  updateTrayButton(objects.home_external, objects.home_external_1,
+                   objects.home_external_2, currentPrinterId, 0xFF, 0xFF,
+                   "Extern");
 
   const auto& staging = stagingState;
   char stagingText[64];
@@ -2424,11 +2380,13 @@ void updateHomeContent() {
                   static_cast<double>(staging.remainingWeightGrams));
     setButtonColors(objects.home_staging,
                     staging.colorCount > 0 ? staging.colorRgb[0] : kColorNeutralGrey);
-    updateHomeColorStrips(5, staging.colorRgb, staging.colorCount);
+    updateHomeColorSwatches(objects.home_staging_1, objects.home_staging_2,
+                            staging.colorRgb, staging.colorCount);
   } else {
     std::snprintf(stagingText, sizeof(stagingText), "Staging\nleer");
     setButtonColors(objects.home_staging, kColorNeutralGrey);
-    updateHomeColorStrips(5, {}, 0);
+    updateHomeColorSwatches(objects.home_staging_1, objects.home_staging_2, {},
+                            0);
   }
   setButtonText(objects.home_staging, stagingText);
 

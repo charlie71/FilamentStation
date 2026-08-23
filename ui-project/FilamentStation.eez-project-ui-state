@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/24",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/1",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/13",
     "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/2",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
@@ -203,10 +203,10 @@
                 {
                   "type": "tab",
                   "id": "#f16b12ce-5e8a-43eb-b227-084dc7cd2621",
-                  "name": "SCR_BAMBU_SPOOL_TYPE",
+                  "name": "SCR_HOME",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/24",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/1",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -1144,7 +1144,11 @@
           "14": {},
           "15": {},
           "16": {},
-          "17": {}
+          "17": {},
+          "33": {},
+          "40": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -1809,8 +1813,12 @@
           },
           "4": {},
           "5": {},
+          "6": {},
+          "7": {},
           "8": {},
-          "9": {},
+          "9": {
+            "$selected": true
+          },
           "10": {},
           "11": {},
           "12": {}
@@ -1821,7 +1829,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.8
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1854,7 +1862,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.8
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1869,9 +1877,7 @@
         "0": {
           "0": {
             "0": {},
-            "1": {
-              "$selected": true
-            },
+            "1": {},
             "2": {},
             "3": {}
           },
@@ -1888,7 +1894,7 @@
           "x": -240,
           "y": -60.000003152642265
         },
-        "scale": 0.8
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
