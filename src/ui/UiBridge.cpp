@@ -1524,35 +1524,31 @@ void bindClick(lv_obj_t* object, lv_event_cb_t callback,
                       reinterpret_cast<void*>(userData));
 }
 
-void styleLabelButton(lv_obj_t* object, std::uint32_t color = kColorPrimaryBlue) {
+void styleLabelButton(lv_obj_t* object) {
   if (object == nullptr) return;
   // Every former "label pretending to be a button" is now a real
   // LVGLButtonWidget with its own EEZ-defined child label (see
-  // scripts/convert_label_buttons.py, TASKS.md 2026-08-23) -- this no
-  // longer needs to inject/center a caption itself, only apply the
-  // semantic color (named EEZ Styles per color role are a follow-up, see
-  // TASKS.md) and make it clickable, since EEZ does not mark these buttons
+  // scripts/convert_label_buttons.py, TASKS.md 2026-08-23). Color no
+  // longer comes from here either (Nutzerwunsch 2026-08-23): every button
+  // carries a named EEZ Style (ButtonPrimary/ButtonNeutral/ButtonDanger,
+  // see scripts/add_button_role_styles.py) referencing theme colors, set
+  // once in the .eez-project and applied by the generated
+  // add_style_button_*() call at widget creation -- this only still needs
+  // to make the button clickable, since EEZ does not mark these buttons
   // clickable on its own.
   lv_obj_add_flag(object, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_remove_flag(object, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_style_bg_opa(object, LV_OPA_COVER, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(object, lv_color_hex(color), LV_PART_MAIN);
-  lv_obj_set_style_text_color(object, lv_color_hex(kColorTextWhite), LV_PART_MAIN);
   lv_obj_set_style_text_align(object, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
   lv_obj_set_style_radius(object, 8, LV_PART_MAIN);
 }
 
-void setLabelButtonAvailable(lv_obj_t* object, bool available,
-                             std::uint32_t activeColor) {
+void setLabelButtonAvailable(lv_obj_t* object, bool available) {
+  if (object == nullptr) return;
   lv_obj_set_flag(object, LV_OBJ_FLAG_CLICKABLE, available);
-  lv_obj_set_style_bg_color(
-      object, lv_color_hex(available ? activeColor : kColorDisabledGrey), LV_PART_MAIN);
-  lv_obj_set_style_text_color(
-      object, lv_color_hex(available ? kColorTextWhite : kColorTextDisabled), LV_PART_MAIN);
-  if (lv_obj_get_child_count(object) > 0) {
-    lv_obj_t* caption = lv_obj_get_child(object, 0);
-    lv_obj_set_style_text_color(
-        caption, lv_color_hex(available ? kColorTextWhite : kColorTextDisabled), LV_PART_MAIN);
+  if (available) {
+    lv_obj_remove_state(object, LV_STATE_DISABLED);
+  } else {
+    lv_obj_add_state(object, LV_STATE_DISABLED);
   }
 }
 
@@ -1573,36 +1569,34 @@ void applySpoolmanAppState(const rtos::UiCommand* command = nullptr) {
       objects.tag_result_quick_weight,
   }};
   for (lv_obj_t* control : onlineControls)
-    setLabelButtonAvailable(control, online, kColorPrimaryBlue);
-  setLabelButtonAvailable(objects.tag_result_advanced_weight, online,
-                          kColorPrimaryBlue);
+    setLabelButtonAvailable(control, online);
+  setLabelButtonAvailable(objects.tag_result_advanced_weight, online);
 
   setLabelButtonAvailable(objects.staging_action_link_tag,
-                          tagReady && currentTagCanAssign, kColorPrimaryBlue);
+                          tagReady && currentTagCanAssign);
   setLabelButtonAvailable(objects.staging_action_unlink_tag,
-                          tagReady && currentTagCanRemove, kColorDangerRed);
+                          tagReady && currentTagCanRemove);
   setLabelButtonAvailable(objects.tag_action_select_spool,
-                          tagReady && currentTagCanAssign, kColorPrimaryBlue);
+                          tagReady && currentTagCanAssign);
   setLabelButtonAvailable(objects.tag_action_use_last_spool,
-                          tagReady && currentTagCanAssign, kColorPrimaryBlue);
+                          tagReady && currentTagCanAssign);
   setLabelButtonAvailable(objects.tag_action_erase,
-                          tagReady && currentTagCanRemove, kColorDangerRed);
+                          tagReady && currentTagCanRemove);
   setLabelButtonAvailable(objects.tag_definition_import_select_spool,
-                          tagReady, kColorPrimaryBlue);
-  setLabelButtonAvailable(objects.tag_definition_import_spoolman, tagReady,
-                          kColorPrimaryBlue);
+                          tagReady);
+  setLabelButtonAvailable(objects.tag_definition_import_spoolman, tagReady);
   setLabelButtonAvailable(objects.tag_legacy_select_spool,
-                          tagReady && currentTagCanAssign, kColorPrimaryBlue);
-  setLabelButtonAvailable(objects.tag_legacy_import, tagReady, kColorPrimaryBlue);
+                          tagReady && currentTagCanAssign);
+  setLabelButtonAvailable(objects.tag_legacy_import, tagReady);
   setLabelButtonAvailable(objects.tag_legacy_erase,
-                          tagReady && currentTagCanRemove, kColorDangerRed);
+                          tagReady && currentTagCanRemove);
   setLabelButtonAvailable(objects.tag_unknown_select_spool,
-                          tagReady && currentTagCanAssign, kColorPrimaryBlue);
+                          tagReady && currentTagCanAssign);
 
   // Configuration and navigation must remain available even while Spoolman
   // is offline or its tag field is incompatible.
-  setLabelButtonAvailable(objects.settings_spoolman, true, kColorPrimaryBlue);
-  setLabelButtonAvailable(objects.spoolman_setting_cancel, true, kColorNeutralGrey);
+  setLabelButtonAvailable(objects.settings_spoolman, true);
+  setLabelButtonAvailable(objects.spoolman_setting_cancel, true);
 
   if (command != nullptr) {
     lv_label_set_text(objects.home_bottom_status, command->text);
@@ -1845,20 +1839,20 @@ void bindGeneratedWidgets() {
   setControlText(objects.tag_unknown_close, "Schlie\xC3\x9F" "en");
   setControlText(objects.bambu_spool_type_title, "Leergewicht ausw\xC3\xA4hlen");
   setControlText(objects.bambu_spool_type_back, "Zur\xC3\xBC" "ck");
-  styleLabelButton(objects.tag_definition_import_select_spool, kColorPrimaryBlue);
-  styleLabelButton(objects.tag_definition_import_spoolman, kColorPrimaryBlue);
-  styleLabelButton(objects.tag_definition_import_cancel, kColorNeutralGrey);
-  styleLabelButton(objects.tag_legacy_select_spool, kColorPrimaryBlue);
-  styleLabelButton(objects.tag_legacy_import, kColorPrimaryBlue);
-  styleLabelButton(objects.tag_legacy_migrate, kColorPrimaryBlue);
-  styleLabelButton(objects.tag_legacy_erase, kColorDangerRed);
-  styleLabelButton(objects.tag_legacy_close, kColorPrimaryBlue);
-  styleLabelButton(objects.tag_unknown_select_spool, kColorPrimaryBlue);
-  styleLabelButton(objects.tag_unknown_close, kColorPrimaryBlue);
-  styleLabelButton(objects.bambu_spool_type_low, kColorPrimaryBlue);
-  styleLabelButton(objects.bambu_spool_type_high, kColorPrimaryBlue);
-  styleLabelButton(objects.bambu_spool_type_manual, kColorPrimaryBlue);
-  styleLabelButton(objects.bambu_spool_type_back, kColorNeutralGrey);
+  styleLabelButton(objects.tag_definition_import_select_spool);
+  styleLabelButton(objects.tag_definition_import_spoolman);
+  styleLabelButton(objects.tag_definition_import_cancel);
+  styleLabelButton(objects.tag_legacy_select_spool);
+  styleLabelButton(objects.tag_legacy_import);
+  styleLabelButton(objects.tag_legacy_migrate);
+  styleLabelButton(objects.tag_legacy_erase);
+  styleLabelButton(objects.tag_legacy_close);
+  styleLabelButton(objects.tag_unknown_select_spool);
+  styleLabelButton(objects.tag_unknown_close);
+  styleLabelButton(objects.bambu_spool_type_low);
+  styleLabelButton(objects.bambu_spool_type_high);
+  styleLabelButton(objects.bambu_spool_type_manual);
+  styleLabelButton(objects.bambu_spool_type_back);
 
   bindClick(objects.tag_action_header, headerClicked);
   bindClick(objects.tag_review_header, headerClicked);
@@ -2011,6 +2005,7 @@ void bindGeneratedWidgets() {
   bindClick(objects.select_printer_1, printerClicked, 1);
   bindClick(objects.select_printer_2, printerClicked, 2);
   bindClick(objects.select_printer_3, printerClicked, 3);
+  bindClick(objects.select_printer_4, printerClicked, 4);
 
   bindClick(objects.settings_wifi, settingsCategoryClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::OpenWifiSettings));
@@ -2135,11 +2130,11 @@ void bindGeneratedWidgets() {
   }};
   for (lv_obj_t* button : additionalSettingsButtons) styleLabelButton(button);
   styleLabelButton(objects.firmware_settings_check);
-  styleLabelButton(objects.wifi_settings_back, kColorNeutralGrey);
-  styleLabelButton(objects.scale_settings_back, kColorNeutralGrey);
-  styleLabelButton(objects.device_settings_back, kColorNeutralGrey);
-  styleLabelButton(objects.diagnostics_settings_back, kColorNeutralGrey);
-  styleLabelButton(objects.firmware_settings_back, kColorNeutralGrey);
+  styleLabelButton(objects.wifi_settings_back);
+  styleLabelButton(objects.scale_settings_back);
+  styleLabelButton(objects.device_settings_back);
+  styleLabelButton(objects.diagnostics_settings_back);
+  styleLabelButton(objects.firmware_settings_back);
 
   const std::array<lv_obj_t*, 20> printerButtons{{
       objects.printer_settings_header, objects.printer_settings_settings,
@@ -2154,9 +2149,9 @@ void bindGeneratedWidgets() {
       objects.printer_edit_test, objects.printer_edit_save,
   }};
   for (lv_obj_t* button : printerButtons) styleLabelButton(button);
-  styleLabelButton(objects.printer_settings_back, kColorNeutralGrey);
-  styleLabelButton(objects.printer_edit_delete, kColorDangerRed);
-  styleLabelButton(objects.printer_edit_cancel, kColorNeutralGrey);
+  styleLabelButton(objects.printer_settings_back);
+  styleLabelButton(objects.printer_edit_delete);
+  styleLabelButton(objects.printer_edit_cancel);
 
   const std::array<lv_obj_t*, 10> spoolmanButtons{{
       objects.spoolman_settings_header, objects.spoolman_settings_settings,
@@ -2168,7 +2163,7 @@ void bindGeneratedWidgets() {
   for (lv_obj_t* button : spoolmanButtons) {
     styleLabelButton(button);
   }
-  styleLabelButton(objects.spoolman_setting_cancel, kColorNeutralGrey);
+  styleLabelButton(objects.spoolman_setting_cancel);
 
   const std::array<lv_obj_t*, 11> stagingButtons{{
       objects.staging_details_header,
@@ -2187,8 +2182,8 @@ void bindGeneratedWidgets() {
     styleLabelButton(button);
   }
   styleLabelButton(objects.staging_action_erase_tag);
-  styleLabelButton(objects.staging_action_clear, kColorDangerRed);
-  styleLabelButton(objects.staging_actions_back, kColorNeutralGrey);
+  styleLabelButton(objects.staging_action_clear);
+  styleLabelButton(objects.staging_actions_back);
   const std::array<lv_obj_t*, 23> trayButtons{{
       objects.tray_details_header, objects.tray_details_settings,
       objects.tray_details_tab_slot, objects.tray_details_tab_spool,
@@ -2206,13 +2201,13 @@ void bindGeneratedWidgets() {
   for (lv_obj_t* button : trayButtons) {
     styleLabelButton(button);
   }
-  styleLabelButton(objects.tray_action_untag, kColorDangerRed);
-  styleLabelButton(objects.tray_action_reset, kColorDangerRed);
-  styleLabelButton(objects.tray_details_close, kColorPrimaryBlue);
-  styleLabelButton(objects.tray_actions_back, kColorNeutralGrey);
-  styleLabelButton(objects.tray_select_cancel, kColorNeutralGrey);
-  styleLabelButton(objects.home_active_ams, kColorNeutralGrey);
-  styleLabelButton(objects.home_ams_4, kColorNeutralGrey);
+  styleLabelButton(objects.tray_action_untag);
+  styleLabelButton(objects.tray_action_reset);
+  styleLabelButton(objects.tray_details_close);
+  styleLabelButton(objects.tray_actions_back);
+  styleLabelButton(objects.tray_select_cancel);
+  styleLabelButton(objects.home_active_ams);
+  styleLabelButton(objects.home_ams_4);
   const std::array<lv_obj_t*, 8> tagButtons{{
       objects.tag_action_select_spool, objects.tag_action_use_last_spool,
       objects.tag_review_confirm,
@@ -2221,9 +2216,9 @@ void bindGeneratedWidgets() {
       objects.tag_result_close,
   }};
   for (lv_obj_t* button : tagButtons) styleLabelButton(button);
-  styleLabelButton(objects.tag_action_erase, kColorDangerRed);
-  styleLabelButton(objects.tag_review_cancel, kColorNeutralGrey);
-  styleLabelButton(objects.tag_write_cancel, kColorNeutralGrey);
+  styleLabelButton(objects.tag_action_erase);
+  styleLabelButton(objects.tag_review_cancel);
+  styleLabelButton(objects.tag_write_cancel);
 
   // Every enabled navigation button labelled "Zurück" uses the primary blue
   // action style.  Cancel/close buttons intentionally keep their secondary
@@ -2260,15 +2255,16 @@ void bindGeneratedWidgets() {
 }
 
 void updatePrinterList() {
-  // select_printer_1/2/3 are bound to fixed printerIds 1/2/3 (see
+  // select_printer_1/2/3/4 are bound to fixed printerIds 1/2/3/4 (see
   // bindClick calls above), so printerEntries[index] must line up
   // positionally with printerId == index + 1 -- this renders real data
   // (Phase 8.6 CRUD, synced via UpdatePrinterList) instead of the former
   // models::mock::printers().
-  const std::array<lv_obj_t*, 3> buttons{{
+  const std::array<lv_obj_t*, 4> buttons{{
       objects.select_printer_1,
       objects.select_printer_2,
       objects.select_printer_3,
+      objects.select_printer_4,
   }};
 
   for (std::size_t index = 0; index < buttons.size(); ++index) {
@@ -2295,17 +2291,6 @@ void updatePrinterList() {
     setButtonColors(buttons[index], color);
   }
 
-  lv_obj_set_size(objects.select_bottom_status, 300, 48);
-  lv_obj_set_style_bg_opa(objects.select_bottom_status, LV_OPA_COVER,
-                          LV_PART_MAIN);
-  lv_obj_set_style_bg_color(objects.select_bottom_status,
-                            lv_color_hex(kColorPrimaryBlue), LV_PART_MAIN);
-  lv_obj_set_style_radius(objects.select_bottom_status, 8, LV_PART_MAIN);
-  lv_obj_set_style_text_color(objects.select_bottom_status,
-                              lv_color_hex(kColorTextWhite), LV_PART_MAIN);
-  lv_obj_set_style_text_align(objects.select_bottom_status,
-                              LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-  lv_obj_set_style_pad_top(objects.select_bottom_status, 14, LV_PART_MAIN);
   setControlText(objects.select_bottom_status, "Drucker verwalten");
 }
 
@@ -2448,29 +2433,6 @@ void updateHomeContent() {
   setButtonText(objects.home_staging, stagingText);
 
   updateWeightDisplays();
-
-  const char* spoolmanStatusText =
-      spoolmanAppState == filament_station::models::SpoolmanAppState::SpoolmanReady
-          ? "online"
-      : spoolmanAppState ==
-                filament_station::models::SpoolmanAppState::TagFieldUnavailable
-          ? "online, Tag-Feld fehlt"
-          : "offline";
-  const char* wifiStatusText =
-      currentNetworkState == rtos::UiNetworkState::Online
-          ? "online"
-      : currentNetworkState == rtos::UiNetworkState::Connecting
-          ? "verbindet"
-      : currentNetworkState == rtos::UiNetworkState::PortalActive
-          ? "Portal aktiv"
-      : currentNetworkState == rtos::UiNetworkState::CredentialsCleared
-          ? "Zugangsdaten gel\xC3\xB6scht"
-          : "offline";
-  char statusText[96];
-  std::snprintf(statusText, sizeof(statusText),
-                "NFC: %s\nSpoolman: %s\nWLAN: %s", currentNfcStatusText,
-                spoolmanStatusText, wifiStatusText);
-  setButtonText(objects.home_status, statusText);
 }
 
 void updateWeightDisplays() {
@@ -3146,10 +3108,8 @@ void processUiCommand(const rtos::UiCommand& command) {
             (command.value & rtos::UI_TAG_CAP_UNLINK) != 0;
         currentTagCanAssign = canAssign;
         currentTagCanRemove = canRemove;
-        setLabelButtonAvailable(
-            objects.staging_action_link_tag, canAssign, kColorPrimaryBlue);
-        setLabelButtonAvailable(
-            objects.staging_action_unlink_tag, canRemove, kColorDangerRed);
+        setLabelButtonAvailable(objects.staging_action_link_tag, canAssign);
+        setLabelButtonAvailable(objects.staging_action_unlink_tag, canRemove);
         char assignmentStatus[64]{};
         if (command.spoolId != 0) {
           std::snprintf(assignmentStatus, sizeof(assignmentStatus),
@@ -3172,11 +3132,9 @@ void processUiCommand(const rtos::UiCommand& command) {
             (command.value & rtos::UI_TAG_CAP_UNLINK) != 0;
         currentTagCanAssign = canAssign;
         currentTagCanRemove = canRemove;
-        setLabelButtonAvailable(objects.tag_action_select_spool, canAssign,
-                                kColorPrimaryBlue);
-        setLabelButtonAvailable(objects.tag_action_use_last_spool, canAssign,
-                                kColorPrimaryBlue);
-        setLabelButtonAvailable(objects.tag_action_erase, canRemove, kColorDangerRed);
+        setLabelButtonAvailable(objects.tag_action_select_spool, canAssign);
+        setLabelButtonAvailable(objects.tag_action_use_last_spool, canAssign);
+        setLabelButtonAvailable(objects.tag_action_erase, canRemove);
       } else if (command.screenId == rtos::UiScreenId::TagReview &&
                  command.text[0] != '\0') {
         lv_label_set_text(objects.tag_review_summary, command.text);
@@ -3194,22 +3152,16 @@ void processUiCommand(const rtos::UiCommand& command) {
             (command.value & rtos::UI_TAG_CAP_UNLINK) != 0;
         currentTagCanAssign = canAssign;
         currentTagCanRemove = canRemove;
-        setLabelButtonAvailable(objects.tag_legacy_select_spool, canAssign,
-                                kColorPrimaryBlue);
-        lv_obj_set_flag(objects.tag_legacy_erase, LV_OBJ_FLAG_CLICKABLE,
-                        canRemove);
-        lv_obj_set_style_bg_color(objects.tag_legacy_erase,
-                                  lv_color_hex(canRemove ? kColorDangerRed : kColorDisabledGrey),
-                                  LV_PART_MAIN);
+        setLabelButtonAvailable(objects.tag_legacy_select_spool, canAssign);
+        setLabelButtonAvailable(objects.tag_legacy_erase, canRemove);
       } else if (command.screenId == rtos::UiScreenId::TagUnknown &&
                   command.text[0] != '\0') {
         lv_label_set_text(objects.tag_unknown_summary, command.text);
         currentTagCanAssign =
             (command.value & rtos::UI_TAG_CAP_LINK) != 0;
         currentTagCanRemove = false;
-        setLabelButtonAvailable(
-            objects.tag_unknown_select_spool,
-            currentTagCanAssign, kColorPrimaryBlue);
+        setLabelButtonAvailable(objects.tag_unknown_select_spool,
+                                currentTagCanAssign);
       }
       if (command.screenId == rtos::UiScreenId::TrayDetails ||
           command.screenId == rtos::UiScreenId::TrayActions) {

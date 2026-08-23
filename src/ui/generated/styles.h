@@ -13,6 +13,28 @@ lv_style_t *get_style_button_primary_MAIN_DISABLED();
 void add_style_button_primary(lv_obj_t *obj);
 void remove_style_button_primary(lv_obj_t *obj);
 
+// Style: ButtonNeutral
+lv_style_t *get_style_button_neutral_MAIN_DEFAULT();
+lv_style_t *get_style_button_neutral_MAIN_DISABLED();
+void add_style_button_neutral(lv_obj_t *obj);
+void remove_style_button_neutral(lv_obj_t *obj);
+
+// Style: ButtonDanger
+lv_style_t *get_style_button_danger_MAIN_DEFAULT();
+lv_style_t *get_style_button_danger_MAIN_DISABLED();
+void add_style_button_danger(lv_obj_t *obj);
+void remove_style_button_danger(lv_obj_t *obj);
+
+// Style: LabelStandart
+lv_style_t *get_style_label_standart_MAIN_DEFAULT();
+void add_style_label_standart(lv_obj_t *obj);
+void remove_style_label_standart(lv_obj_t *obj);
+
+// Style: LabelHeader
+lv_style_t *get_style_label_header_MAIN_DEFAULT();
+void add_style_label_header(lv_obj_t *obj);
+void remove_style_label_header(lv_obj_t *obj);
+
 #ifdef __cplusplus
 }
 #endif

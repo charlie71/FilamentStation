@@ -1280,11 +1280,110 @@ gerade sichtbaren Editor-Text automatisch, unabhängig davon ob "OK"
 gedrückt wurde. "Abbrechen" bleibt bewusst unverändert (verwirft
 Änderungen weiterhin korrekt, das war laut Nutzer schon richtig).
 
+Nachtrag (2026-08-23, Named Styles je Farbrolle, Nutzerwunsch erledigt):
+neues Skript `scripts/add_button_role_styles.py` legt zwei neue benannte
+Theme-Farben (`ButtonNeutralActive` #455a64, `ButtonDangerActive` #c62828,
+Werte identisch zu den bisherigen `kColorNeutralGrey`/`kColorDangerRed`
+C++-Konstanten) sowie zwei neue Styles `ButtonNeutral`/`ButtonDanger` an
+(gleiche Struktur wie das bestehende `ButtonPrimary`, referenzieren die
+Theme-Farben statt Rohwerten) und setzt `useStyle` auf den 15
+Neutral-/6 Danger-Buttons (Audit siehe Skript-Kommentar; `home_active_ams`/
+`home_ams_4` bewusst ausgenommen, deren Farbe ist vollstaendig laufzeit-/
+datengetrieben). `project validate` weiterhin `"valid": true`.
+`UiBridge.cpp::styleLabelButton()` vereinfacht: nimmt keinen Farbparameter
+mehr entgegen, setzt nur noch Clickable-Flag/Ausrichtung/Radius -- alle 35
+Aufrufstellen mit explizitem `kColorXxx`-Argument bereinigt (Skript, um
+Abtippfehler zu vermeiden). Build (0 Warnungen), 52 native Tests gruen.
+**Vor dem Flashen muss der Nutzer erneut in EEZ Studio exportieren** --
+bis dahin wuerden alle Buttons wieder einheitlich blau erscheinen (C++
+ueberschreibt die Farbe nicht mehr, die alten generierten Dateien kennen
+`add_style_button_neutral/danger()` noch nicht).
+
+Nachtrag (2026-08-23, Restliche Feedback-Punkte, Nutzerwunsch erledigt):
+5 gemeldete Punkte behoben.
+
+1. **Laufzeit-Farbfehler bei `settings_spoolman`/`staging_details_quick_weight`**:
+   root cause war eine zweite, von der `styleLabelButton()`-Vereinfachung
+   nicht erfasste Funktion `setLabelButtonAvailable()` (steuert den
+   verfuegbar/gesperrt-Zustand von 20 Buttons), die weiterhin per Parameter
+   eine Farbe entgegennahm und `bg_color`/`text_color` hart ueberschrieb --
+   das uebermalte in jedem Refresh den frisch zugewiesenen EEZ-Style. Fix:
+   Funktion nimmt keinen Farbparameter mehr entgegen, schaltet stattdessen
+   nativ `LV_STATE_DISABLED` (`lv_obj_add_state`/`remove_state`); die
+   DISABLED-Variante jedes Button-Styles (`ButtonPrimary`/`Neutral`/`Danger`)
+   ist in EEZ bereits mit `LV_PART_MAIN | LV_STATE_DISABLED` registriert
+   (siehe `styles.c`), das Umschalten greift also ohne weiteres Zutun. Ein
+   weiterer manueller `bg_color`-Override direkt bei `tag_legacy_erase`
+   (gleiche Baustelle, war nie durch `setLabelButtonAvailable()` gelaufen)
+   ebenfalls durch den Aufruf der Funktion ersetzt. Alle ~20 Aufrufstellen
+   in `UiBridge.cpp` angepasst.
+2. **`home_status` (SCR_HOME) entfernt**: Info (NFC/Spoolman/WLAN-Status)
+   ist jetzt über die Header-Status-Icons abgedeckt. Widget per Skript aus
+   dem `.eez-project` geloescht, der zugehoerige tote Code-Block in
+   `updateHomeContent()` (baute `statusText` und rief `setButtonText()`
+   darauf auf) von Hand entfernt.
+3. **`select_bottom_status` (SCR_PRINTER_SELECT)** und **die 7
+   `tag_*_header`** (SCR_TAG_ACTION_SELECT/TAG_REVIEW/TAG_WRITE/TAG_RESULT/
+   TAG_DEFINITION_IMPORT/TAG_LEGACY/TAG_UNKNOWN) waren die einzigen
+   verbliebenen `LVGLLabelWidget`, die wie ein Button benutzt werden --
+   urspruenglich bei der 124er-Migration bewusst ausgenommen ("plain
+   tappable status region"), Einschaetzung vom Nutzer korrigiert. Neues
+   Skript `scripts/convert_remaining_labels.py` konvertiert beide Faelle zu
+   `LVGLButtonWidget`; bei den 7 Headern werden die bereits vorhandenen
+   3 Status-Icon-Kinder (aus `add_header_status_icons.py`) erhalten, statt
+   wie bei der einfachen Konvertierung durch ein neues `children`-Array
+   ersetzt zu werden (sonst waeren die Icons stillschweigend geloescht
+   worden). `useStyle` = `ButtonPrimary`, `project validate` weiterhin
+   `"valid": true`, per objID-Cross-Check ueber `project widgets`
+   verifiziert (Caption-Label + alle 3 Icons als Kinder vorhanden).
+
+Build (0 Warnungen), 52 native Tests gruen.
+**Vor dem Flashen muss der Nutzer erneut in EEZ Studio exportieren** --
+bis dahin fehlen `select_bottom_status`/die 7 Tag-Header als echte Buttons
+und `home_status` waere weiterhin als generiertes Objekt vorhanden.
+Re-Export durch den Nutzer bestaetigt, Build + 52 Tests danach erneut
+gruen, geflasht.
+
+Nachtrag (2026-08-23, zwei weitere Nutzer-Reports, erledigt):
+
+1. **SCR_PRINTER_SELECT liess nur 3 statt 4 Drucker waehlen**: Root Cause
+   war rein im Layout -- die Seite hatte tatsaechlich nur 3 Zeilen
+   (`select_printer_1/2/3`), `updatePrinterList()` in `UiBridge.cpp` iterierte
+   entsprechend nur ueber 3 Buttons, obwohl `printerEntries` intern schon
+   ein `std::array<PrinterUiEntry, 4>` ist (die Drucker-Verwaltung auf
+   SCR_PRINTER_SETTINGS hat bereits 4 Zeilen, nur die Auswahlseite hinkte
+   hinterher). Neues Skript `scripts/add_fourth_printer_row.py` verkleinert
+   die 3 bestehenden Zeilen von 56px auf 42px Hoehe (Abstand 78/124/170 statt
+   78/137/196) und dupliziert Zeile 3 als `select_printer_4` bei top=216 --
+   passt mit 10px Abstand vor die untere Buttonleiste (top=268), genau wie
+   vorher zwischen Zeile 3 und der Leiste. `updatePrinterList()`s
+   `buttons`-Array und `bindClick(objects.select_printer_4, printerClicked, 4)`
+   ergaenzt.
+   Dabei zusaetzlich aufgefallen und mitbereinigt: `select_bottom_status`
+   ("Drucker verwalten") wurde trotz der laengst erfolgten Umstellung auf
+   einen echten EEZ-Button (`useStyle: ButtonPrimary`) in `updatePrinterList()`
+   weiterhin bei jedem Refresh hart per `lv_obj_set_style_bg_color()` usw.
+   eingefaerbt -- toter Code aus der Zeit, als es noch ein Label war, jetzt
+   entfernt (Farbe kommt nur noch aus dem Style).
+2. **7 fehlende `_settings`-Zahnrad-Buttons auf allen SCR_TAG_*-Screens**
+   (`tag_action_settings`, `tag_review_settings`, `tag_write_settings`,
+   `tag_result_settings`, `tag_definition_import_settings`,
+   `tag_legacy_settings`, `tag_unknown_settings`): identische Form wie das
+   bereits konvertierte `device_settings_settings` (Label, `text: ""`,
+   412/0/68/40), waren aber in der urspruenglichen 124er-Migration nicht
+   erfasst, weil sie ueber `bindClick(..., settingsClicked)` direkt gebunden
+   werden statt ueber `styleLabelButton()` zu laufen -- fielen dadurch aus dem
+   damaligen Audit heraus. `scripts/convert_remaining_labels.py` um diese 7
+   erweitert und konvertiert (keine Kinder zu erhalten, einfache Konvertierung
+   wie `select_bottom_status`).
+
+`project validate` durchgehend `"valid": true` (Widget-Count 586 -> 595 -> 604
+ueber beide Skript-Laeufe). Re-Export durch Nutzer bestaetigt, Build (0
+Warnungen) + 52 native Tests danach gruen, generierte `screens.c` per Grep
+verifiziert (`select_printer_4`/`tag_action_settings` jetzt `lv_button_create`),
+geflasht.
+
 **Noch offen / nächste Schritte:**
-* Named Styles je Farbrolle (Danger/Neutral/...) in EEZ Studio anlegen,
-  damit `useStyle` die tatsächliche Farbe traegt statt weiterhin per
-  `styleLabelButton(object, kColorXxx)` zur Laufzeit ueberschrieben zu
-  werden.
 * Zweite Theme-Zeile (Dark) + Umschalt-UI + Persistierung
   (`StorageDocumentType::Ui`, `/config/ui.json` existiert bereits als
   Ablageort).

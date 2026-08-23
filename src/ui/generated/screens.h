@@ -84,7 +84,6 @@ typedef struct _objects_t {
     lv_obj_t *home_external;
     lv_obj_t *home_staging;
     lv_obj_t *home_weight;
-    lv_obj_t *home_status;
     lv_obj_t *home_bottom_status;
     lv_obj_t *home_ams_1_1;
     lv_obj_t *home_ams_1_2;
@@ -129,6 +128,7 @@ typedef struct _objects_t {
     lv_obj_t *select_printer_1;
     lv_obj_t *select_printer_2;
     lv_obj_t *select_printer_3;
+    lv_obj_t *select_printer_4;
     lv_obj_t *select_back;
     lv_obj_t *select_bottom_status;
     lv_obj_t *settings_header;
@@ -546,9 +546,11 @@ enum Colors {
     COLOR_ID_BUTTON_DISABLED,
     COLOR_ID_BUTTON_TEXT_ACTIVE,
     COLOR_ID_BUTTON_TEXT_DISABLED,
+    COLOR_ID_BUTTON_NEUTRAL_ACTIVE,
+    COLOR_ID_BUTTON_DANGER_ACTIVE,
 };
 void change_color_theme(uint32_t themeIndex);
-extern uint32_t theme_colors[1][4];
+extern uint32_t theme_colors[1][6];
 extern uint32_t active_theme_index;
 
 #ifdef __cplusplus
