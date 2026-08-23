@@ -8,3 +8,4 @@ src/config/Secrets.h
 # not project source, must never be committed.
 .agents/tools/
 skills-lock.json
+.bak*
