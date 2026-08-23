@@ -14,8 +14,11 @@
     "ui_font_ui_german16.c",
     "ui_image_3_d_printer_w.c",
     "ui_image_back_w.c",
+    "ui_image_bambulab_logo.c",
     "ui_image_cancel.c",
     "ui_image_cancel_w.c",
+    "ui_image_conneced_w.c",
+    "ui_image_disconneced_w.c",
     "ui_image_more_w.c",
     "ui_image_nfc.c",
     "ui_image_nfc_w.c",
@@ -25,9 +28,12 @@
     "ui_image_scale_w.c",
     "ui_image_setup.c",
     "ui_image_setup_w.c",
-    "ui_image_spoolman.c",
+    "ui_image_spoolman_connected_w.c",
+    "ui_image_spoolman_disconneced.c",
+    "ui_image_spoolman_logo.c",
     "ui_image_wifi.c",
-    "ui_image_wifi_w.c",
+    "ui_image_wifi_connected_w.c",
+    "ui_image_wifi_disconnected_w.c",
     "vars.h"
   ]
 }

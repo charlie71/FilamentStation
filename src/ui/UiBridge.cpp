@@ -17,6 +17,7 @@
 #include "drivers/DisplayDriver.h"
 #include "drivers/TouchDriver.h"
 #include "services/Logger.h"
+#include "ui/generated/images.h"
 #include "ui/generated/ui.h"
 #include "ui/models/MockUiDataProvider.h"
 
@@ -873,25 +874,21 @@ void setButtonText(lv_obj_t* button, const char* text) {
   }
 }
 
-void centerButtonLabel(lv_obj_t* button) {
-  lv_obj_t* label = buttonLabel(button);
-  if (label == nullptr || label == button) return;
-  lv_obj_update_layout(button);
-  lv_obj_set_width(label, lv_obj_get_width(button) - 8);
-  lv_obj_set_height(label, LV_SIZE_CONTENT);
-  lv_obj_center(label);
-}
-
+// Every button target is now a real EEZ LVGLButtonWidget with its own
+// content-sized, centered child label (see scripts/convert_label_buttons.py
+// and TASKS.md, 2026-08-23) -- EEZ Studio owns that label's position/size/
+// alignment, and LVGL auto-recenters a content-sized label as its text
+// changes. Forcibly re-measuring/re-centering it here on every text update
+// (the former centerButtonLabel()) is therefore both redundant and actively
+// harmful: it caused the same visible position-jump bug already fixed for
+// headers a turn earlier, here on every text field that updates live
+// (Spoolman-/Drucker-Einstellungen). buttonLabel() already
+// falls back to `object` itself when it has no label descendant (a plain
+// status label, not a button), so one code path covers both cases.
 void setControlText(lv_obj_t* object, const char* text) {
   if (object == nullptr) return;
-  if (lv_obj_check_type(object, &lv_label_class)) {
-    lv_obj_t* label = buttonLabel(object);
-    lv_label_set_text(label == nullptr ? object : label, text);
-    centerButtonLabel(object);
-  } else {
-    setButtonText(object, text);
-    centerButtonLabel(object);
-  }
+  lv_obj_t* label = buttonLabel(object);
+  lv_label_set_text(label == nullptr ? object : label, text);
 }
 
 void setButtonColors(lv_obj_t* button, std::uint32_t backgroundRgb) {
@@ -1066,6 +1063,34 @@ void closeSpoolmanEditor() {
   editorContext = EditorContext::None;
 }
 
+// Commits whatever text currently sits in the open Spoolman field editor
+// into spoolmanDraft, exactly as pressing "OK" on the on-screen keyboard
+// would. Test/Speichern/Abbrechen sit lower on the same screen (y=264)
+// than the editor+keyboard overlay (y=0-220, no backdrop blocking touches
+// to the rest of the screen) -- without this, tapping Test/Speichern while
+// a field was still mid-edit (keyboard still open, "OK" never pressed)
+// silently used the old, pre-edit value instead of what was visibly typed
+// (Nutzer-Bugreport 2026-08-23: "Testen" verband sich zum urspruenglichen
+// statt zum gerade eingegebenen Server).
+void commitSpoolmanEditorIfOpen() {
+  if (spoolmanEditor == nullptr || editorContext != EditorContext::Spoolman)
+    return;
+  const char* editedText = lv_textarea_get_text(spoolmanEditor);
+  if (!sendAction(rtos::UiActionType::EditSpoolmanSetting, currentPrinterId, 0,
+                  0, activeSpoolmanField, 0, editedText)) {
+    return;
+  }
+  char* destination = spoolmanFieldDestination(activeSpoolmanField);
+  const std::size_t capacity = spoolmanFieldCapacity(activeSpoolmanField);
+  if (destination != nullptr && capacity > 0)
+    std::snprintf(destination, capacity, "%s", editedText);
+  updateSpoolmanSettingsContent();
+  lv_label_set_text(objects.spoolman_setting_status,
+                    "Status: ge\xC3\xA4ndert, nicht gespeichert");
+  lv_label_set_text(objects.spoolman_setting_version, "Server: -");
+  closeSpoolmanEditor();
+}
+
 void spoolmanKeyboardEvent(lv_event_t* event) {
   if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED ||
       spoolmanEditor == nullptr || spoolmanKeyboard == nullptr) {
@@ -1081,25 +1106,14 @@ void spoolmanKeyboardEvent(lv_event_t* event) {
     return;
   }
   if (std::strcmp(key, "OK") == 0) {
-    const bool printerEditor = editorContext == EditorContext::Printer;
-    const std::int32_t field =
-        printerEditor ? activePrinterField : activeSpoolmanField;
-    const char* editedText = lv_textarea_get_text(spoolmanEditor);
-    if (sendAction(printerEditor ? rtos::UiActionType::EditPrinterField
-                                 : rtos::UiActionType::EditSpoolmanSetting,
-                   printerEditor ? editingPrinterId : currentPrinterId, 0, 0,
-                   field, 0, editedText)) {
-      if (!printerEditor) {
-        char* destination = spoolmanFieldDestination(field);
-        const std::size_t capacity = spoolmanFieldCapacity(field);
-        if (destination != nullptr && capacity > 0)
-          std::snprintf(destination, capacity, "%s", editedText);
-        updateSpoolmanSettingsContent();
-        lv_label_set_text(objects.spoolman_setting_status,
-                          "Status: ge\xC3\xA4ndert, nicht gespeichert");
-        lv_label_set_text(objects.spoolman_setting_version, "Server: -");
+    if (editorContext == EditorContext::Printer) {
+      const char* editedText = lv_textarea_get_text(spoolmanEditor);
+      if (sendAction(rtos::UiActionType::EditPrinterField, editingPrinterId, 0,
+                     0, activePrinterField, 0, editedText)) {
+        closeSpoolmanEditor();
       }
-      closeSpoolmanEditor();
+    } else {
+      commitSpoolmanEditorIfOpen();
     }
   } else if (std::strcmp(key, "Abbr.") == 0) {
     closeSpoolmanEditor();
@@ -1167,6 +1181,10 @@ void spoolmanFieldClicked(lv_event_t* event) {
 void spoolmanActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
+  // Commit a still-open field edit first (see commitSpoolmanEditorIfOpen())
+  // so Testen/Speichern/Abbrechen always act on what's currently visible in
+  // the editor, not a stale pre-edit value.
+  commitSpoolmanEditorIfOpen();
   sendAction(type, currentPrinterId);
 }
 
@@ -1508,31 +1526,13 @@ void bindClick(lv_obj_t* object, lv_event_cb_t callback,
 
 void styleLabelButton(lv_obj_t* object, std::uint32_t color = kColorPrimaryBlue) {
   if (object == nullptr) return;
-  if (lv_obj_check_type(object, &lv_label_class) &&
-      lv_obj_get_child_count(object) == 0) {
-    char text[128]{};
-    std::snprintf(text, sizeof(text), "%s", lv_label_get_text(object));
-    const lv_font_t* font = static_cast<const lv_font_t*>(
-        lv_obj_get_style_text_font(object, LV_PART_MAIN));
-    lv_label_set_text(object, "");
-    lv_obj_set_style_pad_all(object, 0, LV_PART_MAIN);
-
-    // EEZ uses labels as clickable buttons. Give the visible caption its own
-    // content-sized label across the full button width (4 px margin). LVGL can
-    // then center that complete one- or multi-line block reliably.
-    lv_obj_t* caption = lv_label_create(object);
-    lv_obj_set_width(caption, lv_obj_get_width(object) - 8);
-    lv_obj_set_height(caption, LV_SIZE_CONTENT);
-    lv_label_set_long_mode(caption, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(caption, text);
-    lv_obj_set_style_text_align(caption, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(caption, 0, LV_PART_MAIN);
-    if (font != nullptr)
-      lv_obj_set_style_text_font(caption, font, LV_PART_MAIN);
-    lv_obj_remove_flag(caption, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(caption, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_center(caption);
-  }
+  // Every former "label pretending to be a button" is now a real
+  // LVGLButtonWidget with its own EEZ-defined child label (see
+  // scripts/convert_label_buttons.py, TASKS.md 2026-08-23) -- this no
+  // longer needs to inject/center a caption itself, only apply the
+  // semantic color (named EEZ Styles per color role are a follow-up, see
+  // TASKS.md) and make it clickable, since EEZ does not mark these buttons
+  // clickable on its own.
   lv_obj_add_flag(object, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_remove_flag(object, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_style_bg_opa(object, LV_OPA_COVER, LV_PART_MAIN);
@@ -1540,7 +1540,6 @@ void styleLabelButton(lv_obj_t* object, std::uint32_t color = kColorPrimaryBlue)
   lv_obj_set_style_text_color(object, lv_color_hex(kColorTextWhite), LV_PART_MAIN);
   lv_obj_set_style_text_align(object, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
   lv_obj_set_style_radius(object, 8, LV_PART_MAIN);
-  centerButtonLabel(object);
 }
 
 void setLabelButtonAvailable(lv_obj_t* object, bool available,
@@ -1799,17 +1798,6 @@ void bindGeneratedWidgets() {
                    264);
     lv_obj_set_size(scaleActionButtons[index], kScaleActionWidth, 56);
   }
-  const std::array<lv_obj_t*, 16> settingsControls{{
-      objects.home_settings, objects.select_settings, objects.settings_settings,
-      objects.staging_details_settings, objects.staging_actions_settings,
-      objects.tray_details_settings, objects.tray_actions_settings,
-      objects.tray_select_settings, objects.spoolman_settings_settings,
-      objects.printer_settings_settings, objects.printer_edit_settings,
-      objects.wifi_settings_settings, objects.scale_settings_settings,
-      objects.device_settings_settings, objects.diagnostics_settings_settings,
-      objects.firmware_settings_settings,
-  }};
-  //for (lv_obj_t* control : settingsControls) setControlText(control, "Einst.");
 
   const std::array<lv_obj_t*, 6> tagSettings{{
       objects.tag_action_settings, objects.tag_review_settings,
@@ -1927,7 +1915,6 @@ void bindGeneratedWidgets() {
 
   bindClick(objects.home_settings, settingsClicked);
   bindClick(objects.select_settings, settingsClicked);
-  bindClick(objects.settings_settings, settingsClicked);
   bindClick(objects.select_back, backClicked);
   bindClick(objects.select_bottom_status, managePrintersClicked);
   bindClick(objects.settings_back, backClicked);
@@ -2756,17 +2743,6 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
   lv_label_set_text(objects.tray_select_summary, summary);
 }
 
-// Headers use EEZ's native left-aligned label layout (fixed x-offset,
-// LV_ALIGN_LEFT_MID, LV_SIZE_CONTENT width/height) -- unlike setControlText()/
-// centerButtonLabel(), this must NOT resize or re-center the label, or its
-// position visibly shifts whenever the text length (or line-wrap) changes
-// (Nutzerwunsch: Header-Position darf sich durch Beschriftungsaenderungen
-// nicht mehr verschieben).
-void setHeaderText(lv_obj_t* header, const char* text) {
-  lv_obj_t* label = buttonLabel(header);
-  if (label != nullptr) lv_label_set_text(label, text);
-}
-
 void setAllHeaderTexts(const char* text) {
   const std::array<lv_obj_t*, 23> headers{{
       objects.home_header,
@@ -2793,7 +2769,107 @@ void setAllHeaderTexts(const char* text) {
       objects.tag_legacy_header,
       objects.tag_unknown_header,
   }};
-  for (lv_obj_t* header : headers) setHeaderText(header, text);
+  for (lv_obj_t* header : headers) setControlText(header, text);
+}
+
+// Header-Statusicons (Nutzerwunsch, 2026-08-23): je Header ein Drucker-,
+// WLAN- und Spoolman-Icon (scripts/add_header_status_icons.py legt genau
+// ein Bild-Objekt je Status an, keine sichtbare/unsichtbare Variantenpaare)
+// -- die Bildquelle wird hier zur Laufzeit auf die passende
+// verbunden/getrennt-Grafik umgeschaltet, EEZ Studio besitzt weiterhin
+// Position/Größe.
+void updateHeaderStatusIcons() {
+  const std::array<lv_obj_t*, 23> printerIcons{{
+      objects.home_header_printer,
+      objects.select_header_printer,
+      objects.settings_header_printer,
+      objects.staging_details_header_printer,
+      objects.staging_actions_header_printer,
+      objects.tray_details_header_printer,
+      objects.tray_actions_header_printer,
+      objects.tray_select_header_printer,
+      objects.spoolman_settings_header_printer,
+      objects.printer_settings_header_printer,
+      objects.printer_edit_header_printer,
+      objects.wifi_settings_header_printer,
+      objects.scale_settings_header_printer,
+      objects.device_settings_header_printer,
+      objects.diagnostics_settings_header_printer,
+      objects.firmware_settings_header_printer,
+      objects.tag_action_header_printer,
+      objects.tag_review_header_printer,
+      objects.tag_write_header_printer,
+      objects.tag_result_header_printer,
+      objects.tag_definition_import_header_printer,
+      objects.tag_legacy_header_printer,
+      objects.tag_unknown_header_printer,
+  }};
+  const std::array<lv_obj_t*, 23> wifiIcons{{
+      objects.home_header_wifi,
+      objects.select_header_wifi,
+      objects.settings_header_wifi,
+      objects.staging_details_header_wifi,
+      objects.staging_actions_header_wifi,
+      objects.tray_details_header_wifi,
+      objects.tray_actions_header_wifi,
+      objects.tray_select_header_wifi,
+      objects.spoolman_settings_header_wifi,
+      objects.printer_settings_header_wifi,
+      objects.printer_edit_header_wifi,
+      objects.wifi_settings_header_wifi,
+      objects.scale_settings_header_wifi,
+      objects.device_settings_header_wifi,
+      objects.diagnostics_settings_header_wifi,
+      objects.firmware_settings_header_wifi,
+      objects.tag_action_header_wifi,
+      objects.tag_review_header_wifi,
+      objects.tag_write_header_wifi,
+      objects.tag_result_header_wifi,
+      objects.tag_definition_import_header_wifi,
+      objects.tag_legacy_header_wifi,
+      objects.tag_unknown_header_wifi,
+  }};
+  const std::array<lv_obj_t*, 23> spoolmanIcons{{
+      objects.home_header_spoolman,
+      objects.select_header_spoolman,
+      objects.settings_header_spoolman,
+      objects.staging_details_header_spoolman,
+      objects.staging_actions_header_spoolman,
+      objects.tray_details_header_spoolman,
+      objects.tray_actions_header_spoolman,
+      objects.tray_select_header_spoolman,
+      objects.spoolman_settings_header_spoolman,
+      objects.printer_settings_header_spoolman,
+      objects.printer_edit_header_spoolman,
+      objects.wifi_settings_header_spoolman,
+      objects.scale_settings_header_spoolman,
+      objects.device_settings_header_spoolman,
+      objects.diagnostics_settings_header_spoolman,
+      objects.firmware_settings_header_spoolman,
+      objects.tag_action_header_spoolman,
+      objects.tag_review_header_spoolman,
+      objects.tag_write_header_spoolman,
+      objects.tag_result_header_spoolman,
+      objects.tag_definition_import_header_spoolman,
+      objects.tag_legacy_header_spoolman,
+      objects.tag_unknown_header_spoolman,
+  }};
+
+  const PrinterUiEntry* printer = printerEntry(currentPrinterId);
+  const bool printerConnected =
+      printer != nullptr &&
+      printer->connectionState == models::UiConnectionState::Connected;
+  const bool wifiConnected = currentNetworkState == rtos::UiNetworkState::Online;
+  const bool spoolmanConnected =
+      filament_station::models::spoolmanOperationsAvailable(spoolmanAppState);
+
+  for (lv_obj_t* icon : printerIcons)
+    lv_image_set_src(icon, printerConnected ? &img_conneced_w : &img_disconneced_w);
+  for (lv_obj_t* icon : wifiIcons)
+    lv_image_set_src(icon, wifiConnected ? &img_wifi_connected_w : &img_wifi_disconnected_w);
+  for (lv_obj_t* icon : spoolmanIcons)
+    lv_image_set_src(icon, spoolmanConnected ? &img_spoolman_connected_w
+                                             : &img_spoolman_disconneced);
 }
 
 void updateHeaders(rtos::PrinterId printerId) {
@@ -2810,13 +2886,12 @@ void updateHeaders(rtos::PrinterId printerId) {
   }
   currentPrinterId = printerId;
 
-  // Titelleiste zeigt nur noch Druckername + Verbindungsstatus -- welches
-  // AMS gerade betrachtet wird, ist jetzt am farbigen Rand des
+  // Titelleiste zeigt nur noch den Druckernamen -- Verbindungsstatus ist
+  // jetzt das dedizierte Drucker-Statusicon (updateHeaderStatusIcons()),
+  // welches AMS gerade betrachtet wird, ist am farbigen Rand des
   // AMS-Buttons auf Home selbst erkennbar (siehe updateHomeContent()).
-  char header[64];
-  std::snprintf(header, sizeof(header), "%s | %s", printer->name,
-                connectionText(printer->connectionState));
-  setAllHeaderTexts(header);
+  setAllHeaderTexts(printer->name);
+  updateHeaderStatusIcons();
 
   updateHomeContent();
   updatePrinterList();
@@ -2834,10 +2909,8 @@ void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
   }
   currentAmsId = amsId;
 
-  char header[64];
-  std::snprintf(header, sizeof(header), "%s | %s", printer->name,
-                connectionText(printer->connectionState));
-  setAllHeaderTexts(header);
+  setAllHeaderTexts(printer->name);
+  updateHeaderStatusIcons();
   updateHomeContent();
   updateTraySelection(currentPrinterId, currentAmsId, 0, false);
 }
@@ -3305,6 +3378,7 @@ void processUiCommand(const rtos::UiCommand& command) {
       break;
     case rtos::UiCommandType::UpdateNetworkStatus: {
       currentNetworkState = command.networkState;
+      updateHeaderStatusIcons();
       const char* statusText = "Offline";
       if (command.networkState == rtos::UiNetworkState::Connecting)
         statusText = "Verbunden, IP-Adresse wird bezogen";
@@ -3337,6 +3411,7 @@ void processUiCommand(const rtos::UiCommand& command) {
     }
     case rtos::UiCommandType::UpdateSpoolmanState:
       spoolmanAppState = command.spoolmanAppState;
+      updateHeaderStatusIcons();
       applySpoolmanAppState(&command);
       break;
     case rtos::UiCommandType::UpdateSpoolPicker: {

@@ -1,10 +1,10 @@
 #include "images.h"
 
-const ext_img_desc_t images[16] = {
+const ext_img_desc_t images[22] = {
     { "WIFI", &img_wifi },
     { "Scale", &img_scale },
     { "3D Printer W", &img_3_d_printer_w },
-    { "WIFI W", &img_wifi_w },
+    { "WIFI connected W", &img_wifi_connected_w },
     { "Back W", &img_back_w },
     { "Scale W", &img_scale_w },
     { "Cancel", &img_cancel },
@@ -13,8 +13,14 @@ const ext_img_desc_t images[16] = {
     { "Setup W", &img_setup_w },
     { "NFC W", &img_nfc_w },
     { "Save W", &img_save_w },
-    { "Spoolman", &img_spoolman },
+    { "Spoolman connected W", &img_spoolman_connected_w },
     { "NFC", &img_nfc },
     { "More W", &img_more_w },
     { "Refresh W", &img_refresh_w },
+    { "conneced W", &img_conneced_w },
+    { "disconneced W", &img_disconneced_w },
+    { "WIFI disconnected W", &img_wifi_disconnected_w },
+    { "Spoolman disconneced", &img_spoolman_disconneced },
+    { "bambulab logo", &img_bambulab_logo },
+    { "spoolman logo", &img_spoolman_logo },
 };

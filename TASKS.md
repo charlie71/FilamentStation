@@ -1162,6 +1162,136 @@ Nachtrag (2026-08-22, Nutzer-Feedback nach erstem Entwurf):
   Verweis in `UiBridge.cpp` wurde entfernt, da das Objekt nicht mehr
   existiert.
 
+### UI-Architektur-Refactor (2026-08-23, Nutzerwunsch, mehrteilig)
+
+Ziel: (1) durchgängig EEZ-Styles/-Themes statt C++-Farbkonstanten, spätere
+Unterstützung für Light/Dark-Mode; (2) GUI-Layout ausschließlich über EEZ
+Studio änderbar, kein dynamisch in C++ erzeugtes/positioniertes Layout mehr;
+(3) Labels, die zur Laufzeit per `styleLabelButton()` zu Buttons gemacht
+werden, sollen echte EEZ-Buttons werden.
+
+Analyse ergab: `styles.c`/`screens.c` haben bereits eine vollständige,
+kaum genutzte Style-/Theme-Infrastruktur (`theme_colors[N][4]`,
+`change_color_theme(index)`, ein Style `ButtonPrimary`) -- der native
+Mechanismus für Light/Dark existiert also schon, nur mit einer einzigen
+Theme-Zeile befüllt. Von 155 klickbaren Controls waren nur 26 echte
+`LVGLButtonWidget`, 124 waren `LVGLLabelWidget`, die `styleLabelButton()`
+optisch/funktional zu Buttons macht (verifiziert durch Abgleich jedes
+`styleLabelButton()`-Ziels -- direkt und über alle Loop-Arrays -- gegen den
+tatsächlichen Objekttyp in `screens.c`; 9 weitere klickbare, aber nie
+`styleLabelButton()`-behandelte Labels wie `tag_action_header` bleiben
+bewusst Labels, da sie reine, unauffällige Tap-Zonen sind, keine
+Button-Attrappen).
+
+Erster Umsetzungsschritt (nur der Label→Button-Teil, Styles/Themes und die
+Migration der übrigen dynamischen Layout-Funktionen sind noch offen):
+`scripts/convert_label_buttons.py` wandelt die 124 `LVGLLabelWidget` in
+`FilamentStation.eez-project` direkt im JSON in `LVGLButtonWidget` um
+(Text wandert in ein neues, zentriertes Kind-Label, `useStyle` wird auf
+`ButtonPrimary` gesetzt). Skript unterstützt `--only <ids>` zum Pilotieren
+und schreibt vor jedem `--apply` ein Backup. An 2 Widgets pilotiert und per
+`cli-anything-eez-studio project validate`/`project widgets` gegengeprüft,
+bevor alle 124 auf einmal umgewandelt wurden (`project validate` meldet
+danach weiterhin `"valid": true`).
+
+Re-Export durch den Nutzer bestätigt (`lv_button_create()` + `add_style_button_primary()`
++ zentriertes Kind-Label in `screens.c` für alle 124 verifiziert, Build
+0 Warnungen). Anschließend `UiBridge.cpp` angepasst:
+* `styleLabelButton()`: die jetzt tote "Label→Caption-Kind"-Injektion
+  (galt für 0 verbleibende Ziele) entfernt; setzt nur noch
+  Clickable-Flag + Farbe (EEZ markiert diese Buttons nicht selbst als
+  klickbar).
+* `setControlText()`: rief bisher immer `centerButtonLabel()` auf, das
+  Position/Größe des Kind-Labels bei jedem Text-Update neu berechnete --
+  bei den 11 live editierten Feldern (Spoolman-/Drucker-Einstellungen,
+  Text ändert sich bei jedem Tastendruck) reproduzierte das denselben
+  Sprung-Bug wie zuvor bei den Headern. `centerButtonLabel()` komplett
+  entfernt (jetzt unnötig: EEZ definiert Position/Ausrichtung des
+  Kind-Labels bereits korrekt, LVGL zentriert ein content-großes Label bei
+  Textänderung automatisch neu). `setHeaderText()` (Vorrunden-Fix) dadurch
+  redundant geworden und wieder entfernt, `setAllHeaderTexts()` nutzt
+  wieder `setControlText()`.
+
+Nachtrag (2026-08-23, Header-Vereinheitlichung, Nutzerwunsch): Header sollen
+einheitlich zeigen: [3D-Drucker-Icon] [Druckername] [Drucker-Verbindungs-Icon]
+... [WLAN-Icon] [Spoolman-Icon]. Neues Skript
+`scripts/add_header_status_icons.py` fügt jedem der 23 Header genau 3 neue
+`LVGLImageWidget`-Kinder hinzu (`{header}_printer`, `{header}_wifi`,
+`{header}_spoolman`, rechtsbündig, 8px Rand, 8px Abstand). Bewusst nur je
+ein Bild-Objekt pro Status statt eines connected/disconnected-Paares --
+C++ tauscht das `lv_img_dsc_t` per `lv_image_set_src()` zur Laufzeit aus
+(Bild-Assets `conneced W`/`disconneced W`, `WIFI connected W`/
+`WIFI disconnected W`, `Spoolman connected W`/`Spoolman disconneced`
+existierten bereits im Projekt, waren aber nirgends platziert). Pilotiert
+an `home_header`, dann alle 23 angewendet, `project validate` weiterhin
+`"valid": true` (Widget-Count 519→588, exakt 23×3). Die 7 `tag_*_header`
+sind (anders als die 124 Buttons) weiterhin `LVGLLabelWidget` -- bewusst
+nicht konvertiert (siehe oben), das Skript akzeptiert beide Typen als
+Elternobjekt für die neuen Icons.
+
+Re-Export durch den Nutzer bestätigt; ein Zwischenfall dabei: `settings_header`
+verlor beim ersten Re-Export seine 3 Icons wieder (vermutlich hatte der
+Nutzer diesen Screen offen, als das Skript lief -- Speichern in EEZ Studio
+überschrieb den Stand nur für diesen einen Screen). Mit
+`--only settings_header --apply` gezielt nachgezogen, erneuter Re-Export
+bestätigt.
+
+`UiBridge.cpp` fertig verdrahtet:
+* `setAllHeaderTexts()`-Aufrufe zeigen nur noch den Druckernamen (kein
+  "| Verbindungsstatus"-Suffix mehr -- übernimmt jetzt das Icon).
+* Neue Funktion `updateHeaderStatusIcons()`: tauscht für alle 23 Header
+  die drei `_printer`/`_wifi`/`_spoolman`-Icons per `lv_image_set_src()`
+  auf den jeweils passenden Bild-Deskriptor (`img_conneced_w`/
+  `img_disconneced_w`, `img_wifi_connected_w`/`img_wifi_disconnected_w`,
+  `img_spoolman_connected_w`/`img_spoolman_disconneced`) -- Quellen:
+  `printerEntry(currentPrinterId)->connectionState`, `currentNetworkState`,
+  `spoolmanAppState` (über die bereits existierende
+  `models::spoolmanOperationsAvailable()`). Aufgerufen aus `updateHeaders()`,
+  `updateAmsOverview()` sowie den `UpdateNetworkStatus`-/
+  `UpdateSpoolmanState`-Command-Handlern, damit alle drei Icons unabhängig
+  vom gerade fokussierten Screen aktuell bleiben.
+* Nebenbei behoben: der Nutzer hatte in EEZ Studio `settings_settings`
+  (den redundanten, selbstreferenzierenden Einstellungen-Button auf dem
+  Einstellungen-Screen selbst) entfernt -- die zwei verwaisten
+  `objects.settings_settings`-Referenzen in `UiBridge.cpp` (ein
+  `bindClick()` und ein bereits totes, auskommentiertes Array) entfernt.
+* Zwei weitere Re-Export-Zwischenfälle behoben: `settings_header` verlor
+  seine 3 Icons ein zweites Mal, diesmal weil auf `SCR_SETTINGS_HOME` 3
+  verwaiste, falsch benannte Icon-Objekte lagen (kollidierten mit
+  `select_header`s echten Icon-Identifiern -- vermutlich ein
+  Copy-Paste-Rest des Nutzers). Direkt im `.eez-project` bereinigt
+  (verwaiste Objekte entfernt, `settings_header`-Icons per
+  `add_header_status_icons.py --only settings_header` neu ergänzt),
+  `project validate` bestätigt, danach vom Nutzer re-exportiert.
+
+Nachtrag (2026-08-23, Spoolman-Einstellungen-Bug, Nutzer-Report): "Testen"
+verband sich nach einer Hostname-Änderung zum ursprünglichen statt zum
+gerade eingegebenen Server. Ursache: Das Textfeld-Editor-Overlay
+(`spoolmanEditor`/`spoolmanKeyboard`, y=0-220) hat keinen Backdrop und
+blockiert die tiefer sitzenden Test-/Speichern-Buttons (y=264) nicht --
+wurde eine neue URL eingetippt, aber die Bildschirmtastatur nicht per
+"OK" bestätigt, bevor Testen/Speichern angetippt wurde, verwendeten beide
+Aktionen den alten, noch nicht in `spoolmanDraft` übernommenen Wert
+(`spoolmanSettingsFromDraft()` liest korrekt aus dem Draft, nur der Draft
+selbst war noch nicht aktualisiert). Fix: neue Funktion
+`commitSpoolmanEditorIfOpen()`, aufgerufen aus `spoolmanActionClicked()`
+(Testen/Speichern) vor dem eigentlichen Senden der Aktion -- übernimmt den
+gerade sichtbaren Editor-Text automatisch, unabhängig davon ob "OK"
+gedrückt wurde. "Abbrechen" bleibt bewusst unverändert (verwirft
+Änderungen weiterhin korrekt, das war laut Nutzer schon richtig).
+
+**Noch offen / nächste Schritte:**
+* Named Styles je Farbrolle (Danger/Neutral/...) in EEZ Studio anlegen,
+  damit `useStyle` die tatsächliche Farbe traegt statt weiterhin per
+  `styleLabelButton(object, kColorXxx)` zur Laufzeit ueberschrieben zu
+  werden.
+* Zweite Theme-Zeile (Dark) + Umschalt-UI + Persistierung
+  (`StorageDocumentType::Ui`, `/config/ui.json` existiert bereits als
+  Ablageort).
+* Verbleibende dynamische Layout-Funktionen (`createHomeColorStrips()` fuer
+  Tray/Staging, `createStagingTableDecoration()`) durch echte EEZ-Objekte
+  ersetzen, analog zu den AMS-Containern.
+
 ## 9.2 Native Tags
 
 * [x] UID

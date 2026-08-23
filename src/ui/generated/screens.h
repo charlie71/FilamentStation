@@ -69,6 +69,9 @@ typedef struct _objects_t {
     lv_obj_t *boot_version;
     lv_obj_t *boot_status;
     lv_obj_t *home_header;
+    lv_obj_t *home_header_spoolman;
+    lv_obj_t *home_header_wifi;
+    lv_obj_t *home_header_printer;
     lv_obj_t *home_settings;
     lv_obj_t *home_ams_1;
     lv_obj_t *home_ams_2;
@@ -118,6 +121,9 @@ typedef struct _objects_t {
     lv_obj_t *home_staging_2;
     lv_obj_t *home_staging_3;
     lv_obj_t *select_header;
+    lv_obj_t *select_header_spoolman;
+    lv_obj_t *select_header_wifi;
+    lv_obj_t *select_header_printer;
     lv_obj_t *select_settings;
     lv_obj_t *select_title;
     lv_obj_t *select_printer_1;
@@ -126,7 +132,9 @@ typedef struct _objects_t {
     lv_obj_t *select_back;
     lv_obj_t *select_bottom_status;
     lv_obj_t *settings_header;
-    lv_obj_t *settings_settings;
+    lv_obj_t *settings_header_spoolman;
+    lv_obj_t *settings_header_wifi;
+    lv_obj_t *settings_header_printer;
     lv_obj_t *settings_title;
     lv_obj_t *settings_wifi;
     lv_obj_t *settings_spoolman;
@@ -138,6 +146,9 @@ typedef struct _objects_t {
     lv_obj_t *settings_back;
     lv_obj_t *settings_bottom_status;
     lv_obj_t *staging_details_header;
+    lv_obj_t *staging_details_header_spoolman;
+    lv_obj_t *staging_details_header_wifi;
+    lv_obj_t *staging_details_header_printer;
     lv_obj_t *staging_details_settings;
     lv_obj_t *staging_details_title;
     lv_obj_t *staging_details_content;
@@ -148,6 +159,9 @@ typedef struct _objects_t {
     lv_obj_t *staging_details_more;
     lv_obj_t *staging_details_close;
     lv_obj_t *staging_actions_header;
+    lv_obj_t *staging_actions_header_spoolman;
+    lv_obj_t *staging_actions_header_wifi;
+    lv_obj_t *staging_actions_header_printer;
     lv_obj_t *staging_actions_settings;
     lv_obj_t *staging_action_configure;
     lv_obj_t *staging_action_advanced_weight;
@@ -158,6 +172,9 @@ typedef struct _objects_t {
     lv_obj_t *staging_action_erase_tag;
     lv_obj_t *staging_actions_back;
     lv_obj_t *tray_details_header;
+    lv_obj_t *tray_details_header_spoolman;
+    lv_obj_t *tray_details_header_wifi;
+    lv_obj_t *tray_details_header_printer;
     lv_obj_t *tray_details_settings;
     lv_obj_t *tray_details_title;
     lv_obj_t *tray_details_tab_slot;
@@ -170,6 +187,9 @@ typedef struct _objects_t {
     lv_obj_t *tray_details_refresh;
     lv_obj_t *tray_details_close;
     lv_obj_t *tray_actions_header;
+    lv_obj_t *tray_actions_header_spoolman;
+    lv_obj_t *tray_actions_header_wifi;
+    lv_obj_t *tray_actions_header_printer;
     lv_obj_t *tray_actions_settings;
     lv_obj_t *tray_action_from_staging;
     lv_obj_t *tray_action_manual;
@@ -179,6 +199,9 @@ typedef struct _objects_t {
     lv_obj_t *tray_action_refresh;
     lv_obj_t *tray_actions_back;
     lv_obj_t *tray_select_header;
+    lv_obj_t *tray_select_header_spoolman;
+    lv_obj_t *tray_select_header_wifi;
+    lv_obj_t *tray_select_header_printer;
     lv_obj_t *tray_select_settings;
     lv_obj_t *tray_select_title;
     lv_obj_t *tray_select_ams_1;
@@ -193,6 +216,9 @@ typedef struct _objects_t {
     lv_obj_t *tray_select_summary;
     lv_obj_t *tray_select_cancel;
     lv_obj_t *spoolman_settings_header;
+    lv_obj_t *spoolman_settings_header_spoolman;
+    lv_obj_t *spoolman_settings_header_wifi;
+    lv_obj_t *spoolman_settings_header_printer;
     lv_obj_t *spoolman_settings_settings;
     lv_obj_t *spoolman_settings_title;
     lv_obj_t *spoolman_setting_name;
@@ -207,6 +233,9 @@ typedef struct _objects_t {
     lv_obj_t *spoolman_setting_save;
     lv_obj_t *spoolman_setting_cancel;
     lv_obj_t *printer_settings_header;
+    lv_obj_t *printer_settings_header_spoolman;
+    lv_obj_t *printer_settings_header_wifi;
+    lv_obj_t *printer_settings_header_printer;
     lv_obj_t *printer_settings_settings;
     lv_obj_t *printer_settings_title;
     lv_obj_t *printer_settings_row_1;
@@ -220,6 +249,9 @@ typedef struct _objects_t {
     lv_obj_t *printer_settings_edit;
     lv_obj_t *printer_settings_back;
     lv_obj_t *printer_edit_header;
+    lv_obj_t *printer_edit_header_spoolman;
+    lv_obj_t *printer_edit_header_wifi;
+    lv_obj_t *printer_edit_header_printer;
     lv_obj_t *printer_edit_settings;
     lv_obj_t *printer_edit_title;
     lv_obj_t *printer_edit_name;
@@ -233,6 +265,9 @@ typedef struct _objects_t {
     lv_obj_t *printer_edit_cancel;
     lv_obj_t *printer_edit_status;
     lv_obj_t *wifi_settings_header;
+    lv_obj_t *wifi_settings_header_spoolman;
+    lv_obj_t *wifi_settings_header_wifi;
+    lv_obj_t *wifi_settings_header_printer;
     lv_obj_t *wifi_settings_settings;
     lv_obj_t *wifi_settings_title;
     lv_obj_t *wifi_settings_status;
@@ -242,6 +277,9 @@ typedef struct _objects_t {
     lv_obj_t *wifi_settings_reset;
     lv_obj_t *wifi_settings_back;
     lv_obj_t *scale_settings_header;
+    lv_obj_t *scale_settings_header_spoolman;
+    lv_obj_t *scale_settings_header_wifi;
+    lv_obj_t *scale_settings_header_printer;
     lv_obj_t *scale_settings_settings;
     lv_obj_t *scale_settings_title;
     lv_obj_t *scale_settings_weight;
@@ -251,6 +289,9 @@ typedef struct _objects_t {
     lv_obj_t *scale_settings_reset;
     lv_obj_t *scale_settings_back;
     lv_obj_t *device_settings_header;
+    lv_obj_t *device_settings_header_spoolman;
+    lv_obj_t *device_settings_header_wifi;
+    lv_obj_t *device_settings_header_printer;
     lv_obj_t *device_settings_settings;
     lv_obj_t *device_settings_title;
     lv_obj_t *device_settings_name;
@@ -259,6 +300,9 @@ typedef struct _objects_t {
     lv_obj_t *device_settings_restart;
     lv_obj_t *device_settings_back;
     lv_obj_t *diagnostics_settings_header;
+    lv_obj_t *diagnostics_settings_header_spoolman;
+    lv_obj_t *diagnostics_settings_header_wifi;
+    lv_obj_t *diagnostics_settings_header_printer;
     lv_obj_t *diagnostics_settings_settings;
     lv_obj_t *diagnostics_settings_title;
     lv_obj_t *diagnostics_settings_heap;
@@ -267,6 +311,9 @@ typedef struct _objects_t {
     lv_obj_t *diagnostics_settings_refresh;
     lv_obj_t *diagnostics_settings_back;
     lv_obj_t *firmware_settings_header;
+    lv_obj_t *firmware_settings_header_spoolman;
+    lv_obj_t *firmware_settings_header_wifi;
+    lv_obj_t *firmware_settings_header_printer;
     lv_obj_t *firmware_settings_settings;
     lv_obj_t *firmware_settings_title;
     lv_obj_t *firmware_settings_current;
@@ -275,6 +322,9 @@ typedef struct _objects_t {
     lv_obj_t *firmware_settings_check;
     lv_obj_t *firmware_settings_back;
     lv_obj_t *tag_action_header;
+    lv_obj_t *tag_action_header_spoolman;
+    lv_obj_t *tag_action_header_wifi;
+    lv_obj_t *tag_action_header_printer;
     lv_obj_t *tag_action_settings;
     lv_obj_t *tag_action_title;
     lv_obj_t *tag_action_info;
@@ -284,6 +334,9 @@ typedef struct _objects_t {
     lv_obj_t *tag_action_erase;
     lv_obj_t *tag_action_back;
     lv_obj_t *tag_review_header;
+    lv_obj_t *tag_review_header_spoolman;
+    lv_obj_t *tag_review_header_wifi;
+    lv_obj_t *tag_review_header_printer;
     lv_obj_t *tag_review_settings;
     lv_obj_t *tag_review_title;
     lv_obj_t *tag_review_summary;
@@ -291,6 +344,9 @@ typedef struct _objects_t {
     lv_obj_t *tag_review_cancel;
     lv_obj_t *tag_review_confirm;
     lv_obj_t *tag_write_header;
+    lv_obj_t *tag_write_header_spoolman;
+    lv_obj_t *tag_write_header_wifi;
+    lv_obj_t *tag_write_header_printer;
     lv_obj_t *tag_write_settings;
     lv_obj_t *tag_write_title;
     lv_obj_t *tag_write_detected;
@@ -299,6 +355,9 @@ typedef struct _objects_t {
     lv_obj_t *tag_write_verify;
     lv_obj_t *tag_write_cancel;
     lv_obj_t *tag_result_header;
+    lv_obj_t *tag_result_header_spoolman;
+    lv_obj_t *tag_result_header_wifi;
+    lv_obj_t *tag_result_header_printer;
     lv_obj_t *tag_result_settings;
     lv_obj_t *tag_result_title;
     lv_obj_t *tag_result_message;
@@ -306,6 +365,9 @@ typedef struct _objects_t {
     lv_obj_t *tag_result_advanced_weight;
     lv_obj_t *tag_result_close;
     lv_obj_t *tag_definition_import_header;
+    lv_obj_t *tag_definition_import_header_spoolman;
+    lv_obj_t *tag_definition_import_header_wifi;
+    lv_obj_t *tag_definition_import_header_printer;
     lv_obj_t *tag_definition_import_settings;
     lv_obj_t *tag_definition_import_title;
     lv_obj_t *tag_definition_import_summary;
@@ -313,6 +375,9 @@ typedef struct _objects_t {
     lv_obj_t *tag_definition_import_spoolman;
     lv_obj_t *tag_definition_import_cancel;
     lv_obj_t *tag_legacy_header;
+    lv_obj_t *tag_legacy_header_spoolman;
+    lv_obj_t *tag_legacy_header_wifi;
+    lv_obj_t *tag_legacy_header_printer;
     lv_obj_t *tag_legacy_settings;
     lv_obj_t *tag_legacy_title;
     lv_obj_t *tag_legacy_summary;
@@ -322,6 +387,9 @@ typedef struct _objects_t {
     lv_obj_t *tag_legacy_erase;
     lv_obj_t *tag_legacy_close;
     lv_obj_t *tag_unknown_header;
+    lv_obj_t *tag_unknown_header_spoolman;
+    lv_obj_t *tag_unknown_header_wifi;
+    lv_obj_t *tag_unknown_header_printer;
     lv_obj_t *tag_unknown_settings;
     lv_obj_t *tag_unknown_title;
     lv_obj_t *tag_unknown_summary;
