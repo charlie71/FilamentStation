@@ -27,6 +27,36 @@ extern const lv_font_t ui_font_ui_german16;
 namespace filament_station::ui {
 namespace {
 
+// GUI-Farbpalette (Nutzerwunsch, 2026-08-22): jede in der UI verwendete
+// Farbe als benannte, kommentierte Konstante statt als verstreutes
+// 0xRRGGBB-Literal. Werte unveraendert aus dem bisherigen Code uebernommen,
+// nur benannt/dokumentiert.
+constexpr std::uint32_t kColorPrimaryBlue = 0x1565C0;    // Primaerfarbe: aktive/verfuegbare Buttons, "Zurueck"-Aktionen, Standardfarbe
+constexpr std::uint32_t kColorNeutralGrey = 0x455A64;    // Sekundaerfarbe: Abbrechen/neutrale Buttons, leerer Slot/keine Daten
+constexpr std::uint32_t kColorDisabledGrey = 0x616161;   // Deaktiviert/nicht verfuegbar (AMS-Button, freier Druckerplatz, ...)
+constexpr std::uint32_t kColorDangerRed = 0xC62828;      // Destruktive Aktion (Loeschen/Entfernen/Leeren), Fehlerzustand
+constexpr std::uint32_t kColorSuccessGreen = 0x2E7D32;   // Erfolg: Drucker verbunden, Gewicht stabil
+constexpr std::uint32_t kColorWarningAmber = 0xF9A825;   // Warnung/Hervorhebung: ausgewaehltes AMS (Rand), Gewicht nicht stabil
+constexpr std::uint32_t kColorWarningAmberDark = 0xB26A00;  // Textvariante zu kColorWarningAmber auf hellem Grund
+constexpr std::uint32_t kColorManagedPrinterOrange = 0xEF6C00;  // Hervorhebung: der in den Druckereinstellungen aktuell bearbeitete Drucker
+constexpr std::uint32_t kColorTextWhite = 0xFFFFFF;      // Text/Rahmen auf dunklem Grund
+constexpr std::uint32_t kColorTextDark = 0x101820;       // Text/Rahmen auf hellem Grund
+constexpr std::uint32_t kColorTextDisabled = 0xD7DCE0;   // Beschriftung auf deaktivierten Buttons
+constexpr std::uint32_t kColorPanelLight = 0xECEFF1;     // Helle Panel-/Listenzeilen-Hintergruende
+constexpr std::uint32_t kColorPanelLightAlt = 0xB8BDC0;  // Abwechselnde (ungerade) Tabellenzeile
+constexpr std::uint32_t kColorPanelLightest = 0xF4F6F8;  // Overlay-Panel-Hintergrund
+constexpr std::uint32_t kColorOverlayBackdrop = 0x000000;   // Abgedunkelter Hintergrund hinter Overlays/Dialogen
+constexpr std::uint32_t kColorSpoolPickerRow = 0xB0BEC5;    // Default-Hintergrund einer Zeile im Spulen-Picker
+constexpr std::uint32_t kColorOverlayCancelButton = 0x607D8B;  // Neutrale Abbrechen-Schaltflaeche im Overlay
+constexpr std::uint32_t kColorInactivePrinterRow = 0x78909C;   // Deaktivierter/nicht existierender Drucker in Einstellungslisten
+constexpr std::uint32_t kColorAmsButtonBackground = 0x263238;  // Neutraler Hintergrund der Home-AMS-Buttons (Farbe kommt aus den Slot-Feldern)
+// Touch-Kalibrierungsmarker (Diagnose-Screen): 5 gut unterscheidbare Farben im Zyklus.
+constexpr std::uint32_t kColorTouchMarker1 = 0xFFEB3B;
+constexpr std::uint32_t kColorTouchMarker2 = 0x00E676;
+constexpr std::uint32_t kColorTouchMarker3 = 0x00BCD4;
+constexpr std::uint32_t kColorTouchMarker4 = 0xFF4081;
+constexpr std::uint32_t kColorTouchMarker5 = 0xFF9100;
+
 void* drawBuffer1 = nullptr;
 void* drawBuffer2 = nullptr;
 lv_display_t* lvglDisplay = nullptr;
@@ -227,7 +257,7 @@ void applySpoolPickerColors(std::size_t index,
       ++count;
   }
   lv_obj_set_style_bg_color(spoolPickerButtons[index],
-                            lv_color_hex(0xB0BEC5), LV_PART_MAIN);
+                            lv_color_hex(kColorSpoolPickerRow), LV_PART_MAIN);
   for (lv_obj_t* panel : spoolPickerColorPanels[index])
     lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
   if (count == 0) return;
@@ -248,7 +278,7 @@ lv_obj_t* createSpoolPickerButton(const char* text, std::int32_t y,
   lv_obj_t* button = lv_button_create(spoolPickerList);
   lv_obj_set_pos(button, 0, y);
   lv_obj_set_size(button, kSpoolPickerRowWidth, kSpoolPickerRowHeight);
-  lv_obj_set_style_bg_color(button, lv_color_hex(0xB0BEC5), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(button, lv_color_hex(kColorSpoolPickerRow), LV_PART_MAIN);
   lv_obj_set_style_radius(button, 8, LV_PART_MAIN);
   lv_obj_set_style_pad_all(button, 0, LV_PART_MAIN);
   for (std::size_t color = 0;
@@ -272,8 +302,8 @@ lv_obj_t* createSpoolPickerButton(const char* text, std::int32_t y,
   lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
   lv_label_set_text(label, text);
   lv_obj_set_style_text_font(label, &ui_font_ui_german16, LV_PART_MAIN);
-  lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-  lv_obj_set_style_bg_color(label, lv_color_hex(0x101820), LV_PART_MAIN);
+  lv_obj_set_style_text_color(label, lv_color_hex(kColorTextWhite), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(label, lv_color_hex(kColorTextDark), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(label, LV_OPA_70, LV_PART_MAIN);
   lv_obj_set_style_radius(label, 5, LV_PART_MAIN);
   lv_obj_set_style_pad_left(label, 6, LV_PART_MAIN);
@@ -400,7 +430,7 @@ lv_obj_t* createAdvancedModeButton(const char* text, std::int32_t x,
   lv_obj_t* button = lv_button_create(overlayPanel);
   lv_obj_set_pos(button, x, y);
   lv_obj_set_size(button, 186, 48);
-  lv_obj_set_style_bg_color(button, lv_color_hex(0x1565C0), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(button, lv_color_hex(kColorPrimaryBlue), LV_PART_MAIN);
   lv_obj_set_style_radius(button, 8, LV_PART_MAIN);
   lv_obj_t* label = lv_label_create(button);
   lv_label_set_text(label, text);
@@ -445,7 +475,7 @@ void ensureOverlay() {
   lv_obj_set_pos(overlayBackdrop, 0, 0);
   lv_obj_set_size(overlayBackdrop, 480, 320);
   lv_obj_remove_flag(overlayBackdrop, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_style_bg_color(overlayBackdrop, lv_color_hex(0x000000), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(overlayBackdrop, lv_color_hex(kColorOverlayBackdrop), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(overlayBackdrop, LV_OPA_60, LV_PART_MAIN);
   lv_obj_set_style_border_width(overlayBackdrop, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(overlayBackdrop, 0, LV_PART_MAIN);
@@ -454,11 +484,11 @@ void ensureOverlay() {
   lv_obj_set_size(overlayPanel, 420, 238);
   lv_obj_center(overlayPanel);
   lv_obj_remove_flag(overlayPanel, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_style_bg_color(overlayPanel, lv_color_hex(0xF4F6F8), LV_PART_MAIN);
-  lv_obj_set_style_border_color(overlayPanel, lv_color_hex(0x1565C0), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(overlayPanel, lv_color_hex(kColorPanelLightest), LV_PART_MAIN);
+  lv_obj_set_style_border_color(overlayPanel, lv_color_hex(kColorPrimaryBlue), LV_PART_MAIN);
   lv_obj_set_style_border_width(overlayPanel, 2, LV_PART_MAIN);
   lv_obj_set_style_radius(overlayPanel, 12, LV_PART_MAIN);
-  lv_obj_set_style_text_color(overlayPanel, lv_color_hex(0x101820), LV_PART_MAIN);
+  lv_obj_set_style_text_color(overlayPanel, lv_color_hex(kColorTextDark), LV_PART_MAIN);
   // Child coordinates define the complete overlay layout. Removing the
   // theme's implicit content padding keeps both action columns
   // inside the 420 px panel with equal 16 px margins.
@@ -480,10 +510,10 @@ void ensureOverlay() {
   lv_bar_set_range(overlayProgress, 0, 100);
   lv_bar_set_value(overlayProgress, 60, LV_ANIM_OFF);
 
-  overlayCancel = createOverlayButton(overlayPanel, "Abbrechen", 16, 0x607D8B,
+  overlayCancel = createOverlayButton(overlayPanel, "Abbrechen", 16, kColorOverlayCancelButton,
                                       rtos::UiActionType::Cancel);
   overlayConfirm = createOverlayButton(overlayPanel, "Best\xC3\xA4tigen", 218,
-                                       0x1565C0,
+                                       kColorPrimaryBlue,
                                        rtos::UiActionType::Confirm);
   advancedModeButtons = {{
       createAdvancedModeButton("Gebrauchte Spule", 16, 50, 1),
@@ -594,7 +624,7 @@ void styleOverlayNavigation(std::uint32_t color) {
   lv_obj_set_style_bg_color(overlayCancel, lv_color_hex(color), LV_PART_MAIN);
   lv_obj_t* label = lv_obj_get_child(overlayCancel, 0);
   if (label != nullptr)
-    lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, lv_color_hex(kColorTextWhite), LV_PART_MAIN);
 }
 
 void showOverlay(const rtos::UiCommand& command, bool progress) {
@@ -613,7 +643,7 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
   lv_obj_set_size(overlayCancel, 170, 50);
   lv_obj_set_pos(overlayConfirm, 218, 158);
   lv_obj_set_size(overlayConfirm, 170, 50);
-  styleOverlayNavigation(0x607D8B);
+  styleOverlayNavigation(kColorOverlayCancelButton);
   if (command.overlayKind == rtos::UiOverlayKind::AdvancedWeightConfirmation ||
       command.overlayKind == rtos::UiOverlayKind::AdvancedWeightResult) {
     // Six separate summary lines need more vertical room than ordinary
@@ -680,7 +710,7 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
     lv_obj_set_size(overlayCancel, 456, 36);
     lv_label_set_text(lv_obj_get_child(overlayCancel, 0),
                       "Zur\xC3\xBC" "ck");
-    styleOverlayNavigation(0x1565C0);
+    styleOverlayNavigation(kColorPrimaryBlue);
     spoolPickerIds.fill(0);
     spoolPickerInputActive = false;
     for (lv_obj_t* button : spoolPickerButtons)
@@ -710,7 +740,7 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
             ? "Abbrechen"
             : "Schlie\xC3\x9F" "en");
     if (command.overlayKind != rtos::UiOverlayKind::ConnectionProgress)
-      styleOverlayNavigation(0x1565C0);
+      styleOverlayNavigation(kColorPrimaryBlue);
   } else {
     lv_obj_add_flag(overlayProgress, LV_OBJ_FLAG_HIDDEN);
     // Numeric input hides the standard buttons. Always restore the
@@ -729,7 +759,7 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
     } else {
       lv_obj_add_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
       lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Schlie\xC3\x9F" "en");
-      styleOverlayNavigation(0x1565C0);
+      styleOverlayNavigation(kColorPrimaryBlue);
     }
   }
   lv_obj_move_foreground(overlayBackdrop);
@@ -744,7 +774,7 @@ void deleteTouchMarker(lv_timer_t* timer) {
 
 void showTouchMarker(std::int32_t x, std::int32_t y) {
   constexpr std::array<std::uint32_t, 5> kMarkerColors{{
-      0xFFEB3B, 0x00E676, 0x00BCD4, 0xFF4081, 0xFF9100,
+      kColorTouchMarker1, kColorTouchMarker2, kColorTouchMarker3, kColorTouchMarker4, kColorTouchMarker5,
   }};
   constexpr lv_coord_t kMarkerDiameter = 12;
   lv_obj_t* marker = lv_obj_create(lv_layer_top());
@@ -758,7 +788,7 @@ void showTouchMarker(std::int32_t x, std::int32_t y) {
   lv_obj_remove_flag(marker, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_style_pad_all(marker, 0, LV_PART_MAIN);
   lv_obj_set_style_border_width(marker, 1, LV_PART_MAIN);
-  lv_obj_set_style_border_color(marker, lv_color_hex(0x101820), LV_PART_MAIN);
+  lv_obj_set_style_border_color(marker, lv_color_hex(kColorTextDark), LV_PART_MAIN);
   lv_obj_set_style_radius(marker, LV_RADIUS_CIRCLE, LV_PART_MAIN);
   lv_obj_set_style_bg_opa(marker, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_set_style_bg_color(
@@ -873,7 +903,7 @@ void setButtonColors(lv_obj_t* button, std::uint32_t backgroundRgb) {
   lv_obj_t* label = buttonLabel(button);
   if (label != nullptr) {
     lv_obj_set_style_text_color(label,
-                                lv_color_hex(useDarkText ? 0x101820 : 0xFFFFFF),
+                                lv_color_hex(useDarkText ? kColorTextDark : kColorTextWhite),
                                 LV_PART_MAIN);
   }
 }
@@ -1220,14 +1250,13 @@ TrayUiEntry* trayUiEntry(std::uint8_t amsId, std::uint8_t trayId) {
 // RRGGBBAA) into an 0xRRGGBB value; falls back to a neutral grey for
 // missing/malformed input.
 std::uint32_t parseTrayColorHex(const char* colorHex) {
-  constexpr std::uint32_t kFallbackColor = 0x455A64;
-  if (colorHex == nullptr || std::strlen(colorHex) < 6) return kFallbackColor;
+  if (colorHex == nullptr || std::strlen(colorHex) < 6) return kColorNeutralGrey;
   char buffer[7];
   std::snprintf(buffer, sizeof(buffer), "%.6s", colorHex);
   char* end = nullptr;
   const unsigned long value = std::strtoul(buffer, &end, 16);
   return (end != nullptr && *end == '\0') ? static_cast<std::uint32_t>(value)
-                                          : kFallbackColor;
+                                          : kColorNeutralGrey;
 }
 
 const char* printerDraftValue(std::int32_t field) {
@@ -1314,10 +1343,10 @@ void updatePrinterSettingsList() {
     setControlText(rows[index], text);
     lv_obj_set_style_bg_color(rows[index],
                               lv_color_hex(entry.id == managedPrinterId
-                                               ? 0xEF6C00
+                                               ? kColorManagedPrinterOrange
                                                : (entry.enabled && entry.exists
-                                                      ? 0x1565C0
-                                                      : 0x78909C)),
+                                                      ? kColorPrimaryBlue
+                                                      : kColorInactivePrinterRow)),
                               LV_PART_MAIN);
   }
 }
@@ -1477,7 +1506,7 @@ void bindClick(lv_obj_t* object, lv_event_cb_t callback,
                       reinterpret_cast<void*>(userData));
 }
 
-void styleLabelButton(lv_obj_t* object, std::uint32_t color = 0x1565C0) {
+void styleLabelButton(lv_obj_t* object, std::uint32_t color = kColorPrimaryBlue) {
   if (object == nullptr) return;
   if (lv_obj_check_type(object, &lv_label_class) &&
       lv_obj_get_child_count(object) == 0) {
@@ -1508,7 +1537,7 @@ void styleLabelButton(lv_obj_t* object, std::uint32_t color = 0x1565C0) {
   lv_obj_remove_flag(object, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_style_bg_opa(object, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_set_style_bg_color(object, lv_color_hex(color), LV_PART_MAIN);
-  lv_obj_set_style_text_color(object, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  lv_obj_set_style_text_color(object, lv_color_hex(kColorTextWhite), LV_PART_MAIN);
   lv_obj_set_style_text_align(object, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
   lv_obj_set_style_radius(object, 8, LV_PART_MAIN);
   centerButtonLabel(object);
@@ -1518,13 +1547,13 @@ void setLabelButtonAvailable(lv_obj_t* object, bool available,
                              std::uint32_t activeColor) {
   lv_obj_set_flag(object, LV_OBJ_FLAG_CLICKABLE, available);
   lv_obj_set_style_bg_color(
-      object, lv_color_hex(available ? activeColor : 0x616161), LV_PART_MAIN);
+      object, lv_color_hex(available ? activeColor : kColorDisabledGrey), LV_PART_MAIN);
   lv_obj_set_style_text_color(
-      object, lv_color_hex(available ? 0xFFFFFF : 0xD7DCE0), LV_PART_MAIN);
+      object, lv_color_hex(available ? kColorTextWhite : kColorTextDisabled), LV_PART_MAIN);
   if (lv_obj_get_child_count(object) > 0) {
     lv_obj_t* caption = lv_obj_get_child(object, 0);
     lv_obj_set_style_text_color(
-        caption, lv_color_hex(available ? 0xFFFFFF : 0xD7DCE0), LV_PART_MAIN);
+        caption, lv_color_hex(available ? kColorTextWhite : kColorTextDisabled), LV_PART_MAIN);
   }
 }
 
@@ -1545,36 +1574,36 @@ void applySpoolmanAppState(const rtos::UiCommand* command = nullptr) {
       objects.tag_result_quick_weight,
   }};
   for (lv_obj_t* control : onlineControls)
-    setLabelButtonAvailable(control, online, 0x1565C0);
+    setLabelButtonAvailable(control, online, kColorPrimaryBlue);
   setLabelButtonAvailable(objects.tag_result_advanced_weight, online,
-                          0x1565C0);
+                          kColorPrimaryBlue);
 
   setLabelButtonAvailable(objects.staging_action_link_tag,
-                          tagReady && currentTagCanAssign, 0x1565C0);
+                          tagReady && currentTagCanAssign, kColorPrimaryBlue);
   setLabelButtonAvailable(objects.staging_action_unlink_tag,
-                          tagReady && currentTagCanRemove, 0xC62828);
+                          tagReady && currentTagCanRemove, kColorDangerRed);
   setLabelButtonAvailable(objects.tag_action_select_spool,
-                          tagReady && currentTagCanAssign, 0x1565C0);
+                          tagReady && currentTagCanAssign, kColorPrimaryBlue);
   setLabelButtonAvailable(objects.tag_action_use_last_spool,
-                          tagReady && currentTagCanAssign, 0x1565C0);
+                          tagReady && currentTagCanAssign, kColorPrimaryBlue);
   setLabelButtonAvailable(objects.tag_action_erase,
-                          tagReady && currentTagCanRemove, 0xC62828);
+                          tagReady && currentTagCanRemove, kColorDangerRed);
   setLabelButtonAvailable(objects.tag_definition_import_select_spool,
-                          tagReady, 0x1565C0);
+                          tagReady, kColorPrimaryBlue);
   setLabelButtonAvailable(objects.tag_definition_import_spoolman, tagReady,
-                          0x1565C0);
+                          kColorPrimaryBlue);
   setLabelButtonAvailable(objects.tag_legacy_select_spool,
-                          tagReady && currentTagCanAssign, 0x1565C0);
-  setLabelButtonAvailable(objects.tag_legacy_import, tagReady, 0x1565C0);
+                          tagReady && currentTagCanAssign, kColorPrimaryBlue);
+  setLabelButtonAvailable(objects.tag_legacy_import, tagReady, kColorPrimaryBlue);
   setLabelButtonAvailable(objects.tag_legacy_erase,
-                          tagReady && currentTagCanRemove, 0xC62828);
+                          tagReady && currentTagCanRemove, kColorDangerRed);
   setLabelButtonAvailable(objects.tag_unknown_select_spool,
-                          tagReady && currentTagCanAssign, 0x1565C0);
+                          tagReady && currentTagCanAssign, kColorPrimaryBlue);
 
   // Configuration and navigation must remain available even while Spoolman
   // is offline or its tag field is incompatible.
-  setLabelButtonAvailable(objects.settings_spoolman, true, 0x1565C0);
-  setLabelButtonAvailable(objects.spoolman_setting_cancel, true, 0x455A64);
+  setLabelButtonAvailable(objects.settings_spoolman, true, kColorPrimaryBlue);
+  setLabelButtonAvailable(objects.spoolman_setting_cancel, true, kColorNeutralGrey);
 
   if (command != nullptr) {
     lv_label_set_text(objects.home_bottom_status, command->text);
@@ -1614,7 +1643,7 @@ void createHomeColorStrips() {
       lv_obj_remove_flag(strip, LV_OBJ_FLAG_CLICKABLE);
       lv_obj_add_flag(strip, LV_OBJ_FLAG_HIDDEN);
       lv_obj_set_style_border_width(strip, 1, LV_PART_MAIN);
-      lv_obj_set_style_border_color(strip, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+      lv_obj_set_style_border_color(strip, lv_color_hex(kColorTextWhite), LV_PART_MAIN);
       lv_obj_set_style_radius(strip, LV_RADIUS_CIRCLE, LV_PART_MAIN);
       lv_obj_set_style_pad_all(strip, 0, LV_PART_MAIN);
       vTaskDelay(pdMS_TO_TICKS(5));
@@ -1658,9 +1687,9 @@ void createStagingTableDecoration() {
   lv_obj_set_style_bg_opa(objects.staging_details_title, LV_OPA_COVER,
                           LV_PART_MAIN);
   lv_obj_set_style_bg_color(objects.staging_details_title,
-                            lv_color_hex(0x1565C0), LV_PART_MAIN);
+                            lv_color_hex(kColorPrimaryBlue), LV_PART_MAIN);
   lv_obj_set_style_text_color(objects.staging_details_title,
-                              lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+                              lv_color_hex(kColorTextWhite), LV_PART_MAIN);
   lv_obj_set_style_radius(objects.staging_details_title, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_left(objects.staging_details_title, 10, LV_PART_MAIN);
   lv_obj_set_style_pad_top(objects.staging_details_title, 6, LV_PART_MAIN);
@@ -1676,13 +1705,13 @@ void createStagingTableDecoration() {
     lv_obj_set_style_pad_left(label, 6, LV_PART_MAIN);
     lv_obj_set_style_pad_top(label, 2, LV_PART_MAIN);
     if ((row % 2U) == 1U) {
-      lv_obj_set_style_bg_color(label, lv_color_hex(0xB8BDC0), LV_PART_MAIN);
+      lv_obj_set_style_bg_color(label, lv_color_hex(kColorPanelLightAlt), LV_PART_MAIN);
       lv_obj_set_style_bg_opa(label, LV_OPA_COVER, LV_PART_MAIN);
     } else {
-      lv_obj_set_style_bg_color(label, lv_color_hex(0xECEFF1), LV_PART_MAIN);
+      lv_obj_set_style_bg_color(label, lv_color_hex(kColorPanelLight), LV_PART_MAIN);
       lv_obj_set_style_bg_opa(label, LV_OPA_COVER, LV_PART_MAIN);
     }
-    lv_obj_set_style_text_color(label, lv_color_hex(0x101820), LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, lv_color_hex(kColorTextDark), LV_PART_MAIN);
     vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
@@ -1695,9 +1724,9 @@ void createTrayDetailsDecoration() {
   lv_obj_set_style_bg_opa(objects.tray_details_content, LV_OPA_COVER,
                           LV_PART_MAIN);
   lv_obj_set_style_bg_color(objects.tray_details_content,
-                            lv_color_hex(0xECEFF1), LV_PART_MAIN);
+                            lv_color_hex(kColorPanelLight), LV_PART_MAIN);
   lv_obj_set_style_text_color(objects.tray_details_content,
-                              lv_color_hex(0x101820), LV_PART_MAIN);
+                              lv_color_hex(kColorTextDark), LV_PART_MAIN);
   lv_obj_set_style_pad_all(objects.tray_details_content, 6, LV_PART_MAIN);
 }
 
@@ -1742,9 +1771,9 @@ void bindGeneratedWidgets() {
   lv_obj_set_style_bg_opa(objects.staging_action_write_tag, LV_OPA_COVER,
                           LV_PART_MAIN);
   lv_obj_set_style_bg_color(objects.staging_action_write_tag,
-                            lv_color_hex(0xECEFF1), LV_PART_MAIN);
+                            lv_color_hex(kColorPanelLight), LV_PART_MAIN);
   lv_obj_set_style_text_color(objects.staging_action_write_tag,
-                              lv_color_hex(0x101820), LV_PART_MAIN);
+                              lv_color_hex(kColorTextDark), LV_PART_MAIN);
   lv_obj_set_style_text_align(objects.staging_action_write_tag,
                               LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
   lv_obj_set_style_radius(objects.staging_action_write_tag, 8, LV_PART_MAIN);
@@ -1828,20 +1857,20 @@ void bindGeneratedWidgets() {
   setControlText(objects.tag_unknown_close, "Schlie\xC3\x9F" "en");
   setControlText(objects.bambu_spool_type_title, "Leergewicht ausw\xC3\xA4hlen");
   setControlText(objects.bambu_spool_type_back, "Zur\xC3\xBC" "ck");
-  styleLabelButton(objects.tag_definition_import_select_spool, 0x1565C0);
-  styleLabelButton(objects.tag_definition_import_spoolman, 0x1565C0);
-  styleLabelButton(objects.tag_definition_import_cancel, 0x455A64);
-  styleLabelButton(objects.tag_legacy_select_spool, 0x1565C0);
-  styleLabelButton(objects.tag_legacy_import, 0x1565C0);
-  styleLabelButton(objects.tag_legacy_migrate, 0x1565C0);
-  styleLabelButton(objects.tag_legacy_erase, 0xC62828);
-  styleLabelButton(objects.tag_legacy_close, 0x1565C0);
-  styleLabelButton(objects.tag_unknown_select_spool, 0x1565C0);
-  styleLabelButton(objects.tag_unknown_close, 0x1565C0);
-  styleLabelButton(objects.bambu_spool_type_low, 0x1565C0);
-  styleLabelButton(objects.bambu_spool_type_high, 0x1565C0);
-  styleLabelButton(objects.bambu_spool_type_manual, 0x1565C0);
-  styleLabelButton(objects.bambu_spool_type_back, 0x455A64);
+  styleLabelButton(objects.tag_definition_import_select_spool, kColorPrimaryBlue);
+  styleLabelButton(objects.tag_definition_import_spoolman, kColorPrimaryBlue);
+  styleLabelButton(objects.tag_definition_import_cancel, kColorNeutralGrey);
+  styleLabelButton(objects.tag_legacy_select_spool, kColorPrimaryBlue);
+  styleLabelButton(objects.tag_legacy_import, kColorPrimaryBlue);
+  styleLabelButton(objects.tag_legacy_migrate, kColorPrimaryBlue);
+  styleLabelButton(objects.tag_legacy_erase, kColorDangerRed);
+  styleLabelButton(objects.tag_legacy_close, kColorPrimaryBlue);
+  styleLabelButton(objects.tag_unknown_select_spool, kColorPrimaryBlue);
+  styleLabelButton(objects.tag_unknown_close, kColorPrimaryBlue);
+  styleLabelButton(objects.bambu_spool_type_low, kColorPrimaryBlue);
+  styleLabelButton(objects.bambu_spool_type_high, kColorPrimaryBlue);
+  styleLabelButton(objects.bambu_spool_type_manual, kColorPrimaryBlue);
+  styleLabelButton(objects.bambu_spool_type_back, kColorNeutralGrey);
 
   bindClick(objects.tag_action_header, headerClicked);
   bindClick(objects.tag_review_header, headerClicked);
@@ -1890,7 +1919,9 @@ void bindGeneratedWidgets() {
             static_cast<std::uintptr_t>(rtos::UiActionType::Cancel));
 
   bindClick(objects.home_header, headerClicked);
-  bindClick(objects.home_bottom_printers, headerClicked);
+  // home_bottom_printers wurde im EEZ-Projekt entfernt (Nutzerwunsch:
+  // dieselbe Funktion/Druckerauswahl ist bereits ueber die Titelleiste
+  // home_header erreichbar) -- kein Code-seitiges Ausblenden mehr noetig.
   bindClick(objects.select_header, headerClicked);
   bindClick(objects.settings_header, headerClicked);
 
@@ -1966,6 +1997,23 @@ void bindGeneratedWidgets() {
   bindClick(objects.home_ams_2, amsClicked, 2);
   bindClick(objects.home_active_ams, amsClicked, 3);
   bindClick(objects.home_ams_4, amsClicked, 4);
+  // Die vier Slot-Farbcontainer je AMS-Button sind im EEZ-Projekt
+  // verschachtelt angelegt (home_ams_<ams>_2 ist Kind von _1, _3 Kind von
+  // _2, _4 Kind von _3) und jeweils WEITER RECHTS positioniert als ihr
+  // eigener, schmaler Elterncontainer -- LVGL clippt Kinder standardmaessig
+  // auf die Grenzen ihres Elternobjekts, wodurch nur der erste Container
+  // (_1, noch innerhalb des Buttons selbst) sichtbar war. LV_OBJ_FLAG_
+  // OVERFLOW_VISIBLE deaktiviert dieses Clipping je Container.
+  for (lv_obj_t* container : std::array<lv_obj_t*, 16>{{
+           objects.home_ams_1_1, objects.home_ams_1_2, objects.home_ams_1_3,
+           objects.home_ams_1_4, objects.home_ams_2_1, objects.home_ams_2_2,
+           objects.home_ams_2_3, objects.home_ams_2_4, objects.home_ams_3_1,
+           objects.home_ams_3_2, objects.home_ams_3_3, objects.home_ams_3_4,
+           objects.home_ams_4_1, objects.home_ams_4_2, objects.home_ams_4_3,
+           objects.home_ams_4_4,
+       }}) {
+    lv_obj_add_flag(container, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+  }
   bindClick(objects.home_tray_1, trayClicked, 0);
   bindClick(objects.home_tray_2, trayClicked, 1);
   bindClick(objects.home_tray_3, trayClicked, 2);
@@ -2100,11 +2148,11 @@ void bindGeneratedWidgets() {
   }};
   for (lv_obj_t* button : additionalSettingsButtons) styleLabelButton(button);
   styleLabelButton(objects.firmware_settings_check);
-  styleLabelButton(objects.wifi_settings_back, 0x455A64);
-  styleLabelButton(objects.scale_settings_back, 0x455A64);
-  styleLabelButton(objects.device_settings_back, 0x455A64);
-  styleLabelButton(objects.diagnostics_settings_back, 0x455A64);
-  styleLabelButton(objects.firmware_settings_back, 0x455A64);
+  styleLabelButton(objects.wifi_settings_back, kColorNeutralGrey);
+  styleLabelButton(objects.scale_settings_back, kColorNeutralGrey);
+  styleLabelButton(objects.device_settings_back, kColorNeutralGrey);
+  styleLabelButton(objects.diagnostics_settings_back, kColorNeutralGrey);
+  styleLabelButton(objects.firmware_settings_back, kColorNeutralGrey);
 
   const std::array<lv_obj_t*, 20> printerButtons{{
       objects.printer_settings_header, objects.printer_settings_settings,
@@ -2119,9 +2167,9 @@ void bindGeneratedWidgets() {
       objects.printer_edit_test, objects.printer_edit_save,
   }};
   for (lv_obj_t* button : printerButtons) styleLabelButton(button);
-  styleLabelButton(objects.printer_settings_back, 0x455A64);
-  styleLabelButton(objects.printer_edit_delete, 0xC62828);
-  styleLabelButton(objects.printer_edit_cancel, 0x455A64);
+  styleLabelButton(objects.printer_settings_back, kColorNeutralGrey);
+  styleLabelButton(objects.printer_edit_delete, kColorDangerRed);
+  styleLabelButton(objects.printer_edit_cancel, kColorNeutralGrey);
 
   const std::array<lv_obj_t*, 10> spoolmanButtons{{
       objects.spoolman_settings_header, objects.spoolman_settings_settings,
@@ -2133,7 +2181,7 @@ void bindGeneratedWidgets() {
   for (lv_obj_t* button : spoolmanButtons) {
     styleLabelButton(button);
   }
-  styleLabelButton(objects.spoolman_setting_cancel, 0x455A64);
+  styleLabelButton(objects.spoolman_setting_cancel, kColorNeutralGrey);
 
   const std::array<lv_obj_t*, 11> stagingButtons{{
       objects.staging_details_header,
@@ -2152,8 +2200,8 @@ void bindGeneratedWidgets() {
     styleLabelButton(button);
   }
   styleLabelButton(objects.staging_action_erase_tag);
-  styleLabelButton(objects.staging_action_clear, 0xC62828);
-  styleLabelButton(objects.staging_actions_back, 0x455A64);
+  styleLabelButton(objects.staging_action_clear, kColorDangerRed);
+  styleLabelButton(objects.staging_actions_back, kColorNeutralGrey);
   const std::array<lv_obj_t*, 23> trayButtons{{
       objects.tray_details_header, objects.tray_details_settings,
       objects.tray_details_tab_slot, objects.tray_details_tab_spool,
@@ -2171,13 +2219,13 @@ void bindGeneratedWidgets() {
   for (lv_obj_t* button : trayButtons) {
     styleLabelButton(button);
   }
-  styleLabelButton(objects.tray_action_untag, 0xC62828);
-  styleLabelButton(objects.tray_action_reset, 0xC62828);
-  styleLabelButton(objects.tray_details_close, 0x1565C0);
-  styleLabelButton(objects.tray_actions_back, 0x455A64);
-  styleLabelButton(objects.tray_select_cancel, 0x455A64);
-  styleLabelButton(objects.home_active_ams, 0x455A64);
-  styleLabelButton(objects.home_ams_4, 0x455A64);
+  styleLabelButton(objects.tray_action_untag, kColorDangerRed);
+  styleLabelButton(objects.tray_action_reset, kColorDangerRed);
+  styleLabelButton(objects.tray_details_close, kColorPrimaryBlue);
+  styleLabelButton(objects.tray_actions_back, kColorNeutralGrey);
+  styleLabelButton(objects.tray_select_cancel, kColorNeutralGrey);
+  styleLabelButton(objects.home_active_ams, kColorNeutralGrey);
+  styleLabelButton(objects.home_ams_4, kColorNeutralGrey);
   const std::array<lv_obj_t*, 8> tagButtons{{
       objects.tag_action_select_spool, objects.tag_action_use_last_spool,
       objects.tag_review_confirm,
@@ -2186,9 +2234,9 @@ void bindGeneratedWidgets() {
       objects.tag_result_close,
   }};
   for (lv_obj_t* button : tagButtons) styleLabelButton(button);
-  styleLabelButton(objects.tag_action_erase, 0xC62828);
-  styleLabelButton(objects.tag_review_cancel, 0x455A64);
-  styleLabelButton(objects.tag_write_cancel, 0x455A64);
+  styleLabelButton(objects.tag_action_erase, kColorDangerRed);
+  styleLabelButton(objects.tag_review_cancel, kColorNeutralGrey);
+  styleLabelButton(objects.tag_write_cancel, kColorNeutralGrey);
 
   // Every enabled navigation button labelled "Zurück" uses the primary blue
   // action style.  Cancel/close buttons intentionally keep their secondary
@@ -2209,14 +2257,13 @@ void bindGeneratedWidgets() {
       objects.bambu_spool_type_back,
   }};
   for (lv_obj_t* button : activeBackButtons) styleLabelButton(button);
-  const lv_font_t* amsFont =
-      lv_obj_get_style_text_font(buttonLabel(objects.home_ams_1), LV_PART_MAIN);
-  for (lv_obj_t* amsLabel :
-       std::array<lv_obj_t*, 2>{{objects.home_active_ams, objects.home_ams_4}}) {
-    lv_obj_set_style_text_font(amsLabel, amsFont, LV_PART_MAIN);
-    lv_obj_set_style_text_align(amsLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_set_style_pad_top(amsLabel, 10, LV_PART_MAIN);
-  }
+  // Frueher hier: Schriftart von objects.home_ams_1s Label-Kind auf
+  // home_active_ams/home_ams_4 uebertragen, fuer eine frueher noch
+  // vorhandene "AMS N"-Beschriftung. Die AMS-Buttons zeigen keinen Text
+  // mehr (Nutzerwunsch) und haben inzwischen auch kein Label-Kind mehr
+  // (durch die vier neuen EEZ-Farbcontainer ersetzt) -- buttonLabel() lief
+  // dadurch ins Leere und lv_obj_get_style_text_font(nullptr, ...) hing die
+  // UI-Task auf (Watchdog-Reboot). Block ersatzlos entfernt.
   vTaskDelay(pdMS_TO_TICKS(250));
   createHomeColorStrips();
   vTaskDelay(pdMS_TO_TICKS(250));
@@ -2241,7 +2288,7 @@ void updatePrinterList() {
     const auto& printer = printerEntries[index];
     if (!printer.exists) {
       setButtonText(buttons[index], "+ freier Druckerplatz");
-      setButtonColors(buttons[index], 0x616161);
+      setButtonColors(buttons[index], kColorDisabledGrey);
       continue;
     }
     char text[96];
@@ -2254,10 +2301,10 @@ void updatePrinterList() {
 
     const std::uint32_t color =
         printer.id == currentPrinterId
-            ? 0x1565C0
+            ? kColorPrimaryBlue
             : (printer.connectionState == models::UiConnectionState::Connected
-                   ? 0x2E7D32
-                   : 0x616161);
+                   ? kColorSuccessGreen
+                   : kColorDisabledGrey);
     setButtonColors(buttons[index], color);
   }
 
@@ -2265,10 +2312,10 @@ void updatePrinterList() {
   lv_obj_set_style_bg_opa(objects.select_bottom_status, LV_OPA_COVER,
                           LV_PART_MAIN);
   lv_obj_set_style_bg_color(objects.select_bottom_status,
-                            lv_color_hex(0x1565C0), LV_PART_MAIN);
+                            lv_color_hex(kColorPrimaryBlue), LV_PART_MAIN);
   lv_obj_set_style_radius(objects.select_bottom_status, 8, LV_PART_MAIN);
   lv_obj_set_style_text_color(objects.select_bottom_status,
-                              lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+                              lv_color_hex(kColorTextWhite), LV_PART_MAIN);
   lv_obj_set_style_text_align(objects.select_bottom_status,
                               LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
   lv_obj_set_style_pad_top(objects.select_bottom_status, 14, LV_PART_MAIN);
@@ -2280,22 +2327,47 @@ void updateTrayButton(lv_obj_t* button, rtos::PrinterId printerId,
                       const char* title, std::size_t colorStripGroup) {
   (void)printerId;  // Real tray data (see AppTask::syncAmsToUi) is only
                     // ever synced for the printer currently in focus.
+  (void)title;  // Nutzerwunsch (2026-08-22): kein "Slot N"/"Extern"-Titel
+                // mehr, nur noch die vier Infozeilen unten -- die feste
+                // Bildschirmposition zeigt weiterhin, welcher Slot gemeint
+                // ist (analog zu den AMS-Buttons).
   const TrayUiEntry* tray = trayUiEntry(amsId, trayId);
-  char text[64];
+  char text[96];
   if (tray == nullptr || !tray->occupied) {
-    std::snprintf(text, sizeof(text), "%s\nleer", title);
-    setButtonColors(button, 0x455A64);
+    std::snprintf(text, sizeof(text), "leer");
+    setButtonColors(button, kColorNeutralGrey);
     updateHomeColorStrips(colorStripGroup, {}, 0);
   } else {
-    // Printer-reported material only; no Spoolman spool identity is known
-    // for physically-loaded spools the app itself did not assign (see
-    // docs/bambu-protocol.md).
-    std::snprintf(text, sizeof(text), "%s\n%s", title,
-                  tray->material[0] != '\0' ? tray->material : "belegt");
+    // Material kommt real vom Drucker (tray->material). Restgewicht,
+    // Spoolman-ID und K-Faktor sind auf Nutzerwunsch vorerst Mockdaten:
+    // der Drucker kennt nur Material/Farbe (siehe docs/bambu-protocol.md);
+    // ein echter Abgleich mit der zugeordneten Spoolman-Spule
+    // (tray->spoolId, sofern von dieser App zugeordnet) fuer diese drei
+    // Werte ist noch nicht angebunden. externalTrayEntry hat kein
+    // sinnvolles amsId/trayId (Sentinel 0xFF/0xFF) -- ein fester Seed 0
+    // haelt die Mockformeln dafuer im plausiblen Bereich.
+    const std::uint8_t mockSeed = amsId == 0xFF ? 0U : trayId;
+    const std::uint32_t mockRemainingWeightGrams =
+        500U - (static_cast<std::uint32_t>(mockSeed) * 15U);
+    const std::uint32_t mockSpoolmanId =
+        1000U +
+        (amsId == 0xFF ? 90U : static_cast<std::uint32_t>(amsId) * 10U) +
+        static_cast<std::uint32_t>(mockSeed) + 1U;
+    // Format "K (#.###)" (Nutzerwunsch): ein Digit vor, drei Nachkommastellen
+    // -- passend zur ueblichen Groessenordnung echter Bambu-K-Faktor-Werte
+    // (Flow-Dynamics-Kalibrierung, typischerweise 0.000-0.100).
+    const std::uint32_t mockKFactorThousandths = 20U + mockSeed;
+    std::snprintf(
+        text, sizeof(text), "%s\n%ug\n%lu\nK (%u.%03u)",
+        tray->material[0] != '\0' ? tray->material : "belegt",
+        static_cast<unsigned>(mockRemainingWeightGrams),
+        static_cast<unsigned long>(mockSpoolmanId),
+        static_cast<unsigned>(mockKFactorThousandths / 1000U),
+        static_cast<unsigned>(mockKFactorThousandths % 1000U));
     const std::array<std::uint32_t, models::kMaximumFilamentColors> colors{
         parseTrayColorHex(tray->colorHex)};
     const std::uint8_t colorCount = tray->colorHex[0] != '\0' ? 1U : 0U;
-    setButtonColors(button, colorCount > 0 ? colors[0] : 0x455A64);
+    setButtonColors(button, colorCount > 0 ? colors[0] : kColorNeutralGrey);
     updateHomeColorStrips(colorStripGroup, colors, colorCount);
   }
   setButtonText(button, text);
@@ -2313,29 +2385,44 @@ void updateHomeContent() {
       objects.home_active_ams,
       objects.home_ams_4,
   }};
+  // AMS-Buttons zeigen keinen Text mehr, nur einen farbigen Rand am aktuell
+  // gewaehlten AMS (Nutzerwunsch). Die eigentliche Faerbung je Slot passiert
+  // ueber vier vom Nutzer im EEZ-Projekt angelegte Container-Objekte pro
+  // Button (home_ams_<N>_1..4, per Slot-Farbe wenn belegt), nicht mehr ueber
+  // dynamisch erzeugte Overlay-Quadrate.
+  const std::array<std::array<lv_obj_t*, 4>, 4> amsSlotContainers{{
+      {{objects.home_ams_1_1, objects.home_ams_1_2, objects.home_ams_1_3,
+        objects.home_ams_1_4}},
+      {{objects.home_ams_2_1, objects.home_ams_2_2, objects.home_ams_2_3,
+        objects.home_ams_2_4}},
+      {{objects.home_ams_3_1, objects.home_ams_3_2, objects.home_ams_3_3,
+        objects.home_ams_3_4}},
+      {{objects.home_ams_4_1, objects.home_ams_4_2, objects.home_ams_4_3,
+        objects.home_ams_4_4}},
+  }};
   for (std::uint8_t amsId = 1; amsId <= amsButtons.size(); ++amsId) {
     lv_obj_t* button = amsButtons[amsId - 1U];
     const auto& ams = amsEntries[amsId - 1U];
-    char text[32];
-    if (!ams.present) {
-      std::snprintf(text, sizeof(text), "AMS %u --", amsId);
-    } else {
-      std::snprintf(text, sizeof(text), "AMS %u  %u/4", amsId,
-                    ams.occupiedTrayCount);
-    }
-    setButtonText(button, text);
     const bool available = ams.present;
+    setButtonText(button, "");
     lv_obj_set_state(button, LV_STATE_DISABLED, false);
     lv_obj_set_flag(button, LV_OBJ_FLAG_CLICKABLE, available);
-    const std::uint32_t background =
-        !available ? 0x616161 : (amsId == currentAmsId ? 0xF9A825 : 0x1565C0);
-    setButtonColors(button, background);
-    if (!available) {
-      lv_obj_t* label = buttonLabel(button);
-      if (label != nullptr) {
-        lv_obj_set_style_text_color(label, lv_color_hex(0xD7DCE0),
-                                    LV_PART_MAIN);
+    setButtonColors(button, kColorAmsButtonBackground);
+    const bool selected = available && amsId == currentAmsId;
+    lv_obj_set_style_border_width(button, selected ? 3 : 0, LV_PART_MAIN);
+    lv_obj_set_style_border_color(button, lv_color_hex(kColorWarningAmber), LV_PART_MAIN);
+    for (std::uint8_t slot = 0; slot < 4; ++slot) {
+      lv_obj_t* container = amsSlotContainers[amsId - 1U][slot];
+      if (!available) {
+        lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, LV_PART_MAIN);
+        continue;
       }
+      const TrayUiEntry* tray = trayUiEntry(amsId, slot);
+      const std::uint32_t color = tray != nullptr && tray->occupied
+                                      ? parseTrayColorHex(tray->colorHex)
+                                      : kColorNeutralGrey;
+      lv_obj_set_style_bg_opa(container, LV_OPA_COVER, LV_PART_MAIN);
+      lv_obj_set_style_bg_color(container, lv_color_hex(color), LV_PART_MAIN);
     }
   }
 
@@ -2364,11 +2451,11 @@ void updateHomeContent() {
                   staging.material, static_cast<unsigned long>(staging.spoolId),
                   static_cast<double>(staging.remainingWeightGrams));
     setButtonColors(objects.home_staging,
-                    staging.colorCount > 0 ? staging.colorRgb[0] : 0x455A64);
+                    staging.colorCount > 0 ? staging.colorRgb[0] : kColorNeutralGrey);
     updateHomeColorStrips(5, staging.colorRgb, staging.colorCount);
   } else {
     std::snprintf(stagingText, sizeof(stagingText), "Staging\nleer");
-    setButtonColors(objects.home_staging, 0x455A64);
+    setButtonColors(objects.home_staging, kColorNeutralGrey);
     updateHomeColorStrips(5, {}, 0);
   }
   setButtonText(objects.home_staging, stagingText);
@@ -2403,15 +2490,15 @@ void updateWeightDisplays() {
   const models::UiWeightState& weight = liveWeight;
   char text[96];
   if (weight.error) {
-    std::snprintf(text, sizeof(text), "Fehler\n%s", weight.status);
-    setButtonColors(objects.home_weight, 0xC62828);
+    std::snprintf(text, sizeof(text), "Fehler %s", weight.status);
+    setButtonColors(objects.home_weight, kColorDangerRed);
   } else if (!weight.calibrated) {
-    std::snprintf(text, sizeof(text), "-- g\nnicht kalibriert");
-    setButtonColors(objects.home_weight, 0xF9A825);
+    std::snprintf(text, sizeof(text), "-- g nicht kalibriert");
+    setButtonColors(objects.home_weight, kColorWarningAmber);
   } else {
-    std::snprintf(text, sizeof(text), "%.1fg\n%s",
+    std::snprintf(text, sizeof(text), "%.1fg %s",
                   static_cast<double>(weight.grossWeightGrams), weight.status);
-    setButtonColors(objects.home_weight, weight.stable ? 0x2E7D32 : 0xF9A825);
+    setButtonColors(objects.home_weight, weight.stable ? kColorSuccessGreen : kColorWarningAmber);
   }
   setButtonText(objects.home_weight, text);
 
@@ -2425,10 +2512,10 @@ void updateWeightDisplays() {
   }
   lv_label_set_text(objects.scale_settings_weight, text);
   lv_obj_set_style_text_color(objects.scale_settings_weight,
-                              lv_color_hex(weight.error ? 0xC62828
+                              lv_color_hex(weight.error ? kColorDangerRed
                                                         : (weight.stable
-                                                               ? 0x2E7D32
-                                                               : 0xB26A00)),
+                                                               ? kColorSuccessGreen
+                                                               : kColorWarningAmberDark)),
                               LV_PART_MAIN);
   std::snprintf(text, sizeof(text), "Kalibrierung: %s",
                 weight.calibrated ? "geladen" : "nicht vorhanden");
@@ -2511,7 +2598,7 @@ void updateStagingContent() {
                               LV_PART_MAIN);
     lv_obj_set_pos(field, 350 + static_cast<lv_coord_t>(index * 40), 138);
     lv_obj_set_style_border_width(field, 2, LV_PART_MAIN);
-    lv_obj_set_style_border_color(field, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_border_color(field, lv_color_hex(kColorTextWhite), LV_PART_MAIN);
     lv_obj_set_style_radius(field, 4, LV_PART_MAIN);
     lv_obj_move_foreground(field);
   }
@@ -2589,15 +2676,15 @@ void updateTrayDetails() {
     lv_obj_set_style_bg_opa(field, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_bg_color(field, lv_color_hex(colorRgb), LV_PART_MAIN);
     lv_obj_set_style_border_width(field, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(field, lv_color_hex(0x101820), LV_PART_MAIN);
+    lv_obj_set_style_border_color(field, lv_color_hex(kColorTextDark), LV_PART_MAIN);
     lv_obj_set_style_radius(field, 4, LV_PART_MAIN);
     lv_obj_move_foreground(field);
   }
   lv_obj_set_style_bg_color(objects.tray_details_tab_slot,
-                            lv_color_hex(selectedTrayTab == 0 ? 0xF9A825 : 0x1565C0),
+                            lv_color_hex(selectedTrayTab == 0 ? kColorWarningAmber : kColorPrimaryBlue),
                             LV_PART_MAIN);
   lv_obj_set_style_bg_color(objects.tray_details_tab_spool,
-                            lv_color_hex(selectedTrayTab == 1 ? 0xF9A825 : 0x1565C0),
+                            lv_color_hex(selectedTrayTab == 1 ? kColorWarningAmber : kColorPrimaryBlue),
                             LV_PART_MAIN);
 }
 
@@ -2627,8 +2714,8 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
     lv_obj_set_flag(amsButtons[id - 1U], LV_OBJ_FLAG_CLICKABLE, available);
     lv_obj_set_style_bg_color(
         amsButtons[id - 1U],
-        lv_color_hex(!available ? 0x616161
-                                : (id == currentAmsId ? 0xF9A825 : 0x1565C0)),
+        lv_color_hex(!available ? kColorDisabledGrey
+                                : (id == currentAmsId ? kColorWarningAmber : kColorPrimaryBlue)),
         LV_PART_MAIN);
   }
 
@@ -2645,13 +2732,13 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
     const bool highlighted = trayTargetSelected && selectedTrayAmsId == currentAmsId &&
                              selectedTrayId == id;
     lv_obj_set_style_bg_color(slotButtons[id],
-                              lv_color_hex(highlighted ? 0xF9A825 : 0x1565C0),
+                              lv_color_hex(highlighted ? kColorWarningAmber : kColorPrimaryBlue),
                               LV_PART_MAIN);
   }
   lv_obj_set_style_bg_color(
       objects.tray_select_external,
-      lv_color_hex(trayTargetSelected && selectedTrayId == 0xFF ? 0xF9A825
-                                                                 : 0x1565C0),
+      lv_color_hex(trayTargetSelected && selectedTrayId == 0xFF ? kColorWarningAmber
+                                                                 : kColorPrimaryBlue),
       LV_PART_MAIN);
 
   char summary[96];
@@ -2667,6 +2754,17 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
                   static_cast<unsigned long>(staging.spoolId));
   }
   lv_label_set_text(objects.tray_select_summary, summary);
+}
+
+// Headers use EEZ's native left-aligned label layout (fixed x-offset,
+// LV_ALIGN_LEFT_MID, LV_SIZE_CONTENT width/height) -- unlike setControlText()/
+// centerButtonLabel(), this must NOT resize or re-center the label, or its
+// position visibly shifts whenever the text length (or line-wrap) changes
+// (Nutzerwunsch: Header-Position darf sich durch Beschriftungsaenderungen
+// nicht mehr verschieben).
+void setHeaderText(lv_obj_t* header, const char* text) {
+  lv_obj_t* label = buttonLabel(header);
+  if (label != nullptr) lv_label_set_text(label, text);
 }
 
 void setAllHeaderTexts(const char* text) {
@@ -2695,7 +2793,7 @@ void setAllHeaderTexts(const char* text) {
       objects.tag_legacy_header,
       objects.tag_unknown_header,
   }};
-  for (lv_obj_t* header : headers) setControlText(header, text);
+  for (lv_obj_t* header : headers) setHeaderText(header, text);
 }
 
 void updateHeaders(rtos::PrinterId printerId) {
@@ -2712,19 +2810,12 @@ void updateHeaders(rtos::PrinterId printerId) {
   }
   currentPrinterId = printerId;
 
+  // Titelleiste zeigt nur noch Druckername + Verbindungsstatus -- welches
+  // AMS gerade betrachtet wird, ist jetzt am farbigen Rand des
+  // AMS-Buttons auf Home selbst erkennbar (siehe updateHomeContent()).
   char header[64];
-  const bool viewingPresentAms = currentAmsId >= 1 &&
-                                 currentAmsId <= amsEntries.size() &&
-                                 amsEntries[currentAmsId - 1].present;
-  if (viewingPresentAms) {
-    std::snprintf(header, sizeof(header), "%s | %s | AMS %u",
-                  connectionText(printer->connectionState), printer->name,
-                  currentAmsId);
-  } else {
-    std::snprintf(header, sizeof(header), "%s | %s | kein AMS",
-                  connectionText(printer->connectionState), printer->name);
-  }
-
+  std::snprintf(header, sizeof(header), "%s | %s", printer->name,
+                connectionText(printer->connectionState));
   setAllHeaderTexts(header);
 
   updateHomeContent();
@@ -2744,9 +2835,8 @@ void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
   currentAmsId = amsId;
 
   char header[64];
-  std::snprintf(header, sizeof(header), "%s | %s | AMS %u",
-                connectionText(printer->connectionState), printer->name,
-                currentAmsId);
+  std::snprintf(header, sizeof(header), "%s | %s", printer->name,
+                connectionText(printer->connectionState));
   setAllHeaderTexts(header);
   updateHomeContent();
   updateTraySelection(currentPrinterId, currentAmsId, 0, false);
@@ -2984,9 +3074,9 @@ void processUiCommand(const rtos::UiCommand& command) {
         currentTagCanAssign = canAssign;
         currentTagCanRemove = canRemove;
         setLabelButtonAvailable(
-            objects.staging_action_link_tag, canAssign, 0x1565C0);
+            objects.staging_action_link_tag, canAssign, kColorPrimaryBlue);
         setLabelButtonAvailable(
-            objects.staging_action_unlink_tag, canRemove, 0xC62828);
+            objects.staging_action_unlink_tag, canRemove, kColorDangerRed);
         char assignmentStatus[64]{};
         if (command.spoolId != 0) {
           std::snprintf(assignmentStatus, sizeof(assignmentStatus),
@@ -3010,10 +3100,10 @@ void processUiCommand(const rtos::UiCommand& command) {
         currentTagCanAssign = canAssign;
         currentTagCanRemove = canRemove;
         setLabelButtonAvailable(objects.tag_action_select_spool, canAssign,
-                                0x1565C0);
+                                kColorPrimaryBlue);
         setLabelButtonAvailable(objects.tag_action_use_last_spool, canAssign,
-                                0x1565C0);
-        setLabelButtonAvailable(objects.tag_action_erase, canRemove, 0xC62828);
+                                kColorPrimaryBlue);
+        setLabelButtonAvailable(objects.tag_action_erase, canRemove, kColorDangerRed);
       } else if (command.screenId == rtos::UiScreenId::TagReview &&
                  command.text[0] != '\0') {
         lv_label_set_text(objects.tag_review_summary, command.text);
@@ -3032,11 +3122,11 @@ void processUiCommand(const rtos::UiCommand& command) {
         currentTagCanAssign = canAssign;
         currentTagCanRemove = canRemove;
         setLabelButtonAvailable(objects.tag_legacy_select_spool, canAssign,
-                                0x1565C0);
+                                kColorPrimaryBlue);
         lv_obj_set_flag(objects.tag_legacy_erase, LV_OBJ_FLAG_CLICKABLE,
                         canRemove);
         lv_obj_set_style_bg_color(objects.tag_legacy_erase,
-                                  lv_color_hex(canRemove ? 0xC62828 : 0x616161),
+                                  lv_color_hex(canRemove ? kColorDangerRed : kColorDisabledGrey),
                                   LV_PART_MAIN);
       } else if (command.screenId == rtos::UiScreenId::TagUnknown &&
                   command.text[0] != '\0') {
@@ -3046,7 +3136,7 @@ void processUiCommand(const rtos::UiCommand& command) {
         currentTagCanRemove = false;
         setLabelButtonAvailable(
             objects.tag_unknown_select_spool,
-            currentTagCanAssign, 0x1565C0);
+            currentTagCanAssign, kColorPrimaryBlue);
       }
       if (command.screenId == rtos::UiScreenId::TrayDetails ||
           command.screenId == rtos::UiScreenId::TrayActions) {

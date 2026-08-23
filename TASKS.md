@@ -1122,6 +1122,46 @@ Nachtrag (2026-08-22, zwei Nutzer-gemeldete Bugs behoben):
   `StagingActions` -- "Zurück" von dort geht dann ebenso direkt zu Home
   statt zum übersprungenen Status-Screen.
 
+Nachtrag (2026-08-22, Home-Screen-Redesign auf Nutzerwunsch):
+
+* **AMS-Buttons**: kein Text mehr ("AMS N X/4"), stattdessen 4 farbige
+  Slot-Bereiche je Button (Slot-Farbe wenn belegt, sonst neutral grau) und
+  ein farbiger Rand (statt Volltonfarbe) am aktuell gewählten AMS.
+* **Drucker-Button unten links entfernt**: dieselbe Funktion
+  (Druckerauswahl) ist bereits über die Titelleiste erreichbar.
+* **Tray-Info** (home_tray_1-4, home_external): zeigt jetzt Material
+  (echt, vom Drucker), Restgewicht, Spoolman-ID (ohne #) und K-Faktor
+  statt bisher nur "Slot N\n<Material>". Restgewicht/Spoolman-ID/K-Faktor
+  sind auf Nutzerwunsch vorerst Mockdaten (kein Spoolman-Abgleich für
+  beliebige AMS-Slots vorhanden, nur für von dieser App zugeordnete Spulen
+  theoretisch möglich) -- echte Anbindung ist eine spätere Aufgabe. Der
+  "Slot N"/"Extern"-Titel entfällt, die feste Bildschirmposition zeigt
+  weiterhin, welcher Slot gemeint ist.
+* **Titelleiste**: zeigt nur noch Druckername + Verbindungsstatus (vorher
+  zusätzlich "AMS N"/"kein AMS") -- welches AMS gerade betrachtet wird, ist
+  jetzt am farbigen Rand des AMS-Buttons selbst erkennbar. Betrifft
+  `updateHeaders()`/`updateAmsOverview()`, wirkt sich damit auf die
+  gemeinsame Titelleiste aller Screens aus (`setAllHeaderTexts()`).
+
+Nachtrag (2026-08-22, Nutzer-Feedback nach erstem Entwurf):
+
+* **AMS-Farbflächen**: statt dynamisch per Code erzeugter Overlay-Quadrate
+  (`createHomeAmsSlotSquares()`, wieder entfernt) färbt `updateHomeContent()`
+  jetzt vier vom Nutzer direkt im EEZ-Projekt angelegte Container-Objekte
+  pro AMS-Button ein (`home_ams_<N>_1..4`, `bg_opa`/`bg_color` statt
+  Position/Größe -- Layout kommt vollständig aus dem EEZ-Export).
+* **K-Faktor-Format** korrigiert auf "K (#.###)" (ein Digit, drei
+  Nachkommastellen -- passend zur Größenordnung echter Bambu-K-Faktoren)
+  statt zuvor "K (XX.X)".
+* **Farbkonstanten**: alle 24 in `UiBridge.cpp` verwendeten `0xRRGGBB`-Werte
+  in benannte, kommentierte `constexpr`-Konstanten (`kColorPrimaryBlue`,
+  `kColorDangerRed`, `kColorWarningAmber`, ...) am Dateianfang ausgelagert,
+  jeder bisherige Streuvorkommen-Aufruf ersetzt.
+* `objects.home_bottom_printers` wurde vom Nutzer im EEZ-Projekt selbst
+  entfernt (nicht mehr nur code-seitig ausgeblendet); der entsprechende
+  Verweis in `UiBridge.cpp` wurde entfernt, da das Objekt nicht mehr
+  existiert.
+
 ## 9.2 Native Tags
 
 * [x] UID

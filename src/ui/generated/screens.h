@@ -82,8 +82,41 @@ typedef struct _objects_t {
     lv_obj_t *home_staging;
     lv_obj_t *home_weight;
     lv_obj_t *home_status;
-    lv_obj_t *home_bottom_printers;
     lv_obj_t *home_bottom_status;
+    lv_obj_t *home_ams_1_1;
+    lv_obj_t *home_ams_1_2;
+    lv_obj_t *home_ams_1_3;
+    lv_obj_t *home_ams_1_4;
+    lv_obj_t *home_ams_2_1;
+    lv_obj_t *home_ams_2_2;
+    lv_obj_t *home_ams_2_3;
+    lv_obj_t *home_ams_2_4;
+    lv_obj_t *home_ams_3_1;
+    lv_obj_t *home_ams_3_2;
+    lv_obj_t *home_ams_3_3;
+    lv_obj_t *home_ams_3_4;
+    lv_obj_t *home_ams_4_1;
+    lv_obj_t *home_ams_4_2;
+    lv_obj_t *home_ams_4_3;
+    lv_obj_t *home_ams_4_4;
+    lv_obj_t *home_tray_1_1;
+    lv_obj_t *home_tray_1_2;
+    lv_obj_t *home_tray_1_3;
+    lv_obj_t *home_tray_2_1;
+    lv_obj_t *home_tray_2_2;
+    lv_obj_t *home_tray_2_3;
+    lv_obj_t *home_tray_3_1;
+    lv_obj_t *home_tray_3_2;
+    lv_obj_t *home_tray_3_3;
+    lv_obj_t *home_tray_4_1;
+    lv_obj_t *home_tray_4_2;
+    lv_obj_t *home_tray_4_3;
+    lv_obj_t *home_external_1;
+    lv_obj_t *home_external_2;
+    lv_obj_t *home_external_3;
+    lv_obj_t *home_staging_1;
+    lv_obj_t *home_staging_2;
+    lv_obj_t *home_staging_3;
     lv_obj_t *select_header;
     lv_obj_t *select_settings;
     lv_obj_t *select_title;
@@ -434,6 +467,21 @@ void tick_screen_by_id(enum ScreensEnum screenId);
 void tick_screen(int screen_index);
 
 void create_screens();
+
+// Color themes
+
+enum Themes {
+    THEME_ID_DEFAULT,
+};
+enum Colors {
+    COLOR_ID_BUTTON_ACTIVE,
+    COLOR_ID_BUTTON_DISABLED,
+    COLOR_ID_BUTTON_TEXT_ACTIVE,
+    COLOR_ID_BUTTON_TEXT_DISABLED,
+};
+void change_color_theme(uint32_t themeIndex);
+extern uint32_t theme_colors[1][4];
+extern uint32_t active_theme_index;
 
 #ifdef __cplusplus
 }

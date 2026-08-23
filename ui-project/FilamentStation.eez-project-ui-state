@@ -27,7 +27,7 @@
           },
           {
             "type": "border",
-            "selected": 2,
+            "selected": 0,
             "size": 150.53390884399414,
             "location": "right",
             "children": [
