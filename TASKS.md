@@ -2916,13 +2916,85 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 10.6 Workflow
 
-* [ ] Spoolman beim Import weg
-* [ ] NFC während Wizard weg
-* [ ] Waage instabil
-* [ ] Queue voll
-* [ ] Antwort spät
-* [ ] Abbruch
-* [ ] doppelte Messung
+* [x] Spoolman beim Import weg
+* [x] NFC während Wizard weg
+* [x] Waage instabil
+* [x] Queue voll
+* [x] Antwort spät
+* [x] Abbruch
+* [x] doppelte Messung
+
+Bestandsaufnahme (Explore-Agent-Audit + eigene Verifikation der Luecken):
+fuenf von sieben Punkten bereits robust; zwei zusammenhaengende Luecken im
+Wiege-Assistenten (`weightUpdate`, QuickWeight/AdvancedWeight) gefunden
+und behoben -- der Erfolgspfad hatte anders als der Fehlerpfad keinen
+Abgleich gegen einen mittlerweile ueberholten/abgebrochenen Vorgang.
+
+**Waage instabil** -- bereits vorhanden (vorab selbst verifiziert):
+QuickWeight/AdvancedWeight pruefen `!scaleStable` sowohl beim Start als
+auch nochmal unmittelbar vor dem Bestaetigen (`AppTask.cpp` ~3616/3737
+bzw. ~2456/2496) -- ein Messwert, der zwischen Start und Bestaetigung
+instabil wird, wird erkannt, nicht stillschweigend uebernommen.
+
+**Spoolman beim Import weg** -- bereits vorhanden: der `SpoolmanError`-
+Zweig fuer die Legacy-Migration deckt alle drei verwendeten requestIds ab
+und ruft `finishLegacyMigrationEntry(ctx, false, ...)`, die den naechsten
+Eintrag anstoesst statt haengen zu bleiben; die Schleife terminiert mit
+einer Zusammenfassung (nur geloggt, siehe unten) selbst wenn jeder
+verbleibende Eintrag so fehlschlaegt.
+
+**NFC während Wizard weg** -- bereits vorhanden: QuickWeight/
+AdvancedWeight lesen die Spoolman-ID einmalig aus `stagingState.spoolId`
+(selbst per `requestStagingSpool()` geladen) beim Start in
+`quickWeight.spoolId`/`advancedWeight.spoolId` und verwenden diese
+gespeicherte Kopie beim Bestaetigen weiter -- unabhaengig vom physisch
+noch aufgelegten Tag; ein Entfernen des Tags waehrend des Wiegens kann die
+Spoolman-Zuordnung nicht verfaelschen.
+
+**Queue voll** -- bereits vorhanden: `sendWeightUpdate()` sowie die
+Legacy-Migrations-Sendehelfer pruefen `xQueueSend` explizit; schlaegt das
+Senden fehl, wird der jeweilige Zustand zurueckgesetzt und (im
+interaktiven Wiege-Fall) ein Fehlerdialog gezeigt statt eines
+haengenbleibenden Fortschrittsbalkens.
+
+**Antwort spät -- echte Lücke, behoben:** `SpoolmanError` fuer
+`weightUpdate` prueft bereits `weightUpdate.active && event.requestId ==
+weightUpdate.requestId`, der Erfolgspfad (`SpoolmanWeightUpdated`,
+`AppTask.cpp` ~4503) tat das bisher nicht -- er uebernahm jede
+eintreffende Antwort bedingungslos. Jetzt mit demselben Abgleich versehen;
+eine veraltete/ueberholte Antwort wird geloggt und verworfen statt einen
+unerwarteten Erfolgsdialog auszuloesen. Die feste Wiederverwendung der
+Legacy-Migrations-requestIds ueber alle Eintraege hinweg ist dagegen
+unproblematisch: die Migrationsschleife ist strikt seriell (der naechste
+Eintrag wird erst aus `finishLegacyMigrationEntry()` heraus angestossen,
+nachdem die Antwort des vorherigen vollstaendig verarbeitet ist), es kann
+also nie mehr als eine Anfrage gleichzeitig offen sein.
+
+**Abbruch -- echte Lücke, behoben:** `Cancel` setzte bereits
+`quickWeight.pending`/`advancedWeight.pending` zurueck, ruehrte aber
+`weightUpdate` nie an -- brach der Nutzer *nach* dem Bestaetigen ab
+(waehrend die Spoolman-Anfrage noch lief), blieb `weightUpdate.active`
+bestehen; die spaeter eintreffende Antwort loeste dann einen unerwarteten
+Erfolgs-/Fehlerdialog fuer einen laengst verlassenen Vorgang aus. Jetzt
+setzt `Cancel` `weightUpdate = {}` zurueck -- die eigentliche
+HTTP-Anfrage laeuft serverseitig zwar weiter (kein Abbruchkommando an
+SpoolmanTask, wie bei anderen Pending-Zustandsautomaten dieses Projekts
+auch), ihre Antwort wird dank des neuen Abgleichs oben aber korrekt als
+veraltet erkannt und verworfen.
+
+**doppelte Messung** -- bereits vorhanden fuer den Fall selbst
+(`ScaleStable`/`ScaleUnstable` loesen nie automatisch eine Messung aus;
+ein echtes Doppel-Tippen auf "Bestaetigen" wird durch
+`quickWeight.pending`/`advancedWeight.pending`, vor dem Senden auf
+`false` gesetzt, dedupliziert). Der einzige Restfall -- ein zweiter
+Wiegevorgang (anderer Spool/Bildschirm) waehrend der erste noch offen
+ist -- ist derselbe Mechanismus wie "Antwort spät"; zusaetzlich zur
+Antwort-Absicherung jetzt auch am Start blockiert:
+QuickWeightConfirmation/AdvancedWeightConfirmation lehnen einen neuen
+Wiegevorgang mit "Wiegevorgang läuft bereits" ab, solange
+`weightUpdate.active` noch gesetzt ist.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 10.7 Langzeit
 

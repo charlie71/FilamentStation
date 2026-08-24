@@ -1,12 +1,12 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/1",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/24",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/6",
     "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/4",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
     "selectedThemeColorObject": "[FilamentStation.eez-project]:/colors/6",
     "selectedFontObject": "[FilamentStation.eez-project]:/fonts/1",
-    "selectedBitmapObject": "[FilamentStation.eez-project]:/bitmaps/23",
+    "selectedBitmapObject": "[FilamentStation.eez-project]:/bitmaps/14",
     "subnavigationSelectedItems": {
       "variables-tab/sub-navigation/selected-item": "Global"
     }
@@ -29,7 +29,7 @@
           },
           {
             "type": "border",
-            "selected": 0,
+            "selected": 2,
             "size": 216.44739532470703,
             "location": "right",
             "children": [
@@ -131,7 +131,6 @@
                   "type": "tabset",
                   "id": "#e9618473-7f24-4b75-af7c-4b03ffdc25e5",
                   "weight": 2,
-                  "selected": 1,
                   "enableClose": false,
                   "children": [
                     {
@@ -204,10 +203,10 @@
                 {
                   "type": "tab",
                   "id": "#e368c9bf-289f-49c9-9192-04b65e68fad0",
-                  "name": "SCR_HOME",
+                  "name": "SCR_BAMBU_SPOOL_TYPE",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/1",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/24",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -1174,7 +1173,7 @@
           "x": -183.77533556673146,
           "y": -151.60057444215036
         },
-        "scale": 1.5
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1188,9 +1187,7 @@
       "selectionBack": {
         "0": {
           "0": {
-            "0": {
-              "$selected": true
-            }
+            "0": {}
           },
           "2": {},
           "3": {},
@@ -1201,6 +1198,7 @@
             "0": {}
           },
           "10": {},
+          "14": {},
           "15": {},
           "16": {},
           "17": {}
@@ -1209,9 +1207,9 @@
       "transform": {
         "translate": {
           "x": -126.81668158664968,
-          "y": -120.40239415544804
+          "y": -10.85788648163674
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1225,16 +1223,19 @@
       "selectionBack": {
         "0": {
           "0": {
-            "1": {
-              "$selected": true
-            }
+            "1": {}
           },
-          "1": {}
+          "1": {},
+          "7": {},
+          "8": {},
+          "14": {
+            "$selected": true
+          }
         }
       },
       "transform": {
         "translate": {
-          "x": -88.28789902634725,
+          "x": -197.83240670015854,
           "y": -159.82127645612943
         },
         "scale": 0.9
@@ -1563,17 +1564,22 @@
         "0": {
           "0": {
             "0": {},
-            "1": {
-              "$selected": true
-            },
+            "1": {},
             "3": {}
           },
+          "2": {
+            "0": {
+              "$selected": true
+            }
+          },
+          "3": {},
           "5": {},
           "7": {},
           "9": {},
           "10": {},
           "11": {},
-          "12": {}
+          "12": {},
+          "15": {}
         }
       },
       "transform": {
@@ -1581,7 +1587,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1596,14 +1602,17 @@
         "0": {
           "0": {
             "0": {},
-            "1": {
-              "$selected": true
-            },
+            "1": {},
             "2": {},
             "3": {}
           },
           "1": {},
           "5": {},
+          "9": {
+            "0": {
+              "$selected": true
+            }
+          },
           "10": {
             "0": {}
           },
@@ -1617,7 +1626,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1651,7 +1660,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1683,7 +1692,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1698,14 +1707,14 @@
         "0": {
           "0": {
             "0": {},
-            "1": {
-              "$selected": true
-            },
+            "1": {},
             "2": {},
             "3": {}
           },
           "1": {},
-          "2": {},
+          "2": {
+            "$selected": true
+          },
           "3": {},
           "4": {},
           "5": {},
@@ -1719,7 +1728,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1754,7 +1763,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1791,7 +1800,7 @@
           "x": -240,
           "y": -269.54450767381127
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1831,7 +1840,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1851,9 +1860,15 @@
             "3": {}
           },
           "1": {},
+          "2": {
+            "$selected": true
+          },
           "3": {},
           "4": {},
           "8": {},
+          "9": {
+            "$selected": true
+          },
           "10": {},
           "11": {},
           "12": {}
@@ -1864,7 +1879,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1896,7 +1911,7 @@
           "x": -240,
           "y": -60.000003152642265
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1930,7 +1945,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1945,13 +1960,14 @@
         "0": {
           "0": {
             "0": {},
-            "1": {
-              "$selected": true
-            },
+            "1": {},
             "2": {},
             "3": {}
           },
           "1": {},
+          "2": {
+            "$selected": true
+          },
           "4": {},
           "5": {},
           "7": {},
@@ -1964,7 +1980,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1983,12 +1999,12 @@
             "2": {},
             "3": {}
           },
-          "1": {
-            "$selected": true
-          },
+          "1": {},
           "2": {},
           "3": {},
+          "4": {},
           "5": {},
+          "7": {},
           "9": {},
           "11": {},
           "12": {}
@@ -1999,7 +2015,7 @@
           "x": -240,
           "y": -259.99999684735775
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -2024,7 +2040,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -2043,13 +2059,14 @@
             "2": {},
             "3": {}
           },
-          "1": {
-            "$selected": true
-          },
+          "1": {},
           "2": {},
           "3": {},
           "6": {},
-          "8": {}
+          "8": {},
+          "9": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -2057,7 +2074,7 @@
           "x": -240,
           "y": -50.455492326188704
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -2091,7 +2108,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -2106,15 +2123,24 @@
         "0": {
           "0": {
             "0": {},
-            "1": {
-              "$selected": true
-            },
+            "1": {},
             "2": {},
             "3": {}
           },
           "1": {},
           "2": {},
-          "6": {},
+          "3": {
+            "$selected": true
+          },
+          "4": {
+            "$selected": true
+          },
+          "5": {
+            "$selected": true
+          },
+          "6": {
+            "$selected": true
+          },
           "7": {},
           "9": {},
           "11": {}
@@ -2125,7 +2151,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -2158,7 +2184,7 @@
           "x": -179.2998374135237,
           "y": -160
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -2177,22 +2203,25 @@
             "2": {},
             "3": {}
           },
-          "1": {
-            "$selected": true
-          },
+          "1": {},
           "2": {},
           "3": {},
+          "4": {},
           "5": {},
           "6": {},
-          "9": {}
+          "9": {},
+          "10": {
+            "$selected": true
+          },
+          "11": {}
         }
       },
       "transform": {
         "translate": {
           "x": -240,
-          "y": -160
+          "y": -269.54450767381127
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -2211,12 +2240,16 @@
             "2": {},
             "3": {}
           },
-          "1": {
-            "$selected": true
-          },
+          "1": {},
           "2": {},
           "3": {},
-          "5": {},
+          "4": {
+            "0": {}
+          },
+          "5": {
+            "0": {}
+          },
+          "7": {},
           "9": {},
           "11": {}
         }
@@ -2226,7 +2259,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,

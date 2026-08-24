@@ -2247,6 +2247,14 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       quickWeight.pending = false;
       advancedWeight.pending = false;
       pendingTagOperation = PendingTagOperation::None;
+      // A cancel while the "Gewicht speichern" progress overlay is up (the
+      // Spoolman UpdateWeight request itself is already in flight, see
+      // QuickWeightConfirmation/AdvancedWeightConfirmation above) cannot
+      // actually abort that request -- but must stop AppTask from treating
+      // its eventual response as still belonging to this now-abandoned
+      // wizard (Robustheit/Diagnose, TASKS.md 10.6; see the matching guard
+      // on SpoolmanWeightUpdated/weightUpdate.active elsewhere).
+      weightUpdate = {};
       return;
 
     case rtos::UiActionType::Confirm: {
@@ -2461,6 +2469,19 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                       "Der Messwert ist nicht mehr stabil. Bitte erneut wiegen.");
           return;
         }
+        // Ein zweiter Wiegevorgang (anderer Spool, anderer Bildschirm) waehrend
+        // die erste Spoolman-Anfrage noch offen ist wuerde deren Tracking-
+        // Zustand ueberschreiben -- die spaeter eintreffende erste Antwort
+        // wuerde dann faelschlich auf den zweiten Vorgang angewendet
+        // (Robustheit/Diagnose, TASKS.md 10.6).
+        if (weightUpdate.active) {
+          quickWeight.pending = false;
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Wiegevorgang l\xC3\xA4uft bereits",
+                      "Es wird noch ein anderer Wiegevorgang gespeichert. Bitte warten.");
+          return;
+        }
         quickWeight.pending = false;
         weightUpdate = {};
         weightUpdate.active = true;
@@ -2491,6 +2512,15 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
           return;
         }
         if (!advancedWeight.pending) return;
+        // See the matching guard in QuickWeightConfirmation above.
+        if (weightUpdate.active) {
+          advancedWeight.pending = false;
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Wiegevorgang l\xC3\xA4uft bereits",
+                      "Es wird noch ein anderer Wiegevorgang gespeichert. Bitte warten.");
+          return;
+        }
         advancedWeight.pending = false;
         weightUpdate = {};
         weightUpdate.active = true;
@@ -4479,6 +4509,21 @@ void appTask(void* parameter) {
                     "WLAN-Verbindung fehlgeschlagen", event.text);
       }
     } else if (event.type == rtos::AppEventType::SpoolmanWeightUpdated) {
+      // Ignore a stale/superseded response: either the user cancelled this
+      // weigh-wizard (Cancel resets weightUpdate, see there) or -- now that
+      // starting a second one while the first is in flight is rejected
+      // above -- a response for a request that is no longer the tracked one
+      // arrived late. Applying it regardless would clobber whatever the
+      // current wizard state actually is and pop an unexpected dialog
+      // (Robustheit/Diagnose, TASKS.md 10.6).
+      if (!weightUpdate.active || event.requestId != weightUpdate.requestId) {
+        FS_LOGW(services::LogComponent::App,
+                "Ignoring stale SpoolmanWeightUpdated request_id=%lu "
+                "spool_id=%lu",
+                static_cast<unsigned long>(event.requestId),
+                static_cast<unsigned long>(event.spoolId));
+        continue;
+      }
       const bool advanced = weightUpdate.advanced;
       weightUpdate = {};
       quickWeight.lastMeasurementGrams = scaleWeightGrams();
