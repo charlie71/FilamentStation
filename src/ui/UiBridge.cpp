@@ -887,12 +887,18 @@ void setControlText(lv_obj_t* object, const char* text) {
   lv_label_set_text(label == nullptr ? object : label, text);
 }
 
-void setButtonColors(lv_obj_t* button, std::uint32_t backgroundRgb) {
-  lv_obj_set_style_bg_color(button, lv_color_hex(backgroundRgb), LV_PART_MAIN);
+// Standard-Luma-Gewichtung (Rec. 601), Schwelle 150000 entspricht ~59%
+// Helligkeit -- ab da gilt ein Hintergrund als hell genug fuer dunklen Text.
+bool isLightBackground(std::uint32_t backgroundRgb) {
   const std::uint32_t red = (backgroundRgb >> 16U) & 0xFFU;
   const std::uint32_t green = (backgroundRgb >> 8U) & 0xFFU;
   const std::uint32_t blue = backgroundRgb & 0xFFU;
-  const bool useDarkText = (red * 299U + green * 587U + blue * 114U) > 150000U;
+  return (red * 299U + green * 587U + blue * 114U) > 150000U;
+}
+
+void setButtonColors(lv_obj_t* button, std::uint32_t backgroundRgb) {
+  lv_obj_set_style_bg_color(button, lv_color_hex(backgroundRgb), LV_PART_MAIN);
+  const bool useDarkText = isLightBackground(backgroundRgb);
   lv_obj_t* label = buttonLabel(button);
   if (label != nullptr) {
     lv_obj_set_style_text_color(label,
@@ -1947,12 +1953,12 @@ void bindGeneratedWidgets() {
        }}) {
     lv_obj_add_flag(container, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
   }
-  bindClick(objects.home_tray_1, trayClicked, 0);
-  bindClick(objects.home_tray_2, trayClicked, 1);
-  bindClick(objects.home_tray_3, trayClicked, 2);
-  bindClick(objects.home_tray_4, trayClicked, 3);
-  bindClick(objects.home_external, trayClicked, 0xFF);
-  bindClick(objects.home_staging, stagingClicked);
+  bindClick(objects.home_tray_1__tray, trayClicked, 0);
+  bindClick(objects.home_tray_2__tray, trayClicked, 1);
+  bindClick(objects.home_tray_3__tray, trayClicked, 2);
+  bindClick(objects.home_tray_4__tray, trayClicked, 3);
+  bindClick(objects.home_tray_external__tray, trayClicked, 0xFF);
+  bindClick(objects.staging__staging, stagingClicked);
 
   bindClick(objects.select_printer_1, printerClicked, 1);
   bindClick(objects.select_printer_2, printerClicked, 2);
@@ -2244,29 +2250,36 @@ void updatePrinterList() {
   setControlText(objects.select_bottom_status, "Drucker verwalten");
 }
 
-void updateTrayButton(lv_obj_t* button, lv_obj_t* swatch1, lv_obj_t* swatch2,
-                      rtos::PrinterId printerId,
-                      std::uint8_t amsId, std::uint8_t trayId,
-                      const char* title) {
+// Zielobjekte entsprechen den Sub-Widgets der CMP_TRAY_CARD-Komponente
+// (ui-project, Nutzerwunsch 2026-08-23): "button" ist das eigentliche
+// klickbare EEZ-Objekt (Sub-Widget "tray", nicht der transparente
+// Kartenwrapper objects.home_tray_N selbst).
+void updateTrayButton(lv_obj_t* button, lv_obj_t* label, lv_obj_t* swatch1,
+                      lv_obj_t* swatch2, lv_obj_t* spoolIdContainer,
+                      lv_obj_t* spoolIdLabel, lv_obj_t* nozzleIcon,
+                      rtos::PrinterId printerId, std::uint8_t amsId,
+                      std::uint8_t trayId, const char* title) {
   (void)printerId;  // Real tray data (see AppTask::syncAmsToUi) is only
                     // ever synced for the printer currently in focus.
   (void)title;  // Nutzerwunsch (2026-08-22): kein "Slot N"/"Extern"-Titel
-                // mehr, nur noch die vier Infozeilen unten -- die feste
-                // Bildschirmposition zeigt weiterhin, welcher Slot gemeint
-                // ist (analog zu den AMS-Buttons).
+                // mehr -- die feste Bildschirmposition zeigt weiterhin,
+                // welcher Slot gemeint ist (analog zu den AMS-Buttons).
   const TrayUiEntry* tray = trayUiEntry(amsId, trayId);
-  char text[96];
+  char text[64];
   if (tray == nullptr || !tray->occupied) {
     std::snprintf(text, sizeof(text), "leer");
     setButtonColors(button, kColorNeutralGrey);
     updateHomeColorSwatches(swatch1, swatch2, {}, 0);
+    lv_obj_add_flag(spoolIdContainer, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(spoolIdLabel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(nozzleIcon, LV_OBJ_FLAG_HIDDEN);
   } else {
     // Material kommt real vom Drucker (tray->material). Restgewicht,
-    // Spoolman-ID und K-Faktor sind auf Nutzerwunsch vorerst Mockdaten:
-    // der Drucker kennt nur Material/Farbe (siehe docs/bambu-protocol.md);
-    // ein echter Abgleich mit der zugeordneten Spoolman-Spule
-    // (tray->spoolId, sofern von dieser App zugeordnet) fuer diese drei
-    // Werte ist noch nicht angebunden. externalTrayEntry hat kein
+    // Spoolman-ID, K-Faktor und "Duese aktiv" sind auf Nutzerwunsch
+    // vorerst Mockdaten: der Drucker kennt nur Material/Farbe (siehe
+    // docs/bambu-protocol.md); ein echter Abgleich mit der zugeordneten
+    // Spoolman-Spule (tray->spoolId, sofern von dieser App zugeordnet) fuer
+    // diese Werte ist noch nicht angebunden. externalTrayEntry hat kein
     // sinnvolles amsId/trayId (Sentinel 0xFF/0xFF) -- ein fester Seed 0
     // haelt die Mockformeln dafuer im plausiblen Bereich.
     const std::uint8_t mockSeed = amsId == 0xFF ? 0U : trayId;
@@ -2281,19 +2294,40 @@ void updateTrayButton(lv_obj_t* button, lv_obj_t* swatch1, lv_obj_t* swatch2,
     // (Flow-Dynamics-Kalibrierung, typischerweise 0.000-0.100).
     const std::uint32_t mockKFactorThousandths = 20U + mockSeed;
     std::snprintf(
-        text, sizeof(text), "%s\n%ug\n%lu\nK (%u.%03u)",
+        text, sizeof(text), "%s\n%ug\nK (%u.%03u)",
         tray->material[0] != '\0' ? tray->material : "belegt",
         static_cast<unsigned>(mockRemainingWeightGrams),
-        static_cast<unsigned long>(mockSpoolmanId),
         static_cast<unsigned>(mockKFactorThousandths / 1000U),
         static_cast<unsigned>(mockKFactorThousandths % 1000U));
     const std::array<std::uint32_t, models::kMaximumFilamentColors> colors{
         parseTrayColorHex(tray->colorHex)};
     const std::uint8_t colorCount = tray->colorHex[0] != '\0' ? 1U : 0U;
-    setButtonColors(button, colorCount > 0 ? colors[0] : kColorNeutralGrey);
+    const std::uint32_t backgroundColor =
+        colorCount > 0 ? colors[0] : kColorNeutralGrey;
+    setButtonColors(button, backgroundColor);
     updateHomeColorSwatches(swatch1, swatch2, colors, colorCount);
+
+    lv_obj_remove_flag(spoolIdContainer, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(spoolIdLabel, LV_OBJ_FLAG_HIDDEN);
+    char spoolIdText[12];
+    std::snprintf(spoolIdText, sizeof(spoolIdText), "%lu",
+                  static_cast<unsigned long>(mockSpoolmanId));
+    setControlText(spoolIdLabel, spoolIdText);
+
+    // Mock: das erste belegte Fach je AMS (bzw. das externe Fach, sofern
+    // belegt) gilt als "aktiv" -- eine echte Zuordnung zur tatsaechlich
+    // druckenden Duese existiert im Datenmodell noch nicht.
+    const bool mockActive = mockSeed == 0U;
+    if (mockActive) {
+      lv_obj_remove_flag(nozzleIcon, LV_OBJ_FLAG_HIDDEN);
+      lv_image_set_src(nozzleIcon, isLightBackground(backgroundColor)
+                                        ? &img_3_d_printer_nozzle
+                                        : &img_3_d_printer_nozzle_w);
+    } else {
+      lv_obj_add_flag(nozzleIcon, LV_OBJ_FLAG_HIDDEN);
+    }
   }
-  setButtonText(button, text);
+  setControlText(label, text);
 }
 
 void updateHomeContent() {
@@ -2349,21 +2383,38 @@ void updateHomeContent() {
     }
   }
 
-  updateTrayButton(objects.home_tray_1, objects.home_tray_1_1,
-                   objects.home_tray_1_2, currentPrinterId, currentAmsId, 0,
-                   "Slot 1");
-  updateTrayButton(objects.home_tray_2, objects.home_tray_2_1,
-                   objects.home_tray_2_2, currentPrinterId, currentAmsId, 1,
-                   "Slot 2");
-  updateTrayButton(objects.home_tray_3, objects.home_tray_3_1,
-                   objects.home_tray_3_2, currentPrinterId, currentAmsId, 2,
-                   "Slot 3");
-  updateTrayButton(objects.home_tray_4, objects.home_tray_4_1,
-                   objects.home_tray_4_2, currentPrinterId, currentAmsId, 3,
-                   "Slot 4");
-  updateTrayButton(objects.home_external, objects.home_external_1,
-                   objects.home_external_2, currentPrinterId, 0xFF, 0xFF,
-                   "Extern");
+  updateTrayButton(objects.home_tray_1__tray, objects.home_tray_1__label,
+                   objects.home_tray_1__color_1, objects.home_tray_1__color_2,
+                   objects.home_tray_1__spoolmanager_id_container,
+                   objects.home_tray_1__spoolmanager_id,
+                   objects.home_tray_1__nozzle_icon, currentPrinterId,
+                   currentAmsId, 0, "Slot 1");
+  updateTrayButton(objects.home_tray_2__tray, objects.home_tray_2__label,
+                   objects.home_tray_2__color_1, objects.home_tray_2__color_2,
+                   objects.home_tray_2__spoolmanager_id_container,
+                   objects.home_tray_2__spoolmanager_id,
+                   objects.home_tray_2__nozzle_icon, currentPrinterId,
+                   currentAmsId, 1, "Slot 2");
+  updateTrayButton(objects.home_tray_3__tray, objects.home_tray_3__label,
+                   objects.home_tray_3__color_1, objects.home_tray_3__color_2,
+                   objects.home_tray_3__spoolmanager_id_container,
+                   objects.home_tray_3__spoolmanager_id,
+                   objects.home_tray_3__nozzle_icon, currentPrinterId,
+                   currentAmsId, 2, "Slot 3");
+  updateTrayButton(objects.home_tray_4__tray, objects.home_tray_4__label,
+                   objects.home_tray_4__color_1, objects.home_tray_4__color_2,
+                   objects.home_tray_4__spoolmanager_id_container,
+                   objects.home_tray_4__spoolmanager_id,
+                   objects.home_tray_4__nozzle_icon, currentPrinterId,
+                   currentAmsId, 3, "Slot 4");
+  updateTrayButton(objects.home_tray_external__tray,
+                   objects.home_tray_external__label,
+                   objects.home_tray_external__color_1,
+                   objects.home_tray_external__color_2,
+                   objects.home_tray_external__spoolmanager_id_container,
+                   objects.home_tray_external__spoolmanager_id,
+                   objects.home_tray_external__nozzle_icon, currentPrinterId,
+                   0xFF, 0xFF, "Extern");
 
   const auto& staging = stagingState;
   char stagingText[64];
@@ -2374,21 +2425,45 @@ void updateHomeContent() {
   // Druckerkonfiguration ungleich 0 ist. Der Vergleich war folglich immer
   // falsch und zeigte den Staging-Button auf Home immer als leer an, auch
   // wenn tatsaechlich eine Spule gestagt war.
+  const std::uint32_t stagingBackgroundColor =
+      staging.colorCount > 0 ? staging.colorRgb[0] : kColorNeutralGrey;
   if (staging.spoolId != 0) {
-    std::snprintf(stagingText, sizeof(stagingText), "Staging\n%s #%lu\n%.0fg",
-                  staging.material, static_cast<unsigned long>(staging.spoolId),
-                  static_cast<double>(staging.remainingWeightGrams));
-    setButtonColors(objects.home_staging,
-                    staging.colorCount > 0 ? staging.colorRgb[0] : kColorNeutralGrey);
-    updateHomeColorSwatches(objects.home_staging_1, objects.home_staging_2,
+    // K-Faktor ist auf Nutzerwunsch vorerst Mockdaten (wie bei den
+    // AMS-Faechern, siehe updateTrayButton()); staging.spoolId dagegen ist
+    // eine echte Spoolman-ID (ueber den Spulen-Picker zugeordnet), keine
+    // Mockdaten -- direkt anzeigen statt eine erfundene ID zu generieren.
+    const std::uint32_t mockKFactorThousandths =
+        20U + static_cast<std::uint32_t>(staging.spoolId % 5U);
+    std::snprintf(stagingText, sizeof(stagingText), "%s\n%.0fg\nK (%u.%03u)",
+                  staging.material,
+                  static_cast<double>(staging.remainingWeightGrams),
+                  static_cast<unsigned>(mockKFactorThousandths / 1000U),
+                  static_cast<unsigned>(mockKFactorThousandths % 1000U));
+    setButtonColors(objects.staging__staging, stagingBackgroundColor);
+    updateHomeColorSwatches(objects.staging__color_3, objects.staging__color_4,
                             staging.colorRgb, staging.colorCount);
+    lv_obj_remove_flag(objects.staging__spoolmanager_id_container,
+                       LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(objects.staging__spoolmanager_id, LV_OBJ_FLAG_HIDDEN);
+    char spoolIdText[12];
+    std::snprintf(spoolIdText, sizeof(spoolIdText), "%lu",
+                  static_cast<unsigned long>(staging.spoolId));
+    setControlText(objects.staging__spoolmanager_id, spoolIdText);
   } else {
-    std::snprintf(stagingText, sizeof(stagingText), "Staging\nleer");
-    setButtonColors(objects.home_staging, kColorNeutralGrey);
-    updateHomeColorSwatches(objects.home_staging_1, objects.home_staging_2, {},
-                            0);
+    std::snprintf(stagingText, sizeof(stagingText), "leer");
+    setButtonColors(objects.staging__staging, kColorNeutralGrey);
+    updateHomeColorSwatches(objects.staging__color_3, objects.staging__color_4,
+                            {}, 0);
+    lv_obj_add_flag(objects.staging__spoolmanager_id_container,
+                    LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(objects.staging__spoolmanager_id, LV_OBJ_FLAG_HIDDEN);
   }
-  setButtonText(objects.home_staging, stagingText);
+  setControlText(objects.staging__label, stagingText);
+  lv_obj_set_style_text_color(
+      objects.staging__staging_label,
+      lv_color_hex(isLightBackground(stagingBackgroundColor) ? kColorTextDark
+                                                              : kColorTextWhite),
+      LV_PART_MAIN);
 
   updateWeightDisplays();
 }
@@ -3192,7 +3267,7 @@ void processUiCommand(const rtos::UiCommand& command) {
         stagingState = {};
         stagingSpoolState = {};
         updateStagingContent();
-        // Home's staging widget (objects.home_staging) is only repainted by
+        // Home's staging widget (objects.staging) is only repainted by
         // updateHomeContent(); without this call it stayed stale until some
         // unrelated event happened to redraw Home, even after navigating
         // back there.

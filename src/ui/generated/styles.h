@@ -35,10 +35,11 @@ lv_style_t *get_style_label_header_MAIN_DEFAULT();
 void add_style_label_header(lv_obj_t *obj);
 void remove_style_label_header(lv_obj_t *obj);
 
-// Style: LabelStandart_1
-lv_style_t *get_style_label_standart_1_MAIN_DEFAULT();
-void add_style_label_standart_1(lv_obj_t *obj);
-void remove_style_label_standart_1(lv_obj_t *obj);
+// Style: LabelStandart_W
+lv_style_t *get_style_label_standart_w_MAIN_DEFAULT();
+lv_style_t *get_style_label_standart_w_MAIN_PRESSED();
+void add_style_label_standart_w(lv_obj_t *obj);
+void remove_style_label_standart_w(lv_obj_t *obj);
 
 #ifdef __cplusplus
 }

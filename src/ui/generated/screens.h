@@ -77,12 +77,6 @@ typedef struct _objects_t {
     lv_obj_t *home_ams_2;
     lv_obj_t *home_active_ams;
     lv_obj_t *home_ams_4;
-    lv_obj_t *home_tray_1;
-    lv_obj_t *home_tray_2;
-    lv_obj_t *home_tray_3;
-    lv_obj_t *home_tray_4;
-    lv_obj_t *home_external;
-    lv_obj_t *home_staging;
     lv_obj_t *home_weight;
     lv_obj_t *home_bottom_status;
     lv_obj_t *home_ams_1_1;
@@ -101,19 +95,54 @@ typedef struct _objects_t {
     lv_obj_t *home_ams_4_2;
     lv_obj_t *home_ams_4_3;
     lv_obj_t *home_ams_4_4;
-    lv_obj_t *home_tray_1_1;
-    lv_obj_t *home_tray_1_2;
-    lv_obj_t *home_tray_2_1;
-    lv_obj_t *home_tray_2_2;
-    lv_obj_t *home_tray_3_1;
-    lv_obj_t *home_tray_3_2;
-    lv_obj_t *home_tray_4_1;
-    lv_obj_t *home_tray_4_2;
-    lv_obj_t *home_external_1;
-    lv_obj_t *home_external_2;
-    lv_obj_t *home_staging_1;
-    lv_obj_t *home_staging_2;
-    lv_obj_t *obj0;
+    lv_obj_t *home_tray_2;
+    lv_obj_t *home_tray_2__tray;
+    lv_obj_t *home_tray_2__label;
+    lv_obj_t *home_tray_2__color_1;
+    lv_obj_t *home_tray_2__color_2;
+    lv_obj_t *home_tray_2__spoolmanager_id_container;
+    lv_obj_t *home_tray_2__spoolmanager_id;
+    lv_obj_t *home_tray_2__nozzle_icon;
+    lv_obj_t *home_tray_3;
+    lv_obj_t *home_tray_3__tray;
+    lv_obj_t *home_tray_3__label;
+    lv_obj_t *home_tray_3__color_1;
+    lv_obj_t *home_tray_3__color_2;
+    lv_obj_t *home_tray_3__spoolmanager_id_container;
+    lv_obj_t *home_tray_3__spoolmanager_id;
+    lv_obj_t *home_tray_3__nozzle_icon;
+    lv_obj_t *home_tray_4;
+    lv_obj_t *home_tray_4__tray;
+    lv_obj_t *home_tray_4__label;
+    lv_obj_t *home_tray_4__color_1;
+    lv_obj_t *home_tray_4__color_2;
+    lv_obj_t *home_tray_4__spoolmanager_id_container;
+    lv_obj_t *home_tray_4__spoolmanager_id;
+    lv_obj_t *home_tray_4__nozzle_icon;
+    lv_obj_t *home_tray_external;
+    lv_obj_t *home_tray_external__tray;
+    lv_obj_t *home_tray_external__label;
+    lv_obj_t *home_tray_external__color_1;
+    lv_obj_t *home_tray_external__color_2;
+    lv_obj_t *home_tray_external__spoolmanager_id_container;
+    lv_obj_t *home_tray_external__spoolmanager_id;
+    lv_obj_t *home_tray_external__nozzle_icon;
+    lv_obj_t *home_tray_1;
+    lv_obj_t *home_tray_1__tray;
+    lv_obj_t *home_tray_1__label;
+    lv_obj_t *home_tray_1__color_1;
+    lv_obj_t *home_tray_1__color_2;
+    lv_obj_t *home_tray_1__spoolmanager_id_container;
+    lv_obj_t *home_tray_1__spoolmanager_id;
+    lv_obj_t *home_tray_1__nozzle_icon;
+    lv_obj_t *staging;
+    lv_obj_t *staging__staging;
+    lv_obj_t *staging__label;
+    lv_obj_t *staging__color_3;
+    lv_obj_t *staging__color_4;
+    lv_obj_t *staging__spoolmanager_id_container;
+    lv_obj_t *staging__spoolmanager_id;
+    lv_obj_t *staging__staging_label;
     lv_obj_t *select_header;
     lv_obj_t *select_header_spoolman;
     lv_obj_t *select_header_wifi;
@@ -543,9 +572,11 @@ enum Colors {
     COLOR_ID_BUTTON_TEXT_DISABLED,
     COLOR_ID_BUTTON_NEUTRAL_ACTIVE,
     COLOR_ID_BUTTON_DANGER_ACTIVE,
+    COLOR_ID_FILAMENT_TEXT_LIGHT,
+    COLOR_ID_FILAMENT_TEXT_DARK,
 };
 void change_color_theme(uint32_t themeIndex);
-extern uint32_t theme_colors[1][6];
+extern uint32_t theme_colors[1][8];
 extern uint32_t active_theme_index;
 
 #ifdef __cplusplus

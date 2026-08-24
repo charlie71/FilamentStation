@@ -29,6 +29,8 @@ extern const lv_img_dsc_t img_wifi_disconnected_w;
 extern const lv_img_dsc_t img_spoolman_disconneced;
 extern const lv_img_dsc_t img_bambulab_logo;
 extern const lv_img_dsc_t img_spoolman_logo;
+extern const lv_img_dsc_t img_3_d_printer_nozzle;
+extern const lv_img_dsc_t img_3_d_printer_nozzle_w;
 
 #ifndef EXT_IMG_DESC_T
 #define EXT_IMG_DESC_T
@@ -38,7 +40,7 @@ typedef struct _ext_img_desc_t {
 } ext_img_desc_t;
 #endif
 
-extern const ext_img_desc_t images[22];
+extern const ext_img_desc_t images[24];
 
 #ifdef __cplusplus
 }

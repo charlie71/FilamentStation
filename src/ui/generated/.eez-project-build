@@ -13,6 +13,8 @@
     "ui.h",
     "ui_font_ui_german16.c",
     "ui_font_ui_german18_bold.c",
+    "ui_image_3_d_printer_nozzle.c",
+    "ui_image_3_d_printer_nozzle_w.c",
     "ui_image_3_d_printer_w.c",
     "ui_image_back_w.c",
     "ui_image_bambulab_logo.c",

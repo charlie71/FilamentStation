@@ -1417,6 +1417,68 @@ Swatches bleiben bei `home_tray_1..4`/`home_external` deshalb vorerst leer
 bestaetigt (zweimal, wegen der Duplikat-Kollision), Build (0 Warnungen) +
 52 native Tests danach gruen, geflasht.
 
+Nachtrag (2026-08-23, CMP_TRAY_CARD-Komponente, Nutzerumbau + Code-Anpassung):
+Nutzer hat die Home-Screen-Tray-Buttons in EEZ Studio komplett auf eine
+wiederverwendbare Komponente umgestellt (`CMP_TRAY_CARD`, 5 Instanzen:
+`home_tray_1..4`, `home_tray_external` -- ersetzt das bisherige
+`home_external`). EEZ generiert Komponenten ueber eine gemeinsame
+`create_user_widget_cmp_tray_card()`-Funktion mit Index-Offset
+(`((lv_obj_t**)&objects)[startWidgetIndex + N]`); jede Instanz bekommt ihre
+Sub-Widgets als `objects.home_tray_<N>__<name>` (doppelter Unterstrich):
+`__tray` (das eigentliche `LVGLButtonWidget`, `home_tray_N` selbst ist nur
+noch ein transparenter Wrapper), `__label`, `__color_1`/`__color_2` (loesen
+die alten `home_tray_N_1/_2`-Swatches ab, gleiche Rolle), neu
+`__spoolmanager_id_container`/`__spoolmanager_id` (Spoolman-ID-Badge) und
+`__nozzle_icon` (Duesen-Icon fuer "Filament aktiv").
+
+`UiBridge.cpp` entsprechend angepasst:
+* `bindClick()` und alle Farb-/Text-Setter zielen jetzt auf `__tray` statt
+  auf den Wrapper.
+* `updateTrayButton()` um vier Parameter erweitert (`label`,
+  `spoolIdContainer`, `spoolIdLabel`, `nozzleIcon`); Spoolman-ID (weiterhin
+  Mockdaten wie Restgewicht/K-Faktor, siehe bisherige Kommentare) wandert
+  aus dem kombinierten Slot-Text in das eigene `spoolmanager_id`-Label um,
+  Container + Label werden bei leerem Fach versteckt (`LV_OBJ_FLAG_HIDDEN`).
+* Neu: "Duese aktiv"-Anzeige (`nozzle_icon`), ebenfalls Mockdaten -- da es
+  im Datenmodell noch keine echte "aktuell druckende Duese"-Zuordnung gibt,
+  gilt das erste belegte Fach je AMS (bzw. das externe Fach) als Mock-Regel
+  als aktiv. Icon-Variante (`img_3_d_printer_nozzle` dunkel /
+  `img_3_d_printer_nozzle_w` hell) richtet sich nach der Helligkeit der
+  Button-Hintergrundfarbe -- dafuer `setButtonColors()`s bisher inline
+  berechnete Luma-Formel in eine wiederverwendbare `isLightBackground()`
+  extrahiert statt sie zu duplizieren.
+
+`project validate` nicht anwendbar (reine Nutzer-Umstrukturierung in EEZ
+Studio, kein Skript-Edit dieses Mal). Build (0 Warnungen) + 52 native Tests
+gruen, geflasht.
+
+Nachtrag (2026-08-23, CMP_STAGING_CARD-Komponente, Nutzerumbau + Code-
+Anpassung): Nutzer hat auch den Staging-Button auf SCR_HOME auf eine
+Komponente umgestellt (`CMP_STAGING_CARD`, eine Instanz, Name `staging`).
+Gleiches Namensschema wie bei CMP_TRAY_CARD: `objects.staging` ist nur
+noch der transparente Wrapper, `objects.staging__staging` das eigentliche
+`LVGLButtonWidget` (Klick-Ziel), `objects.staging__label` der Spoolinfo-
+Text. Abweichend vom Tray-Card-Wortlaut des Nutzers heissen die beiden
+Zusatzfarb-Container in der generierten Komponente tatsaechlich
+`staging__color_3`/`staging__color_4` (nicht `_1`/`_2` -- vermutlich um
+Bezeichner-Kollisionen mit CMP_TRAY_CARD innerhalb desselben EEZ-Projekts
+zu vermeiden), `objects.staging__spoolmanager_id_container`/
+`__spoolmanager_id` wie beim Tray-Card, und neu `objects.staging__staging_label`
+(rotiertes "STAGING"-Seitenlabel, `STAGING_LABEL` im Projekt) -- dessen
+Textfarbe laut Nutzervorgabe je nach Helligkeit der Button-Hintergrundfarbe
+umspringt (schwarz auf hell, weiss auf dunkel), separat gesetzt, da es
+nicht Kind-Label des Buttons ist und daher nicht automatisch von
+`setButtonColors()`s bestehender `buttonLabel()`-Logik erfasst wird.
+
+Anders als bei den AMS-Faechern ist `stagingState.spoolId` bereits eine
+echte (nicht gemockte) Spoolman-ID, ueber den Spulen-Picker zugeordnet --
+wird direkt angezeigt statt wie beim Tray-Card eine Mock-ID zu erfinden.
+Nur der K-Faktor bleibt Mockdaten (kein Feld in `UiStagingSummary`,
+analog zum Tray-Card-Mock).
+
+`project validate` nicht anwendbar (reine Nutzer-Umstrukturierung in EEZ
+Studio). Build (0 Warnungen) + 52 native Tests gruen, geflasht.
+
 **Noch offen / nächste Schritte:**
 * Zweite Theme-Zeile (Dark) + Umschalt-UI + Persistierung
   (`StorageDocumentType::Ui`, `/config/ui.json` existiert bereits als
@@ -1424,8 +1486,10 @@ bestaetigt (zweimal, wegen der Duplikat-Kollision), Build (0 Warnungen) +
 * Verbleibende dynamische Layout-Funktion `createStagingTableDecoration()`
   durch echte EEZ-Objekte ersetzen, analog zu den AMS-Containern.
 * Mehrfarb-AMS-Daten vom Bambu-Protokoll (`tray->colorHex` derzeit nur 1
-  Farbe) waeren Voraussetzung dafuer, dass die neuen
-  `home_tray_*_1/_2`-Swatches bei echten AMS-Faechern sichtbar werden.
+  Farbe) waeren Voraussetzung dafuer, dass `color_1`/`color_2` bei echten
+  AMS-Faechern sichtbar werden.
+* Echte "aktuell druckende Duese"-Zuordnung im Datenmodell nachruesten,
+  um das Mock-Verhalten von `nozzle_icon` durch echte Daten zu ersetzen.
 
 ## 9.2 Native Tags
 

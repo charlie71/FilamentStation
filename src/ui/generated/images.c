@@ -1,6 +1,6 @@
 #include "images.h"
 
-const ext_img_desc_t images[22] = {
+const ext_img_desc_t images[24] = {
     { "WIFI", &img_wifi },
     { "Scale", &img_scale },
     { "3D Printer W", &img_3_d_printer_w },
@@ -23,4 +23,6 @@ const ext_img_desc_t images[22] = {
     { "Spoolman disconneced", &img_spoolman_disconneced },
     { "bambulab logo", &img_bambulab_logo },
     { "spoolman logo", &img_spoolman_logo },
+    { "3D Printer Nozzle", &img_3_d_printer_nozzle },
+    { "3D Printer Nozzle W", &img_3_d_printer_nozzle_w },
 };
