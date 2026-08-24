@@ -2611,24 +2611,138 @@ Build (0 Warnungen), 52 native Tests gruen, geflasht.
 
 ## 10.3 NFC/Spoolman-Zuordnung
 
-* [ ] Tag während Read entfernen
-* [ ] Tag während Assign entfernen
-* [ ] zwei Tags schnell
-* [ ] unbekannter NDEF
-* [ ] beschädigter NDEF
-* [ ] falsche Payload-Spool-ID
-* [ ] Bambu nie schreiben
-* [ ] OpenPrintTag nie schreiben
-* [ ] OpenTag3D nie schreiben
-* [ ] Unknown nie schreiben
-* [ ] `extra.tag` Duplicate
-* [ ] Spule existiert nicht
-* [ ] Spoolman fällt während Assignment aus
-* [ ] Spoolman Update erfolgreich / NFC Write fehlschlägt
-* [ ] Clear extra.tag erfolgreich / NFC Clear fehlschlägt
-* [ ] UID-Wechsel vor Verify
-* [ ] Tag-Feld fehlt
-* [ ] Tag-Feld falscher Typ
+* [x] Tag während Read entfernen
+* [x] Tag während Assign entfernen
+* [x] zwei Tags schnell
+* [x] unbekannter NDEF
+* [x] beschädigter NDEF
+* [x] falsche Payload-Spool-ID
+* [x] Bambu nie schreiben
+* [x] OpenPrintTag nie schreiben
+* [x] OpenTag3D nie schreiben
+* [x] Unknown nie schreiben
+* [x] `extra.tag` Duplicate
+* [x] Spule existiert nicht
+* [x] Spoolman fällt während Assignment aus
+* [x] Spoolman Update erfolgreich / NFC Write fehlschlägt
+* [x] Clear extra.tag erfolgreich / NFC Clear fehlschlägt
+* [x] UID-Wechsel vor Verify
+* [x] Tag-Feld fehlt
+* [x] Tag-Feld falscher Typ
+
+Bestandsaufnahme (kein neuer Code, reine Verifikation + Belege): anders
+als bei 10.2 waren hier alle 18 Punkte bereits durch die bestehende
+NfcTask/AppTask/TagWritePolicy/NfcPayload-Architektur abgedeckt, in vielen
+Faellen mit expliziten nativen Tests. Geprueft per direkter Code-Lektuere
+(Punkte 1-2, 16) und per Explore-Agent-Audit mit anschliessender
+Stichprobenverifikation dreier kritischer Befunde (Rollback-Logik,
+Konflikt-Dialoge, Malformed-NDEF-Test -- alle drei per Read gegengeprueft
+und korrekt bestaetigt).
+
+**Tag während Read entfernen** -- `NfcTask.cpp`s `reportTag()` liest
+mehrere Bloecke nacheinander (Bambu-Keys, NDEF, Lock-Metadaten); jeder
+Einzelschritt scheitert einzeln und ohne Absturz (`raw.ndefPresent`
+bleibt false, `ntagWritableForPages()` liefert `resultKnown=false`), der
+Hauptloop erkennt die Entfernung im naechsten Zyklus normal.
+
+**Tag während Assign entfernen** -- `PendingTagAssignment`/
+`PendingTagRemoval` haben ein `tagRemoved`-Feld (`AppTask.cpp` ~189-237),
+ausgewertet u. a. bei 1802-1811 ("Tag wurde in Spoolman zugeordnet. Der
+Tag wurde entfernt..."), 4152-4180, 4996-5003 -- die Spoolman-Zuordnung
+bleibt bestehen (Server ist fuehrend), der Nutzer wird explizit gewarnt,
+dass die physische Tag-Nutzlast nicht aktualisiert wurde.
+
+**zwei Tags schnell** -- `InListPassiveTarget` fordert bewusst nur ein
+Target an (`NfcTask.cpp:311-334`, "Activate at most one passive
+ISO14443A target"), `uidLength` wird vor jedem Kopieren begrenzt
+(324-327). Ein waehrend der Entfernungsbestaetigung neu gefundenes Tag
+wird nicht verworfen, sondern direkt uebernommen (1222-1230).
+
+**unbekannter NDEF** -- `TagParserRegistry::parse()` faellt auf
+`TagFormat::Unknown` zurueck (`TagParserRegistry.cpp:93-114`, schreib-
+und loeschgeschuetzt per TagWritePolicy). Tests:
+`test_unknown_tag_has_no_definition_or_write_capability`,
+`test_unknown_data_does_not_match_rejecting_parser`.
+
+**beschädigter NDEF** -- `parseType2Ndef()` prueft jede TLV-Laenge/
+-Position gegen die Puffergrenze (`NfcPayload.cpp:67-113`), `readNdef()`
+in `NfcTask.cpp:532-596` ebenso (monoton wachsender, begrenzter
+Seitenzeiger). Test `test_malformed_payload_is_rejected` (per Read
+verifiziert: 3-Byte-TLV mit vorgetaeuschter Laenge 0x20 liefert
+`NfcPayloadType::Invalid`, kein Crash).
+
+**falsche Payload-Spool-ID** -- eine im NDEF codierte spoolId wird nie
+direkt vertraut: `pendingNativeConsistency` gleicht die UID gegen
+Spoolmans `extra.tag` ab und vergleicht das Ergebnis mit der Payload-ID;
+`NotFound` und Mismatch erzeugen unterschiedliche Konfliktdialoge
+("...in Spoolman fehlt die Zuordnung" bzw. "Spoolman ist fuehrend"),
+`AppTask.cpp:4914-4972` (per Read verifiziert).
+
+**Bambu/OpenPrintTag/OpenTag3D/Unknown nie schreiben** -- zentral in
+`nfc/TagWritePolicy.h`s `capabilitiesFor()`: fuer alle vier Formate
+bleibt `canWriteFilamentStationPayload`/`canClearFilamentStationPayload`
+auf ihrem Default `false` (Kommentar: "Their original data is never
+modified"). Test `test_assignment_effects_for_all_supported_tag_formats`
+prueft alle vier Formate explizit in einer Schleife
+(`MappingOnly`+`preserveOriginalContent=true`),
+`test_removal_effects_for_native_and_bambu_tags` das Gegenstueck fuer
+`removalEffect()`.
+
+**`extra.tag` Duplicate** -- `TagLookupStatus::Duplicate`/
+`SpoolmanTagDuplicate` ist in allen vier Ablaufpfaden verdrahtet:
+Native-Konsistenzpruefung (4871-4878, 4915-4926), Entfernen (4980-4986),
+Zuordnen (5023-5029) und die generische Tag-Aufloesung fuer nicht-native
+Tags (4648-4657, Catch-all bei 4843-4893).
+
+**Spule existiert nicht** -- eine in Spoolman auf eine mittlerweile
+geloeschte Spule zeigende `extra.tag`-Zuordnung scheitert beim Staging-
+Nachladen als `LoadSpool`-404, abgefangen im `SpoolmanError`-Handler
+(`AppTask.cpp:5259-5266`, "Spule konnte nicht geladen werden"); beim
+Gewichts-Update-Pfad zusaetzlich mit gezielterer Meldung ("Bitte eine
+vorhandene Spule neu auswaehlen", 5240-5257).
+
+**Spoolman fällt während Assignment aus** -- `SpoolmanError` deckt jede
+`pendingTagAssignment`-Stufe ausser `None`/`SelectingSpool`/
+`WritingPayload` (das laeuft ueber `NfcError`, siehe naechster Punkt) ab
+(`AppTask.cpp:5205-5238`, per Read verifiziert): `SettingTarget`
+versucht einen Rollback (`RollingBackPrevious`); scheitert der
+Rollback ebenfalls, erscheint ein eigener "Zuordnung inkonsistent"-
+Dialog statt eines generischen Fehlers.
+
+**Spoolman Update erfolgreich / NFC Write fehlschlägt** -- neben dem
+Tag-entfernt-Sonderfall (1804-1810) faengt ein genereller `NfcError`
+waehrend `WritingPayload` (4292-4299) jeden anderen Schreib-/
+Verifikationsfehler ab und ruft `reportAssignmentWriteFailure()` mit der
+Standardmeldung "Tag wurde zugeordnet... Ein erneuter Versuch ist
+moeglich" -- die Spoolman-Zuordnung bleibt in jedem Fall bestehen.
+
+**Clear extra.tag erfolgreich / NFC Clear fehlschlägt** -- symmetrisch:
+`NfcError` waehrend `ClearingPayload` (4301-4315) loggt
+`mapping_removed=true payload_cleared=false` und zeigt "Zuordnung
+teilweise entfernt"; ein UID-Wechsel beim Verify des Loeschens hat einen
+eigenen Zweig in der `NfcTagErased`-Behandlung (4250-4264).
+
+**UID-Wechsel vor Verify** -- `NfcTask.cpp`s `handleWrite()` vergleicht
+per `sameUid()` nach dem erneuten Scan gegen die urspruengliche UID
+(direkt gegengeprueft); `writePage()`s Retry-Schleife reaktiviert und
+prueft ebenfalls dieselbe UID, bevor ein Seiten-Schreibversuch wiederholt
+wird.
+
+**Tag-Feld fehlt** -- OpenPrintTags `parseMain()` verlangt das
+Pflichtfeld (Materialklasse) explizit vor Erfolg
+(`OpenPrintTag.cpp:194-291`), OpenTag3D lehnt fehlendes `material`/
+`vendor` ab (`OpenTag3D.cpp:116-123`); beide liefern `TagParseResult::
+Invalid` statt out-of-bounds zu lesen.
+
+**Tag-Feld falscher Typ** -- OpenPrintTags CBOR-Leser pruefen den
+Major-Type vor der Interpretation (`readUnsigned`/`readText`/
+`readColor`/`readNumber`, `OpenPrintTag.cpp:101-176`), jede Abweichung
+liefert `false` -> `Invalid`. Test
+`test_opentag3d_new_major_version_is_rejected_without_crash` (verfaelschtes
+Versionsfeld, erwartet `knownFormat=true, payloadValid=false`, kein
+Absturz).
+
+Kein Code geaendert -- reine Verifikation. Kein Build/Test/Flash noetig.
 
 ## 10.4 Netzwerk
 
