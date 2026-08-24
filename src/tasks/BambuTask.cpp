@@ -66,6 +66,12 @@ struct PrinterConnection {
   // MQTT session.
   std::uint32_t nextSequenceId = 1;
   PendingTrayAssignment pending{};
+  // See kBambuReconnectIntervalMs (Robustheit/Diagnose, TASKS.md 10.4): a
+  // dropped MQTT session (printer reboot, LAN hiccup) was previously never
+  // retried on its own -- only an explicit BambuCommandType::Connect
+  // (AppTask's connectAllEnabledPrinters(), itself only fired at boot and on
+  // WifiGotIp) ever reconnected. 0 allows an immediate first retry.
+  TickType_t lastReconnectAttemptAt = 0;
 };
 
 using PrinterConnections =
@@ -631,6 +637,17 @@ void serviceConnections(rtos::RtosContext& ctx, PrinterConnections& connections)
                         conn.config.printerId, conn.state,
                         "Verbindung verloren");
     }
+    if (!conn.config.enabled) continue;
+    const TickType_t now = xTaskGetTickCount();
+    if (static_cast<TickType_t>(now - conn.lastReconnectAttemptAt) <
+        pdMS_TO_TICKS(config::kBambuReconnectBackoffMs)) {
+      continue;
+    }
+    conn.lastReconnectAttemptAt = now;
+    FS_LOGI(services::LogComponent::Bambu,
+            "Attempting MQTT reconnect printer_id=%u host=\"%s\"",
+            static_cast<unsigned>(conn.config.printerId), conn.config.host);
+    doConnect(ctx, conn, 0);
   }
 }
 

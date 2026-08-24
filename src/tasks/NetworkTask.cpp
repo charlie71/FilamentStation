@@ -239,13 +239,21 @@ void networkTask(void* parameter) {
   bool configurationApplied = false;
   TickType_t portalStartedAt = 0;
   std::uint32_t portalRequestId = 0;
+  // See kWifiReconnectIntervalMs: WiFiManager's own ESP32 auto-reconnect is
+  // compiled out in this project, so a runtime WiFi loss is otherwise never
+  // retried. 0 allows an immediate first attempt.
+  TickType_t lastReconnectAttemptAt = 0;
 
   rtos::NetworkCommand command{};
   for (;;) {
     const bool portalActive = manager.getConfigPortalActive();
+    const bool disconnectedAndConfigured =
+        !portalActive && configurationApplied && WiFi.status() != WL_CONNECTED;
     const TickType_t wait =
         portalActive
             ? pdMS_TO_TICKS(config::kWifiPortalServiceIntervalMs)
+        : disconnectedAndConfigured
+            ? pdMS_TO_TICKS(config::kWifiReconnectIntervalMs)
             : portMAX_DELAY;
     const QueueSetMemberHandle_t ready = xQueueSelectFromSet(queueSet, wait);
     if (ready == ctx.networkCommandQueue &&
@@ -323,6 +331,18 @@ void networkTask(void* parameter) {
       wifiEventQueueOverflow = false;
       FS_LOGW(services::LogComponent::Net,
               "Event enqueue failed queue=wifi_event");
+    }
+
+    if (!portalActive && configurationApplied &&
+        WiFi.status() != WL_CONNECTED) {
+      const TickType_t now = xTaskGetTickCount();
+      if (static_cast<TickType_t>(now - lastReconnectAttemptAt) >=
+          pdMS_TO_TICKS(config::kWifiReconnectIntervalMs)) {
+        lastReconnectAttemptAt = now;
+        FS_LOGI(services::LogComponent::Net,
+                "Attempting WiFi reconnect after runtime loss");
+        WiFi.reconnect();
+      }
     }
 
     if (!manager.getConfigPortalActive()) continue;

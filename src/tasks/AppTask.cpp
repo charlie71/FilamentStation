@@ -113,6 +113,17 @@ constexpr std::uint32_t kLegacyMigrationSetTagRequestId = 0x4D470103U;
 constexpr std::uint32_t kLegacyMigrationDeleteRequestBase = 0x4D470110U;
 constexpr std::uint32_t kNetworkLoadRequestId = 0x4E455401U;
 constexpr std::uint32_t kSpoolmanLoadRequestId = 0x53504D01U;
+// EVENT_SPOOLMAN_READY is only ever cleared on a WiFi loss (see the
+// WifiDisconnected/WifiLostIp handling below) -- if Spoolman itself becomes
+// unreachable while WiFi stays up (server restart, network hiccup on its
+// side), the bit stays stale-set and nothing ever re-checks or recovers
+// (Robustheit/Diagnose, TASKS.md 10.4). appTask()'s main loop polls this
+// interval on its otherwise-idle wait instead of blocking on
+// portMAX_DELAY, calling the same retrySpoolmanHealthCheckIfNeeded() the
+// boot-race fix already uses (naturally idempotent, silent on failure --
+// see its own request id suppressing the offline-startup error dialog).
+constexpr std::uint32_t kAppTaskIdleTickMs = 5000;
+constexpr std::uint32_t kSpoolmanHealthCheckRetryIntervalMs = 30000;
 constexpr std::uint32_t kTraySpoolCacheLoadRequestId = 0x54534301U;
 constexpr std::uint32_t kObsoletePendingWeightDeleteRequestId = 0x57475401U;
 constexpr std::uint32_t kObsoletePendingMeasurementsDeleteRequestId =
@@ -3782,8 +3793,18 @@ void appTask(void* parameter) {
   // task stack before event-specific handlers run.
   static rtos::AppEvent event{};
   UBaseType_t reportedMinimumStack = static_cast<UBaseType_t>(~0U);
+  TickType_t lastSpoolmanHealthCheckRetryAt = 0;
   for (;;) {
-    if (xQueueReceive(ctx.appEventQueue, &event, portMAX_DELAY) != pdTRUE) {
+    if (xQueueReceive(ctx.appEventQueue, &event,
+                      pdMS_TO_TICKS(kAppTaskIdleTickMs)) != pdTRUE) {
+      // Idle tick, no real event within the wait window -- see
+      // kSpoolmanHealthCheckRetryIntervalMs above.
+      const TickType_t now = xTaskGetTickCount();
+      if (static_cast<TickType_t>(now - lastSpoolmanHealthCheckRetryAt) >=
+          pdMS_TO_TICKS(kSpoolmanHealthCheckRetryIntervalMs)) {
+        lastSpoolmanHealthCheckRetryAt = now;
+        retrySpoolmanHealthCheckIfNeeded(ctx);
+      }
       continue;
     }
 

@@ -16,6 +16,13 @@ constexpr char kBambuMqttUsername[] = "bblp";
 constexpr std::uint32_t kBambuConnectTimeoutMs = 8000;
 // Bounded queue-wait between MQTT keepalive/service ticks; not a busy loop.
 constexpr std::uint32_t kBambuServiceIntervalMs = 200;
+// A dropped MQTT session (printer reboot, LAN hiccup) is retried on this
+// interval by serviceConnections() for any printer still marked in-use
+// (Robustheit/Diagnose, TASKS.md 10.4) -- was defined but never actually
+// wired up before; only an explicit BambuCommandType::Connect (fired at
+// boot and on WifiGotIp) ever reconnected. mqttClient.connect() itself
+// blocks up to kBambuConnectTimeoutMs on failure, which already provides a
+// natural floor on the retry cadence for a consistently slow-to-fail host.
 constexpr std::uint32_t kBambuReconnectBackoffMs = 5000;
 // How long BambuTask waits for the printer's own tray telemetry to confirm
 // an AssignTray (ams_filament_setting + extrusion_cali_sel) before giving

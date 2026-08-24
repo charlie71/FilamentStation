@@ -2746,12 +2746,82 @@ Kein Code geaendert -- reine Verifikation. Kein Build/Test/Flash noetig.
 
 ## 10.4 Netzwerk
 
-* [ ] WLAN weg
-* [ ] Spoolman weg
-* [ ] langsame Antwort
-* [ ] ungültige Antwort
-* [ ] Reconnect
-* [ ] MQTT
+* [x] WLAN weg
+* [x] Spoolman weg
+* [x] langsame Antwort
+* [x] ungültige Antwort
+* [x] Reconnect
+* [x] MQTT
+
+Bestandsaufnahme: hier war das Muster genau umgekehrt zu 10.3 -- die
+*Erkennung* von Verbindungsverlust (WLAN/Spoolman/Bambu) war ueberall
+bereits sauber verdrahtet (Events, Event-Group-Bits, Fehlermeldungen),
+aber die *automatische Wiederherstellung* fehlte an drei von sechs
+Stellen komplett: das System erkannte einen Ausfall korrekt, unternahm
+danach aber nichts von selbst -- ein manueller Neustart oder (bei
+Spoolman/Bambu) ein zufaelliger WLAN-Blip war bisher die einzige
+Erholung. Alle drei Luecken behoben; die anderen drei Punkte waren
+bereits robust (nur verifiziert, kein Code geaendert).
+
+**WLAN weg** -- **Luecke geschlossen**: `WifiSignal::Disconnected`/
+`LostIp` loeschten bereits `EVENT_WIFI_CONNECTED` und meldeten den
+Verlust (`NetworkTask.cpp`), aber nichts versuchte danach, die
+Verbindung wiederherzustellen. Ursache gefunden: WiFiManagers eigener
+ESP32-Auto-Reconnect (`WiFi_autoReconnect()`) ist im vendorten Quelltext
+(`.pio/libdeps/.../WiFiManager/WiFiManager.cpp`) hinter dem Build-Makro
+`esp32autoreconnect` versteckt, das dieses Projekt nirgends definiert --
+bestaetigt per Volltextsuche. Neu: `networkTask()`s Hauptschleife wartet
+jetzt beschraenkt (`kWifiReconnectIntervalMs`, 15s) statt unbegrenzt,
+sobald konfiguriert-aber-nicht-verbunden und kein Config-Portal aktiv
+ist, und ruft periodisch `WiFi.reconnect()` auf.
+
+**Spoolman weg** -- **Luecke geschlossen**: `EVENT_SPOOLMAN_READY` wurde
+ausschliesslich bei einem WLAN-Verlust geloescht (`AppTask.cpp`) -- faellt
+Spoolman selbst aus, waehrend WLAN durchgehend verbunden bleibt (Server-
+Neustart, Netzwerkproblem auf Spoolman-Seite), blieb das Bit
+faelschlich gesetzt und nichts pruefte je erneut nach. Neu: `appTask()`s
+Hauptschleife wartet jetzt beschraenkt (`kAppTaskIdleTickMs`, 5s) statt
+unbegrenzt auf `portMAX_DELAY` und ruft alle `kSpoolmanHealthCheckRetryIntervalMs`
+(30s) das bereits vorhandene `retrySpoolmanHealthCheckIfNeeded()` auf
+(bereits fuer den Boot-Race-Fix gebaut, idempotent, meldet Fehlschlaege
+bewusst still -- exakt das richtige Verhalten fuer einen
+Hintergrund-Retry).
+
+**langsame Antwort** -- bereits vorhanden: `SpoolmanTask::getJson()`
+setzt `HTTPClient::setConnectTimeout()`/`setTimeout()` auf den
+nutzerkonfigurierten, validierten `timeoutMs` (1000-60000ms, siehe
+`JsonStorage::validate()`); `BambuTask`s `mqttClient.connect()` ist durch
+`kBambuConnectTimeoutMs` begrenzt. Keine unbegrenzte Blockade moeglich.
+
+**ungültige Antwort** -- bereits vorhanden: `getJson()` prueft
+`status != HTTP_CODE_OK` und `deserializeJson()`-Fehler getrennt und
+liefert je einen spezifischen Fehlertext; `parseSpool()`/`parseFilament()`
+haben defensive `.is<>()`-Pruefungen vor jedem Feldzugriff.
+`BambuTask::handleReportPayload()` faengt `deserializeJson()`-Fehlschlaege
+fuer MQTT-Payloads ebenso ab (loggt, kehrt zurueck, kein Crash) --
+gegengeprueft per Read.
+
+**Reconnect** -- siehe "WLAN weg"/"MQTT"/"Spoolman weg": alle drei
+Wiederherstellungsluecken behoben, dies war derselbe zugrundeliegende
+Fehler an drei Stellen.
+
+**MQTT** -- **Luecke geschlossen**: eine abgebrochene MQTT-Sitzung
+(Drucker-Neustart, LAN-Aussetzer) wurde nur ueber ein explizites
+`BambuCommandType::Connect` neu verbunden (nur bei Boot und
+`WifiGotIp` ausgeloest, `AppTask::connectAllEnabledPrinters()`) --
+`serviceConnections()` meldete den Verbindungsverlust (`BambuDisconnected`)
+korrekt, unternahm aber nichts. Bemerkenswert: die Konstante
+`kBambuReconnectBackoffMs` existierte bereits in `BambuConfig.h`, wurde
+aber nirgends benutzt -- derselbe Musterfund wie `CreateBackup` in 10.2
+(als totes API fuer ein geplantes, nie fertiggestelltes Feature). Neu:
+`serviceConnections()` ruft jetzt fuer jede weiterhin `enabled` markierte
+Verbindung periodisch (`kBambuReconnectBackoffMs`, 5s) das bereits
+vorhandene `doConnect()` erneut auf (dieselbe Funktion, die auch ein
+explizites Connect-Kommando nutzt) -- `mqttClient.connect()`s eigener
+Timeout (`kBambuConnectTimeoutMs`, 8s) verhindert dabei von selbst ein
+Haemmern bei durchgehend langsam scheiternden Verbindungen.
+
+Build (0 Warnungen), 52 native Tests gruen, geflasht.
 
 ## 10.5 Mehrdrucker
 
