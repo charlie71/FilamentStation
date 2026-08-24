@@ -43,11 +43,16 @@ enum class PrinterSlotState : std::uint8_t {
 
 struct PrinterSlotStateData {
   std::uint8_t trayId = 0;
-  std::uint32_t spoolId = 0;
+  // No spoolId field here on purpose: the printer has no notion of Spoolman
+  // identities (a project-specific attempt to round-trip one through a
+  // custom "tray_id_name" MQTT field was hardware-tested and abandoned, see
+  // docs/bambu-protocol.md). The printer<->AMS/tray<->Spoolman-spool
+  // association is tracked separately and persisted locally, see
+  // models/TraySpoolCache.h.
   PrinterSlotState state = PrinterSlotState::Unknown;
   // Printer-reported material/color for this tray (Bambu tray_type/
-  // tray_color), not a Spoolman identity -- the printer has no notion of
-  // Spoolman spool IDs, see docs/bambu-protocol.md.
+  // tray_color) -- these two fields are a real Bambu identity, unrelated to
+  // Spoolman, see docs/bambu-protocol.md.
   char material[12]{};
   char colorHex[9]{};
 };

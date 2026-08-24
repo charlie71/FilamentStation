@@ -1,5 +1,7 @@
 #include <unity.h>
 
+#include <cstdio>
+
 #include "models/PrinterState.h"
 
 using namespace filament_station::models;
@@ -75,9 +77,11 @@ void testAmsAndSlotLookup() {
 
   PrinterSlotStateData* slot = findSlot(*printer, 1, 3);
   TEST_ASSERT_NOT_NULL(slot);
-  slot->spoolId = 91;
+  std::snprintf(slot->material, sizeof(slot->material), "PLA");
   slot->state = PrinterSlotState::Ready;
-  TEST_ASSERT_EQUAL_UINT32(91, printer->amsUnits[0].slots[3].spoolId);
+  TEST_ASSERT_EQUAL_STRING("PLA", printer->amsUnits[0].slots[3].material);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(PrinterSlotState::Ready),
+                        static_cast<int>(printer->amsUnits[0].slots[3].state));
   TEST_ASSERT_NULL(findSlot(*printer, 1, kSlotsPerAms));
 }
 

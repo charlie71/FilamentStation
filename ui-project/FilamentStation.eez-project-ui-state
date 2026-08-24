@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/4",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/1",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/7",
     "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/5",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
@@ -235,7 +235,8 @@
                   },
                   "icon": "svg:page"
                 }
-              ]
+              ],
+              "active": true
             },
             {
               "type": "row",
@@ -255,8 +256,7 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ],
-                  "active": true
+                  ]
                 },
                 {
                   "type": "tabset",
@@ -1129,17 +1129,15 @@
           "10": {},
           "11": {},
           "31": {},
-          "32": {
-            "$selected": true
-          }
+          "32": {}
         }
       },
       "transform": {
         "translate": {
-          "x": 8.831531226389131,
-          "y": -159.43186106666633
+          "x": -240,
+          "y": -160
         },
-        "scale": 0.9
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1238,7 +1236,7 @@
           "x": -88.28789902634725,
           "y": -159.82127645612943
         },
-        "scale": 0.9
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1373,22 +1371,22 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {},
-        "1": {
-          "0": {},
-          "$selected": true
-        },
+        "1": {},
         "2": {},
         "3": {},
         "4": {},
         "5": {},
-        "6": {}
+        "6": {},
+        "9": {
+          "$selected": true
+        }
       },
       "transform": {
         "translate": {
           "x": -238.09463342443678,
           "y": -200.0540642390097
         },
-        "scale": 2
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1403,16 +1401,17 @@
         "0": {},
         "1": {},
         "4": {},
-        "6": {
-          "$selected": true
-        }
+        "6": {},
+        "7": {},
+        "8": {},
+        "9": {}
       },
       "transform": {
         "translate": {
           "x": -125.82143839518227,
           "y": -98.907834370931
         },
-        "scale": 0.9
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -2283,7 +2282,7 @@
   ],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,
-  "flowZoom": 0.9,
+  "flowZoom": 1,
   "implementationLanguage": "C",
   "openDialogDefaultPath": "C:\\VSCode\\Projects\\FilamentStation\\ui-project\\images\\3d-nozzle_W.png"
 }

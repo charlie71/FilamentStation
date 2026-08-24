@@ -80,6 +80,12 @@ void applyTrayOccupancy(JsonObjectConst trayJson,
   std::snprintf(slot.material, sizeof(slot.material), "%s", trayType);
   const char* trayColor = trayJson["tray_color"] | "";
   std::snprintf(slot.colorHex, sizeof(slot.colorHex), "%s", trayColor);
+  // spoolId is deliberately never touched here -- see bambuApplyReport()'s
+  // doc comment and docs/bambu-protocol.md: hardware-confirmed
+  // (2026-08-23) that this printer accepts "tray_id_name" on write but
+  // echoes it back empty on every subsequent report, not just after a
+  // reconnect. Parsing it back here previously wiped a just-confirmed
+  // spoolId within seconds, same session included.
 }
 
 }  // namespace

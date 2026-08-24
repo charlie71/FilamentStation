@@ -93,12 +93,149 @@ Zuordnung Spoolman-Spule -> Filamenttyp/-farbe erfolgt in einer spaeteren
 Phase (8.5, AMS-Zuordnung) und wird `BambuTask` fertig aufbereitet
 uebergeben.
 
+`tray_id_name` ist kein Bambu-Standardfeld mit fester Bedeutung -- der
+Versuch war eine eigene Konvention dieses Projekts:
+`bambuBuildAmsFilamentSetting()` schreibt bei jeder Zuordnung
+`"SM<spoolmanId>"` hinein (leerer String beim Leeren eines Slots), in der
+Hoffnung, die Spoolman-Zuordnung eines Slots so aus dem Drucker selbst
+rekonstruieren zu koennen, statt sie nur lokal im ESP32-RAM zu verwalten
+(das eine Neuverbindung/einen Neustart nicht ueberlebt). Urspruenglich mit
+Doppelpunkt (`"SM:<spoolmanId>"`) -- auf Nutzerwunsch (2026-08-23) ohne
+Trennzeichen umgestellt, als Test, ob der Doppelpunkt der Grund fuer das
+folgend beschriebene Verwerfen des Werts war (noch nicht erneut auf
+Hardware verifiziert).
+
+**Per Hardwaretest widerlegt (2026-08-23):** der Drucker nimmt den Wert
+beim Schreiben klaglos an (`ams_filament_setting` wird nicht abgelehnt,
+der Wert wird sogar in der Kommando-Bestaetigung echot), gibt das Feld in
+Statusberichten aber immer leer zurueck. Zunaechst beobachtet in den
+regulaeren periodischen `push_status`-Nachrichten -- die enthalten in der
+Praxis aber meist **gar kein** `ams`-Feld (nur Telemetrie wie
+`bed_temper`/`wifi_signal`); `ams.ams[]` (inkl. `tray_id_name`) wird
+offenbar nur bei einem vollen Pushall mitgeliefert. Deshalb gezielt
+nachgetestet: Zuordnung gesetzt, Bestaetigung abgewartet
+(`AssignTray confirmed`), danach ueber den "Aktualisieren"-Button auf dem
+Tray-Details-Screen (`UiActionType::RefreshSlot` ->
+`BambuCommandType::RequestStatus` -> frisches `pushall`) explizit ein
+neuer voller Statusabruf ausgeloest -- **auch dessen Antwort zeigt
+`tray_id_name` weiterhin leer** (`[PLA:""] [PLA:""] [PLA:""]` fuer alle drei
+belegten Faecher). Damit ist ausgeschlossen, dass der falsche
+Abfragebefehl die Ursache war (Nutzer-Verdacht) -- der Drucker speichert
+das Feld nachweislich nirgends, unabhaengig davon, wie/wann man nachfragt.
+Der Wert existiert offenbar nur als Echo der Kommando-Bestaetigung, nicht
+als AMS-Zustand.
+
+Die Lesevariante (`bambuApplyReport()` parst `tray_id_name` zurueck in
+`spoolId`) wurde deshalb zunaechst wieder entfernt -- sie haette sonst eine
+gerade erst per `checkPendingTrayAssignment()` lokal bestaetigte Zuordnung
+Sekunden spaeter wieder auf "unbekannt" zurueckgesetzt, ein aktiver
+Rueckschritt gegenueber dem vorherigen (rein lokalen) Verhalten.
+
+**Ansatz komplett verworfen (2026-08-24, Nutzerwunsch):** nach dem obigen
+Befund ergibt auch das weitere Schreiben von `tray_id_name` keinen Sinn
+mehr -- `BambuTrayFilament::spoolmanId` und die `tray_id_name`-Kodierung in
+`bambuBuildAmsFilamentSetting()` wurden vollstaendig entfernt.
+`PrinterSlotStateData` hat seitdem bewusst **kein** `spoolId`-Feld mehr
+(weder von `bambuApplyReport()` noch von `BambuTask` befuellt) -- die
+gesamte Idee, die Zuordnung ueber den Drucker selbst zu spiegeln, ist vom
+Tisch.
+
+Stattdessen: ein lokal auf der SD-Karte persistierter Cache
+(`/mappings/printer-slots.json`, `models/TraySpoolCache.h`,
+`rtos::StorageDocumentType::TraySpoolCache`), verwaltet komplett in
+`AppTask`. Jeder Eintrag haelt `printerId`/`amsId`/`trayId` ->
+`spoolId` **plus** `material`/`colorHex`, wie sie der Drucker im Moment der
+Bestaetigung meldete. Beim Anzeigen (`AppTask::syncAmsToUi()` ->
+`resolveTraySpoolCacheSpoolId()`) wird das *aktuelle* `material`/`colorHex`
+gegen den Cache-Eintrag geprueft: stimmt es nicht mehr ueberein (Spule
+physisch ausgetauscht, ohne dass diese App davon weiss), gilt die
+Zuordnung als unbekannt (`spoolId` 0, UI zeigt "?") statt einer
+womoeglich falschen Nummer. Ueberlebt Neuverbindung/Neustart, da rein
+lokal auf der SD-Karte, unabhaengig vom Drucker.
+
 `nozzle_temp_min`/`nozzle_temp_max` stammen aus den projektspezifischen
 Spoolman-Filament-Extra-Feldern `bambu_temp_min`/`bambu_temp_max` (vom
 Nutzer selbst in Spoolman angelegt, kein Standardfeld). Fehlen diese Felder
 oder sind sie nicht als gueltige, positive Zahl mit `min <= max` dekodierbar,
 bleiben beide Werte `0` und die App zeigt einen Hinweis im
 Ergebnisdialog -- es wird keine Temperatur erfunden.
+
+**Nutzerhinweis (2026-08-24):** `bambu_temp_min`/`bambu_temp_max` (und das
+neue, Anzeige-only `flow_dynamics_k_factor`, siehe unten) sind
+Spoolman-Eigenschaften des **Filaments**, nicht der Spule. Urspruenglich
+wurden sie aus dem in einer Spool-Antwort (`GET /spool/{id}`)
+verschachtelten `filament`-Objekt gelesen
+(`spoolResponse.filament.extra.bambu_temp_min`) -- strukturell zwar schon
+auf Filament-Ebene, aber implizit auf die Vollstaendigkeit dieses
+eingebetteten Objekts angewiesen. Auf Nutzerwunsch umgestellt: `AppTask`
+fragt jetzt nach einer erfolgreichen `LoadSpool`-Antwort (fuer
+`remainingWeightGrams` und um `filamentId` zu erfahren) explizit
+`GET /filament/{filamentId}` ab (`SpoolmanCommandType::LoadFilament`,
+`SpoolmanTask::loadFilamentDetails()`/`parseFilament()`) und liest
+`bambu_temp_min`/`bambu_temp_max`/`flow_dynamics_k_factor` von dort --
+`extra` liegt in dieser Antwort auf Root-Ebene, nicht mehr verschachtelt.
+Betrifft sowohl den AssignTray-Ablauf (`SlotAssignmentStage::LoadingFilament`,
+neuer Zwischenschritt zwischen `LoadingSpool` und `WritingSlot`) als auch
+die Home-Tray-Karten-Anzeige (`AppTask::resolveTraySpoolDetails()`).
+Schlaegt der Filament-Fetch fehl (Netzwerkfehler), wird die Zuordnung
+trotzdem abgeschlossen, nur ohne Temperatur/K-Faktor -- dieselbe
+Nutzerfreundlichkeit wie bei fehlenden/ungueltigen Extra-Feldern, siehe
+oben.
+
+`flow_dynamics_k_factor` (K-Faktor, Flow-Dynamics-Kalibrierung) ist ein
+weiteres projektspezifisches Filament-Extra-Feld, rein fuer die Anzeige
+auf der Home-Tray-Karte gedacht (Nutzerwunsch 2026-08-24) -- kein Einfluss
+auf ein an den Drucker gesendetes Kommando, keine Plausibilitaetsspanne
+wie bei den Temperaturen (nur "> 0" gefordert). Der urspruenglich von mir
+angenommene Feldname `bambu_k_factor` war falsch; per Hardware-Test
+(2026-08-24) vom Nutzer korrigiert.
+
+**Nachtrag (2026-08-24, Hardware-Test zeigte `nozzle_temp_min=0
+nozzle_temp_max=0` trotz konfigurierter Extra-Felder):** neben der
+Feldnamen-Korrektur oben hatte `getJson()`/`loadFilamentDetails()`
+(`SpoolmanTask.cpp`) bis dahin ueberhaupt kein Logging -- weder Erfolg
+noch Fehlschlag des `GET /filament/{id}`-Abrufs war sichtbar. Ergaenzt:
+`getJson()` loggt jetzt jeden Fehlschlag (`FS_LOGE`, URL + Fehlertext,
+inkl. JSON-Parse-Fehler) und jeden Erfolg (`FS_LOGT`, URL);
+`loadFilamentDetails()` loggt zusaetzlich die tatsaechlich aus der Antwort
+extrahierten Werte (`FS_LOGD`: filament_id,
+temp_fields_present/valid, temp_min/max, kfactor_present/valid/wert).
+
+**Nachtrag (2026-08-24, eigentliche Ursache gefunden -- Spoolman-
+Listenabschluss-Marker wird mit der LoadFilament-Antwort verwechselt):**
+Die neuen Logs (siehe oben) zeigten das raetselhafte Muster direkt: das
+`[APP] Sending ...`-Log mit `kfactor_valid=0`/`temp=0` erschien **vor**
+dem `[SPOOLMAN] Filament loaded ... valid=1`-Log derselben Anfrage-ID --
+der falsche Wert wurde also verschickt, *bevor* die eigentliche Antwort
+überhaupt eintraf. Ursache: `SpoolmanTask::loadSpools()` schickt nach
+*jeder* `LoadSpool`/Such-Anfrage zusaetzlich zur eigentlichen Spule ein
+Abschluss-Event (`"N Spulen gefunden"`, `value=-1`, leeres `spool`/
+`filament`), das dieselbe `requestId` traegt wie die Anfrage selbst --
+gedacht dafuer, dass der Spulen-Picker weiss, wann eine Suche fertig ist.
+Jede Stelle, die nach einer `LoadSpool`-Antwort einen `LoadFilament`-
+Folge-Request unter *derselben* `requestId` startet (Nutzerhinweis
+2026-08-24: `AssignTray`s `SlotAssignmentStage::LoadingFilament`,
+`AppTask::sendStagingUpdate()`s `PendingStagingFilamentLoad` fuers
+Staging, und `resolveTraySpoolDetails()`s `TraySpoolDetailsEntry` fuer
+die AMS-Tray-Karten) bekam dieses Abschluss-Event faelschlich als
+"Filament-Antwort" serviert, weil es strukturell *immer* vor der
+echten (HTTP-Roundtrip-gebundenen) Filament-Antwort in AppTasks eigener
+Queue ankommt -- direkt nach der `LoadSpool`-Antwort, noch bevor der
+`LoadFilament`-Request ueberhaupt beim Server war. Die betroffenen
+Handler lasen daraus `value=-1` (`< 0`) und werteten das faelschlich als
+"Fetch fehlgeschlagen/keine Daten", loeschten dabei aber ihren
+Pending-State -- die echte, kurz danach eintreffende Antwort landete
+dann in keinem Handler mehr und wurde stillschweigend verworfen. Fix in
+allen drei Stellen: die Bedingung prueft jetzt zusaetzlich
+`event.filament.id != 0` (nur eine echte, erfolgreich geparste
+Filament-Antwort hat dieses Feld gesetzt; der Abschluss-Marker nie) --
+das Abschluss-Event faellt jetzt unbehandelt durch, der Pending-State
+bleibt bestehen, bis die echte Antwort eintrifft. Erklaert rueckwirkend
+sowohl das urspruengliche `nozzle_temp_min=0 nozzle_temp_max=0`-Symptom
+als auch den spaeteren "K-Faktor wird korrekt geladen, aber nicht
+angezeigt"-Bug beim Staging (und vermutlich denselben Fehler,
+unbemerkt, bei den AMS-Tray-Karten). Build (0 Warnungen), 51 native
+Tests gruen, geflasht -- Hardware-Test steht noch aus.
 
 `tray_info_idx` referenziert Bambus intern hinterlegte Filament-Profil-ID
 ("setting_id"). Ein erster Hardwaretest ohne dieses Feld (nur tray_type/
@@ -388,10 +525,14 @@ Von `BambuProtocol::bambuApplyReport()` ausgewertete Pfade:
   `PrinterState::nozzleDiameter` uebernommen -- benoetigt fuer das
   `extrusion_cali_sel`-Kommando (siehe oben).
 
-**Bewusst nicht ausgewertet:** `spoolId` je Slot. Der Drucker kennt keine
-Spoolman-IDs; welche Spoolman-Spule einem Slot zugeordnet ist, verwaltet die
-Anwendung selbst (Phase 8.5). `bambuApplyReport()` aendert `spoolId` in
-`PrinterSlotStateData` daher nie.
+**Bewusst nicht ausgewertet:** `tray_id_name`. Ein Versuch, eine Spoolman-
+`spoolId` daraus aufzuloesen ("SM:<spoolmanId>", siehe "ams_filament_setting"
+oben), wurde per Hardwaretest widerlegt (2026-08-23) -- der Drucker gibt
+dieses Feld immer leer zurueck, auch innerhalb derselben Session kurz nach
+dem Schreiben. `PrinterSlotStateData` hat seitdem bewusst kein `spoolId`-Feld
+mehr (siehe oben, "Ansatz komplett verworfen"); die Spoolman-Zuordnung wird
+stattdessen komplett ausserhalb dieser Datei verwaltet, siehe
+`models/TraySpoolCache.h` und `AppTask::resolveTraySpoolCacheSpoolId()`.
 
 **Nicht implementiert** (ausserhalb des Funktionsumfangs von Phase 8.3):
 Druckfortschritt, Kamera/AI-Erkennung, Temperaturen, Firmwareversion,

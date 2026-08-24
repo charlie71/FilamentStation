@@ -1491,6 +1491,493 @@ Studio). Build (0 Warnungen) + 52 native Tests gruen, geflasht.
 * Echte "aktuell druckende Duese"-Zuordnung im Datenmodell nachruesten,
   um das Mock-Verhalten von `nozzle_icon` durch echte Daten zu ersetzen.
 
+Nachtrag (2026-08-23, Spoolman-ID ueber Drucker-Telemetrie aufloesen,
+Nutzerwunsch erledigt): Bisher lebte die Zuordnung "Slot -> Spoolman-Spule"
+nur lokal im ESP32-RAM (`checkPendingTrayAssignment()` setzte `spoolId`
+einmalig bei Bestaetigung einer eigenen `AssignTray`) -- eine Neuverbindung
+oder ein Neustart verlor diese Information komplett, obwohl der Drucker
+weiterlief. Neue eigene Konvention (kein Bambu-Standardfeld): beim
+Zuordnen wird das Feld `tray_id_name` mit `"SM:<spoolmanId>"` beschrieben
+(`BambuProtocol::bambuBuildAmsFilamentSetting()`, ueber ein neues
+`BambuTrayFilament::spoolmanId`, von `BambuTask::handleAssignTray()` aus
+`command.spoolId` befuellt); der Drucker "versteht" das Feld nicht, gibt es
+aber unveraendert bei jedem folgenden Statusbericht zurueck.
+`BambuProtocol::bambuApplyReport()` parst es (neue `parseSpoolmanTrayIdName()`,
+anonymous namespace) zurueck in `PrinterSlotStateData::spoolId` -- **nur
+wenn das Feld im Report vorhanden ist** (fehlt es komplett, bleibt ein
+bekannter Wert unangetastet, Absicherung gegen Reports ohne dieses Feld);
+ist es vorhanden, aber nicht im `"SM:<Zahl>"`-Format, wird `spoolId` auf 0
+("unbekannt") zurueckgesetzt. `UiBridge.cpp::updateTrayButton()` zeigt bei
+belegtem Fach mit `spoolId == 0` jetzt `?` im `spoolmanager_id`-Label statt
+wie zuvor eine erfundene Mock-ID -- die Spoolman-ID ist damit fuer AMS-
+Faecher keine Mockdaten mehr, nur Restgewicht/K-Faktor/"Duese aktiv"
+bleiben es (siehe oben). Betroffene Doku-Kommentare in
+`services/BambuProtocol.h`/`models/PrinterState.h` und
+`docs/bambu-protocol.md` (Anfrage- und Statusbericht-Abschnitte)
+aktualisiert -- der alte "Drucker kennt keine Spoolman-IDs, spoolId wird
+nie veraendert"-Vertrag gilt so nicht mehr.
+
+4 neue Tests in `test_bambu_protocol` (Encoding `tray_id_name`,
+Decoding gueltiger/ungueltiger Werte, externes Fach); bestehender Test
+`testApplyReportNeverTouchesSpoolId` in
+`testApplyReportPreservesSpoolIdWhenTrayIdNameFieldAbsent` umbenannt (Test
+selbst unveraendert gueltig -- sein JSON enthaelt `tray_id_name` nicht,
+genau der Fall, den die neue, engere Zusicherung noch abdeckt). 56 native
+Tests gruen (vorher 52). Kein `.eez-project`-Eingriff, kein Re-Export
+noetig. Build (0 Warnungen), geflasht.
+
+Nachtrag (2026-08-23, `tray_id_name`-Lesepfad per Hardwaretest widerlegt
+und zurueckgebaut): der Nutzer berichtete, dass die Spoolman-ID nach einem
+ESP32-Neustart wieder "?" zeigt, statt aus der Drucker-Telemetrie
+aufgeloest zu werden -- Verdacht: Auswertungsfehler speziell beim
+Pushall-Report. Neuer, gezielter Diagnose-Log in `BambuTask.cpp`
+(`Report raw tray_id_name`, liest `tray_id_name` direkt aus dem noch in
+Scope befindlichen `JsonDocument`, da die bestehende "Report raw
+payload"-Zeile bei `kLogMessageCapacity` = 320 Byte weit vor dem `ams`-Teil
+abgeschnitten wird) zeigte den tatsaechlichen Befund: `field_present=1
+tray_id_name=""` fuer alle drei belegten Faecher -- **nicht nur nach dem
+Neustart**, sondern schon im allerersten periodischen Report danach. Der
+Drucker nimmt `tray_id_name` beim Schreiben an, gibt es aber nie befuellt
+zurueck, auch nicht innerhalb derselben Session. Ursache war also keine
+Pushall-spezifische Auswertungsluecke, sondern eine falsche Grundannahme:
+der Lesepfad haette schon Sekunden nach jeder Zuordnung die gerade lokal
+bestaetigte `spoolId` wieder auf 0 zurueckgesetzt (aktiver Rueckschritt
+gegenueber dem vorherigen Verhalten).
+
+Lesepfad vollstaendig zurueckgebaut: `applyTrayOccupancy()` fasst `spoolId`
+wieder nie an (wie vor der vorherigen Aenderung), Doku-Kommentare in
+`BambuProtocol.h`/`PrinterState.h`/`UiBridge.cpp` und
+`docs/bambu-protocol.md` entsprechend korrigiert (inkl. neuem Abschnitt mit
+dem konkreten Log-Beleg). Schreibpfad (`tray_id_name` = `"SM:<id>"` beim
+Zuordnen) bleibt bestehen (harmlos, evtl. auf anderer Firmware nuetzlich),
+wird aber nirgends mehr gelesen. Die 3 Lesepfad-Tests aus dem vorherigen
+Nachtrag entfernt, `testApplyReportNeverTouchesSpoolId` wiederhergestellt
+(jetzt mit explizit leerem `tray_id_name` im Test-JSON, um genau die
+Regression abzudecken, die hier aufgetreten war); Encoding-Test fuer
+`tray_id_name` bleibt. 53 native Tests gruen. Der Diagnose-Log bleibt im
+Code (geringe Kosten, hilfreich falls das Verhalten auf anderer
+Firmware/anderem Druckermodell doch funktioniert). Build (0 Warnungen),
+geflasht.
+
+**Offene Frage unveraendert:** "Zuordnung uebersteht Neustart" ist damit
+noch nicht geloest -- `spoolId` lebt weiterhin nur im ESP32-RAM. Ein echter
+Fix muesste auf der ESP32-Seite selbst persistieren (z. B. `StorageTask`),
+unabhaengig vom Drucker.
+
+Nachtrag (2026-08-23, `tray_id_name` endgueltig als nicht persistent
+bestaetigt): Nutzer vermutete, der Status werde mit dem falschen Befehl
+abgefragt (evtl. traegt nur ein voller Pushall, nicht der periodische
+`push_status`, das `tray_id_name`-Feld). Erste Diagnose-Log-Version
+(`FS_LOGD`, 3 Zeilen pro Report) tauchte im Log gar nicht auf -- Ursache:
+die Log-Queue verwirft neue Zeilen stillschweigend, wenn sie voll ist
+(`RtosContext::enqueueLogLine()`, 10ms-Timeout), und diese Reports erzeugen
+bereits 8-9 Zeilen Log-Spam in unter 15ms. Zu einer Zeile zusammengefasst
+und auf `FS_LOGI` gehoben (`BambuTask.cpp`), danach sichtbar.
+
+Gezielter Test: Zuordnung gesetzt, `AssignTray confirmed` abgewartet, dann
+explizit ueber den "Aktualisieren"-Button (`RefreshSlot` ->
+`RequestStatus` -> frisches `pushall`) eine neue volle Statusabfrage
+ausgeloest. Auch deren Antwort zeigte `tray_id_name` weiterhin leer fuer
+alle drei belegten Faecher. Damit ist der urspruengliche Verdacht
+widerlegt -- es liegt nicht am Abfragebefehl, der Drucker speichert das
+Feld nachweislich nirgends. `docs/bambu-protocol.md` um diesen finalen
+Befund ergaenzt. Der Diagnose-Log bleibt im Code (geringe Kosten).
+
+Nachtrag (2026-08-23, `tray_id_name`-Format ohne Trennzeichen, Nutzerwunsch):
+Format von `"SM:<spoolmanId>"` auf `"SM<spoolmanId>"` umgestellt (Test-
+Hypothese: der Doppelpunkt koennte vom Feld verworfen werden) --
+`bambuBuildAmsFilamentSetting()`, Test/Doku entsprechend angepasst. Noch
+nicht auf Hardware verifiziert, ob das Speicherverhalten damit anders
+ausfaellt. Build (0 Warnungen), 53 native Tests gruen, geflasht.
+
+Nachtrag (2026-08-24, `tray_id_name`-Ansatz komplett verworfen, stattdessen
+lokaler persistierter Cache, Nutzerwunsch): Nutzer hat entschieden, den
+gesamten "Spoolman-ID ueber den Drucker durchreichen"-Ansatz aufzugeben
+(nach dem Hardwarebefund vom Vortag: der Drucker speichert `tray_id_name`
+nachweislich nirgends) und stattdessen einen lokalen Cache
+Drucker->AMS/Fach->Spoolman-Spule zu verwenden, der bei jedem Statusabgleich
+gegen die vom Drucker gemeldete Farbe/Material geprueft wird -- stimmen sie
+nicht mehr ueberein, gilt die Zuordnung als unbekannt (`?` in der UI). K-Faktor
+und Restgewicht sollen auf den Tray-Buttons nicht mehr angezeigt werden
+(waren ohnehin nur Mockdaten).
+
+**Rueckbau `tray_id_name`:** `BambuTrayFilament::spoolmanId`-Feld und die
+Kodierung in `bambuBuildAmsFilamentSetting()` entfernt (`BambuProtocol.h/.cpp`).
+`PrinterSlotStateData` hat kein `spoolId`-Feld mehr (`PrinterState.h`) --
+`BambuTask::checkPendingTrayAssignment()` setzt es folglich auch nicht mehr,
+`PendingTrayAssignment::spoolId` (BambuTask-intern, war nur fuer diese
+Zuweisung da) ebenfalls entfernt. Das Diagnose-Log aus der Vortags-
+Untersuchung (`Report raw tray_id_name`) ist mit entfernt, ebenso `spool_id`
+aus der "Report tray detail"-Logzeile.
+
+**Neuer lokaler Cache** (`src/models/TraySpoolCache.h`, neu): Eintrag
+`{printerId, amsId, trayId, spoolId, material, colorHex}`, `amsId`/`trayId`
+entweder ein echter AMS-Slot oder beide `kExternalTraySentinel` (0xFF, wie
+ueberall sonst im Projekt fuer das externe Fach). Kapazitaet bewusst auf
+16 Eintraege begrenzt (realistische Nutzung statt theoretischem Maximum von
+4 Druckern x 4 AMS x 4 Faechern = 64 -- haelt `AppEvent` in der
+Groessenordnung von `BambuConfigCollection`, degradiert bei Ueberlauf
+kontrolliert mit Log-Warnung statt Datenverlust).
+
+Persistiert unter `/mappings/printer-slots.json` (in `AGENTS.md` §21 bereits
+als Pfad fuer genau diesen Zweck reserviert) -- neuer
+`rtos::StorageDocumentType::TraySpoolCache`, vollstaendig durchgezogen durch
+`JsonStorage.h/.cpp` (Groessenbucket, Defaults, `documentTypeName`,
+`createDefault`, `validate` inkl. neuer `validateTraySpoolCacheEntries()`
+mit Adressvalidierung/Duplikatpruefung) und `StorageTask.cpp`
+(`kInitialDocuments[]`-Eintrag, Lade-Block analog zum bestehenden Bambu-Muster).
+`isAllowedJsonPath()` erlaubte den neuen Pfad bereits generisch (jedes
+`/mappings/*.json`), keine Anpassung noetig; die separate, restriktivere
+`isMappingPath()`-Pruefung betrifft nur die 3 alten Legacy-NFC-Mapping-
+Dateien und war nicht zu beruehren.
+
+**AppTask.cpp** (alleiniger Besitzer des Caches): `traySpoolCache`-Modul-
+variable, `requestTraySpoolCache()`/`persistTraySpoolCache()` (Laden beim
+Boot analog `requestBambuConfiguration()`, Speichern als Fire-and-Forget
+ohne Dialog -- ein fehlgeschlagener Save ist beim naechsten erfolgreichen
+Zuordnen einfach erneut versucht) und `resolveTraySpoolCacheSpoolId()`
+(Cache-Lookup + Abgleich material/colorHex gegen die *aktuell* vom Drucker
+gemeldeten Werte, 0 bei Nichtuebereinstimmung). Cache-Aktualisierung direkt
+am bestehenden Bestaetigungspunkt in der `pendingSlotAssignment`-Zustands-
+maschine eingehaengt (dort, wo bisher nur der Fortschrittsdialog geschlossen
+wurde): bei erfolgreicher Zuordnung wird die Spoolman-ID mit
+material/colorHex aus dem soeben bestaetigten `PrinterState` upserted und
+persistiert, bei ResetSlot/UntagSlot (`wasClearing`) wird der Eintrag
+entfernt. `syncAmsToUi()` nutzt `resolveTraySpoolCacheSpoolId()` statt des
+entfernten `slot.spoolId` fuer sowohl AMS-Faecher als auch das externe Fach
+(Cache findet dort nie einen Eintrag, da externe Faecher nie ueber
+`AssignTray` laufen -- unveraendert, war vorher genauso immer leer).
+
+**UI:** `UiBridge.cpp::updateTrayButton()` zeigt auf dem Tray-Button jetzt
+nur noch das Material (oder "belegt"), kein Mock-Restgewicht/K-Faktor mehr.
+Spoolmanager-ID-Anzeige (`?` bei unbekannt/nicht mehr passend) unveraendert.
+Staging-Karte (`home_staging`) bleibt unveraendert -- deren Spoolman-ID ist
+weiterhin echt (ueber den Spulen-Picker zugeordnet), keine Mockdaten, vom
+Nutzerwunsch nicht betroffen.
+
+**Tests:** `testAmsFilamentSettingEncodesSpoolmanTrayIdName` entfernt (Feature
+weg); `testApplyReportNeverTouchesSpoolId` entfernt (Feld existiert nicht
+mehr, nichts mehr zu testen); `test_printer_model`s
+`testAmsAndSlotLookup` auf `material`/`state` statt `spoolId` umgestellt.
+51 native Tests gruen (vorher 53). `test_json_storage` deckt den neuen
+Storage-Pfad nicht ab (existiert nicht in einer `native-*`-Umgebung, JsonStorage.cpp
+haengt an Arduino-`FS.h`/`Print.h` -- wie bei allen anderen Storage-
+Dokumenttypen unveraendert nur ueber den Geraete-Build abgesichert).
+
+RAM-Zuwachs durch `TraySpoolCache` in `AppEvent` (16-tief gequed): ca. 5.7 KB
+(34.4% -> 36.2% von 320 KB), Flash 26.0% -> 26.5%. Build (0 Warnungen),
+geflasht.
+
+**Noch nicht auf echter Hardware verifiziert:** ob die neue Zuordnung
+tatsaechlich einen Neustart uebersteht (persistiert jetzt rein lokal, sollte
+funktionieren, aber der komplette Lade-/Speicherpfad ueber `StorageTask`/SD
+ist fuer diesen neuen Dokumenttyp noch nicht auf Hardware getestet) und ob
+die Abgleichslogik (`material`/`colorHex`-Vergleich) bei einem echten
+Spulenwechsel am Drucker korrekt "?" zeigt.
+
+Nachtrag (2026-08-24, Restgewicht/K-Faktor aus Spoolman nachladen,
+Nutzerwunsch): sobald eine Spule per obigem Cache identifiziert ist, werden
+Restgewicht und K-Faktor jetzt echt aus Spoolman nachgeladen und auf dem
+Tray-Button angezeigt (vorher: gar keine Anzeige, davor: Mockdaten).
+
+**Neues Spoolman-Extra-Feld** `bambu_k_factor` (`models/SpoolmanSpool.h`:
+`bambuKFactorPresent`/`bambuKFactorValid`/`bambuKFactor`, analog zu
+`bambu_temp_min`/`_max`) -- projektspezifisch, keine Bambu-/Spoolman-
+Standardgroesse; `SpoolmanTask::parseSpool()` dekodiert es ueber die
+bestehende `SpoolmanClient::decodeNumberExtraField()`. Anders als die
+Duesentemperaturen nur fuers Anzeigen gedacht, fliesst nicht in ein an den
+Drucker gesendetes Kommando ein. `remainingWeightGrams` existiert bereits
+als Standard-Spoolman-Feld, keine Aenderung noetig.
+
+**Neuer Fetch-Pfad in AppTask.cpp:** kleiner, rein lokaler (nicht
+persistierter) Cache `traySpoolDetails` (8 Eintraege, per `spoolId`
+keyed) -- anders als `traySpoolCache` echte Live-Spoolman-Daten
+(Restgewicht aendert sich durch Verbrauch), daher nicht auf SD gespeichert,
+frisch bei jedem Boot. `resolveTraySpoolDetails()` liefert den Cache-Treffer
+zurueck oder loest (falls noch keiner in Flug) einen `LoadSpool`-Abruf aus;
+Request-IDs aus einem eigenen Bereich (`kTraySpoolDetailsRequestIdBase`,
+Index-basiert wie das bestehende `kLegacyMigrationDeleteRequestBase`-Muster)
+identifizieren die Antwort im grossen `SpoolmanResponse`-Dispatch --
+erfolgreiche Antwort speichert das Ergebnis und stoesst sofort einen
+`syncAmsToUi()` fuer den aktiven Drucker an, statt auf den naechsten
+ohnehin faelligen Sync zu warten. Bewusst ein einmaliger Snapshot, keine
+TTL/Refresh-Logik -- eine spaeter am Drucker/in der App verbrauchte Menge
+aktualisiert die Anzeige daher erst nach einem Neustart oder wenn der Cache-
+Slot durch einen anderen Spool verdraengt wird.
+
+**UI:** `syncAmsToUi()` fuellt `UiCommand.spool` (bereits vorhandenes Feld,
+bisher nur fuer `UpdateStaging` genutzt) mit einer minimalen `SpoolmanSpool`
+(nur `id`/`remainingWeightGrams`/`bambuKFactorValid`/`bambuKFactor` gesetzt)
+sobald Details geladen sind -- keine Aenderung an `rtos::UiCommand` noetig.
+`TrayUiEntry` (`UiBridge.cpp`) um `detailsLoaded`/`remainingWeightGrams`/
+`kFactorValid`/`kFactor` erweitert; `detailsLoaded` unterscheidet bewusst
+"noch nicht geladen" von einem echten Restgewicht 0 (aus `command.spool.id
+!= 0`, das nur bei erfolgreichem Ladevorgang gesetzt wird). Tray-Button-Text
+jetzt wieder dreizeilig, sobald identifiziert *und* geladen:
+`<Material>\n<Restgewicht>g\nK (<Faktor>)` (K-Zeile nur wenn
+`bambu_k_factor` in Spoolman hinterlegt) -- vorher/bei unbekannter
+Zuordnung weiterhin nur das Material.
+
+Build (0 Warnungen), 51 native Tests gruen, RAM-Zuwachs minimal (+0.5 KB
+gegenueber dem Cache-Nachtrag). Geflasht.
+
+**Noch nicht auf echter Hardware verifiziert:** der komplette Spoolman-
+Abruf-/Anzeige-Pfad fuer dieses Feature (Fetch-Timing, ob `bambu_k_factor`
+korrekt dekodiert wird, ob die Anzeige nach Abschluss des asynchronen
+Abrufs wie erwartet nachzieht).
+
+Nachtrag (2026-08-24, `bambu_temp_min`/`bambu_temp_max`/`bambu_k_factor`
+sind Filament-, nicht Spulen-Eigenschaften -- Nutzerhinweis + Anfrage
+angepasst): bisher wurden alle drei Felder aus dem in einer
+`LoadSpool`-Antwort verschachtelten `filament`-Objekt gelesen -- strukturell
+zwar bereits auf Filament-Ebene, aber implizit auf die Vollstaendigkeit
+dieses eingebetteten Objekts angewiesen. Auf Nutzerwunsch komplett
+umgestellt (beide betroffenen Pfade, siehe unten): explizites
+`GET /filament/{id}` statt sich auf die Spool-Antwort zu verlassen.
+
+**Neuer Spoolman-Request:** `SpoolmanCommandType::LoadFilament`
+(`rtos/Commands.h`), `SpoolmanCommand::filamentId` (`rtos/Messages.h`),
+`SpoolmanTask::loadFilamentDetails()`/`sendFilamentDetails()` (`GET
+/filament/{id}`, `AppEventType::SpoolmanResponse` mit neuem
+`AppEvent::filament`-Feld). `SpoolmanTask::parseFilament()` dekodiert
+`bambu_temp_min`/`bambu_temp_max`/`bambu_k_factor` jetzt von dort (Root-
+Ebene der Antwort, nicht mehr unter einem verschachtelten `"filament"`-
+Schluessel wie in einer Spool-Antwort).
+
+**Modelle:** die drei Felder von `models::SpoolmanSpool` nach
+`models::SpoolmanFilament` verschoben (`bambuTempFieldsPresent/Valid/MinC/
+MaxC`, `bambuKFactorPresent/Valid/KFactor`); `SpoolmanSpool` bekommt
+stattdessen `filamentId` (aus `filament["id"]` der Spool-Antwort geparst),
+um den Folge-Request adressieren zu koennen. `parseSpool()` parst die drei
+Felder nicht mehr selbst.
+
+**AssignTray-Ablauf** (`AppTask.cpp`, bisher bereits auf echter Hardware
+validiert -- mit Bedacht angepasst): `SlotAssignmentStage` um `LoadingFilament`
+erweitert (`SelectingSpool -> LoadingSpool -> LoadingFilament -> WritingSlot`).
+`LoadingSpool`s Erfolgsantwort baut nicht mehr direkt das `AssignTray`-
+Kommando, sondern merkt sich material/colorHex in
+`PendingSlotAssignment::trayType/trayColorHex` und stoesst per
+`requestFilamentDetails()` den Filament-Fetch an. Neue
+`LoadingFilament`-Erfolgs-/Fehlerbehandlung baut das `AssignTray`-Kommando
+(neue Helper-Funktion `sendPendingSlotAssignTray()`, liest die gemerkten
+Felder + die per Parameter uebergebene Temperatur). Schlaegt der Filament-
+Fetch fehl (Netzwerkfehler, nicht "Feld fehlt/ungueltig"), wird die
+Zuordnung trotzdem abgeschlossen, nur ohne Temperatur -- dieselbe
+Nutzerfreundlichkeit wie beim bisherigen "Felder fehlen/ungueltig"-Fall,
+keine harte Fehlerabbruch mehr fuer einen reinen Netzwerk-Hickup beim
+zweiten Request.
+
+**Home-Tray-Karte** (`resolveTraySpoolDetails()`, gestern neu eingefuehrt):
+`TraySpoolDetailsEntry` um einen `TraySpoolDetailsStage`-Zustand erweitert
+(`Idle -> LoadingSpool -> LoadingFilament -> Loaded`) statt der bisherigen
+`pending`/`loaded`-Bools, gleiches Muster wie der AssignTray-Ablauf.
+`rtos::UiCommand` um `kFactorValid`/`kFactor` erweitert (K-Faktor ist jetzt
+keine `SpoolmanSpool`-Eigenschaft mehr, `command.spool` kann es nicht mehr
+tragen); Restgewicht nutzt neu das bereits vorhandene `UiCommand::weightGrams`
+statt `command.spool.remainingWeightGrams`. `UiBridge.cpp`s
+`detailsLoaded`-Erkennung (`command.spool.id != 0`) unveraendert gueltig,
+liest Gewicht/K-Faktor jetzt aber aus den neuen Feldern.
+
+Build (0 Warnungen), 51 native Tests gruen, RAM +6.2 KB (36.3% -> 38.2% von
+320 KB, groesster Einzelsprung bisher -- die zusaetzlichen `filament`-Felder
+in `AppEvent`/`SpoolmanCommand`, beide bereits recht grosse gequeute
+Strukturen). Geflasht.
+
+**Noch nicht auf echter Hardware verifiziert:** der komplette neue
+Filament-Fetch-Pfad (beide Verwendungen), insbesondere ob
+`GET /filament/{id}` bei diesem Spoolman-Server tatsaechlich `extra` auf
+Root-Ebene zurueckgibt wie angenommen, und ob der AssignTray-Ablauf mit dem
+zusaetzlichen Zwischenschritt weiterhin zuverlaessig funktioniert (er war
+vor dieser Aenderung bereits hardwaregetestet).
+
+Nachtrag (2026-08-24, Log-Spam bei jedem periodischen `push_status` auf
+Trace-Level, Nutzerwunsch): fuenf `FS_LOGD`/`FS_LOGI`-Zeilen in
+`BambuTask.cpp` ("Report raw payload", "MQTT command reply", "Report
+applied", "Report tray detail" je Fach) und `AppTask.cpp` ("Bambu event
+received") feuerten bisher bei *jedem* Statusbericht (alle paar Sekunden),
+nicht nur bei echten Ereignissen -- auf `FS_LOGT` (Trace) umgestellt. Build
+(0 Warnungen), 51 native Tests gruen, geflasht.
+
+Nachtrag (2026-08-24, Feldname-Korrektur + fehlende Diagnose-Logs, nach
+Hardware-Test): Nutzer meldete anhand eines echten Zuordnungs-Logs, dass
+trotz auf Filament-Ebene konfigurierter `bambu_temp_min`/`bambu_temp_max`/
+`flow_dynamics_k_factor`-Extra-Felder weiterhin `nozzle_temp_min=0
+nozzle_temp_max=0` an den Drucker gesendet wurde, und stellte klar, dass
+der korrekte Spoolman-Extra-Feldname fuer den K-Faktor
+`flow_dynamics_k_factor` ist (nicht das von mir angenommene
+`bambu_k_factor`). Zwei Aenderungen: (1) Feldname in `SpoolmanTask.cpp`
+(`parseFilament()`) sowie alle Kommentare in `SpoolmanCatalog.h`,
+`SpoolmanSpool.h`, `Messages.h`, `AppTask.cpp`, `UiBridge.cpp` von
+`bambu_k_factor` auf `flow_dynamics_k_factor` korrigiert. (2) Der
+Filament-Abruf (`getJson()`/`loadFilamentDetails()` in `SpoolmanTask.cpp`)
+hatte bislang *keinerlei* Logging -- weder Erfolg noch Fehlschlag --
+wodurch die eigentliche Ursache fuer `temp=0` nicht diagnostizierbar war.
+`getJson()` loggt jetzt jeden fehlgeschlagenen GET (`FS_LOGE`, URL +
+Fehlertext + ggf. JSON-Parse-Fehler) sowie jeden erfolgreichen GET
+(`FS_LOGT`, URL). `loadFilamentDetails()` loggt zusaetzlich nach dem
+Parsen die tatsaechlich extrahierten Werte (`FS_LOGD`: filament_id,
+temp_fields_present/valid, temp_min/max, kfactor_present/valid/wert) bzw.
+bei Parse-Fehlschlag den Grund (`FS_LOGE`). Damit sollte ein erneuter
+Zuordnungsversuch zeigen, ob (a) der HTTP-Request fehlschlaegt, (b) die
+Antwort geparst, aber `bambuTempFieldsValid=false` ist, oder (c) die
+Werte tatsaechlich korrekt ankommen und das Problem woanders liegt. Die
+eigentliche `temp=0`-Ursache ist damit noch nicht behoben, nur
+diagnostizierbar gemacht -- naechster Schritt ist ein erneuter
+Hardware-Test mit den neuen Logs. Ausserdem einen durch das vorherige
+sed-Refactoring versehentlich in sich widerspruechlichen Kommentar
+(`"flow_dynamics_k_factor", nicht "flow_dynamics_k_factor"`) auf
+`nicht "bambu_k_factor"` korrigiert. Build (0 Warnungen), 51 native Tests
+gruen, geflasht.
+
+Nachtrag (2026-08-24, weitere Diagnose-Logs nach erneutem Hardware-Test):
+Nutzer-Log zeigte `[SPOOLMAN] Filament loaded ... temp_fields_valid=1
+temp_min=191 temp_max=241 ...` (der Filament-Abruf war also erfolgreich
+und korrekt geparst), aber trotzdem weiterhin `nozzle_temp_min=0
+nozzle_temp_max=0` in der ausgehenden `ams_filament_setting`-MQTT-Nachricht
+242ms spaeter. Ausfuehrliche statische Codepruefung der gesamten Kette
+`SpoolmanTask::loadFilamentDetails()` -> `AppTask`s
+`SlotAssignmentStage::LoadingFilament`-Antwort-Handler ->
+`sendPendingSlotAssignTray()` -> `BambuTask::handleAssignTray()` fand
+keinen Logikfehler; die requestId-Verkettung (`action.requestId` ->
+LoadSpool -> LoadFilament -> `pendingSlotAssignment.requestId`) ist
+durchgaengig konsistent. Da die Ursache dadurch nicht abschliessend
+lokalisiert werden konnte, zwei weitere gezielte Logs ergaenzt, um den
+naechsten Hardware-Test eindeutig zu machen: `[SPOOLMAN] Filament loaded`
+traegt jetzt `request_id=` (zum Abgleich mit der Zuordnung); neu
+`[APP] Sending AssignTray request_id=... spool_id=... nozzle_temp_min=...
+nozzle_temp_max=...` direkt beim Enqueuen des `BambuCommand`s, sowie
+`[APP] LoadFilament skipped request_id=... spool_filament_id=...` falls
+der Filament-Folge-Request uebersprungen wird (z. B. `filamentId=0`). Noch
+kein Fix, nur weitere Diagnose. Build (0 Warnungen), 51 native Tests
+gruen, geflasht.
+
+Nachtrag (2026-08-24, drei Nutzer-Reports zu Leergewicht/Bruttogewicht/
+K-Faktor beim Staging, noch vor Antwort auf die obige Diagnose-Anfrage):
+(1) "Leergewicht wird immer 0g ausgegeben" -- Ursache gefunden (reiner
+UI-Bug, unabhaengig von der Spoolman-Antwort selbst):
+`UiBridge.cpp`s `UpdateStaging`-Handler initialisierte die lokalen
+Variablen `emptyWeightGrams`/`initialWeightGrams` *immer* aus
+`command.weightUpdate.*` (fuer den manuellen Text-Eingabe-Pfad gedacht),
+auch im `hasReloadedSpool`-Zweig (echter Spoolman-Reload) -- dort ist
+`command.weightUpdate` nie gesetzt (0), wodurch das per `command.spool.
+emptyWeightGrams` korrekt geladene Leergewicht direkt danach wieder auf 0
+ueberschrieben wurde. Jetzt quellenspezifisch vorbelegt
+(`hasReloadedSpool ? command.spool.* : command.weightUpdate.*`). (2)
+"Bruttogewicht zeigt Restgewicht-Leergewicht" -- war zuvor tatsaechlich der
+*Live-Waagenwert* (`liveWeight.grossWeightGrams`), voellig unabhaengig von
+der gestagten Spule; korrekte Semantik laut Mockup-Vorlage (Leer=250,
+Brutto=1247, Rest=997, also Brutto=Leer+Rest) jetzt nachgebaut:
+`stagingState.grossWeightGrams = emptyWeightGrams + remainingWeightGrams`.
+(3) "K-Faktor bei Staging-Spulenauswahl falsch/Mockdaten" -- bestaetigt:
+`updateHomeContent()`s Staging-Kachel (`objects.staging__staging`) zeigte
+seit der Restgewicht/K-Faktor-Einfuehrung (siehe Nachtrag oben) bewusst
+Mockdaten (`mockKFactorThousandths`, ein Rechenwert aus `spoolId % 5`).
+Die AMS-Faecher wurden damals bereits auf echte Spoolman-Werte umgestellt,
+die Staging-Kachel jedoch nicht. Fix: `AppTask` laedt beim Staging-Reload
+jetzt denselben LoadSpool->LoadFilament-Zweischritt wie beim
+AssignTray-Ablauf (neuer `PendingStagingFilamentLoad`-State plus
+`sendStagingUpdate()`-Helper) und liefert `emptySpoolWeightGrams`/
+`bambuKFactorValid`/`bambuKFactor` vom Filament-Endpoint an die UI
+(`UiCommand::kFactorValid`/`kFactor`, wiederverwendet von der
+Tray-Karten-Anzeige). `UiModels.h`s `UiStagingSummary` um `kFactorValid`/
+`kFactor` erweitert; `updateHomeContent()`s Staging-Kachel und
+`updateStagingContent()` (Detailtabelle) zeigen jetzt echte Werte statt
+Mock/Live-Waage, mit graceful degradation (Filament-Fetch schlaegt fehl ->
+Anzeige ohne K-Faktor-Zeile/mit Leergewicht 0, keine erfundenen Werte).
+Ausserdem auf Nutzerwunsch das Spoolman-Logging erhoeht: `loadSpools()`
+(Einzel-Spule und Suche) loggt jetzt vor dem Request die abgefragte URL
+und nach dem Parsen die vollstaendigen Ergebniswerte (`FS_LOGD`: spool_id,
+filament_id, vendor, material, empty/initial/remaining_weight bzw. bei
+der Suche die Trefferzahl) oder den Parse-Fehlschlag (`FS_LOGE`). Build
+(0 Warnungen), 51 native Tests gruen, geflasht.
+
+Nachtrag (2026-08-24, K-Faktor wird geladen, aber nirgends angezeigt):
+Hardware-Log bestaetigte, dass der K-Faktor-Fetch selbst funktioniert
+(`kfactor_valid=1 kfactor=0.100`), aber `stagingState.kFactorValid/kFactor`
+hatte in der Staging-Detailtabelle (`updateStagingContent()`,
+`scr_staging_details`) bislang schlicht keine eigene Zeile -- nur die
+Home-Kachel (`objects.staging__staging`) zeigt K-Faktor, die
+Detailtabelle (Spoolman-ID/Hersteller/Material/Farben/Leergewicht/
+Bruttogewicht/Restgewicht/NFC) aber nicht. `stagingTableRows` ist
+programmatisch erzeugt (`createStagingTableDecoration()`, 20px/Zeile ab
+y=80), nicht EEZ-Studio-generiert, daher ohne Studio-Aenderung um eine
+9. Zeile erweiterbar: Array-Groesse 8 -> 9, neue Zeile "K-Faktor: %.3f"
+(oder "nicht hinterlegt") zwischen Restgewicht und NFC eingefuegt. Letzte
+Zeile liegt jetzt bei y=240..260, die Aktionsbuttons beginnen bei y=264 --
+passt ohne Ueberlappung. Build (0 Warnungen), 51 native Tests gruen,
+geflasht.
+
+Nachtrag (2026-08-24, CMP_TRAY_CARD/CMP_STAGING_CARD auf drei Labels
+umgebaut, Nutzerumbau im ui-project): Nutzer hat in EEZ Studio das
+einzelne mehrzeilige "label"-Sub-Widget beider Komponenten durch drei
+eigene Labels ersetzt (material/weight/k_factor) und den Export bereits
+ausgefuehrt (`screens.c`/`screens.h` neu generiert,
+`objects.home_tray_N__material/weight/k_factor` bzw.
+`objects.staging__material/weight/k_factor`). `updateTrayButton()` in
+`UiBridge.cpp` nahm bisher genau ein `label`-Zielobjekt entgegen und
+baute einen kombinierten mehrzeiligen String -- Signatur auf drei
+separate `materialLabel`/`weightLabel`/`kFactorLabel`-Parameter
+umgestellt, alle fuenf Aufrufstellen (tray_1..4, external) sowie die
+Staging-Kachel in `updateHomeContent()` entsprechend angepasst. Leere
+Zeilen (kein K-Faktor hinterlegt, Restgewicht noch nicht geladen,
+Fach/Staging leer) setzen jetzt einfach leeren Text statt eine Zeile im
+kombinierten String wegzulassen -- bei fester Positionierung (kein
+Textumbruch-Layout) visuell aequivalent. Build (0 Warnungen), 51 native
+Tests gruen, geflasht.
+
+Nachtrag (2026-08-24, K-Faktor wird aus Spoolman geladen, aber im
+Staging-Kachel-Label `k_factor` nicht angezeigt -- Material/Gewicht
+zeigen laut Nutzer korrekt): Hardware-Log bestaetigt erneut einen
+korrekten Fetch (`kfactor_valid=1 kfactor=0.200`). Codepruefung der
+Kette `AppTask::sendStagingUpdate()` -> `UiBridge`s `UpdateStaging`-
+Handler -> `updateHomeContent()`s Staging-Kachel-Block fand keinen
+Logikfehler; alle drei Stellen setzen/lesen `kFactorValid`/`kFactor`
+konsistent, und der EEZ-Export-Offset fuer `objects.staging__k_factor`
+wurde gegen den Objekt-Erzeugungscode gegengeprueft (9 Sub-Widgets je
+Kartenprofil + 1 Wrapper-Slot, passt zur 10er-Schrittweite zwischen den
+`create_user_widget_cmp_*`-Aufrufen in `screens.c`). Da die Ursache
+dadurch nicht lokalisiert werden konnte, drei gezielte Logs ergaenzt:
+`[APP] Sending UpdateStaging ... kfactor_valid=... kfactor=...` beim
+Senden, `[UI] UpdateStaging received ... kfactor_valid=... kfactor=...`
+beim Empfang, und `[UI] Staging card k_factor label set/cleared
+text=... obj=<Pointer>` direkt vor dem `setControlText()`-Aufruf --
+letzteres insbesondere um zu pruefen, ob `objects.staging__k_factor`
+ueberhaupt ein gueltiges (nicht-null) LVGL-Objekt ist. Noch kein Fix,
+nur weitere Diagnose. Build (0 Warnungen), 51 native Tests gruen,
+geflasht.
+
+Nachtrag (2026-08-24, eigentliche Ursache gefunden -- betrifft auch den
+laengst zurueckliegenden `temp=0`-Bug): Nutzer-Log zeigte den
+entscheidenden Hinweis: `[APP] Sending UpdateStaging ... kfactor_valid=0`
+erschien **vor** `[SPOOLMAN] Filament loaded ... kfactor_valid=1`
+derselben Anfrage-ID -- die UI wurde also aktualisiert, *bevor* die
+echte Filament-Antwort überhaupt eintraf. Ursache:
+`SpoolmanTask::loadSpools()` sendet nach *jeder* `LoadSpool`-Anfrage
+(auch fuer eine einzelne Spule) zusaetzlich zur Spule selbst ein
+Abschluss-Event (`"N Spulen gefunden"`, `value=-1`, leeres `spool`/
+`filament`) mit dergleichen `requestId` -- urspruenglich fuer den
+Spulen-Picker gedacht ("Suche fertig"). Da `AssignTray`s
+`LoadingFilament`-Schritt, `AppTask::sendStagingUpdate()`s
+`PendingStagingFilamentLoad` und `resolveTraySpoolDetails()`s
+`TraySpoolDetailsEntry` alle den `LoadFilament`-Folge-Request unter
+*derselben* `requestId` wie die vorausgehende `LoadSpool`-Anfrage
+stellen, wurde dieses Abschluss-Event faelschlich als Filament-Antwort
+interpretiert -- es kommt strukturell *immer* zuerst an (direkt nach der
+LoadSpool-Antwort, noch bevor der Filament-Request den Server überhaupt
+erreicht hat). Die Handler lasen `value=-1` als "Fetch fehlgeschlagen",
+loeschten dabei aber ihren Pending-State; die echte Antwort landete
+danach in keinem Handler mehr. Fix an allen drei betroffenen Stellen in
+`AppTask.cpp`: Bedingung um `event.filament.id != 0` ergaenzt (nur eine
+echte Filament-Antwort setzt dieses Feld) -- der Abschluss-Marker faellt
+jetzt unbehandelt durch, der Pending-State bleibt bis zur echten Antwort
+bestehen. Erklaert rueckwirkend auch das nie aufgeklaerte
+`nozzle_temp_min=0 nozzle_temp_max=0`-Symptom vom AssignTray-Test sowie
+vermutlich denselben Fehler unbemerkt bei den AMS-Tray-Karten (Gewicht
+wird schon in der LoadSpool-Stufe gesetzt, daher unauffaellig -- nur
+K-Faktor war betroffen). `docs/bambu-protocol.md` entsprechend ergaenzt.
+Build (0 Warnungen), 51 native Tests gruen, geflasht -- Hardware-Test
+fuer Staging-K-Faktor UND AssignTray-Temperaturen steht noch aus.
+
 ## 9.2 Native Tags
 
 * [x] UID

@@ -58,6 +58,46 @@ models::PrinterStateCollection printerCollection{};
 // holds (name/host/serialNumber/accessCode/enabled/default/selected), not
 // live connection/AMS status.
 models::BambuConfigCollection printerConfigs{};
+// Persisted printer->AMS/tray->Spoolman-spool association (Nutzerwunsch
+// 2026-08-24, /mappings/printer-slots.json). Replaces an earlier attempt to
+// round-trip this through the printer itself via a custom MQTT field, which
+// hardware testing showed the printer never persists (see
+// docs/bambu-protocol.md). Kept locally instead; validated against live
+// material/colorHex on every sync (see resolveTraySpoolCacheSpoolId()) so a
+// spool physically swapped outside this app is detected as stale.
+models::TraySpoolCache traySpoolCache{};
+
+// Once a tray's Spoolman spool is identified (traySpoolCache above), the
+// remaining weight and K-factor are fetched from Spoolman and shown on the
+// tray card (Nutzerwunsch 2026-08-24). Small RAM-only cache keyed by
+// spoolId, *not* persisted (unlike traySpoolCache): this is live Spoolman
+// data (remaining weight changes as filament is used), not an identity
+// association -- re-fetched fresh every boot. Sized for a handful of
+// simultaneously displayed trays, not persisted associations; on overflow
+// the first slot is evicted rather than growing unbounded.
+constexpr std::size_t kMaximumTraySpoolDetailsEntries = 8;
+constexpr std::uint32_t kTraySpoolDetailsRequestIdBase = 0x54534402U;
+// Two sequential fetches per entry: LoadSpool first (for remainingWeightGrams
+// and to learn filamentId), then LoadFilament (for K-factor -- a Spoolman
+// *filament* property, not a spool property, see docs/bambu-protocol.md).
+// Both requests reuse the same slot's requestId since they never overlap in
+// time for a given entry.
+enum class TraySpoolDetailsStage : std::uint8_t {
+  Idle,
+  LoadingSpool,
+  LoadingFilament,
+  Loaded,
+};
+struct TraySpoolDetailsEntry {
+  rtos::SpoolId spoolId = 0;
+  TraySpoolDetailsStage stage = TraySpoolDetailsStage::Idle;
+  float remainingWeightGrams = 0.0F;
+  bool kFactorValid = false;
+  float kFactor = 0.0F;
+};
+std::array<TraySpoolDetailsEntry, kMaximumTraySpoolDetailsEntries>
+    traySpoolDetails{};
+
 std::uint32_t pendingBambuSaveRequestId = 0;
 bool pendingBambuSaveShowsResult = false;
 rtos::PrinterId pendingBambuSaveNotifyPrinterId = models::kInvalidPrinterId;
@@ -73,6 +113,7 @@ constexpr std::uint32_t kLegacyMigrationSetTagRequestId = 0x4D470103U;
 constexpr std::uint32_t kLegacyMigrationDeleteRequestBase = 0x4D470110U;
 constexpr std::uint32_t kNetworkLoadRequestId = 0x4E455401U;
 constexpr std::uint32_t kSpoolmanLoadRequestId = 0x53504D01U;
+constexpr std::uint32_t kTraySpoolCacheLoadRequestId = 0x54534301U;
 constexpr std::uint32_t kObsoletePendingWeightDeleteRequestId = 0x57475401U;
 constexpr std::uint32_t kObsoletePendingMeasurementsDeleteRequestId =
     0x57475402U;
@@ -120,6 +161,19 @@ struct WeightUpdateState {
 WeightUpdateState weightUpdate{};
 bool pendingStagingSpoolSelection = false;
 std::uint32_t pendingStagingSpoolRequestId = 0;
+// After a staging LoadSpool response arrives, a follow-up LoadFilament
+// fetch is needed for emptySpoolWeightGrams/K-Faktor (Spoolman *filament*
+// properties, see docs/bambu-protocol.md und Nutzerhinweis 2026-08-24) --
+// the embedded filament object inside a spool response is not reliable for
+// these fields (same issue as bambu_temp_min/bambu_temp_max). The resolved
+// spool is cached here across that second request the same way
+// pendingSlotAssignment caches trayType/trayColorHex.
+struct PendingStagingFilamentLoad {
+  bool active = false;
+  std::uint32_t requestId = 0;
+  models::SpoolmanSpool spool{};
+};
+PendingStagingFilamentLoad pendingStagingFilamentLoad{};
 // AppTask's own authoritative mirror of "is a spool currently staged",
 // kept in sync at every point staging content changes (see the three
 // UpdateStaging call sites). Lets navigation decisions (SelectStaging,
@@ -203,11 +257,17 @@ PendingTagResolution pendingTagResolution{};
 // AMS slot. AppTask does not retain resolved spool data after staging (see
 // requestStagingSpool), so the spool is re-loaded here (LoadingSpool) before
 // its material/color are sent to the printer via BambuCommand::AssignTray
-// (WritingSlot).
+// (WritingSlot). bambu_temp_min/bambu_temp_max are Spoolman *filament*
+// properties (Nutzerhinweis 2026-08-24), fetched via a dedicated
+// LoadingFilament step (using the spool's filamentId) rather than trusted
+// from the spool response's embedded filament object -- material/colorHex
+// are captured in PendingSlotAssignment across that step since they're
+// still needed once it completes.
 enum class SlotAssignmentStage : std::uint8_t {
   None,
   SelectingSpool,
   LoadingSpool,
+  LoadingFilament,
   WritingSlot,
 };
 struct PendingSlotAssignment {
@@ -217,10 +277,14 @@ struct PendingSlotAssignment {
   std::uint8_t amsId = 0;
   std::uint8_t trayId = 0;
   rtos::SpoolId spoolId = 0;
-  // Set when the resolved spool's Spoolman filament has no usable
-  // bambu_temp_min/bambu_temp_max extra fields, so the completion dialog
-  // can tell the user the printer only received material/color, not a
-  // temperature range (see requestStagingSpool's SpoolmanResponse handler).
+  // Captured from the LoadingSpool response, needed again once
+  // LoadingFilament completes.
+  char trayType[16]{};
+  char trayColorHex[9]{};
+  // Set when the resolved filament has no usable bambu_temp_min/
+  // bambu_temp_max extra fields (or the LoadFilament fetch itself failed),
+  // so the completion dialog can tell the user the printer only received
+  // material/color, not a temperature range.
   bool tempFieldsMissing = false;
 };
 PendingSlotAssignment pendingSlotAssignment{};
@@ -323,6 +387,23 @@ bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
                    const char* failureMessage);
 bool requestStagingSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
                          rtos::SpoolId spoolId);
+bool requestFilamentDetails(rtos::RtosContext& ctx, std::uint32_t requestId,
+                            std::uint32_t filamentId);
+bool sendPendingSlotAssignTray(rtos::RtosContext& ctx, std::uint32_t requestId,
+                               std::uint16_t nozzleTempMinC,
+                               std::uint16_t nozzleTempMaxC);
+void sendStagingUpdate(rtos::RtosContext& ctx, std::uint32_t requestId,
+                       const models::SpoolmanSpool& spool,
+                       float emptyWeightGrams, bool kFactorValid,
+                       float kFactor);
+struct TraySpoolDetailsSnapshot {
+  bool loaded = false;
+  float remainingWeightGrams = 0.0F;
+  bool kFactorValid = false;
+  float kFactor = 0.0F;
+};
+TraySpoolDetailsSnapshot resolveTraySpoolDetails(rtos::RtosContext& ctx,
+                                                 rtos::SpoolId spoolId);
 
 void showNativeTagAction(rtos::RtosContext& ctx, std::uint32_t requestId,
                          rtos::SpoolId authoritativeSpoolId,
@@ -696,6 +777,83 @@ void requestBambuConfiguration(rtos::RtosContext& ctx) {
             "Command enqueue failed queue=storage op=load_bambu_config");
 }
 
+void requestTraySpoolCache(rtos::RtosContext& ctx) {
+  rtos::StorageCommand command{};
+  command.type = rtos::StorageCommandType::LoadJson;
+  command.requestId = kTraySpoolCacheLoadRequestId;
+  command.documentType = rtos::StorageDocumentType::TraySpoolCache;
+  std::snprintf(command.path, sizeof(command.path),
+               "/mappings/printer-slots.json");
+  if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
+      pdPASS)
+    FS_LOGW(services::LogComponent::App,
+            "Command enqueue failed queue=storage op=load_tray_spool_cache");
+}
+
+// Fire-and-forget: no dialog, no pending-requestId tracking -- a failed save
+// just means the association isn't durable yet, retried on the next
+// successful assignment. requestId 0 is safe here (nothing in the event
+// loop matches a bare 0 without also checking a specific pending state).
+void persistTraySpoolCache(rtos::RtosContext& ctx) {
+  JsonDocument document;
+  document["schemaVersion"] = 1;
+  document["updatedAt"] = "1970-01-01T00:00:00Z";
+  document["documentType"] = "traySpoolCache";
+  JsonArray entries = document["entries"].to<JsonArray>();
+  const std::size_t count =
+      traySpoolCache.entryCount < models::kMaximumTraySpoolCacheEntries
+          ? traySpoolCache.entryCount
+          : models::kMaximumTraySpoolCacheEntries;
+  for (std::size_t index = 0; index < count; ++index) {
+    const models::TraySpoolCacheEntry& source = traySpoolCache.entries[index];
+    JsonObject entry = entries.add<JsonObject>();
+    entry["printerId"] = source.printerId;
+    entry["amsId"] = source.amsId;
+    entry["trayId"] = source.trayId;
+    entry["spoolId"] = source.spoolId;
+    entry["material"] = source.material;
+    entry["colorHex"] = source.colorHex;
+  }
+  rtos::StorageCommand storage{};
+  storage.type = rtos::StorageCommandType::SaveJson;
+  storage.documentType = rtos::StorageDocumentType::TraySpoolCache;
+  std::snprintf(storage.path, sizeof(storage.path),
+               "/mappings/printer-slots.json");
+  const std::size_t length =
+      serializeJson(document, storage.json, sizeof(storage.json));
+  if (length == 0 || length >= sizeof(storage.json)) {
+    FS_LOGW(services::LogComponent::App,
+            "Tray-Spoolman cache too large to persist entries=%u",
+            static_cast<unsigned>(count));
+    return;
+  }
+  storage.jsonLength = static_cast<std::uint16_t>(length);
+  if (xQueueSend(ctx.storageCommandQueue, &storage, pdMS_TO_TICKS(1000)) !=
+      pdPASS)
+    FS_LOGW(services::LogComponent::App,
+            "Command enqueue failed queue=storage op=save_tray_spool_cache");
+}
+
+// Returns the cached Spoolman spool id for (printerId, amsId, trayId) only
+// if the printer's *current* material/colorHex still match what was true at
+// assignment time -- otherwise the tray was physically changed outside this
+// app since, and the association can no longer be trusted (0 = unknown,
+// shown as "?" by the UI).
+rtos::SpoolId resolveTraySpoolCacheSpoolId(rtos::PrinterId printerId,
+                                           std::uint8_t amsId,
+                                           std::uint8_t trayId,
+                                           const char* material,
+                                           const char* colorHex) {
+  const models::TraySpoolCacheEntry* entry = models::findTraySpoolCacheEntry(
+      traySpoolCache, printerId, amsId, trayId);
+  if (entry == nullptr) return 0;
+  if (std::strcmp(entry->material, material) != 0 ||
+      std::strcmp(entry->colorHex, colorHex) != 0) {
+    return 0;
+  }
+  return entry->spoolId;
+}
+
 // Pushes one printerConfigs entry to the UI's printer list/header rendering
 // (UiBridge.cpp printerEntries), which used to be a separate, unfed mock.
 // value = 120 + bitmask(enabled=1, isDefault=2, isActive=4); see the
@@ -765,9 +923,26 @@ void syncAmsToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
       tray.trayId = trayIndex;
       tray.value =
           300 + (slot.state == models::PrinterSlotState::Ready ? 1 : 0);
-      tray.spoolId = slot.spoolId;
+      tray.spoolId = resolveTraySpoolCacheSpoolId(
+          printerId, amsIndex, trayIndex, slot.material, slot.colorHex);
       std::snprintf(tray.title, sizeof(tray.title), "%s", slot.material);
       std::snprintf(tray.text, sizeof(tray.text), "%s", slot.colorHex);
+      if (tray.spoolId != 0) {
+        // Restgewicht/K-Faktor aus Spoolman nachladen, sobald die Spule
+        // identifiziert ist (Nutzerwunsch 2026-08-24) -- tray.spool.id
+        // bleibt sonst 0 (UiBridge liest das als "noch nicht geladen" und
+        // zeigt nur das Material). K-Faktor ist eine Spoolman-*Filament*-
+        // Eigenschaft (Nutzerhinweis 2026-08-24), daher eigene
+        // UiCommand-Felder statt tray.spool (das nur Spulen-Felder traegt).
+        const TraySpoolDetailsSnapshot details =
+            resolveTraySpoolDetails(ctx, tray.spoolId);
+        if (details.loaded) {
+          tray.spool.id = tray.spoolId;
+          tray.weightGrams = details.remainingWeightGrams;
+          tray.kFactorValid = details.kFactorValid;
+          tray.kFactor = details.kFactor;
+        }
+      }
       sendUiCommand(ctx, tray, "AppTask: tray details sync overflow");
     }
   }
@@ -781,11 +956,24 @@ void syncAmsToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
                                   models::PrinterSlotState::Ready
                               ? 1
                               : 0);
-  external.spoolId = printer->externalSlot.spoolId;
+  external.spoolId = resolveTraySpoolCacheSpoolId(
+      printerId, models::kExternalTraySentinel,
+      models::kExternalTraySentinel, printer->externalSlot.material,
+      printer->externalSlot.colorHex);
   std::snprintf(external.title, sizeof(external.title), "%s",
                 printer->externalSlot.material);
   std::snprintf(external.text, sizeof(external.text), "%s",
                 printer->externalSlot.colorHex);
+  if (external.spoolId != 0) {
+    const TraySpoolDetailsSnapshot details =
+        resolveTraySpoolDetails(ctx, external.spoolId);
+    if (details.loaded) {
+      external.spool.id = external.spoolId;
+      external.weightGrams = details.remainingWeightGrams;
+      external.kFactorValid = details.kFactorValid;
+      external.kFactor = details.kFactor;
+    }
+  }
   sendUiCommand(ctx, external, "AppTask: external tray sync overflow");
 }
 
@@ -1013,6 +1201,69 @@ bool requestStagingSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
                     pdMS_TO_TICKS(1000)) == pdPASS;
 }
 
+// bambu_temp_min/bambu_temp_max/flow_dynamics_k_factor are Spoolman *filament*
+// properties (Nutzerhinweis 2026-08-24) -- fetched via their own request
+// instead of trusting a spool response's embedded filament object.
+bool requestFilamentDetails(rtos::RtosContext& ctx, std::uint32_t requestId,
+                            std::uint32_t filamentId) {
+  models::SpoolmanSettings settings{};
+  if (filamentId == 0 || !spoolmanSettingsFromDraft(settings)) return false;
+  rtos::SpoolmanCommand command{};
+  command.type = rtos::SpoolmanCommandType::LoadFilament;
+  command.requestId = requestId;
+  command.filamentId = filamentId;
+  command.settings = settings;
+  return xQueueSend(ctx.spoolmanCommandQueue, &command,
+                    pdMS_TO_TICKS(1000)) == pdPASS;
+}
+
+TraySpoolDetailsEntry* findOrCreateTraySpoolDetails(rtos::SpoolId spoolId) {
+  for (auto& entry : traySpoolDetails) {
+    if (entry.spoolId == spoolId) return &entry;
+  }
+  for (auto& entry : traySpoolDetails) {
+    if (entry.spoolId == 0) {
+      entry.spoolId = spoolId;
+      return &entry;
+    }
+  }
+  // Cache full: evict the first slot. Realistic usage (a handful of
+  // simultaneously displayed, distinct spools) never gets close to this.
+  traySpoolDetails[0] = TraySpoolDetailsEntry{};
+  traySpoolDetails[0].spoolId = spoolId;
+  return &traySpoolDetails[0];
+}
+
+// Returns the cached remaining weight/K-factor for `spoolId` if already
+// fetched from Spoolman; otherwise (re-)starts the LoadSpool->LoadFilament
+// fetch chain (unless one is already in flight) and returns `loaded ==
+// false` for now -- the next sync after the response arrives (see the
+// SpoolmanResponse/SpoolmanError handlers further down) will have it. Never
+// re-fetches once loaded: this is a display-only snapshot, not kept fresh
+// against later weight changes (Nutzerwunsch 2026-08-24).
+TraySpoolDetailsSnapshot resolveTraySpoolDetails(rtos::RtosContext& ctx,
+                                                 rtos::SpoolId spoolId) {
+  TraySpoolDetailsSnapshot snapshot{};
+  if (spoolId == 0) return snapshot;
+  TraySpoolDetailsEntry* entry = findOrCreateTraySpoolDetails(spoolId);
+  if (entry->stage == TraySpoolDetailsStage::Loaded) {
+    snapshot.loaded = true;
+    snapshot.remainingWeightGrams = entry->remainingWeightGrams;
+    snapshot.kFactorValid = entry->kFactorValid;
+    snapshot.kFactor = entry->kFactor;
+    return snapshot;
+  }
+  if (entry->stage != TraySpoolDetailsStage::Idle) return snapshot;
+  const std::size_t index =
+      static_cast<std::size_t>(entry - traySpoolDetails.data());
+  if (requestStagingSpool(
+          ctx, kTraySpoolDetailsRequestIdBase + static_cast<std::uint32_t>(index),
+          spoolId)) {
+    entry->stage = TraySpoolDetailsStage::LoadingSpool;
+  }
+  return snapshot;
+}
+
 bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
                    const char* failureMessage) {
   if (xQueueSend(ctx.uiCommandQueue, &command, pdMS_TO_TICKS(1000)) == pdPASS) {
@@ -1072,6 +1323,76 @@ bool sendBambuCommand(rtos::RtosContext& ctx,
           "Command enqueue failed queue=bambu command=%u",
           static_cast<unsigned>(command.type));
   return false;
+}
+
+// Builds and sends the AssignTray command from pendingSlotAssignment's
+// captured material/colorHex (set when its LoadingSpool step completed),
+// plus whatever nozzle temperature range the caller resolved (0/0 if
+// bambu_temp_min/bambu_temp_max are missing/invalid/unreachable -- no
+// temperature is ever invented, see the LoadingFilament response handler).
+bool sendPendingSlotAssignTray(rtos::RtosContext& ctx, std::uint32_t requestId,
+                               std::uint16_t nozzleTempMinC,
+                               std::uint16_t nozzleTempMaxC) {
+  rtos::BambuCommand assignTray{};
+  assignTray.type = rtos::BambuCommandType::AssignTray;
+  assignTray.requestId = requestId;
+  assignTray.printerId = pendingSlotAssignment.printerId;
+  // pendingSlotAssignment.amsId is the UI-side 1-based AMS number
+  // (validated as 1..kMaximumAmsPerPrinter at the ConfigureSlotFromStaging/
+  // ReapplySlot entry point); the wire protocol counts AMS units 0-based
+  // (see the matching conversion/comment at ResetSlot/UntagSlot).
+  assignTray.amsId = static_cast<std::uint8_t>(pendingSlotAssignment.amsId - 1U);
+  assignTray.trayId = pendingSlotAssignment.trayId;
+  assignTray.spoolId = pendingSlotAssignment.spoolId;
+  std::snprintf(assignTray.trayType, sizeof(assignTray.trayType), "%s",
+               pendingSlotAssignment.trayType);
+  std::snprintf(assignTray.trayColorHex, sizeof(assignTray.trayColorHex), "%s",
+               pendingSlotAssignment.trayColorHex);
+  assignTray.nozzleTempMinC = nozzleTempMinC;
+  assignTray.nozzleTempMaxC = nozzleTempMaxC;
+  FS_LOGD(services::LogComponent::App,
+          "Sending AssignTray request_id=%lu spool_id=%lu "
+          "nozzle_temp_min=%u nozzle_temp_max=%u",
+          static_cast<unsigned long>(requestId),
+          static_cast<unsigned long>(assignTray.spoolId), nozzleTempMinC,
+          nozzleTempMaxC);
+  return sendBambuCommand(ctx, assignTray);
+}
+
+// Builds and sends the UpdateStaging UiCommand plus the "ins Staging
+// geladen" toast once the staged spool's data is complete -- either after
+// the LoadFilament follow-up finished (emptyWeightGrams/kFactor from the
+// filament, see PendingStagingFilamentLoad) or, on a failed/skipped
+// follow-up, immediately with just the spool-level data (graceful
+// degradation, same pattern as sendPendingSlotAssignTray()).
+void sendStagingUpdate(rtos::RtosContext& ctx, std::uint32_t requestId,
+                       const models::SpoolmanSpool& spool,
+                       float emptyWeightGrams, bool kFactorValid,
+                       float kFactor) {
+  stagingSpoolId = spool.id;
+  rtos::UiCommand staging{};
+  staging.type = rtos::UiCommandType::UpdateStaging;
+  staging.requestId = requestId;
+  staging.spoolId = spool.id;
+  staging.spool = spool;
+  staging.spool.emptyWeightGrams = emptyWeightGrams;
+  staging.kFactorValid = kFactorValid;
+  staging.kFactor = kFactor;
+  FS_LOGD(services::LogComponent::App,
+          "Sending UpdateStaging request_id=%lu spool_id=%lu "
+          "empty_weight=%.1f kfactor_valid=%d kfactor=%.3f",
+          static_cast<unsigned long>(requestId),
+          static_cast<unsigned long>(spool.id),
+          static_cast<double>(emptyWeightGrams), kFactorValid,
+          static_cast<double>(kFactor));
+  sendUiCommand(ctx, staging, "AppTask: staging selection overflow");
+  rtos::UiCommand toast{};
+  toast.type = rtos::UiCommandType::ShowToast;
+  toast.requestId = requestId;
+  std::snprintf(toast.text, sizeof(toast.text),
+               "Spule #%lu ins Staging geladen",
+               static_cast<unsigned long>(spool.id));
+  sendUiCommand(ctx, toast, "AppTask: staging toast overflow");
 }
 
 // Auto-connect every enabled printer so real status/AMS data is available
@@ -4178,6 +4499,55 @@ void appTask(void* parameter) {
       currentScreen = result.screenId;
       sendUiCommand(ctx, result, "AppTask: import result UI overflow");
     } else if (event.type == rtos::AppEventType::SpoolmanResponse &&
+               event.requestId >= kTraySpoolDetailsRequestIdBase &&
+               event.requestId < kTraySpoolDetailsRequestIdBase +
+                                      kMaximumTraySpoolDetailsEntries) {
+      // Response to resolveTraySpoolDetails()'s two-step fetch
+      // (LoadSpool -> LoadFilament, see TraySpoolDetailsStage) -- store the
+      // result and re-sync Home so the tray card picks it up without
+      // waiting for the next unrelated report (Nutzerwunsch 2026-08-24).
+      const std::size_t index = event.requestId - kTraySpoolDetailsRequestIdBase;
+      TraySpoolDetailsEntry& entry = traySpoolDetails[index];
+      if (entry.stage == TraySpoolDetailsStage::LoadingSpool) {
+        if (event.value >= 0 && event.spool.id == entry.spoolId) {
+          entry.remainingWeightGrams = event.spool.remainingWeightGrams;
+          if (event.spool.filamentId != 0 &&
+              requestFilamentDetails(ctx, event.requestId,
+                                     event.spool.filamentId)) {
+            entry.stage = TraySpoolDetailsStage::LoadingFilament;
+          } else {
+            // No filament id, or the follow-up request couldn't be
+            // enqueued -- show the weight we do have rather than nothing.
+            entry.stage = TraySpoolDetailsStage::Loaded;
+            if (models::isValidPrinterId(printerCollection.activePrinterId))
+              syncAmsToUi(ctx, printerCollection.activePrinterId);
+          }
+        } else {
+          entry = TraySpoolDetailsEntry{};
+        }
+      } else if (entry.stage == TraySpoolDetailsStage::LoadingFilament &&
+                 event.filament.id != 0) {
+        // event.filament.id != 0 excludes loadSpools()'s trailing "N Spulen
+        // gefunden" completion marker (see docs/bambu-protocol.md) -- it
+        // reuses this same requestId (LoadSpool -> LoadFilament chain both
+        // key off event.requestId) and, for a single-spool LoadSpool, is
+        // enqueued immediately after the real spool response, arriving here
+        // well before the actual (HTTP-round-trip-bound) filament response.
+        // Without this guard it was mistaken for "filament fetch done, no
+        // data", prematurely marking the entry Loaded with kFactorValid
+        // still false -- the real response then arrived to a stage that no
+        // longer matched anything and was silently dropped (bug found via
+        // Nutzer-Report 2026-08-24, staging card showed the same symptom).
+        entry.kFactorValid = event.filament.bambuKFactorValid;
+        entry.kFactor = event.filament.bambuKFactor;
+        // Weight is already known from the first step regardless of
+        // whether the filament fetch itself succeeded -- show what we
+        // have instead of discarding it over a missing K-factor.
+        entry.stage = TraySpoolDetailsStage::Loaded;
+        if (models::isValidPrinterId(printerCollection.activePrinterId))
+          syncAmsToUi(ctx, printerCollection.activePrinterId);
+      }
+    } else if (event.type == rtos::AppEventType::SpoolmanResponse &&
                event.requestId == kLegacyMigrationLoadSpoolRequestId &&
                legacyMigrationStage == LegacyMigrationStage::LoadingTarget) {
       if (event.value < 0) {
@@ -4280,11 +4650,11 @@ void appTask(void* parameter) {
                pendingSlotAssignment.stage ==
                    SlotAssignmentStage::LoadingSpool &&
                event.requestId == pendingSlotAssignment.requestId) {
-      rtos::UiCommand hide{};
-      hide.type = rtos::UiCommandType::HideProgress;
-      sendUiCommand(ctx, hide,
-                    "AppTask: slot assignment progress close overflow");
       if (event.value < 0 || event.spool.id == 0) {
+        rtos::UiCommand hide{};
+        hide.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, hide,
+                      "AppTask: slot assignment progress close overflow");
         pendingSlotAssignment = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, event.requestId,
@@ -4292,37 +4662,47 @@ void appTask(void* parameter) {
                     "Spulendaten konnten nicht geladen werden.");
         continue;
       }
-      // Daten: material/color aus der aufgeloesten Spule; Bambu erwartet
-      // trayColorHex als RRGGBB(AA)-Hexstring, colorHex[0] liefert genau das.
-      rtos::BambuCommand assignTray{};
-      assignTray.type = rtos::BambuCommandType::AssignTray;
-      assignTray.requestId = event.requestId;
-      assignTray.printerId = pendingSlotAssignment.printerId;
-      // pendingSlotAssignment.amsId is the UI-side 1-based AMS number
-      // (validated as 1..kMaximumAmsPerPrinter at the ConfigureSlotFromStaging/
-      // ReapplySlot entry point); the wire protocol counts AMS units 0-based
-      // (see the matching conversion/comment at ResetSlot/UntagSlot above).
-      assignTray.amsId =
-          static_cast<std::uint8_t>(pendingSlotAssignment.amsId - 1U);
-      assignTray.trayId = pendingSlotAssignment.trayId;
-      assignTray.spoolId = event.spool.id;
-      std::snprintf(assignTray.trayType, sizeof(assignTray.trayType), "%s",
+      // Material/color aus der aufgeloesten Spule; Bambu erwartet
+      // trayColorHex als RRGGBB(AA)-Hexstring, colorHex[0] liefert genau
+      // das. Fuer die spaetere LoadingFilament-Antwort gemerkt (siehe
+      // sendPendingSlotAssignTray()) -- bambu_temp_min/bambu_temp_max sind
+      // eine Spoolman *Filament*-Eigenschaft (Nutzerhinweis 2026-08-24),
+      // dafuer ein eigener Request statt sich auf das verschachtelte
+      // filament-Objekt dieser Spool-Antwort zu verlassen.
+      pendingSlotAssignment.spoolId = event.spool.id;
+      std::snprintf(pendingSlotAssignment.trayType,
+                    sizeof(pendingSlotAssignment.trayType), "%s",
                     event.spool.material);
-      std::snprintf(assignTray.trayColorHex, sizeof(assignTray.trayColorHex),
-                    "%s",
+      std::snprintf(pendingSlotAssignment.trayColorHex,
+                    sizeof(pendingSlotAssignment.trayColorHex), "%s",
                     event.spool.colorCount > 0 ? event.spool.colorHex[0] : "");
-      // Duesentemperatur aus den Spoolman-Filament-Extra-Feldern
-      // bambu_temp_min/bambu_temp_max (siehe SpoolmanTask::parseSpool);
-      // bleiben 0, wenn diese fehlen oder ungueltig sind -- der Nutzer wird
-      // darauf per Hinweis im Ergebnisdialog aufmerksam gemacht (siehe die
-      // BambuUpdate/BambuError-Behandlung fuer SlotAssignmentStage::
-      // WritingSlot), es wird keine Temperatur erfunden.
-      pendingSlotAssignment.tempFieldsMissing = !event.spool.bambuTempFieldsValid;
-      if (event.spool.bambuTempFieldsValid) {
-        assignTray.nozzleTempMinC = event.spool.bambuTempMinC;
-        assignTray.nozzleTempMaxC = event.spool.bambuTempMaxC;
+      if (event.spool.filamentId != 0 &&
+          requestFilamentDetails(ctx, event.requestId,
+                                 event.spool.filamentId)) {
+        pendingSlotAssignment.stage = SlotAssignmentStage::LoadingFilament;
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::SpoolmanRequest, event.requestId,
+                    "Slot konfigurieren", "Filamentdaten werden geladen.");
+        continue;
       }
-      if (!sendBambuCommand(ctx, assignTray)) {
+      // Keine Filament-ID (sollte normalerweise nicht vorkommen) oder der
+      // Folge-Request konnte nicht gesendet werden -- ohne Temperatur
+      // fortfahren statt die ganze Zuordnung abzubrechen (gleiche
+      // Nutzerfreundlichkeit wie bei fehlenden/ungueltigen bambu_temp_min/
+      // bambu_temp_max-Werten, siehe LoadingFilament-Behandlung unten).
+      FS_LOGD(services::LogComponent::App,
+              "LoadFilament skipped request_id=%lu spool_filament_id=%lu -- "
+              "proceeding without temperature",
+              static_cast<unsigned long>(event.requestId),
+              static_cast<unsigned long>(event.spool.filamentId));
+      pendingSlotAssignment.tempFieldsMissing = true;
+      {
+        rtos::UiCommand hide{};
+        hide.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, hide,
+                      "AppTask: slot assignment progress close overflow");
+      }
+      if (!sendPendingSlotAssignTray(ctx, event.requestId, 0, 0)) {
         pendingSlotAssignment = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, event.requestId,
@@ -4331,7 +4711,56 @@ void appTask(void* parameter) {
         continue;
       }
       pendingSlotAssignment.stage = SlotAssignmentStage::WritingSlot;
-      pendingSlotAssignment.spoolId = event.spool.id;
+      sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                  rtos::UiOverlayKind::BambuConnection, event.requestId,
+                  "Slot konfigurieren",
+                  "Slotdaten werden an den Drucker gesendet.");
+      continue;
+    } else if (event.type == rtos::AppEventType::SpoolmanResponse &&
+               pendingSlotAssignment.stage ==
+                   SlotAssignmentStage::LoadingFilament &&
+               event.requestId == pendingSlotAssignment.requestId &&
+               event.filament.id != 0) {
+      // event.filament.id != 0 excludes loadSpools()'s trailing "N Spulen
+      // gefunden" completion marker (see docs/bambu-protocol.md): the
+      // preceding LoadSpool request (requestStagingSpool()) and this
+      // LoadFilament follow-up both key off event.requestId, and that
+      // marker -- always sent after a LoadSpool response, empty spool/
+      // filament payload, value=-1 -- reaches this queue well before the
+      // real (HTTP-round-trip-bound) filament response. Without this guard
+      // it was mistaken for "filament fetch done, no data", sending the
+      // AssignTray command with nozzle_temp_min/max=0 immediately -- the
+      // real response then arrived to a stage that had already moved to
+      // WritingSlot and was silently dropped (root cause of the
+      // nozzle_temp_min=0/nozzle_temp_max=0 hardware finding, 2026-08-24).
+      rtos::UiCommand hide{};
+      hide.type = rtos::UiCommandType::HideProgress;
+      sendUiCommand(ctx, hide,
+                    "AppTask: slot assignment progress close overflow");
+      // bambu_temp_min/bambu_temp_max bleiben 0, wenn sie fehlen/ungueltig
+      // sind oder der Fetch selbst fehlschlug -- der Nutzer wird darauf per
+      // Hinweis im Ergebnisdialog aufmerksam gemacht (siehe die BambuUpdate/
+      // BambuError-Behandlung fuer SlotAssignmentStage::WritingSlot), es
+      // wird keine Temperatur erfunden.
+      std::uint16_t nozzleTempMinC = 0;
+      std::uint16_t nozzleTempMaxC = 0;
+      if (event.value >= 0 && event.filament.bambuTempFieldsValid) {
+        nozzleTempMinC = event.filament.bambuTempMinC;
+        nozzleTempMaxC = event.filament.bambuTempMaxC;
+        pendingSlotAssignment.tempFieldsMissing = false;
+      } else {
+        pendingSlotAssignment.tempFieldsMissing = true;
+      }
+      if (!sendPendingSlotAssignTray(ctx, event.requestId, nozzleTempMinC,
+                                     nozzleTempMaxC)) {
+        pendingSlotAssignment = {};
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event.requestId,
+                    "Slot nicht konfiguriert",
+                    "Der Auftrag konnte nicht an den Drucker gesendet werden.");
+        continue;
+      }
+      pendingSlotAssignment.stage = SlotAssignmentStage::WritingSlot;
       sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                   rtos::UiOverlayKind::BambuConnection, event.requestId,
                   "Slot konfigurieren",
@@ -4342,24 +4771,51 @@ void appTask(void* parameter) {
           event.requestId == pendingStagingSpoolRequestId) {
         if (event.value >= 0 && event.spool.id != 0) {
           pendingStagingSpoolRequestId = 0;
-          stagingSpoolId = event.spool.id;
           rtos::UiCommand hide{};
           hide.type = rtos::UiCommandType::HideProgress;
           sendUiCommand(ctx, hide, "AppTask: staging load close overflow");
-          rtos::UiCommand staging{};
-          staging.type = rtos::UiCommandType::UpdateStaging;
-          staging.requestId = event.requestId;
-          staging.spoolId = event.spool.id;
-          staging.spool = event.spool;
-          sendUiCommand(ctx, staging, "AppTask: staging selection overflow");
-          rtos::UiCommand toast{};
-          toast.type = rtos::UiCommandType::ShowToast;
-          toast.requestId = event.requestId;
-          std::snprintf(toast.text, sizeof(toast.text),
-                        "Spule #%lu ins Staging geladen",
-                        static_cast<unsigned long>(event.spool.id));
-          sendUiCommand(ctx, toast, "AppTask: staging toast overflow");
+          // emptySpoolWeightGrams/K-Faktor sind Spoolman *Filament*-
+          // Eigenschaften (Nutzerhinweis 2026-08-24) -- das eingebettete
+          // filament-Objekt dieser Spool-Antwort ist dafuer nicht
+          // zuverlaessig genug (dasselbe Problem wie bei bambu_temp_min/
+          // bambu_temp_max), daher ein eigener Folge-Request statt K-Faktor
+          // wie zuvor als Mockdaten anzuzeigen.
+          if (event.spool.filamentId != 0 &&
+              requestFilamentDetails(ctx, event.requestId,
+                                     event.spool.filamentId)) {
+            pendingStagingFilamentLoad.active = true;
+            pendingStagingFilamentLoad.requestId = event.requestId;
+            pendingStagingFilamentLoad.spool = event.spool;
+          } else {
+            sendStagingUpdate(ctx, event.requestId, event.spool,
+                              event.spool.emptyWeightGrams, false, 0.0F);
+          }
         }
+        continue;
+      }
+      if (pendingStagingFilamentLoad.active &&
+          event.requestId == pendingStagingFilamentLoad.requestId &&
+          event.filament.id != 0) {
+        // event.filament.id != 0 excludes loadSpools()'s trailing "N Spulen
+        // gefunden" completion marker (see docs/bambu-protocol.md): the
+        // preceding LoadSpool request and this LoadFilament follow-up both
+        // key off event.requestId, and that marker -- always sent right
+        // after a LoadSpool response, empty spool/filament payload,
+        // value=-1 -- reaches this queue well before the real (HTTP-round-
+        // trip-bound) filament response. Without this guard it was
+        // mistaken for "filament fetch done, no data", clearing
+        // pendingStagingFilamentLoad with kFactorValid still false -- the
+        // real response then arrived to a cleared state and was silently
+        // dropped (root cause of the "K-Faktor wird geladen, aber nicht
+        // angezeigt" hardware finding, 2026-08-24).
+        const models::SpoolmanSpool spool = pendingStagingFilamentLoad.spool;
+        pendingStagingFilamentLoad = {};
+        float emptyWeightGrams = spool.emptyWeightGrams;
+        if (event.filament.emptySpoolWeightGrams > 0.0F)
+          emptyWeightGrams = event.filament.emptySpoolWeightGrams;
+        sendStagingUpdate(ctx, event.requestId, spool, emptyWeightGrams,
+                          event.filament.bambuKFactorValid,
+                          event.filament.bambuKFactor);
         continue;
       }
       rtos::UiCommand picker{};
@@ -4798,6 +5254,19 @@ void appTask(void* parameter) {
                     "Spule konnte nicht geladen werden", event.text);
         continue;
       }
+      if (pendingStagingFilamentLoad.active &&
+          event.requestId == pendingStagingFilamentLoad.requestId) {
+        // Filament fetch failed (network hiccup etc.) -- spool data is
+        // already known from the LoadSpool step, so show the staged spool
+        // anyway without empty-weight/K-Faktor rather than abandoning the
+        // staging selection (same graceful degradation as the AssignTray
+        // LoadingFilament error path above).
+        const models::SpoolmanSpool spool = pendingStagingFilamentLoad.spool;
+        pendingStagingFilamentLoad = {};
+        sendStagingUpdate(ctx, event.requestId, spool,
+                          spool.emptyWeightGrams, false, 0.0F);
+        continue;
+      }
       if (pendingSlotAssignment.stage == SlotAssignmentStage::LoadingSpool &&
           event.requestId == pendingSlotAssignment.requestId) {
         pendingSlotAssignment = {};
@@ -4807,6 +5276,51 @@ void appTask(void* parameter) {
                     event.text[0] != '\0'
                         ? event.text
                         : "Spulendaten konnten nicht geladen werden.");
+        continue;
+      }
+      if (pendingSlotAssignment.stage == SlotAssignmentStage::LoadingFilament &&
+          event.requestId == pendingSlotAssignment.requestId) {
+        // Filament fetch failed (network hiccup etc.) -- material/color are
+        // already known from the LoadingSpool step, so proceed without a
+        // temperature range instead of abandoning an otherwise-successful
+        // assignment (same graceful degradation as missing/invalid
+        // bambu_temp_min/bambu_temp_max, see the SpoolmanResponse handler).
+        pendingSlotAssignment.tempFieldsMissing = true;
+        rtos::UiCommand hide{};
+        hide.type = rtos::UiCommandType::HideProgress;
+        sendUiCommand(ctx, hide,
+                      "AppTask: slot assignment progress close overflow");
+        if (!sendPendingSlotAssignTray(ctx, event.requestId, 0, 0)) {
+          pendingSlotAssignment = {};
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, event.requestId,
+                      "Slot nicht konfiguriert",
+                      "Der Auftrag konnte nicht an den Drucker gesendet werden.");
+          continue;
+        }
+        pendingSlotAssignment.stage = SlotAssignmentStage::WritingSlot;
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::BambuConnection, event.requestId,
+                    "Slot konfigurieren",
+                    "Slotdaten werden an den Drucker gesendet.");
+        continue;
+      }
+      if (event.requestId >= kTraySpoolDetailsRequestIdBase &&
+          event.requestId < kTraySpoolDetailsRequestIdBase +
+                                 kMaximumTraySpoolDetailsEntries) {
+        // resolveTraySpoolDetails()'s LoadSpool or LoadFilament step failed.
+        const std::size_t index =
+            event.requestId - kTraySpoolDetailsRequestIdBase;
+        TraySpoolDetailsEntry& entry = traySpoolDetails[index];
+        if (entry.stage == TraySpoolDetailsStage::LoadingFilament) {
+          // Weight is already known from the completed LoadingSpool step --
+          // show it without a K-factor rather than discarding it.
+          entry.stage = TraySpoolDetailsStage::Loaded;
+          if (models::isValidPrinterId(printerCollection.activePrinterId))
+            syncAmsToUi(ctx, printerCollection.activePrinterId);
+        } else {
+          entry = TraySpoolDetailsEntry{};
+        }
         continue;
       }
       if (currentScreen == rtos::UiScreenId::TagDefinitionImport ||
@@ -4885,6 +5399,51 @@ void appTask(void* parameter) {
         // wording without adding a second pending-state machine.
         const bool wasClearing = pendingSlotAssignment.spoolId == 0;
         const bool tempFieldsMissing = pendingSlotAssignment.tempFieldsMissing;
+        // Persist (or drop) the Spoolman association locally now that the
+        // printer's own telemetry has confirmed the write -- see
+        // models/TraySpoolCache.h and docs/bambu-protocol.md. amsId here is
+        // the UI-side 1-based number (same conversion as the AssignTray
+        // command above); the material/colorHex captured at this moment
+        // become the baseline a later mismatch is checked against.
+        if (success) {
+          const std::uint8_t amsIndex =
+              static_cast<std::uint8_t>(pendingSlotAssignment.amsId - 1U);
+          if (wasClearing) {
+            models::removeTraySpoolCacheEntry(traySpoolCache,
+                                              pendingSlotAssignment.printerId,
+                                              amsIndex,
+                                              pendingSlotAssignment.trayId);
+            persistTraySpoolCache(ctx);
+          } else {
+            const models::PrinterState* printer = models::findPrinter(
+                printerCollection, pendingSlotAssignment.printerId);
+            if (printer != nullptr && amsIndex < models::kMaximumAmsPerPrinter &&
+                pendingSlotAssignment.trayId < models::kSlotsPerAms) {
+              const models::PrinterSlotStateData& slot =
+                  printer->amsUnits[amsIndex]
+                      .slots[pendingSlotAssignment.trayId];
+              models::TraySpoolCacheEntry cacheEntry{};
+              cacheEntry.printerId = pendingSlotAssignment.printerId;
+              cacheEntry.amsId = amsIndex;
+              cacheEntry.trayId = pendingSlotAssignment.trayId;
+              cacheEntry.spoolId = pendingSlotAssignment.spoolId;
+              std::snprintf(cacheEntry.material, sizeof(cacheEntry.material),
+                            "%s", slot.material);
+              std::snprintf(cacheEntry.colorHex, sizeof(cacheEntry.colorHex),
+                            "%s", slot.colorHex);
+              if (models::upsertTraySpoolCacheEntry(traySpoolCache,
+                                                    cacheEntry)) {
+                persistTraySpoolCache(ctx);
+              } else {
+                FS_LOGW(services::LogComponent::App,
+                        "Tray-Spoolman cache full, association not "
+                        "persisted printer_id=%u",
+                        static_cast<unsigned>(
+                            pendingSlotAssignment.printerId));
+              }
+            }
+          }
+        }
         pendingSlotAssignment = {};
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
@@ -4990,7 +5549,7 @@ void appTask(void* parameter) {
               if (slot.state == models::PrinterSlotState::Ready) ++occupiedTotal;
           }
         }
-        FS_LOGD(services::LogComponent::App,
+        FS_LOGT(services::LogComponent::App,
                 "Bambu event received type=%u printer_id=%u "
                 "connection_state=%u ams_present=%u trays_occupied=%u "
                 "external_state=%u focused=%s",
@@ -5178,6 +5737,9 @@ void appTask(void* parameter) {
         }
         syncAllPrinterEntriesToUi(ctx);
         connectAllEnabledPrinters(ctx);
+      } else if (event.type == rtos::AppEventType::StorageReadCompleted &&
+                 event.requestId == kTraySpoolCacheLoadRequestId) {
+        traySpoolCache = event.traySpoolCache;
       } else if (pendingBambuSaveRequestId != 0 &&
                  event.requestId == pendingBambuSaveRequestId &&
                  event.type == rtos::AppEventType::StorageWriteCompleted) {
@@ -5227,6 +5789,7 @@ void appTask(void* parameter) {
         requestNetworkConfiguration(ctx);
         requestSpoolmanConfiguration(ctx);
         requestBambuConfiguration(ctx);
+        requestTraySpoolCache(ctx);
         requestScaleConfiguration(ctx);
         deleteObsoleteStorageFile(
             ctx, kObsoletePendingWeightDeleteRequestId,

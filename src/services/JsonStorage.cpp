@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "models/BambuPrinterConfig.h"
+#include "models/TraySpoolCache.h"
 
 namespace filament_station::services {
 namespace {
@@ -189,6 +190,11 @@ void applyBambuDefaults(JsonDocument& document) {
     document["printers"].to<JsonArray>();
 }
 
+void applyTraySpoolCacheDefaults(JsonDocument& document) {
+  if (!document["entries"].is<JsonArrayConst>())
+    document["entries"].to<JsonArray>();
+}
+
 bool isValidBambuHost(const char* value) {
   return isValidHostname(value) || isValidIpv4(value, false);
 }
@@ -275,6 +281,59 @@ JsonStorageError validateBambuPrinters(const JsonDocument& document) {
   return JsonStorageError::Ok;
 }
 
+// A slot address is either the external/manual holder (both amsId and
+// trayId == kExternalTraySentinel) or a real AMS slot (both in their
+// respective valid ranges) -- amsId valid but trayId the sentinel (or vice
+// versa) is not a real address and is rejected.
+bool isValidTraySlotAddress(std::uint8_t amsId, std::uint8_t trayId) {
+  if (amsId == models::kExternalTraySentinel ||
+      trayId == models::kExternalTraySentinel) {
+    return amsId == models::kExternalTraySentinel &&
+           trayId == models::kExternalTraySentinel;
+  }
+  return amsId < models::kMaximumAmsPerPrinter &&
+         trayId < models::kSlotsPerAms;
+}
+
+JsonStorageError validateTraySpoolCacheEntries(const JsonDocument& document) {
+  if (!document["entries"].is<JsonArrayConst>()) {
+    return JsonStorageError::InvalidDocumentField;
+  }
+  const JsonArrayConst entries = document["entries"].as<JsonArrayConst>();
+  if (entries.size() > models::kMaximumTraySpoolCacheEntries) {
+    return JsonStorageError::InvalidDocumentField;
+  }
+  for (std::size_t index = 0; index < entries.size(); ++index) {
+    const JsonObjectConst entry = entries[index].as<JsonObjectConst>();
+    if (!entry["printerId"].is<std::uint16_t>() ||
+        entry["printerId"].as<std::uint16_t>() == 0 ||
+        !entry["amsId"].is<std::uint8_t>() ||
+        !entry["trayId"].is<std::uint8_t>() ||
+        !isValidTraySlotAddress(entry["amsId"].as<std::uint8_t>(),
+                                entry["trayId"].as<std::uint8_t>()) ||
+        !entry["spoolId"].is<std::uint32_t>() ||
+        entry["spoolId"].as<std::uint32_t>() == 0 ||
+        !isNonEmptyString(entry["material"]) ||
+        std::strlen(entry["material"].as<const char*>()) >= 12U ||
+        !isNonEmptyString(entry["colorHex"]) ||
+        std::strlen(entry["colorHex"].as<const char*>()) >= 9U) {
+      return JsonStorageError::InvalidDocumentField;
+    }
+    const auto printerId = entry["printerId"].as<std::uint16_t>();
+    const auto amsId = entry["amsId"].as<std::uint8_t>();
+    const auto trayId = entry["trayId"].as<std::uint8_t>();
+    for (std::size_t other = 0; other < index; ++other) {
+      const JsonObjectConst otherEntry = entries[other].as<JsonObjectConst>();
+      if (otherEntry["printerId"].as<std::uint16_t>() == printerId &&
+          otherEntry["amsId"].as<std::uint8_t>() == amsId &&
+          otherEntry["trayId"].as<std::uint8_t>() == trayId) {
+        return JsonStorageError::InvalidDocumentField;
+      }
+    }
+  }
+  return JsonStorageError::Ok;
+}
+
 }  // namespace
 
 std::size_t JsonStorage::maxSizeFor(
@@ -286,6 +345,7 @@ std::size_t JsonStorage::maxSizeFor(
     case rtos::StorageDocumentType::Network:
     case rtos::StorageDocumentType::Spoolman:
     case rtos::StorageDocumentType::Bambu:
+    case rtos::StorageDocumentType::TraySpoolCache:
       return kConfigMaxSize;
     case rtos::StorageDocumentType::Ui:
     case rtos::StorageDocumentType::Nfc:
@@ -348,6 +408,10 @@ JsonStorageResult JsonStorage::load(
       documentType == rtos::StorageDocumentType::Bambu) {
     applyBambuDefaults(document);
   }
+  if (error == JsonStorageError::Ok &&
+      documentType == rtos::StorageDocumentType::TraySpoolCache) {
+    applyTraySpoolCacheDefaults(document);
+  }
   if (error == JsonStorageError::Ok) {
     error = validate(document, documentType);
   }
@@ -409,6 +473,8 @@ const char* JsonStorage::documentTypeName(
       return "nfc";
     case rtos::StorageDocumentType::Diagnostics:
       return "diagnostics";
+    case rtos::StorageDocumentType::TraySpoolCache:
+      return "traySpoolCache";
   }
   return nullptr;
 }
@@ -454,6 +520,9 @@ JsonStorageError JsonStorage::createDefault(
       document["mappings"].to<JsonArray>();
       break;
     case rtos::StorageDocumentType::Diagnostics:
+      break;
+    case rtos::StorageDocumentType::TraySpoolCache:
+      document["entries"].to<JsonArray>();
       break;
   }
   return validate(document, documentType);
@@ -567,6 +636,8 @@ JsonStorageError JsonStorage::validate(
       return validateBambuPrinters(document);
     case rtos::StorageDocumentType::Diagnostics:
       return JsonStorageError::Ok;
+    case rtos::StorageDocumentType::TraySpoolCache:
+      return validateTraySpoolCacheEntries(document);
   }
   return JsonStorageError::InvalidArgument;
 }

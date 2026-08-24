@@ -121,6 +121,16 @@ struct TrayUiEntry {
   char material[12]{};
   char colorHex[9]{};
   rtos::SpoolId spoolId = 0;
+  // Restgewicht/K-Faktor aus Spoolman -- nur aussagekraeftig, wenn
+  // detailsLoaded true ist (AppTask::resolveTraySpoolDetails() hat den
+  // asynchronen Spoolman-Abruf abgeschlossen); vorher/bei unbekannter
+  // Zuordnung bleiben sie auf 0/false und duerfen nicht angezeigt werden
+  // (0.0F waere sonst nicht von einem echten Restgewicht 0 unterscheidbar),
+  // siehe UiBridge.cpp::updateTrayButton().
+  bool detailsLoaded = false;
+  float remainingWeightGrams = 0.0F;
+  bool kFactorValid = false;
+  float kFactor = 0.0F;
 };
 std::array<std::array<TrayUiEntry, 4>, 4> trayEntries{};
 TrayUiEntry externalTrayEntry{};
@@ -151,7 +161,7 @@ models::UiStagingSummary stagingState{};
 models::UiSpoolSummary stagingSpoolState{};
 lv_obj_t* calibrationEditor = nullptr;
 lv_obj_t* calibrationKeyboard = nullptr;
-std::array<lv_obj_t*, 8> stagingTableRows{};
+std::array<lv_obj_t*, 9> stagingTableRows{};
 bool touchWasPressed = false;
 std::size_t touchMarkerColorIndex = 0;
 lv_obj_t* overlayBackdrop = nullptr;
@@ -2251,54 +2261,68 @@ void updatePrinterList() {
 }
 
 // Zielobjekte entsprechen den Sub-Widgets der CMP_TRAY_CARD-Komponente
-// (ui-project, Nutzerwunsch 2026-08-23): "button" ist das eigentliche
-// klickbare EEZ-Objekt (Sub-Widget "tray", nicht der transparente
-// Kartenwrapper objects.home_tray_N selbst).
-void updateTrayButton(lv_obj_t* button, lv_obj_t* label, lv_obj_t* swatch1,
-                      lv_obj_t* swatch2, lv_obj_t* spoolIdContainer,
-                      lv_obj_t* spoolIdLabel, lv_obj_t* nozzleIcon,
-                      rtos::PrinterId printerId, std::uint8_t amsId,
-                      std::uint8_t trayId, const char* title) {
+// (ui-project, Nutzerwunsch 2026-08-23; auf drei eigene Labels
+// material/weight/k_factor umgebaut, Nutzerwunsch 2026-08-24 -- vorher ein
+// einzelnes mehrzeiliges "label"): "button" ist das eigentliche klickbare
+// EEZ-Objekt (Sub-Widget "tray", nicht der transparente Kartenwrapper
+// objects.home_tray_N selbst).
+void updateTrayButton(lv_obj_t* button, lv_obj_t* materialLabel,
+                      lv_obj_t* weightLabel, lv_obj_t* kFactorLabel,
+                      lv_obj_t* swatch1, lv_obj_t* swatch2,
+                      lv_obj_t* spoolIdContainer, lv_obj_t* spoolIdLabel,
+                      lv_obj_t* nozzleIcon, rtos::PrinterId printerId,
+                      std::uint8_t amsId, std::uint8_t trayId,
+                      const char* title) {
   (void)printerId;  // Real tray data (see AppTask::syncAmsToUi) is only
                     // ever synced for the printer currently in focus.
   (void)title;  // Nutzerwunsch (2026-08-22): kein "Slot N"/"Extern"-Titel
                 // mehr -- die feste Bildschirmposition zeigt weiterhin,
                 // welcher Slot gemeint ist (analog zu den AMS-Buttons).
   const TrayUiEntry* tray = trayUiEntry(amsId, trayId);
-  char text[64];
   if (tray == nullptr || !tray->occupied) {
-    std::snprintf(text, sizeof(text), "leer");
+    setControlText(materialLabel, "leer");
+    setControlText(weightLabel, "");
+    setControlText(kFactorLabel, "");
     setButtonColors(button, kColorNeutralGrey);
     updateHomeColorSwatches(swatch1, swatch2, {}, 0);
     lv_obj_add_flag(spoolIdContainer, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(spoolIdLabel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(nozzleIcon, LV_OBJ_FLAG_HIDDEN);
   } else {
-    // Material kommt real vom Drucker (tray->material). Restgewicht,
-    // Spoolman-ID, K-Faktor und "Duese aktiv" sind auf Nutzerwunsch
-    // vorerst Mockdaten: der Drucker kennt nur Material/Farbe (siehe
-    // docs/bambu-protocol.md); ein echter Abgleich mit der zugeordneten
-    // Spoolman-Spule (tray->spoolId, sofern von dieser App zugeordnet) fuer
-    // diese Werte ist noch nicht angebunden. externalTrayEntry hat kein
-    // sinnvolles amsId/trayId (Sentinel 0xFF/0xFF) -- ein fester Seed 0
-    // haelt die Mockformeln dafuer im plausiblen Bereich.
+    // Material kommt real vom Drucker (tray->material). tray->spoolId kommt
+    // aus dem lokal persistierten Cache (models/TraySpoolCache.h), geprueft
+    // gegen material/colorHex zum Zuordnungszeitpunkt -- 0 heisst "belegt,
+    // aber keine (mehr) vertrauenswuerdige Spoolman-Zuordnung" und zeigt
+    // ein "?" statt einer Zahl. Sobald die Spule identifiziert ist, laedt
+    // AppTask Restgewicht/K-Faktor asynchron aus Spoolman nach
+    // (Nutzerwunsch 2026-08-24) -- tray->detailsLoaded unterscheidet
+    // "noch nicht geladen" von einem echten Restgewicht 0. K-Faktor kommt
+    // aus dem projektspezifischen Spoolman-Filament-Extra-Feld
+    // "flow_dynamics_k_factor" und wird nur gezeigt, wenn dort hinterlegt.
+    // externalTrayEntry hat kein sinnvolles amsId/trayId (Sentinel
+    // 0xFF/0xFF) -- ein fester Seed 0 haelt die "Duese aktiv"-Mockformel
+    // dafuer im plausiblen Bereich.
     const std::uint8_t mockSeed = amsId == 0xFF ? 0U : trayId;
-    const std::uint32_t mockRemainingWeightGrams =
-        500U - (static_cast<std::uint32_t>(mockSeed) * 15U);
-    const std::uint32_t mockSpoolmanId =
-        1000U +
-        (amsId == 0xFF ? 90U : static_cast<std::uint32_t>(amsId) * 10U) +
-        static_cast<std::uint32_t>(mockSeed) + 1U;
-    // Format "K (#.###)" (Nutzerwunsch): ein Digit vor, drei Nachkommastellen
-    // -- passend zur ueblichen Groessenordnung echter Bambu-K-Faktor-Werte
-    // (Flow-Dynamics-Kalibrierung, typischerweise 0.000-0.100).
-    const std::uint32_t mockKFactorThousandths = 20U + mockSeed;
-    std::snprintf(
-        text, sizeof(text), "%s\n%ug\nK (%u.%03u)",
-        tray->material[0] != '\0' ? tray->material : "belegt",
-        static_cast<unsigned>(mockRemainingWeightGrams),
-        static_cast<unsigned>(mockKFactorThousandths / 1000U),
-        static_cast<unsigned>(mockKFactorThousandths % 1000U));
+    const char* material =
+        tray->material[0] != '\0' ? tray->material : "belegt";
+    setControlText(materialLabel, material);
+    if (tray->spoolId != 0 && tray->detailsLoaded) {
+      char weightText[24];
+      std::snprintf(weightText, sizeof(weightText), "%.0fg",
+                    static_cast<double>(tray->remainingWeightGrams));
+      setControlText(weightLabel, weightText);
+      if (tray->kFactorValid) {
+        char kFactorText[24];
+        std::snprintf(kFactorText, sizeof(kFactorText), "K (%.3f)",
+                      static_cast<double>(tray->kFactor));
+        setControlText(kFactorLabel, kFactorText);
+      } else {
+        setControlText(kFactorLabel, "");
+      }
+    } else {
+      setControlText(weightLabel, "");
+      setControlText(kFactorLabel, "");
+    }
     const std::array<std::uint32_t, models::kMaximumFilamentColors> colors{
         parseTrayColorHex(tray->colorHex)};
     const std::uint8_t colorCount = tray->colorHex[0] != '\0' ? 1U : 0U;
@@ -2310,8 +2334,12 @@ void updateTrayButton(lv_obj_t* button, lv_obj_t* label, lv_obj_t* swatch1,
     lv_obj_remove_flag(spoolIdContainer, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(spoolIdLabel, LV_OBJ_FLAG_HIDDEN);
     char spoolIdText[12];
-    std::snprintf(spoolIdText, sizeof(spoolIdText), "%lu",
-                  static_cast<unsigned long>(mockSpoolmanId));
+    if (tray->spoolId != 0) {
+      std::snprintf(spoolIdText, sizeof(spoolIdText), "%lu",
+                    static_cast<unsigned long>(tray->spoolId));
+    } else {
+      std::snprintf(spoolIdText, sizeof(spoolIdText), "?");
+    }
     setControlText(spoolIdLabel, spoolIdText);
 
     // Mock: das erste belegte Fach je AMS (bzw. das externe Fach, sofern
@@ -2327,7 +2355,6 @@ void updateTrayButton(lv_obj_t* button, lv_obj_t* label, lv_obj_t* swatch1,
       lv_obj_add_flag(nozzleIcon, LV_OBJ_FLAG_HIDDEN);
     }
   }
-  setControlText(label, text);
 }
 
 void updateHomeContent() {
@@ -2383,32 +2410,38 @@ void updateHomeContent() {
     }
   }
 
-  updateTrayButton(objects.home_tray_1__tray, objects.home_tray_1__label,
+  updateTrayButton(objects.home_tray_1__tray, objects.home_tray_1__material,
+                   objects.home_tray_1__weight, objects.home_tray_1__k_factor,
                    objects.home_tray_1__color_1, objects.home_tray_1__color_2,
                    objects.home_tray_1__spoolmanager_id_container,
                    objects.home_tray_1__spoolmanager_id,
                    objects.home_tray_1__nozzle_icon, currentPrinterId,
                    currentAmsId, 0, "Slot 1");
-  updateTrayButton(objects.home_tray_2__tray, objects.home_tray_2__label,
+  updateTrayButton(objects.home_tray_2__tray, objects.home_tray_2__material,
+                   objects.home_tray_2__weight, objects.home_tray_2__k_factor,
                    objects.home_tray_2__color_1, objects.home_tray_2__color_2,
                    objects.home_tray_2__spoolmanager_id_container,
                    objects.home_tray_2__spoolmanager_id,
                    objects.home_tray_2__nozzle_icon, currentPrinterId,
                    currentAmsId, 1, "Slot 2");
-  updateTrayButton(objects.home_tray_3__tray, objects.home_tray_3__label,
+  updateTrayButton(objects.home_tray_3__tray, objects.home_tray_3__material,
+                   objects.home_tray_3__weight, objects.home_tray_3__k_factor,
                    objects.home_tray_3__color_1, objects.home_tray_3__color_2,
                    objects.home_tray_3__spoolmanager_id_container,
                    objects.home_tray_3__spoolmanager_id,
                    objects.home_tray_3__nozzle_icon, currentPrinterId,
                    currentAmsId, 2, "Slot 3");
-  updateTrayButton(objects.home_tray_4__tray, objects.home_tray_4__label,
+  updateTrayButton(objects.home_tray_4__tray, objects.home_tray_4__material,
+                   objects.home_tray_4__weight, objects.home_tray_4__k_factor,
                    objects.home_tray_4__color_1, objects.home_tray_4__color_2,
                    objects.home_tray_4__spoolmanager_id_container,
                    objects.home_tray_4__spoolmanager_id,
                    objects.home_tray_4__nozzle_icon, currentPrinterId,
                    currentAmsId, 3, "Slot 4");
   updateTrayButton(objects.home_tray_external__tray,
-                   objects.home_tray_external__label,
+                   objects.home_tray_external__material,
+                   objects.home_tray_external__weight,
+                   objects.home_tray_external__k_factor,
                    objects.home_tray_external__color_1,
                    objects.home_tray_external__color_2,
                    objects.home_tray_external__spoolmanager_id_container,
@@ -2417,7 +2450,6 @@ void updateHomeContent() {
                    0xFF, 0xFF, "Extern");
 
   const auto& staging = stagingState;
-  char stagingText[64];
   // Staging ist druckerunabhaengig (die AMS-Zuordnung eines gestagten Spools
   // erfolgt separat ueber ConfigureSlotFromStaging mit explizitem
   // printerId) -- stagingState.printerId wird nirgends gesetzt und war
@@ -2428,17 +2460,34 @@ void updateHomeContent() {
   const std::uint32_t stagingBackgroundColor =
       staging.colorCount > 0 ? staging.colorRgb[0] : kColorNeutralGrey;
   if (staging.spoolId != 0) {
-    // K-Faktor ist auf Nutzerwunsch vorerst Mockdaten (wie bei den
-    // AMS-Faechern, siehe updateTrayButton()); staging.spoolId dagegen ist
-    // eine echte Spoolman-ID (ueber den Spulen-Picker zugeordnet), keine
-    // Mockdaten -- direkt anzeigen statt eine erfundene ID zu generieren.
-    const std::uint32_t mockKFactorThousandths =
-        20U + static_cast<std::uint32_t>(staging.spoolId % 5U);
-    std::snprintf(stagingText, sizeof(stagingText), "%s\n%.0fg\nK (%u.%03u)",
-                  staging.material,
-                  static_cast<double>(staging.remainingWeightGrams),
-                  static_cast<unsigned>(mockKFactorThousandths / 1000U),
-                  static_cast<unsigned>(mockKFactorThousandths % 1000U));
+    // K-Faktor kommt jetzt echt aus Spoolman (UpdateStaging-Handler oben,
+    // AppTask::sendStagingUpdate() via LoadFilament) statt wie zuvor aus
+    // Mockdaten (Nutzer-Report 2026-08-24) -- staging.kFactorValid
+    // unterscheidet "noch nicht geladen/nicht hinterlegt" von einem
+    // tatsaechlichen K-Faktor 0, gleiches Muster wie updateTrayButton().
+    // CMP_STAGING_CARD hat wie CMP_TRAY_CARD drei eigene Labels
+    // material/weight/k_factor statt eines einzelnen mehrzeiligen "label"
+    // (Nutzerumbau 2026-08-24).
+    setControlText(objects.staging__material, staging.material);
+    char weightText[24];
+    std::snprintf(weightText, sizeof(weightText), "%.0fg",
+                  static_cast<double>(staging.remainingWeightGrams));
+    setControlText(objects.staging__weight, weightText);
+    if (staging.kFactorValid) {
+      char kFactorText[24];
+      std::snprintf(kFactorText, sizeof(kFactorText), "K (%.3f)",
+                    static_cast<double>(staging.kFactor));
+      FS_LOGD(services::LogComponent::Ui,
+              "Staging card k_factor label set text=\"%s\" obj=%p",
+              kFactorText, static_cast<void*>(objects.staging__k_factor));
+      setControlText(objects.staging__k_factor, kFactorText);
+    } else {
+      FS_LOGD(services::LogComponent::Ui,
+              "Staging card k_factor label cleared (kFactorValid=false) "
+              "obj=%p",
+              static_cast<void*>(objects.staging__k_factor));
+      setControlText(objects.staging__k_factor, "");
+    }
     setButtonColors(objects.staging__staging, stagingBackgroundColor);
     updateHomeColorSwatches(objects.staging__color_3, objects.staging__color_4,
                             staging.colorRgb, staging.colorCount);
@@ -2450,7 +2499,9 @@ void updateHomeContent() {
                   static_cast<unsigned long>(staging.spoolId));
     setControlText(objects.staging__spoolmanager_id, spoolIdText);
   } else {
-    std::snprintf(stagingText, sizeof(stagingText), "leer");
+    setControlText(objects.staging__material, "leer");
+    setControlText(objects.staging__weight, "");
+    setControlText(objects.staging__k_factor, "");
     setButtonColors(objects.staging__staging, kColorNeutralGrey);
     updateHomeColorSwatches(objects.staging__color_3, objects.staging__color_4,
                             {}, 0);
@@ -2458,7 +2509,6 @@ void updateHomeContent() {
                     LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(objects.staging__spoolmanager_id, LV_OBJ_FLAG_HIDDEN);
   }
-  setControlText(objects.staging__label, stagingText);
   lv_obj_set_style_text_color(
       objects.staging__staging_label,
       lv_color_hex(isLightBackground(stagingBackgroundColor) ? kColorTextDark
@@ -2560,8 +2610,19 @@ void updateStagingContent() {
                 static_cast<double>(staging.remainingWeightGrams),
                 static_cast<double>(remainingPercent));
   lv_label_set_text(stagingTableRows[6], rowText);
-  std::snprintf(rowText, sizeof(rowText), "NFC: %s", currentNfcStatusText);
+  // K-Faktor kommt aus Spoolman (AppTask::sendStagingUpdate() via
+  // LoadFilament, Nutzer-Report 2026-08-24) -- kFactorValid unterscheidet
+  // "noch nicht geladen/nicht hinterlegt" von einem tatsaechlichen K-Faktor
+  // 0, siehe updateTrayButton() fuer dasselbe Muster bei den AMS-Faechern.
+  if (staging.kFactorValid) {
+    std::snprintf(rowText, sizeof(rowText), "K-Faktor: %.3f",
+                  static_cast<double>(staging.kFactor));
+  } else {
+    std::snprintf(rowText, sizeof(rowText), "K-Faktor: nicht hinterlegt");
+  }
   lv_label_set_text(stagingTableRows[7], rowText);
+  std::snprintf(rowText, sizeof(rowText), "NFC: %s", currentNfcStatusText);
+  lv_label_set_text(stagingTableRows[8], rowText);
 
   const std::array<lv_obj_t*, models::kMaximumFilamentColors> colorFields{{
       objects.staging_details_color_1,
@@ -3248,6 +3309,17 @@ void processUiCommand(const rtos::UiCommand& command) {
                         command.title);
           std::snprintf(entry->colorHex, sizeof(entry->colorHex), "%s",
                         command.text);
+          // command.spool.id is only set (by AppTask::syncAmsToUi(), via
+          // resolveTraySpoolDetails()) once the async Spoolman fetch for
+          // this spool has actually completed -- command.spoolId != 0 alone
+          // only means "identified", not "weight/K-factor loaded yet".
+          // K-Faktor ist eine Spoolman-*Filament*-Eigenschaft
+          // (Nutzerhinweis 2026-08-24), daher command.kFactor* statt
+          // command.spool (das nur Spulen-Felder traegt).
+          entry->detailsLoaded = command.spool.id != 0;
+          entry->remainingWeightGrams = command.weightGrams;
+          entry->kFactorValid = command.kFactorValid;
+          entry->kFactor = command.kFactor;
         }
         updateHomeContent();
         updateTrayDetails();
@@ -3280,12 +3352,17 @@ void processUiCommand(const rtos::UiCommand& command) {
       stagingState.remainingWeightGrams = hasReloadedSpool
                                                ? command.spool.remainingWeightGrams
                                                : command.weightUpdate.remainingWeightGrams;
-      stagingState.grossWeightGrams = liveWeight.grossWeightGrams;
+      stagingState.kFactorValid = command.kFactorValid;
+      stagingState.kFactor = command.kFactor;
+      FS_LOGD(services::LogComponent::Ui,
+              "UpdateStaging received request_id=%lu spool_id=%lu "
+              "kfactor_valid=%d kfactor=%.3f",
+              static_cast<unsigned long>(command.requestId),
+              static_cast<unsigned long>(command.spoolId),
+              command.kFactorValid, static_cast<double>(command.kFactor));
       stagingSpoolState.spoolId = command.spoolId;
       stagingSpoolState.remainingWeightGrams = stagingState.remainingWeightGrams;
       if (hasReloadedSpool) {
-        stagingSpoolState.emptyWeightGrams = command.spool.emptyWeightGrams;
-        stagingSpoolState.initialWeightGrams = command.spool.initialWeightGrams;
         std::snprintf(stagingState.vendor, sizeof(stagingState.vendor), "%s",
                       command.spool.vendor);
         std::snprintf(stagingState.material, sizeof(stagingState.material), "%s",
@@ -3301,8 +3378,20 @@ void processUiCommand(const rtos::UiCommand& command) {
                       command.spool.material);
       }
       char vendor[32]{}, filament[40]{}, material[24]{};
-      float emptyWeightGrams = command.weightUpdate.emptySpoolWeightGrams;
-      float initialWeightGrams = command.weightUpdate.initialWeightGrams;
+      // Bug (Nutzer-Report 2026-08-24): diese beiden Defaults kamen bisher
+      // *immer* aus command.weightUpdate, auch im hasReloadedSpool-Zweig --
+      // dort ist command.weightUpdate nie gesetzt (0), wodurch ein per
+      // Spoolman-Reload korrekt geladenes emptyWeightGrams/initialWeightGrams
+      // hier direkt wieder auf 0 ueberschrieben wurde ("Leergewicht immer
+      // 0g"). Jetzt quellenspezifisch vorbelegt; command.text bleibt im
+      // hasReloadedSpool-Fall leer, sscanf() unten liefert dann parsed<3 und
+      // ruehrt die Werte nicht an.
+      float emptyWeightGrams = hasReloadedSpool
+                                    ? command.spool.emptyWeightGrams
+                                    : command.weightUpdate.emptySpoolWeightGrams;
+      float initialWeightGrams = hasReloadedSpool
+                                      ? command.spool.initialWeightGrams
+                                      : command.weightUpdate.initialWeightGrams;
       const int parsed = std::sscanf(
           command.text, "%31[^|]|%39[^|]|%23[^|]|%f|%f", vendor, filament,
           material, &emptyWeightGrams, &initialWeightGrams);
@@ -3320,6 +3409,10 @@ void processUiCommand(const rtos::UiCommand& command) {
       }
       stagingSpoolState.emptyWeightGrams = emptyWeightGrams;
       stagingSpoolState.initialWeightGrams = initialWeightGrams;
+      // Bruttogewicht = Leergewicht + Restgewicht (Spulentara + verbleibendes
+      // Filament) -- kein Live-Waagenwert, siehe Nutzer-Report 2026-08-24.
+      stagingState.grossWeightGrams =
+          stagingSpoolState.emptyWeightGrams + stagingState.remainingWeightGrams;
       stagingState.colorCount = 0;
       stagingSpoolState.colorCount = 0;
       if (hasReloadedSpool) {

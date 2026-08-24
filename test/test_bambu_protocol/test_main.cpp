@@ -261,17 +261,6 @@ void testApplyReportParsesNozzleDiameter() {
   TEST_ASSERT_EQUAL_STRING("0.4", state.nozzleDiameter);
 }
 
-void testApplyReportNeverTouchesSpoolId() {
-  JsonDocument document;
-  deserializeJson(document, R"({
-    "print": {"ams": {"ams": [{"id":"0","tray":[{"id":"0","tray_type":"PLA"}]}]}}
-  })");
-  PrinterState state{};
-  state.amsUnits[0].slots[0].spoolId = 42;
-  TEST_ASSERT_TRUE(services::bambuApplyReport(document, state));
-  TEST_ASSERT_EQUAL_UINT32(42, state.amsUnits[0].slots[0].spoolId);
-}
-
 }  // namespace
 
 int main(int, char**) {
@@ -292,6 +281,5 @@ int main(int, char**) {
   RUN_TEST(testApplyReportIgnoresOutOfRangeIds);
   RUN_TEST(testApplyReportParsesExternalTray);
   RUN_TEST(testApplyReportParsesNozzleDiameter);
-  RUN_TEST(testApplyReportNeverTouchesSpoolId);
   return UNITY_END();
 }

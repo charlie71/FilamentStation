@@ -9,6 +9,7 @@
 #include "config/BoardConfig.h"
 #include "config/NfcConfig.h"
 #include "models/BambuPrinterConfig.h"
+#include "models/TraySpoolCache.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
 #include "services/JsonStorage.h"
@@ -33,6 +34,7 @@ constexpr InitialDocument kInitialDocuments[] = {
     {"/config/ui.json", rtos::StorageDocumentType::Ui},
     {"/config/scale.json", rtos::StorageDocumentType::Scale},
     {"/config/nfc.json", rtos::StorageDocumentType::Nfc},
+    {"/mappings/printer-slots.json", rtos::StorageDocumentType::TraySpoolCache},
 };
 
 bool isMappingPath(const char* path) {
@@ -246,6 +248,36 @@ void processLoadCommand(rtos::RtosContext& ctx,
     if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
       FS_LOGW(services::LogComponent::Storage,
               "Event enqueue failed queue=app_event document=bambu");
+    return;
+  }
+  if (result.ok() &&
+      command.documentType == rtos::StorageDocumentType::TraySpoolCache) {
+    rtos::AppEvent event{};
+    event.type = rtos::AppEventType::StorageReadCompleted;
+    event.requestId = command.requestId;
+    event.value = static_cast<std::int32_t>(result.bytesProcessed);
+    auto& cache = event.traySpoolCache;
+    const JsonArrayConst entries = document["entries"].as<JsonArrayConst>();
+    std::uint8_t count = 0;
+    for (const JsonObjectConst entry : entries) {
+      if (count >= models::kMaximumTraySpoolCacheEntries) break;
+      models::TraySpoolCacheEntry& destination = cache.entries[count];
+      destination.printerId = entry["printerId"].as<std::uint16_t>();
+      destination.amsId = entry["amsId"].as<std::uint8_t>();
+      destination.trayId = entry["trayId"].as<std::uint8_t>();
+      destination.spoolId = entry["spoolId"].as<std::uint32_t>();
+      std::snprintf(destination.material, sizeof(destination.material), "%s",
+                    entry["material"].as<const char*>());
+      std::snprintf(destination.colorHex, sizeof(destination.colorHex), "%s",
+                    entry["colorHex"].as<const char*>());
+      ++count;
+    }
+    cache.entryCount = count;
+    std::snprintf(event.text, sizeof(event.text),
+                  "Tray-Spoolman cache loaded");
+    if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
+      FS_LOGW(services::LogComponent::Storage,
+              "Event enqueue failed queue=app_event document=tray_spool_cache");
     return;
   }
   if (result.ok() && command.documentType == rtos::StorageDocumentType::Nfc &&

@@ -35,7 +35,11 @@ struct PendingTrayAssignment {
   std::uint32_t requestId = 0;
   std::uint8_t amsId = 0;
   std::uint8_t trayId = 0;
-  rtos::SpoolId spoolId = 0;
+  // No spoolId field here on purpose -- BambuTask only confirms that the
+  // printer's own tray_type/tray_color telemetry now matches what was sent
+  // (see checkPendingTrayAssignment() below); the Spoolman association
+  // itself is tracked and persisted entirely by AppTask, see
+  // models/TraySpoolCache.h.
   // Empty expectedTrayType means "confirm the slot becomes empty" (Reset).
   char expectedTrayType[16]{};
   char expectedColorHex[9]{};
@@ -153,7 +157,6 @@ void checkPendingTrayAssignment(rtos::RtosContext& ctx,
   const std::uint32_t requestId = conn.pending.requestId;
   const std::uint8_t amsId = conn.pending.amsId;
   const std::uint8_t trayId = conn.pending.trayId;
-  conn.state.amsUnits[amsId].slots[trayId].spoolId = conn.pending.spoolId;
   conn.pending = {};
   FS_LOGI(services::LogComponent::Bambu,
           "AssignTray confirmed printer_id=%u ams_id=%u tray_id=%u",
@@ -174,7 +177,7 @@ void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
   // publishBambuRequest()) so a command rejection is visible even when
   // bambuApplyReport() below has no field for it -- payload is not
   // null-terminated, hence "%.*s" with the explicit length.
-  FS_LOGD(services::LogComponent::Bambu,
+  FS_LOGT(services::LogComponent::Bambu,
           "Report raw payload printer_id=%u payload=%.*s",
           static_cast<unsigned>(conn.config.printerId),
           static_cast<int>(length), reinterpret_cast<const char*>(payload));
@@ -203,7 +206,7 @@ void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
       const char* result = print["result"] | "";
       const char* reason = print["reason"] | "";
       const long errCode = print["err_code"] | 0L;
-      FS_LOGI(services::LogComponent::Bambu,
+      FS_LOGT(services::LogComponent::Bambu,
               "MQTT command reply printer_id=%u command=\"%s\" result=\"%s\" "
               "reason=\"%s\" err_code=%ld",
               static_cast<unsigned>(conn.config.printerId), command, result,
@@ -228,7 +231,7 @@ void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
     for (const auto& slot : ams.slots)
       if (slot.state == models::PrinterSlotState::Ready) ++occupiedTrayCount;
   }
-  FS_LOGD(services::LogComponent::Bambu,
+  FS_LOGT(services::LogComponent::Bambu,
           "Report applied printer_id=%u ams_reported=%u ams_present=%u "
           "trays_occupied=%u external_state=%u",
           static_cast<unsigned>(conn.config.printerId),
@@ -245,13 +248,13 @@ void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
     if (!ams.present) continue;
     for (std::uint8_t trayId = 0; trayId < models::kSlotsPerAms; ++trayId) {
       const auto& slot = ams.slots[trayId];
-      FS_LOGD(services::LogComponent::Bambu,
+      FS_LOGT(services::LogComponent::Bambu,
               "Report tray detail printer_id=%u ams_id=%u tray_id=%u "
-              "state=%u material=\"%s\" color=\"%s\" spool_id=%lu",
+              "state=%u material=\"%s\" color=\"%s\"",
               static_cast<unsigned>(conn.config.printerId),
               static_cast<unsigned>(amsId), static_cast<unsigned>(trayId),
               static_cast<unsigned>(slot.state), slot.material,
-              slot.colorHex, static_cast<unsigned long>(slot.spoolId));
+              slot.colorHex);
     }
   }
   checkPendingTrayAssignment(ctx, conn);
@@ -483,19 +486,16 @@ void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
   // identical on the wire, see docs/bambu-protocol.md). Report success to
   // AppTask only once the printer's own telemetry confirms the change
   // (checkPendingTrayAssignment(), called from handleReportPayload()), or
-  // fail it after kBambuAssignConfirmTimeoutMs (serviceConnections()). The
-  // Spoolman association (spoolId) is likewise committed only on
-  // confirmation, not here -- see checkPendingTrayAssignment(). A still-
-  // active previous pending (shouldn't normally happen, AppTask serializes
-  // slot assignments) is failed first rather than silently dropped, so its
-  // requestId doesn't strand a progress dialog forever.
+  // fail it after kBambuAssignConfirmTimeoutMs (serviceConnections()). A
+  // still-active previous pending (shouldn't normally happen, AppTask
+  // serializes slot assignments) is failed first rather than silently
+  // dropped, so its requestId doesn't strand a progress dialog forever.
   failPendingAssignment(ctx, *conn,
                         "\xC3\x9C" "berholt durch neue Slot-Zuordnung");
   conn->pending.active = true;
   conn->pending.requestId = command.requestId;
   conn->pending.amsId = command.amsId;
   conn->pending.trayId = command.trayId;
-  conn->pending.spoolId = command.spoolId;
   std::snprintf(conn->pending.expectedTrayType,
                sizeof(conn->pending.expectedTrayType), "%s",
                filament.trayType);

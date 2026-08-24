@@ -227,6 +227,7 @@ enum class SpoolmanCommandType : std::uint8_t {
   SetSpoolTag,
   ClearSpoolTag,
   LoadSpool,
+  LoadFilament,
   SearchSpools,
   SearchVendors,
   CreateVendor,

@@ -32,7 +32,7 @@ constexpr std::array<UiTraySummary, 9> kTrays{{
 
 constexpr UiStagingSummary kStaging{
     1, 91, UiStagingState::WeightReady, {0xFDD835, 0xFB8C00, 0x212121}, 3,
-    1247.0F, 997.0F,
+    1247.0F, 997.0F, true, 0.021F,
     "Bambu Lab", "PLA", "Tag erkannt"};
 
 constexpr UiSpoolSummary kSpool{

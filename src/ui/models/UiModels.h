@@ -92,6 +92,11 @@ struct UiStagingSummary {
   std::uint8_t colorCount = 0;
   float grossWeightGrams = 0.0F;
   float remainingWeightGrams = 0.0F;
+  // K-Faktor ist eine Spoolman *Filament*-Eigenschaft (Nutzerhinweis
+  // 2026-08-24), asynchron nachgeladen -- kFactorValid unterscheidet "noch
+  // nicht/nicht verfuegbar" von einem tatsaechlichen K-Faktor 0.
+  bool kFactorValid = false;
+  float kFactor = 0.0F;
   char vendor[kVendorNameCapacity]{};
   char material[kMaterialNameCapacity]{};
   char nfcStatus[kStatusTextCapacity]{};

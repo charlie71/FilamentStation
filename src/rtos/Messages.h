@@ -11,6 +11,7 @@
 #include "models/SpoolmanSettings.h"
 #include "models/SpoolmanSpool.h"
 #include "models/SpoolmanCatalog.h"
+#include "models/TraySpoolCache.h"
 #include "rtos/Commands.h"
 #include "rtos/Events.h"
 
@@ -52,7 +53,12 @@ struct AppEvent {
   PrinterId printerId;
   models::PrinterState printerState{};
   models::BambuConfigCollection bambuConfigs{};
+  models::TraySpoolCache traySpoolCache{};
   models::SpoolmanSpool spool{};
+  // Response payload for SpoolmanCommandType::LoadFilament (bambu_temp_min/
+  // bambu_temp_max/flow_dynamics_k_factor -- Spoolman *filament* properties, see
+  // docs/bambu-protocol.md).
+  models::SpoolmanFilament filament{};
   models::SpoolmanWeightUpdate weightUpdate{};
   models::TagIdentity tagIdentity{};
   char networkSsid[33];
@@ -80,6 +86,12 @@ struct UiCommand {
   models::SpoolmanAppState spoolmanAppState =
       models::SpoolmanAppState::SpoolmanUnavailable;
   float weightGrams;
+  // K-Faktor fuer UpdateTrayDetails, sobald AppTask::resolveTraySpoolDetails()
+  // ihn (als Spoolman-*Filament*-Eigenschaft, siehe docs/bambu-protocol.md)
+  // geladen hat -- kFactorValid unterscheidet "noch nicht/nicht verfuegbar"
+  // von einem tatsaechlichen K-Faktor 0.
+  bool kFactorValid = false;
+  float kFactor = 0.0F;
   models::SpoolmanSpool spool{};
   models::SpoolmanWeightUpdate weightUpdate{};
   char spoolColorHex[models::SpoolmanSpool::kMaximumColors][9];
@@ -106,7 +118,8 @@ enum class StorageDocumentType : std::uint8_t {
   Ui,
   Scale,
   Nfc,
-  Diagnostics
+  Diagnostics,
+  TraySpoolCache
 };
 constexpr std::size_t kStorageJsonPayloadCapacity = 768;
 struct StorageCommand {
@@ -127,6 +140,10 @@ struct SpoolmanCommand {
   SpoolmanCommandType type;
   std::uint32_t requestId;
   std::uint32_t spoolId;
+  // LoadFilament: which filament to fetch (bambu_temp_min/bambu_temp_max/
+  // flow_dynamics_k_factor live on the filament, not the spool -- see
+  // docs/bambu-protocol.md).
+  std::uint32_t filamentId;
   float weightGrams;
   models::SpoolmanSettings settings;
   models::TagDefinition tagDefinition{};

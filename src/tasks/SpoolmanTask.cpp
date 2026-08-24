@@ -45,12 +45,16 @@ bool getJson(const char* url, std::uint32_t timeoutMs, JsonDocument& document,
   http.setTimeout(static_cast<uint16_t>(timeoutMs));
   if (!http.begin(url)) {
     std::snprintf(error, errorCapacity, "Ung\xC3\xBCltige Server-URL");
+    FS_LOGE(services::LogComponent::Spoolman,
+            "Request failed method=GET url=\"%s\" error=\"%s\"", url, error);
     return false;
   }
   const int status = http.GET();
   if (status != HTTP_CODE_OK) {
     std::snprintf(error, errorCapacity, "HTTP-Anfrage fehlgeschlagen (%d)",
                   status);
+    FS_LOGE(services::LogComponent::Spoolman,
+            "Request failed method=GET url=\"%s\" error=\"%s\"", url, error);
     http.end();
     return false;
   }
@@ -58,8 +62,13 @@ bool getJson(const char* url, std::uint32_t timeoutMs, JsonDocument& document,
   http.end();
   if (jsonError) {
     std::snprintf(error, errorCapacity, "Ung\xC3\xBCltige Serverantwort");
+    FS_LOGE(services::LogComponent::Spoolman,
+            "Request failed method=GET url=\"%s\" error=\"%s\" json_error=\"%s\"",
+            url, error, jsonError.c_str());
     return false;
   }
+  FS_LOGT(services::LogComponent::Spoolman,
+          "Request succeeded method=GET url=\"%s\"", url);
   return true;
 }
 
@@ -258,6 +267,7 @@ bool parseSpool(JsonVariantConst source, models::SpoolmanSpool& spool) {
     return false;
   spool.id = source["id"].as<std::uint32_t>();
   const JsonObjectConst filament = source["filament"].as<JsonObjectConst>();
+  spool.filamentId = filament["id"] | 0U;
   std::snprintf(spool.filament, sizeof(spool.filament), "%s",
                 filament["name"] | "-");
   std::snprintf(spool.material, sizeof(spool.material), "%s",
@@ -280,27 +290,11 @@ bool parseSpool(JsonVariantConst source, models::SpoolmanSpool& spool) {
       !spool.extraTagPresent || services::SpoolmanClient::decodeTextExtraField(
                                     extraTag, spool.extraTag,
                                     sizeof(spool.extraTag));
-  // Bambu-Duesentemperatur: projektspezifische Extra-Felder auf
-  // Filamentebene (nicht am Spool selbst, da die Temperatur eine
-  // Materialeigenschaft ist, siehe docs/bambu-protocol.md). Beide Felder
-  // muessen vorhanden und als Zahl > 0 dekodierbar sein, sonst bleibt
-  // bambuTempFieldsValid false und der Aufrufer zeigt einen Hinweis statt
-  // eine erfundene Temperatur zu senden.
-  const JsonVariantConst extraTempMin = filament["extra"]["bambu_temp_min"];
-  const JsonVariantConst extraTempMax = filament["extra"]["bambu_temp_max"];
-  spool.bambuTempFieldsPresent =
-      !extraTempMin.isNull() && !extraTempMax.isNull();
-  float tempMin = 0.0F;
-  float tempMax = 0.0F;
-  spool.bambuTempFieldsValid =
-      spool.bambuTempFieldsPresent &&
-      services::SpoolmanClient::decodeNumberExtraField(extraTempMin, tempMin) &&
-      services::SpoolmanClient::decodeNumberExtraField(extraTempMax, tempMax) &&
-      tempMin > 0.0F && tempMax > 0.0F && tempMin <= tempMax;
-  if (spool.bambuTempFieldsValid) {
-    spool.bambuTempMinC = static_cast<std::uint16_t>(tempMin);
-    spool.bambuTempMaxC = static_cast<std::uint16_t>(tempMax);
-  }
+  // bambu_temp_min/bambu_temp_max/flow_dynamics_k_factor are deliberately NOT parsed
+  // here anymore: they are Spoolman *filament* properties (Nutzerhinweis
+  // 2026-08-24), fetched via a dedicated SpoolmanCommandType::LoadFilament
+  // request (see loadFilament()/parseFilament() below) using spool.filamentId,
+  // rather than trusted from this spool response's embedded filament object.
   return spool.id != 0;
 }
 
@@ -333,6 +327,44 @@ bool parseFilament(JsonVariantConst source,
   filament.emptySpoolWeightGrams = source["spool_weight"] | 0.0F;
   filament.nozzleTemperatureC = source["settings_extruder_temp"] | 0;
   filament.bedTemperatureC = source["settings_bed_temp"] | 0;
+  // Bambu-Duesentemperatur: projektspezifische Extra-Felder (kein
+  // Spoolman-Standardfeld, siehe docs/bambu-protocol.md). Beide Felder
+  // muessen vorhanden und als Zahl > 0 dekodierbar sein, sonst bleibt
+  // bambuTempFieldsValid false und der Aufrufer zeigt einen Hinweis statt
+  // eine erfundene Temperatur zu senden. "extra" liegt hier auf Root-Ebene
+  // (direkter Filament-Fetch), nicht unter einem verschachtelten
+  // "filament"-Schluessel wie in einer Spool-Antwort.
+  const JsonVariantConst extraTempMin = source["extra"]["bambu_temp_min"];
+  const JsonVariantConst extraTempMax = source["extra"]["bambu_temp_max"];
+  filament.bambuTempFieldsPresent =
+      !extraTempMin.isNull() && !extraTempMax.isNull();
+  float tempMin = 0.0F;
+  float tempMax = 0.0F;
+  filament.bambuTempFieldsValid =
+      filament.bambuTempFieldsPresent &&
+      services::SpoolmanClient::decodeNumberExtraField(extraTempMin, tempMin) &&
+      services::SpoolmanClient::decodeNumberExtraField(extraTempMax, tempMax) &&
+      tempMin > 0.0F && tempMax > 0.0F && tempMin <= tempMax;
+  if (filament.bambuTempFieldsValid) {
+    filament.bambuTempMinC = static_cast<std::uint16_t>(tempMin);
+    filament.bambuTempMaxC = static_cast<std::uint16_t>(tempMax);
+  }
+  // Bambu-K-Faktor: Anzeige-only (Nutzerwunsch 2026-08-24), kein Einfluss
+  // auf das an den Drucker gesendete Kommando -- daher genuegt "> 0", keine
+  // Plausibilitaetsspanne wie bei den Duesentemperaturen noetig.
+  // Feldname vom Nutzer bestaetigt (2026-08-24): "flow_dynamics_k_factor",
+  // nicht "bambu_k_factor".
+  const JsonVariantConst extraKFactor =
+      source["extra"]["flow_dynamics_k_factor"];
+  filament.bambuKFactorPresent = !extraKFactor.isNull();
+  float kFactor = 0.0F;
+  filament.bambuKFactorValid =
+      filament.bambuKFactorPresent &&
+      services::SpoolmanClient::decodeNumberExtraField(extraKFactor, kFactor) &&
+      kFactor > 0.0F;
+  if (filament.bambuKFactorValid) {
+    filament.bambuKFactor = kFactor;
+  }
   return filament.id != 0;
 }
 
@@ -824,6 +856,76 @@ void sendSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
             "Event enqueue failed queue=app_event result=spool");
 }
 
+void sendFilamentDetails(rtos::RtosContext& ctx, std::uint32_t requestId,
+                         const models::SpoolmanFilament& filament) {
+  static rtos::AppEvent event{};
+  event = rtos::AppEvent{};
+  event.type = rtos::AppEventType::SpoolmanResponse;
+  event.requestId = requestId;
+  event.value = 0;
+  event.filament = filament;
+  std::snprintf(event.text, sizeof(event.text), "#%lu  %.32s \xC2\xB7 %.20s",
+               static_cast<unsigned long>(filament.id), filament.name,
+               filament.material);
+  if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
+    FS_LOGW(services::LogComponent::Spoolman,
+            "Event enqueue failed queue=app_event result=filament_details");
+}
+
+// SpoolmanCommandType::LoadFilament: GET /filament/{id} directly, instead of
+// trusting the (possibly incomplete) nested filament object embedded in a
+// spool response -- bambu_temp_min/bambu_temp_max/flow_dynamics_k_factor are
+// filament properties, see docs/bambu-protocol.md.
+void loadFilamentDetails(rtos::RtosContext& ctx,
+                         const rtos::SpoolmanCommand& command) {
+  if ((xEventGroupGetBits(ctx.systemEventGroup) & rtos::EVENT_WIFI_CONNECTED) == 0) {
+    sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
+               "Keine WLAN-Verbindung");
+    return;
+  }
+  const models::SpoolmanSettings& settings =
+      command.settings.serverUrl[0] != '\0' ? command.settings : activeSettings;
+  if (!settings.enabled || settings.serverUrl[0] == '\0') {
+    sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
+               "Spoolman ist nicht konfiguriert");
+    return;
+  }
+  if (command.filamentId == 0) {
+    sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
+               "Ung\xC3\xBCltige Filament-ID");
+    return;
+  }
+  char url[256]{};
+  std::snprintf(url, sizeof(url), "%s/filament/%lu", settings.serverUrl,
+               static_cast<unsigned long>(command.filamentId));
+  JsonDocument document;
+  char error[96]{};
+  if (!getJson(url, settings.timeoutMs, document, error, sizeof(error))) {
+    sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId, error);
+    return;
+  }
+  models::SpoolmanFilament filament{};
+  if (!parseFilament(document.as<JsonVariantConst>(), filament)) {
+    sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
+               "Filamentdaten sind ung\xC3\xBCltig");
+    FS_LOGE(services::LogComponent::Spoolman,
+            "Filament parse failed filament_id=%lu",
+            static_cast<unsigned long>(command.filamentId));
+    return;
+  }
+  FS_LOGD(services::LogComponent::Spoolman,
+          "Filament loaded request_id=%lu filament_id=%lu "
+          "temp_fields_present=%d temp_fields_valid=%d temp_min=%u "
+          "temp_max=%u kfactor_present=%d kfactor_valid=%d kfactor=%.3f",
+          static_cast<unsigned long>(command.requestId),
+          static_cast<unsigned long>(filament.id),
+          filament.bambuTempFieldsPresent, filament.bambuTempFieldsValid,
+          filament.bambuTempMinC, filament.bambuTempMaxC,
+          filament.bambuKFactorPresent, filament.bambuKFactorValid,
+          static_cast<double>(filament.bambuKFactor));
+  sendFilamentDetails(ctx, command.requestId, filament);
+}
+
 void loadSpools(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
   if ((xEventGroupGetBits(ctx.systemEventGroup) & rtos::EVENT_WIFI_CONNECTED) == 0) {
     sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
@@ -862,6 +964,9 @@ void loadSpools(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
     }
   }
 
+  FS_LOGD(services::LogComponent::Spoolman,
+          "Querying spool(s) request_id=%lu url=\"%s\"",
+          static_cast<unsigned long>(command.requestId), url);
   JsonDocument document;
   char error[96]{};
   if (!getJson(url, settings.timeoutMs, document, error, sizeof(error))) {
@@ -872,7 +977,22 @@ void loadSpools(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
   if (command.type == rtos::SpoolmanCommandType::LoadSpool) {
     models::SpoolmanSpool spool{};
     if (parseSpool(document.as<JsonVariantConst>(), spool)) {
+      FS_LOGD(services::LogComponent::Spoolman,
+              "Spool loaded request_id=%lu spool_id=%lu filament_id=%lu "
+              "vendor=\"%s\" material=\"%s\" empty_weight=%.1f "
+              "initial_weight=%.1f remaining_weight=%.1f",
+              static_cast<unsigned long>(command.requestId),
+              static_cast<unsigned long>(spool.id),
+              static_cast<unsigned long>(spool.filamentId), spool.vendor,
+              spool.material, static_cast<double>(spool.emptyWeightGrams),
+              static_cast<double>(spool.initialWeightGrams),
+              static_cast<double>(spool.remainingWeightGrams));
       sendSpool(ctx, command.requestId, count++, spool);
+    } else {
+      FS_LOGE(services::LogComponent::Spoolman,
+              "Spool parse failed request_id=%lu spool_id=%lu",
+              static_cast<unsigned long>(command.requestId),
+              static_cast<unsigned long>(command.spoolId));
     }
   } else if (document.is<JsonArrayConst>()) {
     for (JsonVariantConst item : document.as<JsonArrayConst>()) {
@@ -880,6 +1000,10 @@ void loadSpools(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
       models::SpoolmanSpool spool{};
       if (parseSpool(item, spool)) sendSpool(ctx, command.requestId, count++, spool);
     }
+    FS_LOGD(services::LogComponent::Spoolman,
+            "Spool search request_id=%lu url=\"%s\" results=%ld",
+            static_cast<unsigned long>(command.requestId), url,
+            static_cast<long>(count));
   }
   static rtos::AppEvent completed{};
   completed = rtos::AppEvent{};
@@ -1133,6 +1257,8 @@ void spoolmanTask(void* parameter) {
     } else if (command.type == rtos::SpoolmanCommandType::LoadSpool ||
                command.type == rtos::SpoolmanCommandType::SearchSpools) {
       loadSpools(ctx, command);
+    } else if (command.type == rtos::SpoolmanCommandType::LoadFilament) {
+      loadFilamentDetails(ctx, command);
     } else if (command.type == rtos::SpoolmanCommandType::SearchVendors) {
       searchVendors(ctx, command);
     } else if (command.type == rtos::SpoolmanCommandType::CreateVendor) {

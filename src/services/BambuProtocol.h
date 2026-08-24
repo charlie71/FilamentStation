@@ -88,9 +88,13 @@ const char* bambuGenericTrayInfoIdx(const char* material);
 // Merges recognized fields from a "report" topic payload into `state`.
 // Returns false for payloads without a "print" object (not a status
 // report, or unrecognized message type); such payloads are otherwise
-// harmless and must not be treated as an error by the caller. `spoolId`
-// entries in `state` are Spoolman associations unknown to the printer and
-// are never modified here.
+// harmless and must not be treated as an error by the caller.
+// `PrinterSlotStateData` deliberately has no `spoolId` field -- the printer
+// has no notion of Spoolman identities (a project-specific attempt to
+// round-trip one through a custom "tray_id_name" MQTT field was
+// hardware-tested and abandoned, see docs/bambu-protocol.md). The
+// printer/AMS/tray -> Spoolman-spool association is tracked and persisted
+// entirely by AppTask instead, see models/TraySpoolCache.h.
 bool bambuApplyReport(const JsonDocument& document, models::PrinterState& state);
 
 }  // namespace services
