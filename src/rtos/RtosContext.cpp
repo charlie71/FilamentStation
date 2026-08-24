@@ -12,6 +12,7 @@ namespace filament_station::rtos {
 namespace {
 RtosContext instance;
 static_assert(sizeof(LogMessage::text) == config::kLogMessageCapacity);
+std::atomic<std::uint32_t> droppedLogLines{0};
 
 bool createTask(TaskFunction_t function, const config::TaskSettings& settings,
                 RtosContext* taskContext, TaskHandle_t* handle) {
@@ -31,7 +32,13 @@ void enqueueLogLine(const char* message) {
   std::snprintf(entry.text, sizeof(entry.text), "%s", message);
   // Eine volle Queue verwirft nur die komplette neue Zeile. Bereits laufende
   // USB-Ausgaben werden niemals von einem anderen Task unterbrochen.
-  xQueueSend(ctx.logQueue, &entry, pdMS_TO_TICKS(10));
+  if (xQueueSend(ctx.logQueue, &entry, pdMS_TO_TICKS(10)) != pdPASS) {
+    droppedLogLines.fetch_add(1, std::memory_order_relaxed);
+  }
+}
+
+std::uint32_t droppedLogLineCount() {
+  return droppedLogLines.load(std::memory_order_relaxed);
 }
 
 bool RtosContext::createObjects() {

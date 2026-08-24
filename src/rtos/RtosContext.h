@@ -5,7 +5,9 @@
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include "config/TaskConfig.h"
 
 namespace filament_station::rtos {
@@ -47,5 +49,12 @@ RtosContext& context();
 // Low-level transport used exclusively by services::Logger. Application code
 // must use FS_LOGE/W/I/D/T so every line has canonical metadata.
 void enqueueLogLine(const char* message);
+// A full logQueue silently drops the new line (see enqueueLogLine()) rather
+// than blocking the producer task -- correct for a long-running device, but
+// previously left with zero visibility if it ever actually happened
+// (Robustheit/Diagnose, TASKS.md 10.7). Called from every task via
+// FS_LOG*, so a lock-free atomic counter instead of a queue/mutex.
+// Diagnostics-only; not reset except at boot.
+std::uint32_t droppedLogLineCount();
 
 }  // namespace filament_station::rtos

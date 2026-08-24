@@ -2998,15 +2998,105 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 10.7 Langzeit
 
-* [ ] Tasks blockieren korrekt
-* [ ] Critical Sections
-* [ ] Mutex
+* [x] Tasks blockieren korrekt
+* [x] Critical Sections
+* [x] Mutex
 * [ ] mehrstündiger Test
-* [ ] Speicher
-* [ ] UI
-* [ ] Dateien
-* [ ] Reconnect
-* [ ] Logger
+* [x] Speicher
+* [x] UI
+* [x] Dateien
+* [x] Reconnect
+* [x] Logger
+
+Bestandsaufnahme (eigene Verifikation der Blockier-/Critical-Section-/
+Mutex-Punkte per Volltextsuche ueber alle 8 Tasks + Explore-Agent-Audit
+fuer die restlichen Punkte, kritischer Fund selbst gegengeprueft): acht
+von neun Punkten sind Code-Eigenschaften, die sich per Review verifizieren
+lassen und bereits erfuellt sind (eine echte Luecke bei "Logger"
+gefunden und behoben). "mehrstuendiger Test" ist bewusst NICHT abgehakt --
+das ist keine Code-Eigenschaft, sondern ein tatsaechlicher
+Dauerlauf-Test auf echter Hardware, den nur der Nutzer durchfuehren kann.
+
+**Tasks blockieren korrekt** -- verifiziert: alle 8 Tasks (App/Storage/
+Scale/Nfc/Spoolman/Bambu/Network/Ui) warten in ihrer Hauptschleife
+ausschliesslich per `xQueueReceive`/`xQueueSelectFromSet` mit `portMAX_DELAY`
+oder einem begrenzten Timeout -- keine einzige Busy-Loop im gesamten
+`src`-Baum. `UiTask.cpp` ist dabei besonders bemerkenswert: die Wartezeit
+richtet sich nach `ui::runLvglTimers()`s eigener Empfehlung (LVGLs
+Animations-/Timer-Planung), nicht nach einem festen Intervall.
+
+**Critical Sections** -- verifiziert: die einzige Stelle im gesamten
+Projekt ist das HX711-Bit-Banging in `ScaleTask.cpp` (~91-103,
+`portENTER_CRITICAL`/`portEXIT_CRITICAL` um exakt die 24+1 GPIO-Takt-
+Zyklen) -- kurz, keine blockierenden/Queue-Aufrufe darin, korrekt fuer
+zeitkritisches Bit-Banging eingesetzt.
+
+**Mutex** -- verifiziert: keine einzige `SemaphoreHandle_t`/
+`xSemaphoreCreateMutex` im gesamten `src`-Baum. Die Architektur verzichtet
+komplett auf geteilten Speicher zwischen Tasks -- jede Kommunikation laeuft
+ueber Message-Queues mit wertkopierten Structs, wodurch eine ganze Klasse
+von Mutex-Bugs (Deadlocks, Prioritaetsinversion, vergessenes Unlock) von
+vornherein nicht existieren kann.
+
+**mehrstündiger Test** -- **nicht abgehakt, erfordert echte Hardware:**
+dies ist kein statisch pruefbarer Code-Aspekt, sondern ein tatsaechlicher
+mehrstuendiger Dauerlauf auf dem Geraet (Speicherverlauf, Queue-Fuellstaende,
+Reconnect-Zyklen ueber Zeit beobachten). Die dafuer noetige Diagnose-
+Infrastruktur (Heap/PSRAM-Tiefstand seit Boot, jetzt auch verworfene
+Logzeilen, siehe "Logger" unten) steht bereit; der eigentliche Test bleibt
+dem Nutzer ueberlassen.
+
+**Speicher** -- bereits vorhanden: `logTaskDiagnostics()` (Phase 10.1)
+loggt `ESP.getMinFreeHeap()`/`getMinFreePsram()` (Tiefstand seit Boot --
+der Standardweg, einen langsamen Leck ohne Live-Mehrstundentest zu
+erkennen). Repo-weite Suche nach `new `/`malloc(`/`calloc(` findet nur
+`heap_caps_malloc` fuer die beiden LVGL-Zeichenpuffer
+(`UiBridge.cpp::initializeLvgl()`), einmalig beim Boot alloziert -- keine
+einzige dynamische Allokation pro Schleifendurchlauf/Ereignis irgendwo im
+Projekt (entspricht den in AGENTS.md/Codekommentaren wiederholt
+referenzierten "static/stack/queue-value-type"-Konventionen).
+
+**UI** -- bereits vorhanden: alle `_create()`-Aufrufe in `UiBridge.cpp`
+ausserhalb der einmaligen Boot-Initialisierung sind entweder idempotent
+(`ensureOverlay()` erstellt seine Overlay-Widgets nur beim ersten Aufruf,
+schuetzt sich per Null-Check) oder korrekt gepaart (Spoolman-/Drucker-
+Feld-Editoren loeschen ihr vorheriges Widget explizit vor dem Neuerstellen).
+Der einzige echte Pro-Ereignis-Ersteller ist der Touch-Marker
+(`showTouchMarker()`, bei jedem Touch-Down neu erzeugt), der sich aber
+selbst per `lv_timer_create(deleteTouchMarker, 2000, ...)` nach 2s wieder
+entfernt -- begrenzt, kein Aufstauen.
+
+**Dateien** -- bereits vorhanden: jedes `.open()` in `JsonStorage.cpp`/
+`StorageTask.cpp` schliesst auf jedem Ausstiegspfad, inklusive frueher
+Fehler-Returns -- `isValidDocumentFile()` (von `atomicSave()`/
+`recoverAtomicSave()` wiederholt aufgerufen) schliesst unbedingt vor jedem
+Return; `atomicSave()`s eigene `temporaryFile` wird vor allen moeglichen
+Fehlerpfaden geschlossen.
+
+**Reconnect** -- bereits vorhanden (Ressourcen-Aspekt der in 10.4 neu
+gebauten Logik, nicht die Logik selbst): `BambuTask.cpp`s
+`PrinterConnection` haelt `tlsClient`/`mqttClient` als Wert-Member fuer
+die gesamte Prozesslaufzeit -- `doConnect()` ruft nur Methoden auf den
+bestehenden Objekten auf, kein `new WiFiClientSecure`/`new PubSubClient`
+je Reconnect-Versuch. `WiFi.reconnect()` (NetworkTask) und
+`retrySpoolmanHealthCheckIfNeeded()` (AppTask) allozieren nichts und
+senden hoechstens einen einzelnen, groessenbegrenzten Command-Struct in
+eine bereits begrenzte Queue.
+
+**Logger -- echte Lücke, behoben:** `enqueueLogLine()`
+(`RtosContext.cpp`) verwarf eine Zeile bei voller Queue bereits korrekt
+begrenzt (10ms Wartezeit statt `portMAX_DELAY`, kein unbegrenztes
+Wachstum) -- das Verwerfen selbst war aber vollstaendig unsichtbar: der
+`xQueueSend`-Ruckgabewert wurde nie geprueft, keine Zaehlung, keine
+Diagnose-Sichtbarkeit. Bei einem Logburst waehrend eines echten Fehlers
+(genau der Moment, in dem Logzeilen am wichtigsten sind) haetten Zeilen
+spurlos verschwinden koennen. Neu: `std::atomic<std::uint32_t>
+droppedLogLines` in `RtosContext.cpp` (lock-frei, da aus jedem Task per
+FS_LOG* erreichbar), neue Funktion `rtos::droppedLogLineCount()`;
+`logTaskDiagnostics()` loggt den kumulierten Wert seit Boot direkt neben
+der Heap/PSRAM-Diagnose.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ---
 

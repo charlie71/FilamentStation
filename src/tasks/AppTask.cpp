@@ -2049,6 +2049,15 @@ DiagnosticsSummary logTaskDiagnostics(rtos::RtosContext& ctx) {
           static_cast<unsigned long>(ESP.getMinFreeHeap()),
           static_cast<unsigned long>(ESP.getFreePsram()),
           static_cast<unsigned long>(ESP.getMinFreePsram()));
+  // Cumulative since boot -- a full logQueue silently drops the newest line
+  // (see rtos::enqueueLogLine()) rather than blocking the producer task, a
+  // deliberate tradeoff that previously had zero visibility (Robustheit/
+  // Diagnose, TASKS.md 10.7): during a burst that overruns the 10ms wait,
+  // exactly the lines a technician would need to diagnose it could vanish
+  // without a trace.
+  FS_LOGI(services::LogComponent::Rtos,
+          "Logger diagnostics dropped_lines=%lu",
+          static_cast<unsigned long>(rtos::droppedLogLineCount()));
 
   return summary;
 }
