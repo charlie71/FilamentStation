@@ -1,5 +1,6 @@
 #include "tasks/Tasks.h"
 
+#include <Arduino.h>
 #include <SD.h>
 #include <SPI.h>
 #include <cstdio>
@@ -434,10 +435,6 @@ void processStorageCommand(rtos::RtosContext& ctx,
                          "JSON delete failed", command.requestId);
       }
       return;
-    case rtos::StorageCommandType::CreateBackup:
-      sendStorageResult(ctx, command, rtos::AppEventType::StorageRequestError,
-                        {services::JsonStorageError::InvalidArgument, 0}, "");
-      return;
   }
 }
 
@@ -640,7 +637,17 @@ void storageTask(void* parameter) {
                 "Command rejected reason=restart_required request_id=%lu",
                 static_cast<unsigned long>(command.requestId));
       } else {
+        const std::uint32_t startMs = millis();
         processStorageCommand(ctx, command);
+        const std::uint32_t elapsedMs = millis() - startMs;
+        if (elapsedMs >= config::kSdSlowOperationWarningMs) {
+          FS_LOGW(services::LogComponent::Storage,
+                  "Slow SD operation request_id=%lu type=%u path=\"%s\" "
+                  "elapsed_ms=%lu",
+                  static_cast<unsigned long>(command.requestId),
+                  static_cast<unsigned>(command.type), command.path,
+                  static_cast<unsigned long>(elapsedMs));
+        }
       }
     }
 

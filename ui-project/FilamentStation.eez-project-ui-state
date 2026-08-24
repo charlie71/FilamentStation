@@ -1,7 +1,7 @@
 {
   "navigation": {
     "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/1",
-    "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/7",
+    "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/6",
     "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/4",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
     "selectedThemeColorObject": "[FilamentStation.eez-project]:/colors/6",
@@ -198,7 +198,6 @@
               "type": "tabset",
               "id": "EDITORS",
               "weight": 49.8967350839487,
-              "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
@@ -216,10 +215,10 @@
                 {
                   "type": "tab",
                   "id": "#8cca91c9-4476-4a6c-bd1a-9eefd8064973",
-                  "name": "CMP_STAGING_CARD",
+                  "name": "CMP_TRAY_CARD",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userWidgets/7",
+                    "objectPath": "[FilamentStation.eez-project]:/userWidgets/6",
                     "permanent": false
                   },
                   "icon": "svg:user_widget"
@@ -235,7 +234,8 @@
                   },
                   "icon": "svg:page"
                 }
-              ]
+              ],
+              "active": true
             },
             {
               "type": "row",
@@ -255,8 +255,7 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ],
-                  "active": true
+                  ]
                 },
                 {
                   "type": "tabset",
@@ -1128,16 +1127,18 @@
           "9": {},
           "10": {},
           "11": {},
-          "31": {},
+          "31": {
+            "$selected": true
+          },
           "32": {}
         }
       },
       "transform": {
         "translate": {
-          "x": -240,
-          "y": -160
+          "x": -116.46628563886668,
+          "y": -124.96069464239568
         },
-        "scale": 1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1236,7 +1237,7 @@
           "x": -88.28789902634725,
           "y": -159.82127645612943
         },
-        "scale": 1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1376,17 +1377,15 @@
         "3": {},
         "4": {},
         "5": {},
-        "6": {
-          "$selected": true
-        },
+        "6": {},
         "9": {}
       },
       "transform": {
         "translate": {
-          "x": -238.09463342443678,
-          "y": -200.0540642390097
+          "x": -260.6707926663484,
+          "y": -208.5122397528617
         },
-        "scale": 1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1400,10 +1399,10 @@
       "selectionBack": {
         "0": {},
         "1": {},
-        "4": {},
-        "6": {
+        "4": {
           "$selected": true
         },
+        "6": {},
         "7": {},
         "8": {},
         "9": {}
@@ -1413,7 +1412,7 @@
           "x": -125.82143839518227,
           "y": -98.907834370931
         },
-        "scale": 1
+        "scale": 3
       },
       "timeline": {
         "isEditorActive": false,
@@ -2280,13 +2279,11 @@
   "lvglPart": "MAIN",
   "lvglState": "DEFAULT",
   "lvglExpandedPropertiesGroup": [
-    "SHADOW",
-    "POSITION AND SIZE",
-    "TEXT"
+    "MISCELLANEOUS"
   ],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,
-  "flowZoom": 1,
+  "flowZoom": 0.9,
   "implementationLanguage": "C",
   "openDialogDefaultPath": "C:\\VSCode\\Projects\\FilamentStation\\ui-project\\images\\3d-nozzle_W.png"
 }

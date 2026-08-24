@@ -209,7 +209,13 @@ enum class NfcCommandType : std::uint8_t {
   WriteSpoolTag,
   EraseTag,
 };
-enum class StorageCommandType : std::uint8_t { LoadJson, SaveJson, DeleteJson, CreateBackup };
+// CreateBackup wurde bewusst nicht aufgenommen: JsonStorage::atomicSave()
+// legt bei jedem Speichern bereits automatisch ein *.bak.json an (Phase 2.4,
+// per Wiederherstellungstest verifiziert; recoverAtomicSave() nutzt es beim
+// naechsten Boot bei fehlender/beschaedigter Zieldatei) -- ein zusaetzlicher
+// manueller Trigger auf demselben Pfad wuerde mit diesem Mechanismus
+// kollidieren, siehe TASKS.md 10.2.
+enum class StorageCommandType : std::uint8_t { LoadJson, SaveJson, DeleteJson };
 enum class NetworkCommandType : std::uint8_t {
   ApplyConfiguration,
   RequestStatus,

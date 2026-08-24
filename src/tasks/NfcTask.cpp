@@ -103,6 +103,53 @@ void sendError(rtos::RtosContext& ctx, std::uint32_t requestId,
   sendEvent(ctx, event);
 }
 
+// PN532 runtime disconnect/reconnect (Robustheit/Diagnose, TASKS.md 10.2):
+// unlike boot-time initializePn532() failures, a wire coming loose mid-
+// session previously went completely unnoticed -- scanTarget() communication
+// errors only ever triggered a silent resetRfField() retry, with no upper
+// bound and no notification to AppTask/UI, and a tag that happened to be
+// selected at the time would eventually be reported as physically "removed"
+// instead. sustainedCommErrors persists across those soft resets (unlike
+// consecutiveScanErrors) so a genuinely dead reader is still caught even
+// though it keeps getting "recovery" attempts.
+void reportPn532Disconnected(rtos::RtosContext& ctx) {
+  xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_NFC_READY);
+  FS_LOGE(services::LogComponent::Nfc,
+          "PN532 not responding at runtime; treating as disconnected");
+  sendError(ctx, 0, "PN532 not responding; check HSU wiring");
+}
+
+void reportPn532Reconnected(rtos::RtosContext& ctx) {
+  xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_NFC_READY);
+  FS_LOGI(services::LogComponent::Nfc, "PN532 responding again");
+  static rtos::AppEvent event{};
+  event = rtos::AppEvent{};
+  event.type = rtos::AppEventType::NfcInitialized;
+  std::snprintf(event.text, sizeof(event.text), "PN532 ready");
+  sendEvent(ctx, event);
+}
+
+void notePn532Responding(rtos::RtosContext& ctx, bool& pn532Connected,
+                         std::uint16_t& sustainedCommErrors) {
+  sustainedCommErrors = 0;
+  if (!pn532Connected) {
+    pn532Connected = true;
+    reportPn532Reconnected(ctx);
+  }
+}
+
+void notePn532CommError(rtos::RtosContext& ctx, bool& pn532Connected,
+                        std::uint16_t& sustainedCommErrors) {
+  if (sustainedCommErrors < config::kPn532DisconnectConfirmationScans) {
+    ++sustainedCommErrors;
+  }
+  if (pn532Connected &&
+      sustainedCommErrors >= config::kPn532DisconnectConfirmationScans) {
+    pn532Connected = false;
+    reportPn532Disconnected(ctx);
+  }
+}
+
 bool initializeUart() {
   constexpr gpio_num_t txPin =
       static_cast<gpio_num_t>(config::kPn532UartTxPin);
@@ -1069,6 +1116,9 @@ void nfcTask(void* parameter) {
   std::uint8_t consecutiveScanErrors = 0;
   std::uint8_t confirmedAbsenceScans = 0;
   std::uint8_t confirmedFreshAbsenceScans = 0;
+  bool pn532Connected =
+      initializationResult == Pn532InitializationResult::Ready;
+  std::uint16_t sustainedCommErrors = 0;
   rtos::NfcCommand command{};
   for (;;) {
     if (xQueueReceive(ctx.nfcCommandQueue, &command,
@@ -1111,6 +1161,7 @@ void nfcTask(void* parameter) {
         confirmedAbsenceScans = 0;
         confirmedFreshAbsenceScans = 0;
         consecutiveScanErrors = 0;
+        notePn532Responding(ctx, pn532Connected, sustainedCommErrors);
         continue;
       }
 
@@ -1134,14 +1185,18 @@ void nfcTask(void* parameter) {
         confirmedAbsenceScans = 0;
         confirmedFreshAbsenceScans = 0;
         consecutiveScanErrors = 0;
+        notePn532Responding(ctx, pn532Connected, sustainedCommErrors);
         continue;
       }
       if (reacquireResult == ScanResult::CommunicationError) {
         // Transport/PN532 errors do not prove that the RF tag disappeared.
         confirmedFreshAbsenceScans = 0;
         ++consecutiveScanErrors;
+        notePn532CommError(ctx, pn532Connected, sustainedCommErrors);
         continue;
       }
+      // A NoTarget result still proves the PN532 itself answered.
+      notePn532Responding(ctx, pn532Connected, sustainedCommErrors);
 
       if (reacquireResult == ScanResult::NoTarget &&
           ++confirmedFreshAbsenceScans <
@@ -1188,9 +1243,11 @@ void nfcTask(void* parameter) {
       consecutiveScanErrors = 0;
       confirmedAbsenceScans = 0;
       confirmedFreshAbsenceScans = 0;
+      notePn532Responding(ctx, pn532Connected, sustainedCommErrors);
     } else if (scanResult == ScanResult::CommunicationError) {
       // A malformed or timed-out UART transaction is not evidence that the
       // tag was removed. Recover the PN532 transport, but preserve presence.
+      notePn532CommError(ctx, pn532Connected, sustainedCommErrors);
       if (++consecutiveScanErrors >= 2) {
         FS_LOGW(services::LogComponent::Nfc,
                 "PN532 scan recovery consecutive_errors=%u",
@@ -1200,6 +1257,7 @@ void nfcTask(void* parameter) {
       }
     } else {
       consecutiveScanErrors = 0;
+      notePn532Responding(ctx, pn532Connected, sustainedCommErrors);
     }
   }
 }

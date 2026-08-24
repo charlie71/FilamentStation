@@ -43,6 +43,14 @@ constexpr bool kSdCardDetectAvailable = false;
 // Entfernung bleibt der Storage-Fehler bis zum Neustart verriegelt.
 constexpr std::uint32_t kSdHealthCheckIntervalMs = 2000;
 
+// Eine einzelne Kommandobearbeitung (Laden/Speichern/Loeschen) laenger als
+// dieser Schwellwert deutet auf eine degradierende/langsame SD-Karte hin
+// (Robustheit/Diagnose, TASKS.md 10.2) -- kein Abbruch, nur Diagnose-
+// Sichtbarkeit im Log, da die eigentliche Blockierung ohnehin auf den
+// dedizierten StorageTask begrenzt bleibt (kein anderer Task wartet
+// synchron auf SD-I/O).
+constexpr std::uint32_t kSdSlowOperationWarningMs = 750;
+
 // HX711 am herausgefuehrten EXT-Anschluss des WT32-SC01-Plus:
 // EXT_IO2/GPIO11 ist ein interruptfaehiger Eingang fuer DOUT,
 // EXT_IO1/GPIO10 ist der Taktausgang. Beide Pins sind laut Boarddatenblatt

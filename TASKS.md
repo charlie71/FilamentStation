@@ -2512,13 +2512,102 @@ erneuten Hardware-Test (mehrfaches Drücken) steht noch aus.
 
 ## 10.2 Speicher
 
-* [ ] SD entfernen
-* [ ] Stromausfall
-* [ ] HX711 trennen
-* [ ] PN532 trennen
-* [ ] langsame SD
-* [ ] JSON beschädigt
-* [ ] Backup
+* [x] SD entfernen
+* [x] Stromausfall
+* [x] HX711 trennen
+* [x] PN532 trennen
+* [x] langsame SD
+* [x] JSON beschädigt
+* [x] Backup
+
+Bestandsaufnahme: die meisten dieser Szenarien waren durch die Phase-2/
+StorageTask-Architektur bereits robust abgedeckt, ohne dass diese Phase
+10.2 das explizit dokumentiert hatte. Zwei Luecken (PN532-Laufzeittrennung,
+langsame-SD-Sichtbarkeit) waren echt und wurden neu geschlossen; ein
+Stub (`CreateBackup`) war totes API und wurde entfernt statt implementiert
+(Nutzerentscheidung).
+
+**SD entfernen** -- bereits vorhanden: `StorageTask::storageTask()`
+pollt `cardIsAccessible()` alle `kSdHealthCheckIntervalMs` (2000ms), setzt
+bei Verlust `removalLatched`, loescht `EVENT_SD_READY`, sendet
+`SdRemoved` und verriegelt alle weiteren Befehle bis zum Neustart
+("SD unavailable; restart required") -- ein erneutes Einstecken wird
+erkannt (`SdReinserted`), aendert aber bewusst nichts an der Verriegelung
+(Neustart bleibt erforderlich, da der Zustand aller offenen
+Dateihandles/Puffer nach einer Entfernung nicht mehr vertrauenswuerdig
+ist).
+
+**Stromausfall** -- bereits vorhanden (Phase 2.4): `JsonStorage::
+atomicSave()` schreibt in eine `.tmp.json`, validiert sie, verschiebt die
+bisherige Zieldatei nach `.bak.json`, benennt dann erst `.tmp.json` in
+die Zieldatei um und loescht abschliessend `.bak.json` -- jeder Schritt
+einzeln fuer sich abgesichert. `JsonStorage::recoverAtomicSave()` laeuft
+beim Boot fuer jedes Initial-Dokument (`ensureInitialDocument()`) und
+stellt nach einem Stromausfall mitten in dieser Sequenz automatisch den
+zuletzt gueltigen Stand wieder her (Ziel gueltig -> Reste aufraeumen;
+sonst `.tmp.json` falls gueltig uebernehmen; sonst `.bak.json`
+zurueckspielen; sonst -- wenn alle drei fehlen -- als leerer/erster Boot
+werten). Bereits per "Wiederherstellungstest" (Phase 2.4) verifiziert.
+
+**HX711 trennen** -- bereits vorhanden: `ScaleTask::scaleTask()` erkennt
+ausbleibende HX711-Samples ueber `kHx711ReadyTimeoutMs`, loescht
+`EVENT_SCALE_READY`, sendet `ScaleError` ("HX711 not responding") und
+erkennt eine Rueckkehr am naechsten erfolgreichen Sample (`ScaleReady`
+erneut, Zustand automatisch zurueckgesetzt) -- kein Neustart noetig,
+anders als bei SD.
+
+**PN532 trennen** -- **Luecke geschlossen** (neu): Initialisierungs-
+fehler beim Boot waren bereits abgedeckt (`initializePn532()` meldet
+`NfcError` und setzt `EVENT_NFC_READY` nie), eine Trennung *waehrend*
+des Betriebs (Kabel loest sich mitten in der Sitzung) wurde bisher aber
+gar nicht erkannt -- `scanTarget()`-Kommunikationsfehler loesten nur
+einen stillen `resetRfField()`-Wiederholversuch aus, ohne Obergrenze und
+ohne Meldung an AppTask/UI; ein zu diesem Zeitpunkt aufgelegtes Tag waere
+irgendwann faelschlich als "entfernt" gemeldet worden. Neu:
+`sustainedCommErrors`-Zaehler (uebersteht die bestehenden weichen
+RF-Resets, im Gegensatz zu `consecutiveScanErrors`) an allen
+`scanTarget()`/`readPages()`-Erfolgs- und Fehlerstellen in `NfcTask.cpp`
+verdrahtet (`notePn532Responding()`/`notePn532CommError()`); nach
+`kPn532DisconnectConfirmationScans` (20, neu in `NfcConfig.h`) direkt
+aufeinanderfolgenden Fehlern gilt der Leser als getrennt (`EVENT_NFC_READY`
+geloescht, `NfcError` "PN532 not responding; check HSU wiring"), eine
+erneute gueltige Antwort (auch ein simples "kein Tag gefunden") meldet
+die Rueckkehr (`NfcInitialized` erneut, kein Neustart noetig).
+
+**langsame SD** -- **Sichtbarkeit ergaenzt** (neu): strukturell bereits
+robust (dedizierter StorageTask, kein anderer Task wartet synchron auf
+SD-I/O, alle Queue-Operationen haben Timeouts statt unbegrenzt zu
+blockieren) -- es fehlte aber jede Diagnose-Sichtbarkeit, falls eine
+Karte degradiert (spuerbar langsamer statt komplett ausfallend). Neu:
+`storageTask()` misst die Dauer jeder `processStorageCommand()`-
+Bearbeitung und loggt ab `kSdSlowOperationWarningMs` (750ms, neu in
+`BoardConfig.h`) eine `FS_LOGW`-Zeile mit request_id/Typ/Pfad/Dauer --
+reine Diagnose, kein Abbruchverhalten.
+
+**JSON beschädigt** -- bereits vorhanden: `JsonStorage::load()` prueft
+Groessenlimits, Parse-Erfolg, Schema-Version, `updatedAt`-Format und
+dokumenttyp-spezifische Feldvalidierung; jeder Fehlschlag liefert einen
+spezifischen `JsonStorageError` statt eines Absturzes oder stillschweigend
+uebernommener Teildaten. Fuer die in `kInitialDocuments` gelisteten
+Kerndateien greift zusaetzlich die oben beschriebene Boot-Wiederherstellung
+(`recoverAtomicSave()`); fuer die Legacy-NFC-Mapping-Dateien (nicht in
+dieser Liste, nur On-Demand geladen) meldet ein beschaedigter/fehlender
+Stand explizit "Legacy mapping file not found" statt eines Fehlers ohne
+Kontext (`isMappingPath()`-Sonderfall in `processLoadCommand()`).
+
+**Backup** -- **als totes API entfernt statt implementiert** (Nutzer-
+entscheidung nach Rueckfrage): `StorageCommandType::CreateBackup`
+existierte als Stub (lieferte immer `InvalidArgument`, wurde von nirgends
+aufgerufen) und war ohnehin praktisch nicht sicher implementierbar, ohne
+mit dem oben beschriebenen automatischen `.bak.json`-Mechanismus zu
+kollidieren (derselbe Dateiname wird von `atomicSave()`/
+`recoverAtomicSave()` als Crash-Recovery-Artefakt behandelt, nicht als
+dauerhaftes manuelles Backup). Der eigentliche Schutz -- ein Backup bei
+*jedem* Speichern, nicht nur auf Abruf -- ist durch Phase 2.4 bereits
+vollstaendig abgedeckt; `CreateBackup` aus `StorageCommandType` entfernt,
+mit Verweisen auf Phase 2.4 in `Commands.h` dokumentiert.
+
+Build (0 Warnungen), 52 native Tests gruen, geflasht.
 
 ## 10.3 NFC/Spoolman-Zuordnung
 
