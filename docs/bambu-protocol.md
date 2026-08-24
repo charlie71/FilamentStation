@@ -519,6 +519,22 @@ Von `BambuProtocol::bambuApplyReport()` ausgewertete Pfade:
       leerem Slot. Wird nach `PrinterSlotStateData::material` uebernommen.
     * `tray_color`: RRGGBBAA-Hex-String. Wird unveraendert (als String, keine
       Farbkonvertierung) nach `PrinterSlotStateData::colorHex` uebernommen.
+  * **Nachtrag (2026-08-24, physisch entfernte AMS-Einheit, Robustheit/
+    Diagnose TASKS.md 10.5):** `ams.ams[]` erscheint laut obiger Beobachtung
+    (Abschnitt "Vollstaendigen Status anfordern") nur bei einem vollen
+    `pushall`, nicht beim regulaeren periodischen `push_status` -- wenn das
+    Array in einem Bericht vorkommt, gilt es daher als vollstaendige,
+    massgebliche Momentaufnahme aller tatsaechlich angeschlossenen
+    AMS-Einheiten (unverifizierte Annahme, community-basiert wie der Rest
+    dieser Datei). `bambuApplyReport()` merkt sich deshalb bei jedem
+    vorhandenen `ams.ams[]`, welche `id`s darin vorkommen, und setzt fuer
+    jede zuvor als `present` bekannte, jetzt fehlende Einheit
+    `present=false`/`connectionState=Offline` (plus neu berechnetes
+    `amsCount`) -- vorher wurde `present` nur je gesetzt, nie zurueckgesetzt,
+    eine abgezogene AMS-Einheit blieb dadurch fuer die restliche Sitzung
+    faelschlich als angeschlossen sichtbar. Ein Bericht *ohne* `ams.ams[]`
+    (regulaeres `push_status`) aendert an der Anwesenheit bewusst nichts
+    (gleiches Merge-Verhalten wie der Rest dieser Funktion).
 * `print.vt_tray`: externer/manueller Slot (kein AMS), gleiche Feldstruktur
   wie ein Tray-Eintrag. Wird auf `PrinterState::externalSlot` abgebildet.
 * `print.ams.tray_now`: welches Fach gerade in der Duese aktiv ist

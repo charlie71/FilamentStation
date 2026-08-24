@@ -2825,15 +2825,94 @@ Build (0 Warnungen), 52 native Tests gruen, geflasht.
 
 ## 10.5 Mehrdrucker
 
-* [ ] Wechsel während MQTT
-* [ ] Wechsel während Update
-* [ ] offline
-* [ ] mehrere offline
-* [ ] aktiven löschen
-* [ ] Default löschen
-* [ ] alte Antwort
-* [ ] AMS weg
-* [ ] Daten trennen
+* [x] Wechsel während MQTT
+* [x] Wechsel während Update
+* [x] offline
+* [x] mehrere offline
+* [x] aktiven löschen
+* [x] Default löschen
+* [x] alte Antwort
+* [x] AMS weg
+* [x] Daten trennen
+
+Bestandsaufnahme (Explore-Agent-Audit + eigene Verifikation der Luecke):
+acht von neun Punkten waren bereits robust -- die Mehrdrucker-Architektur
+(`PrinterConnections`-Array, `printerId`-getaggte Events, `requestId`-
+Abgleich vor jeder Zustandsaenderung) ist konsequent durchgezogen. Eine
+echte Luecke gefunden und behoben: eine physisch entfernte AMS-Einheit
+blieb fuer immer als "angeschlossen" markiert.
+
+**Wechsel während MQTT** -- bereits vorhanden: jedes Bambu-Event traegt
+`event.printerId`; `printerEntry(event.printerId)` aktualisiert immer die
+Daten des *betroffenen* Druckers in `printerCollection`, unabhaengig vom
+gerade fokussierten (`AppTask.cpp` ~5406-5418). Nur die sichtbare Header/
+AMS-Anzeige aktualisiert sich zusaetzlich live, wenn
+`event.printerId == printerCollection.activePrinterId` gilt
+(~5604-5621) -- ein Bericht eines Hintergrund-Druckers kann die Anzeige
+des fokussierten Druckers nicht verfaelschen.
+
+**Wechsel während Update** -- bereits vorhanden: `pendingSlotAssignment`
+traegt ein eigenes `printerId`-Feld; jeder Stufen-Handler
+(LoadingSpool/LoadingFilament/WritingSlot) prueft `requestId` vor jeder
+Zustandsaenderung, das abschliessende AssignTray-Ergebnis wird bewusst
+unabhaengig vom aktuellen Fokus verarbeitet (Kommentar: "shown regardless
+of which printer is currently in focus") und schreibt in
+`pendingSlotAssignment.printerId`-skalierte Daten (TraySpoolCache-Eintrag,
+`findPrinter(printerCollection, pendingSlotAssignment.printerId)`) statt
+in den gerade aktiven Drucker.
+
+**offline / mehrere offline** -- bereits vorhanden per Architektur:
+`PrinterConnections` ist ein Array mit vollstaendig unabhaengigem Zustand
+je Drucker (`mqttClient`/`state`/`reportedConnected`/seit 10.4 auch
+`lastReconnectAttemptAt`); `serviceConnections()` iteriert alle Eintraege
+unabhaengig, kein gemeinsamer/globaler "gerade offline"-Zustand. Mehrere
+gleichzeitig offline Drucker sind dadurch kein Sonderfall, sondern nur N
+unabhaengige Einzelfaelle.
+
+**aktiven löschen / Default löschen** -- bereits vorhanden: die
+`DeletePrinter`-UI-Aktion loescht `activePrinterId`/`isActive` explizit,
+falls der geloeschte Drucker aktiv war (`AppTask.cpp` 2938-2969);
+`removePrinterConfig()` (700-725) loescht `selectedPrinterId`, falls es
+auf den entfernten Drucker zeigte, und befoerdert automatisch
+`printers[0]` zum neuen Default, falls der entfernte Drucker Default war.
+
+**alte Antwort** -- bereits vorhanden: `pendingPrinterTestRequestId`
+verhindert einen zweiten gleichzeitigen Verbindungstest und wird vor der
+Anwendung eines `BambuTestResult` gegengeprueft; jeder
+`pendingSlotAssignment`-Handler prueft ebenso `event.requestId ==
+pendingSlotAssignment.requestId`, bevor er eine Antwort uebernimmt -- eine
+veraltete/ueberholte Antwort wird still verworfen statt angewendet zu
+werden.
+
+**AMS weg -- echte Lücke, behoben:** `bambuApplyReport()` setzte
+`AmsState::present`/`amsCount` bisher nur je (beim ersten Erscheinen
+einer AMS-Einheit im Bericht), nie zurueck -- eine physisch entfernte
+AMS-Einheit blieb fuer den Rest der Sitzung faelschlich als
+angeschlossen markiert (per Volltextsuche bestaetigt: `present = false`
+wird nirgends im gesamten `src`-Baum geschrieben, nur der
+Struct-Default). Ursache/Fix siehe `docs/bambu-protocol.md`-Nachtrag:
+`ams.ams[]` erscheint nur bei einem vollen `pushall`, gilt dort aber als
+vollstaendige Momentaufnahme -- `bambuApplyReport()` merkt sich jetzt,
+welche AMS-`id`s im aktuellen (vollen) Bericht vorkommen, und setzt fuer
+jede zuvor bekannte, jetzt fehlende Einheit `present=false`/
+`connectionState=Offline`, plus neu berechnetes `amsCount`. Ein Bericht
+ohne `ams.ams[]` (regulaeres `push_status`) aendert bewusst nichts. Neue
+Tests `testApplyReportClearsAmsRemovedFromFullReport` (AMS 1 fehlt im
+zweiten vollen Bericht -> present=false, amsCount=1) und
+`testApplyReportPartialUpdateKeepsAmsPresence` (Bericht ganz ohne
+`ams`-Schluessel laesst vorhandene Praesenz unangetastet).
+
+**Daten trennen** -- bereits vorhanden: der persistierte
+`TraySpoolCache` ist per `printerId+amsId+trayId` verschluesselt
+(`models/TraySpoolCache.h`), echte Drucker-Trennung bestaetigt. Der
+RAM-only-Cache fuer Restgewicht/K-Faktor (`traySpoolDetails`,
+`AppTask.cpp`) ist bewusst nur nach `spoolId` (nicht druckerspezifisch)
+organisiert -- korrekt so: eine Spoolman-Spule hat dasselbe Gewicht/
+K-Faktor unabhaengig davon, in welchem Drucker-AMS sie gerade steckt,
+eine druckerspezifische Aufteilung waere hier keine Trennung, sondern
+unnoetige Duplizierung.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 10.6 Workflow
 

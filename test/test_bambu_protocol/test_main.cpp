@@ -238,6 +238,65 @@ void testApplyReportIgnoresOutOfRangeIds() {
   for (const auto& ams : state.amsUnits) TEST_ASSERT_FALSE(ams.present);
 }
 
+void testApplyReportClearsAmsRemovedFromFullReport() {
+  JsonDocument first;
+  deserializeJson(first, R"({
+    "print": {
+      "ams": {"ams": [
+        {"id":"0","tray":[{"id":"0","tray_type":"PLA"}]},
+        {"id":"1","tray":[{"id":"0","tray_type":"PETG"}]}
+      ]}
+    }
+  })");
+  PrinterState state{};
+  TEST_ASSERT_TRUE(services::bambuApplyReport(first, state));
+  TEST_ASSERT_TRUE(state.amsUnits[0].present);
+  TEST_ASSERT_TRUE(state.amsUnits[1].present);
+  TEST_ASSERT_EQUAL_UINT8(2, state.amsCount);
+
+  // AMS 1 physically unplugged: the next full report's ams[] no longer
+  // lists it -- since this array only ever appears on a full "pushall"
+  // (see docs/bambu-protocol.md), its absence here is authoritative, not
+  // a partial update that should leave AMS 1 untouched.
+  JsonDocument second;
+  deserializeJson(second, R"({
+    "print": {
+      "ams": {"ams": [
+        {"id":"0","tray":[{"id":"0","tray_type":"PLA"}]}
+      ]}
+    }
+  })");
+  TEST_ASSERT_TRUE(services::bambuApplyReport(second, state));
+  TEST_ASSERT_TRUE(state.amsUnits[0].present);
+  TEST_ASSERT_FALSE(state.amsUnits[1].present);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(models::AmsConnectionState::Offline),
+      static_cast<int>(state.amsUnits[1].connectionState));
+  TEST_ASSERT_EQUAL_UINT8(1, state.amsCount);
+}
+
+void testApplyReportPartialUpdateKeepsAmsPresence() {
+  JsonDocument first;
+  deserializeJson(first, R"({
+    "print": {
+      "ams": {"ams": [{"id":"0","tray":[{"id":"0","tray_type":"PLA"}]}]}
+    }
+  })");
+  PrinterState state{};
+  TEST_ASSERT_TRUE(services::bambuApplyReport(first, state));
+  TEST_ASSERT_TRUE(state.amsUnits[0].present);
+
+  // A regular periodic push_status typically omits ams.ams[] entirely (see
+  // docs/bambu-protocol.md) -- its absence here must NOT be read as "no AMS
+  // attached", unlike a full report that includes the (possibly smaller)
+  // array explicitly.
+  JsonDocument partial;
+  deserializeJson(partial, R"({"print": {"bed_temper": 23.5}})");
+  TEST_ASSERT_TRUE(services::bambuApplyReport(partial, state));
+  TEST_ASSERT_TRUE(state.amsUnits[0].present);
+  TEST_ASSERT_EQUAL_UINT8(1, state.amsCount);
+}
+
 void testApplyReportParsesExternalTray() {
   JsonDocument document;
   deserializeJson(document, R"({
@@ -314,6 +373,8 @@ int main(int, char**) {
   RUN_TEST(testApplyReportParsesAmsTraysWithStringIds);
   RUN_TEST(testApplyReportParsesAmsWithNumericIds);
   RUN_TEST(testApplyReportIgnoresOutOfRangeIds);
+  RUN_TEST(testApplyReportClearsAmsRemovedFromFullReport);
+  RUN_TEST(testApplyReportPartialUpdateKeepsAmsPresence);
   RUN_TEST(testApplyReportParsesExternalTray);
   RUN_TEST(testApplyReportParsesNozzleDiameter);
   RUN_TEST(testApplyReportParsesTrayNow);

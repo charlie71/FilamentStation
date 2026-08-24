@@ -1,5 +1,6 @@
 #include "services/BambuProtocol.h"
 
+#include <array>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -237,18 +238,28 @@ bool bambuApplyReport(const JsonDocument& document,
   const JsonObjectConst print = document["print"].as<JsonObjectConst>();
 
   if (print["ams"]["ams"].is<JsonArrayConst>()) {
+    // Only a full "pushall" report carries ams.ams[] at all (a regular
+    // periodic push_status typically omits it entirely, see
+    // docs/bambu-protocol.md) -- so whenever this array *is* present, it is
+    // a complete, authoritative snapshot of every currently attached AMS
+    // unit. Track which ids appear in it so a unit that was present before
+    // but is missing from this report (physically unplugged) can be
+    // explicitly cleared below, rather than staying stuck "present"
+    // forever (Robustheit/Diagnose, TASKS.md 10.5) -- every other field in
+    // this function is merged/kept-at-last-known-value on purpose, but
+    // presence has no such fallback: nothing else ever observes removal.
+    std::array<bool, models::kMaximumAmsPerPrinter> seenAmsIds{};
     for (JsonObjectConst amsEntry :
         print["ams"]["ams"].as<JsonArrayConst>()) {
       std::uint8_t amsId = 0;
       if (!parseTrayIndex(amsEntry["id"], models::kMaximumAmsPerPrinter,
                           amsId))
         continue;
+      seenAmsIds[amsId] = true;
       models::AmsState& amsState = state.amsUnits[amsId];
       amsState.amsId = amsId;
       amsState.present = true;
       amsState.connectionState = models::AmsConnectionState::Connected;
-      if (state.amsCount <= amsId)
-        state.amsCount = static_cast<std::uint8_t>(amsId + 1);
 
       if (!amsEntry["tray"].is<JsonArrayConst>()) continue;
       for (JsonObjectConst trayEntry : amsEntry["tray"].as<JsonArrayConst>()) {
@@ -257,6 +268,19 @@ bool bambuApplyReport(const JsonDocument& document,
           continue;
         amsState.slots[trayId].trayId = trayId;
         applyTrayOccupancy(trayEntry, amsState.slots[trayId]);
+      }
+    }
+    state.amsCount = 0;
+    for (std::uint8_t amsId = 0; amsId < models::kMaximumAmsPerPrinter;
+        ++amsId) {
+      if (seenAmsIds[amsId]) {
+        state.amsCount = static_cast<std::uint8_t>(amsId + 1);
+        continue;
+      }
+      if (state.amsUnits[amsId].present) {
+        state.amsUnits[amsId].present = false;
+        state.amsUnits[amsId].connectionState =
+            models::AmsConnectionState::Offline;
       }
     }
   }
