@@ -18,6 +18,7 @@
 #include "drivers/TouchDriver.h"
 #include "services/Logger.h"
 #include "ui/generated/images.h"
+#include "ui/generated/styles.h"
 #include "ui/generated/ui.h"
 #include "ui/models/MockUiDataProvider.h"
 
@@ -2264,6 +2265,36 @@ void updatePrinterList() {
   setControlText(objects.select_bottom_status, "Drucker verwalten");
 }
 
+// Waehlt je nach Helligkeit von `backgroundColor` (erste Filamentfarbe bzw.
+// Kartenhintergrund) zwischen der hellen ("Standart"/"Header", dunkler
+// Text) und dunklen ("Standart_W"/"Header_W", heller Text) Style-Variante
+// fuer ein Label (Nutzerwunsch 2026-08-24): dunkler Hintergrund -> _W,
+// heller Hintergrund -> ohne _W. `headerStyle` waehlt zwischen
+// LabelStandart(_W) (material/weight/k_factor) und LabelHeader(_W)
+// (STAGING_LABEL). Beide Varianten immer zuerst entfernt, dann die
+// passende hinzugefuegt, damit beim Umschalten kein alter Style haengen
+// bleibt (LVGL haengt Styles sonst an, statt sie zu ersetzen).
+void applyBackgroundAwareLabelStyle(lv_obj_t* label, bool lightBackground,
+                                    bool headerStyle) {
+  if (headerStyle) {
+    remove_style_label_header(label);
+    remove_style_label_header_w(label);
+    if (lightBackground) {
+      add_style_label_header(label);
+    } else {
+      add_style_label_header_w(label);
+    }
+  } else {
+    remove_style_label_standart(label);
+    remove_style_label_standart_w(label);
+    if (lightBackground) {
+      add_style_label_standart(label);
+    } else {
+      add_style_label_standart_w(label);
+    }
+  }
+}
+
 // Zielobjekte entsprechen den Sub-Widgets der CMP_TRAY_CARD-Komponente
 // (ui-project, Nutzerwunsch 2026-08-23; auf drei eigene Labels
 // material/weight/k_factor umgebaut, Nutzerwunsch 2026-08-24 -- vorher ein
@@ -2284,6 +2315,10 @@ void updateTrayButton(lv_obj_t* button, lv_obj_t* materialLabel,
                 // welcher Slot gemeint ist (analog zu den AMS-Buttons).
   const TrayUiEntry* tray = trayUiEntry(amsId, trayId);
   if (tray == nullptr || !tray->occupied) {
+    const bool lightBackground = isLightBackground(kColorNeutralGrey);
+    applyBackgroundAwareLabelStyle(materialLabel, lightBackground, false);
+    applyBackgroundAwareLabelStyle(weightLabel, lightBackground, false);
+    applyBackgroundAwareLabelStyle(kFactorLabel, lightBackground, false);
     setControlText(materialLabel, "leer");
     setControlText(weightLabel, "");
     setControlText(kFactorLabel, "");
@@ -2330,6 +2365,10 @@ void updateTrayButton(lv_obj_t* button, lv_obj_t* materialLabel,
         colorCount > 0 ? colors[0] : kColorNeutralGrey;
     setButtonColors(button, backgroundColor);
     updateHomeColorSwatches(swatch1, swatch2, colors, colorCount);
+    const bool lightBackground = isLightBackground(backgroundColor);
+    applyBackgroundAwareLabelStyle(materialLabel, lightBackground, false);
+    applyBackgroundAwareLabelStyle(weightLabel, lightBackground, false);
+    applyBackgroundAwareLabelStyle(kFactorLabel, lightBackground, false);
 
     lv_obj_remove_flag(spoolIdContainer, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(spoolIdLabel, LV_OBJ_FLAG_HIDDEN);
@@ -2347,9 +2386,8 @@ void updateTrayButton(lv_obj_t* button, lv_obj_t* materialLabel,
     // (erstes belegtes Fach je AMS).
     if (tray->isActiveNozzle) {
       lv_obj_remove_flag(nozzleIcon, LV_OBJ_FLAG_HIDDEN);
-      lv_image_set_src(nozzleIcon, isLightBackground(backgroundColor)
-                                        ? &img_3_d_printer_nozzle
-                                        : &img_3_d_printer_nozzle_w);
+      lv_image_set_src(nozzleIcon, lightBackground ? &img_3_d_printer_nozzle
+                                                    : &img_3_d_printer_nozzle_w);
     } else {
       lv_obj_add_flag(nozzleIcon, LV_OBJ_FLAG_HIDDEN);
     }
@@ -2458,6 +2496,13 @@ void updateHomeContent() {
   // wenn tatsaechlich eine Spule gestagt war.
   const std::uint32_t stagingBackgroundColor =
       staging.colorCount > 0 ? staging.colorRgb[0] : kColorNeutralGrey;
+  const bool stagingLightBackground = isLightBackground(stagingBackgroundColor);
+  applyBackgroundAwareLabelStyle(objects.staging__material,
+                                 stagingLightBackground, false);
+  applyBackgroundAwareLabelStyle(objects.staging__weight,
+                                 stagingLightBackground, false);
+  applyBackgroundAwareLabelStyle(objects.staging__k_factor,
+                                 stagingLightBackground, false);
   if (staging.spoolId != 0) {
     // K-Faktor kommt jetzt echt aus Spoolman (UpdateStaging-Handler oben,
     // AppTask::sendStagingUpdate() via LoadFilament) statt wie zuvor aus
@@ -2508,11 +2553,8 @@ void updateHomeContent() {
                     LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(objects.staging__spoolmanager_id, LV_OBJ_FLAG_HIDDEN);
   }
-  lv_obj_set_style_text_color(
-      objects.staging__staging_label,
-      lv_color_hex(isLightBackground(stagingBackgroundColor) ? kColorTextDark
-                                                              : kColorTextWhite),
-      LV_PART_MAIN);
+  applyBackgroundAwareLabelStyle(objects.staging__staging_label,
+                                 stagingLightBackground, true);
 
   updateWeightDisplays();
 }

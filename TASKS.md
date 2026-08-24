@@ -2002,6 +2002,25 @@ korrekt implementiert. Neuer Test `testApplyReportParsesTrayNow`
 (numerische/String-Form, AMS-Fach, extern, keins, Feld fehlt -> alter
 Wert bleibt). Build (0 Warnungen), 52 native Tests gruen, geflasht.
 
+Nachtrag (2026-08-24, hintergrundabhaengige Label-Styles, Nutzerwunsch):
+material/weight/k_factor (Tray- und Staging-Karte) sowie STAGING_LABEL
+sollen je nach Helligkeit der ersten Filamentfarbe/des Kartenhintergrunds
+zwischen der hellen (`LabelStandart`/`LabelHeader`, dunkler Text) und
+dunklen (`LabelStandart_W`/`LabelHeader_W`, heller Text) Style-Variante
+wechseln. Neue Helper-Funktion `applyBackgroundAwareLabelStyle()` in
+`UiBridge.cpp` (entfernt immer zuerst beide Varianten, fuegt dann die
+passende hinzu -- sonst haengen beim Umschalten alte Styles an, LVGL
+ersetzt Styles nicht automatisch), angewendet in `updateTrayButton()`
+(alle 5 Tray-Karten) und im Staging-Widget in `updateHomeContent()`
+(ersetzt dort den bisherigen rohen `lv_obj_set_style_text_color()`-Aufruf
+fuer STAGING_LABEL). `LabelHeader_W` existierte zwar schon im
+ui-project, war aber noch nicht exportiert -- `styles.h` war zudem
+bislang gar nicht in `UiBridge.cpp` eingebunden (nie direkt gebraucht,
+Style-Funktionen liefen bisher nur ueber generierten Screen-Code); beides
+ergaenzt (`#include "ui/generated/styles.h"`), nach Nutzer-Export von
+`styles.c`/`.h` fertig gebaut. Build (0 Warnungen), 52 native Tests
+gruen, geflasht.
+
 ## 9.2 Native Tags
 
 * [x] UID

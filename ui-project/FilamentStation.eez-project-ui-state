@@ -2,7 +2,7 @@
   "navigation": {
     "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/1",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/7",
-    "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/5",
+    "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/4",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
     "selectedThemeColorObject": "[FilamentStation.eez-project]:/colors/6",
     "selectedFontObject": "[FilamentStation.eez-project]:/fonts/1",
@@ -235,8 +235,7 @@
                   },
                   "icon": "svg:page"
                 }
-              ],
-              "active": true
+              ]
             },
             {
               "type": "row",
@@ -256,7 +255,8 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ]
+                  ],
+                  "active": true
                 },
                 {
                   "type": "tabset",
@@ -1376,10 +1376,10 @@
         "3": {},
         "4": {},
         "5": {},
-        "6": {},
-        "9": {
+        "6": {
           "$selected": true
-        }
+        },
+        "9": {}
       },
       "transform": {
         "translate": {
@@ -1401,7 +1401,9 @@
         "0": {},
         "1": {},
         "4": {},
-        "6": {},
+        "6": {
+          "$selected": true
+        },
         "7": {},
         "8": {},
         "9": {}
@@ -2239,10 +2241,11 @@
       "1": {},
       "2": {},
       "3": {},
-      "4": {},
-      "5": {
+      "4": {
         "$selected": true
-      }
+      },
+      "5": {},
+      "6": {}
     },
     "[FilamentStation.eez-project]:/userWidgets/16[flow-state]": {
       "selectionFront": {},
@@ -2278,7 +2281,8 @@
   "lvglState": "DEFAULT",
   "lvglExpandedPropertiesGroup": [
     "SHADOW",
-    "POSITION AND SIZE"
+    "POSITION AND SIZE",
+    "TEXT"
   ],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,

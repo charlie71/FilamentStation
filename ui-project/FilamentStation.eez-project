@@ -741,8 +741,8 @@
             {
               "objID": "10000000-0087-4000-8000-000000000000",
               "type": "LVGLButtonWidget",
-              "left": 136,
-              "top": 190,
+              "left": 132,
+              "top": 199,
               "width": 344,
               "height": 27,
               "customInputs": [],
@@ -823,10 +823,10 @@
             {
               "objID": "10000000-0104-4000-8000-000000000000",
               "type": "LVGLLabelWidget",
-              "left": 136,
-              "top": 222,
+              "left": 133,
+              "top": 230,
               "width": 340,
-              "height": 94,
+              "height": 84,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -864,7 +864,7 @@
               "objID": "03c0240b-562c-4260-d67e-0a6dfa1e3652",
               "type": "LVGLImageWidget",
               "left": 149,
-              "top": 190,
+              "top": 199,
               "width": 31,
               "height": 25,
               "customInputs": [],
@@ -1656,7 +1656,7 @@
               "left": 100,
               "top": 84,
               "width": 91,
-              "height": 102,
+              "height": 112,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -1701,7 +1701,7 @@
               "left": 195,
               "top": 84,
               "width": 91,
-              "height": 102,
+              "height": 112,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -1746,7 +1746,7 @@
               "left": 290,
               "top": 84,
               "width": 91,
-              "height": 102,
+              "height": 112,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -1791,7 +1791,7 @@
               "left": 385,
               "top": 84,
               "width": 91,
-              "height": 102,
+              "height": 112,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -1836,7 +1836,7 @@
               "left": 5,
               "top": 84,
               "width": 91,
-              "height": 102,
+              "height": 112,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -1881,7 +1881,7 @@
               "left": 5,
               "top": 199,
               "width": 121,
-              "height": 102,
+              "height": 112,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -26745,7 +26745,7 @@
           "left": 1,
           "top": 0,
           "width": 90,
-          "height": 100,
+          "height": 110,
           "customInputs": [],
           "customOutputs": [],
           "style": {
@@ -26786,7 +26786,7 @@
           "objID": "d7872adf-f47e-4177-8f43-a59a5e154f74",
           "type": "LVGLContainerWidget",
           "left": 5,
-          "top": 80,
+          "top": 87,
           "width": 40,
           "height": 20,
           "customInputs": [],
@@ -26826,7 +26826,7 @@
           "objID": "2a9aed26-77d4-40d8-fabe-937429222c64",
           "type": "LVGLContainerWidget",
           "left": 46,
-          "top": 80,
+          "top": 87,
           "width": 40,
           "height": 20,
           "customInputs": [],
@@ -26868,7 +26868,7 @@
           "left": 6,
           "top": 2,
           "width": 55,
-          "height": 20,
+          "height": 22,
           "customInputs": [],
           "customOutputs": [],
           "style": {
@@ -26903,7 +26903,10 @@
                 "DEFAULT": {
                   "bg_color": "#ffffff",
                   "bg_opa": 255,
-                  "shadow_opa": 0
+                  "shadow_opa": 0,
+                  "border_color": "#e0e0e0",
+                  "border_width": 1,
+                  "radius": 10
                 }
               }
             }
@@ -26915,7 +26918,7 @@
           "objID": "28fa52ed-5ebb-4fcc-bd0b-5347912faa74",
           "type": "LVGLLabelWidget",
           "left": 8,
-          "top": -38,
+          "top": -42,
           "width": 50,
           "height": 20,
           "customInputs": [],
@@ -27020,7 +27023,7 @@
           "objID": "97e7f1c5-f3ec-4f8a-fac1-7f472576fea1",
           "type": "LVGLLabelWidget",
           "left": 6,
-          "top": 24,
+          "top": 28,
           "width": 32,
           "height": 20,
           "customInputs": [],
@@ -27065,7 +27068,7 @@
           "objID": "cf8bb334-479f-4d60-fa16-4a6c529ba2b4",
           "type": "LVGLLabelWidget",
           "left": 6,
-          "top": 44,
+          "top": 48,
           "width": 40,
           "height": 20,
           "customInputs": [],
@@ -27110,7 +27113,7 @@
           "objID": "828de9d9-21a4-4f1a-cf09-284c859ff0ef",
           "type": "LVGLLabelWidget",
           "left": 6,
-          "top": 63,
+          "top": 67,
           "width": 72,
           "height": 20,
           "customInputs": [],
@@ -27160,7 +27163,7 @@
       "left": 0,
       "top": 0,
       "width": 91,
-      "height": 102,
+      "height": 112,
       "isUsedAsUserWidget": true,
       "createAtStart": false,
       "deleteOnScreenUnload": false
@@ -27222,7 +27225,7 @@
           "left": 1,
           "top": 0,
           "width": 120,
-          "height": 100,
+          "height": 110,
           "customInputs": [],
           "customOutputs": [],
           "style": {
@@ -27303,7 +27306,7 @@
           "objID": "5f987132-a13a-4a12-bbb2-0c68e01ba3d8",
           "type": "LVGLContainerWidget",
           "left": 73,
-          "top": 80,
+          "top": 87,
           "width": 40,
           "height": 20,
           "customInputs": [],
@@ -27345,7 +27348,7 @@
           "left": 32,
           "top": 2,
           "width": 55,
-          "height": 20,
+          "height": 22,
           "customInputs": [],
           "customOutputs": [],
           "style": {
@@ -27380,7 +27383,10 @@
                 "DEFAULT": {
                   "bg_color": "#ffffff",
                   "bg_opa": 255,
-                  "shadow_opa": 0
+                  "shadow_opa": 0,
+                  "border_color": "#e0e0e0",
+                  "border_width": 2,
+                  "radius": 10
                 }
               }
             }
@@ -27392,7 +27398,7 @@
           "objID": "46a83c75-6f1c-40b0-88df-00b0abbb3a9d",
           "type": "LVGLLabelWidget",
           "left": 34,
-          "top": -38,
+          "top": -42,
           "width": 50,
           "height": 20,
           "customInputs": [],
@@ -27502,7 +27508,7 @@
           "objID": "4219545d-b67f-4717-87c8-a35e3ee6c6a6",
           "type": "LVGLLabelWidget",
           "left": 32,
-          "top": 24,
+          "top": 26,
           "width": 32,
           "height": 20,
           "customInputs": [],
@@ -27547,7 +27553,7 @@
           "objID": "03fcfcf0-0fbf-44f4-d54d-b0094704b655",
           "type": "LVGLLabelWidget",
           "left": 32,
-          "top": 44,
+          "top": 47,
           "width": 40,
           "height": 20,
           "customInputs": [],
@@ -27592,7 +27598,7 @@
           "objID": "45380cff-4d3b-4691-d612-6631329e79a7",
           "type": "LVGLLabelWidget",
           "left": 32,
-          "top": 63,
+          "top": 70,
           "width": 72,
           "height": 20,
           "customInputs": [],
@@ -27642,7 +27648,7 @@
       "left": 0,
       "top": 0,
       "width": 121,
-      "height": 102,
+      "height": 112,
       "isUsedAsUserWidget": true,
       "createAtStart": false,
       "deleteOnScreenUnload": false
