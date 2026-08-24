@@ -27448,8 +27448,8 @@
           "type": "LVGLLabelWidget",
           "left": -22,
           "top": 40,
-          "width": 72,
-          "height": 20,
+          "width": 77,
+          "height": 22,
           "customInputs": [],
           "customOutputs": [],
           "style": {
@@ -27476,7 +27476,7 @@
           "checkedStateType": "literal",
           "disabledStateType": "literal",
           "states": "",
-          "useStyle": "LabelStandart_W",
+          "useStyle": "LabelHeader_W",
           "localStyles": {
             "objID": "94daa4c3-30b3-4ceb-d341-d0d1a86f55fc",
             "definition": {
@@ -29152,22 +29152,6 @@
         }
       },
       {
-        "objID": "c88c477a-2101-4089-c930-bfb52af1e204",
-        "name": "LabelStandart",
-        "forWidgetType": "LVGLLabelWidget",
-        "childStyles": [],
-        "definition": {
-          "objID": "0c070d4a-fbce-475c-d76a-eaff8b4933e7",
-          "definition": {
-            "MAIN": {
-              "DEFAULT": {
-                "text_font": "UiGerman16"
-              }
-            }
-          }
-        }
-      },
-      {
         "objID": "d6de6805-7403-4b8a-ce04-940966aadd92",
         "name": "LabelHeader",
         "forWidgetType": "LVGLLabelWidget",
@@ -29178,6 +29162,39 @@
             "MAIN": {
               "DEFAULT": {
                 "text_font": "UIGerman18Bold"
+              }
+            }
+          }
+        }
+      },
+      {
+        "objID": "be86e4a7-c6e0-4469-f48f-c5925be09aca",
+        "name": "LabelHeader_W",
+        "forWidgetType": "LVGLLabelWidget",
+        "childStyles": [],
+        "definition": {
+          "objID": "3012db46-e04b-4d1c-97e4-18d0a1e1248c",
+          "definition": {
+            "MAIN": {
+              "DEFAULT": {
+                "text_font": "UIGerman18Bold",
+                "text_color": "#FFFFFF"
+              }
+            }
+          }
+        }
+      },
+      {
+        "objID": "c88c477a-2101-4089-c930-bfb52af1e204",
+        "name": "LabelStandart",
+        "forWidgetType": "LVGLLabelWidget",
+        "childStyles": [],
+        "definition": {
+          "objID": "0c070d4a-fbce-475c-d76a-eaff8b4933e7",
+          "definition": {
+            "MAIN": {
+              "DEFAULT": {
+                "text_font": "UiGerman16"
               }
             }
           }
@@ -29195,9 +29212,6 @@
               "DEFAULT": {
                 "text_font": "UiGerman16",
                 "text_color": "#FFFFFF"
-              },
-              "PRESSED": {
-                "text_color": "FilamentTextLight"
               }
             }
           }

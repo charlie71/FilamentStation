@@ -1978,6 +1978,30 @@ K-Faktor war betroffen). `docs/bambu-protocol.md` entsprechend ergaenzt.
 Build (0 Warnungen), 51 native Tests gruen, geflasht -- Hardware-Test
 fuer Staging-K-Faktor UND AssignTray-Temperaturen steht noch aus.
 
+Nachtrag (2026-08-24, echtes Duesen-Icon statt Mockformel, Nutzerwunsch):
+Bambu meldet ueber `print.ams.tray_now`, welches Fach gerade in der Duese
+aktiv ist -- global ueber alle AMS-Einheiten hinweg adressiert (`0..15` =
+`amsId*4+trayId`, `254` = externe Spule/`vt_tray`, `255` = keins aktiv).
+Bisher zeigte `UiBridge.cpp`s `updateTrayButton()` das Duesen-Icon per
+Mockformel (immer das erste belegte Fach je AMS). Umgesetzt: neues
+`PrinterState::activeTrayNow`-Feld (Default `kActiveTrayNowNone=255`,
+neue Konstanten `kActiveTrayNowExternal=254`/`kActiveTrayNowNone=255` in
+`PrinterState.h`), `BambuProtocol::bambuApplyReport()` parst
+`tray_now` (eigener `parseTrayNow()`-Helper, da der volle 0..255-Bereich
+gebraucht wird -- der bestehende `parseTrayIndex()` nimmt eine
+`uint8_t`-Obergrenze und kann daher kein `maxExclusive=256` ausdruecken).
+`AppTask::syncAmsToUi()` berechnet je Fach den globalen Index
+(`amsIndex*kSlotsPerAms+trayIndex`) und vergleicht gegen
+`activeTrayNow`, kodiert das Ergebnis als Bit 1 in `UiCommand::value`
+(Bit 0 bleibt "belegt", bestehende Konvention). `UiBridge.cpp`:
+`TrayUiEntry` um `isActiveNozzle` erweitert, `UpdateTrayDetails`-Handler
+dekodiert Bit 1, `updateTrayButton()` zeigt das Duesen-Icon jetzt nur
+noch beim tatsaechlich aktiven Fach -- Bildauswahl (hell -> "3D Printer
+Nozzle", dunkel -> "3D Printer Nozzle W") unveraendert, war schon
+korrekt implementiert. Neuer Test `testApplyReportParsesTrayNow`
+(numerische/String-Form, AMS-Fach, extern, keins, Feld fehlt -> alter
+Wert bleibt). Build (0 Warnungen), 52 native Tests gruen, geflasht.
+
 ## 9.2 Native Tags
 
 * [x] UID

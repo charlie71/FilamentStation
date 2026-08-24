@@ -15,6 +15,13 @@ constexpr std::size_t kMaximumPrinters = 4;
 constexpr std::size_t kMaximumAmsPerPrinter = 4;
 constexpr std::size_t kSlotsPerAms = 4;
 
+// Bambu "tray_now" wire encoding (print.ams.tray_now): 0..15 address a
+// global AMS slot as amsId*kSlotsPerAms + trayId (0..3 = AMS 0 slot 0..3,
+// 4..7 = AMS 1, ...), 254 is the external/vt_tray spool, 255 means no tray
+// is currently active. See docs/bambu-protocol.md.
+constexpr std::uint8_t kActiveTrayNowExternal = 254;
+constexpr std::uint8_t kActiveTrayNowNone = 255;
+
 enum class PrinterConnectionState : std::uint8_t {
   Disabled,
   Offline,
@@ -80,6 +87,13 @@ struct PrinterState {
   // required (as a string) by the "extrusion_cali_sel" wire command, see
   // docs/bambu-protocol.md.
   char nozzleDiameter[8]{};
+  // Which tray is currently loaded into the nozzle ("print.ams.tray_now"),
+  // see kActiveTrayNowExternal/kActiveTrayNowNone above -- Nutzerwunsch
+  // 2026-08-24 (Home-Tray-Karten zeigen das Duesen-Icon nur beim wirklich
+  // aktiven Fach statt einer Mockformel). Kept at its last known value if a
+  // report doesn't include the field, same merge behavior as the rest of
+  // this struct.
+  std::uint8_t activeTrayNow = kActiveTrayNowNone;
 };
 
 struct PrinterStateCollection {

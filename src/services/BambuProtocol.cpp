@@ -45,6 +45,26 @@ bool parseTrayIndex(JsonVariantConst value, std::uint8_t maxExclusive,
   return false;
 }
 
+// Same as parseTrayIndex(), but for "tray_now" -- its valid range is the
+// full 0..255 (254/255 are sentinels, see models::kActiveTrayNowExternal/
+// kActiveTrayNowNone), which doesn't fit parseTrayIndex()'s uint8_t
+// maxExclusive bound.
+bool parseTrayNow(JsonVariantConst value, std::uint8_t& out) {
+  if (value.is<std::uint8_t>()) {
+    out = value.as<std::uint8_t>();
+    return true;
+  }
+  if (value.is<const char*>()) {
+    const char* text = value.as<const char*>();
+    char* end = nullptr;
+    const long parsed = std::strtol(text, &end, 10);
+    if (end == text || *end != '\0' || parsed < 0 || parsed > 255) return false;
+    out = static_cast<std::uint8_t>(parsed);
+    return true;
+  }
+  return false;
+}
+
 struct GenericMaterialMapping {
   const char* material;
   const char* trayInfoIdx;
@@ -239,6 +259,16 @@ bool bambuApplyReport(const JsonDocument& document,
         applyTrayOccupancy(trayEntry, amsState.slots[trayId]);
       }
     }
+  }
+
+  // "tray_now" reports which tray is currently loaded into the nozzle,
+  // across all AMS units plus the external spool (Nutzerwunsch 2026-08-24,
+  // see models::kActiveTrayNowExternal/kActiveTrayNowNone). Not every
+  // report carries it -- keep the last known value otherwise, same as the
+  // rest of this function.
+  std::uint8_t trayNow = 0;
+  if (parseTrayNow(print["ams"]["tray_now"], trayNow)) {
+    state.activeTrayNow = trayNow;
   }
 
   if (print["vt_tray"].is<JsonObjectConst>()) {

@@ -916,13 +916,19 @@ void syncAmsToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
     for (std::uint8_t trayIndex = 0; trayIndex < models::kSlotsPerAms;
          ++trayIndex) {
       const models::PrinterSlotStateData& slot = ams.slots[trayIndex];
+      const std::uint8_t globalTrayNow =
+          static_cast<std::uint8_t>(amsIndex * models::kSlotsPerAms + trayIndex);
+      const bool isActiveTray = printer->activeTrayNow == globalTrayNow;
       rtos::UiCommand tray{};
       tray.type = rtos::UiCommandType::UpdateTrayDetails;
       tray.printerId = printerId;
       tray.amsId = uiAmsId;
       tray.trayId = trayIndex;
-      tray.value =
-          300 + (slot.state == models::PrinterSlotState::Ready ? 1 : 0);
+      // Bit 0: belegt (Ready). Bit 1: gerade in der Duese aktiv
+      // ("tray_now", Nutzerwunsch 2026-08-24) -- siehe UiBridge.cpp's
+      // UpdateTrayDetails-Handler fuer die Gegenseite dieser Kodierung.
+      tray.value = 300 + (slot.state == models::PrinterSlotState::Ready ? 1 : 0) +
+                   (isActiveTray ? 2 : 0);
       tray.spoolId = resolveTraySpoolCacheSpoolId(
           printerId, amsIndex, trayIndex, slot.material, slot.colorHex);
       std::snprintf(tray.title, sizeof(tray.title), "%s", slot.material);
@@ -952,10 +958,14 @@ void syncAmsToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
   external.printerId = printerId;
   external.amsId = 0xFF;
   external.trayId = 0xFF;
-  external.value = 300 + (printer->externalSlot.state ==
-                                  models::PrinterSlotState::Ready
-                              ? 1
-                              : 0);
+  external.value = 300 +
+                    (printer->externalSlot.state ==
+                             models::PrinterSlotState::Ready
+                         ? 1
+                         : 0) +
+                    (printer->activeTrayNow == models::kActiveTrayNowExternal
+                         ? 2
+                         : 0);
   external.spoolId = resolveTraySpoolCacheSpoolId(
       printerId, models::kExternalTraySentinel,
       models::kExternalTraySentinel, printer->externalSlot.material,

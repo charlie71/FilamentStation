@@ -88,7 +88,9 @@ const char* bambuGenericTrayInfoIdx(const char* material);
 // Merges recognized fields from a "report" topic payload into `state`.
 // Returns false for payloads without a "print" object (not a status
 // report, or unrecognized message type); such payloads are otherwise
-// harmless and must not be treated as an error by the caller.
+// harmless and must not be treated as an error by the caller. Also parses
+// "print.ams.tray_now" into `state.activeTrayNow` (see
+// models::kActiveTrayNowExternal/kActiveTrayNowNone) when present.
 // `PrinterSlotStateData` deliberately has no `spoolId` field -- the printer
 // has no notion of Spoolman identities (a project-specific attempt to
 // round-trip one through a custom "tray_id_name" MQTT field was

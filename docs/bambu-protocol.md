@@ -521,6 +521,18 @@ Von `BambuProtocol::bambuApplyReport()` ausgewertete Pfade:
       Farbkonvertierung) nach `PrinterSlotStateData::colorHex` uebernommen.
 * `print.vt_tray`: externer/manueller Slot (kein AMS), gleiche Feldstruktur
   wie ein Tray-Eintrag. Wird auf `PrinterState::externalSlot` abgebildet.
+* `print.ams.tray_now`: welches Fach gerade in der Duese aktiv ist
+  (Nutzerwunsch 2026-08-24), Zahl oder String (beide Formen akzeptiert wie
+  bei `id` oben). Globale Adressierung ueber alle AMS-Einheiten hinweg:
+  `0..15` = `amsId * kSlotsPerAms + trayId` (`0..3` = AMS 0 Fach 0..3,
+  `4..7` = AMS 1, usw.), `254` = externe Spule/`vt_tray`
+  (`models::kActiveTrayNowExternal`), `255` = kein Fach aktiv
+  (`models::kActiveTrayNowNone`). Wird nach `PrinterState::activeTrayNow`
+  uebernommen; fehlt das Feld in einem Bericht, bleibt der zuletzt bekannte
+  Wert stehen (gleiches Merge-Verhalten wie der Rest der Funktion). Treibt
+  die Duesen-Icon-Anzeige der Home-Tray-Karten (`UiBridge.cpp`s
+  `updateTrayButton()`) -- vorher eine Mockformel ("erstes belegtes Fach je
+  AMS gilt als aktiv").
 * `print.nozzle_diameter`: String (z. B. `"0.4"`), wird nach
   `PrinterState::nozzleDiameter` uebernommen -- benoetigt fuer das
   `extrusion_cali_sel`-Kommando (siehe oben).

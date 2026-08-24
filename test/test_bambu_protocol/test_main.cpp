@@ -261,6 +261,41 @@ void testApplyReportParsesNozzleDiameter() {
   TEST_ASSERT_EQUAL_STRING("0.4", state.nozzleDiameter);
 }
 
+void testApplyReportParsesTrayNow() {
+  // Global AMS slot (string form, as the printer sends it): AMS 1 slot 2 ->
+  // amsId 1 * kSlotsPerAms 4 + trayId 2 = 6.
+  JsonDocument amsSlot;
+  deserializeJson(amsSlot, R"({"print": {"ams": {"tray_now": "6"}}})");
+  PrinterState state{};
+  TEST_ASSERT_TRUE(services::bambuApplyReport(amsSlot, state));
+  TEST_ASSERT_EQUAL_UINT8(6, state.activeTrayNow);
+
+  // External/vt_tray sentinel (numeric form).
+  JsonDocument external;
+  deserializeJson(external, R"({"print": {"ams": {"tray_now": 254}}})");
+  PrinterState externalState{};
+  TEST_ASSERT_TRUE(services::bambuApplyReport(external, externalState));
+  TEST_ASSERT_EQUAL_UINT8(models::kActiveTrayNowExternal,
+                          externalState.activeTrayNow);
+  TEST_ASSERT_EQUAL_UINT8(254, externalState.activeTrayNow);
+
+  // No tray active.
+  JsonDocument none;
+  deserializeJson(none, R"({"print": {"ams": {"tray_now": "255"}}})");
+  PrinterState noneState{};
+  TEST_ASSERT_TRUE(services::bambuApplyReport(none, noneState));
+  TEST_ASSERT_EQUAL_UINT8(models::kActiveTrayNowNone, noneState.activeTrayNow);
+
+  // Field absent from this report: keeps the last known value rather than
+  // resetting (same merge behavior as the rest of bambuApplyReport()).
+  JsonDocument partial;
+  deserializeJson(partial, R"({"print": {"nozzle_diameter": "0.4"}})");
+  PrinterState carried{};
+  carried.activeTrayNow = 6;
+  TEST_ASSERT_TRUE(services::bambuApplyReport(partial, carried));
+  TEST_ASSERT_EQUAL_UINT8(6, carried.activeTrayNow);
+}
+
 }  // namespace
 
 int main(int, char**) {
@@ -281,5 +316,6 @@ int main(int, char**) {
   RUN_TEST(testApplyReportIgnoresOutOfRangeIds);
   RUN_TEST(testApplyReportParsesExternalTray);
   RUN_TEST(testApplyReportParsesNozzleDiameter);
+  RUN_TEST(testApplyReportParsesTrayNow);
   return UNITY_END();
 }

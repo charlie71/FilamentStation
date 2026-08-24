@@ -131,6 +131,10 @@ struct TrayUiEntry {
   float remainingWeightGrams = 0.0F;
   bool kFactorValid = false;
   float kFactor = 0.0F;
+  // Ob dieses Fach laut Drucker gerade in der Duese aktiv ist ("tray_now",
+  // Nutzerwunsch 2026-08-24) -- siehe AppTask::syncAmsToUi()'s
+  // UpdateTrayDetails-value-Kodierung fuer die Gegenseite.
+  bool isActiveNozzle = false;
 };
 std::array<std::array<TrayUiEntry, 4>, 4> trayEntries{};
 TrayUiEntry externalTrayEntry{};
@@ -2299,10 +2303,6 @@ void updateTrayButton(lv_obj_t* button, lv_obj_t* materialLabel,
     // "noch nicht geladen" von einem echten Restgewicht 0. K-Faktor kommt
     // aus dem projektspezifischen Spoolman-Filament-Extra-Feld
     // "flow_dynamics_k_factor" und wird nur gezeigt, wenn dort hinterlegt.
-    // externalTrayEntry hat kein sinnvolles amsId/trayId (Sentinel
-    // 0xFF/0xFF) -- ein fester Seed 0 haelt die "Duese aktiv"-Mockformel
-    // dafuer im plausiblen Bereich.
-    const std::uint8_t mockSeed = amsId == 0xFF ? 0U : trayId;
     const char* material =
         tray->material[0] != '\0' ? tray->material : "belegt";
     setControlText(materialLabel, material);
@@ -2342,11 +2342,10 @@ void updateTrayButton(lv_obj_t* button, lv_obj_t* materialLabel,
     }
     setControlText(spoolIdLabel, spoolIdText);
 
-    // Mock: das erste belegte Fach je AMS (bzw. das externe Fach, sofern
-    // belegt) gilt als "aktiv" -- eine echte Zuordnung zur tatsaechlich
-    // druckenden Duese existiert im Datenmodell noch nicht.
-    const bool mockActive = mockSeed == 0U;
-    if (mockActive) {
+    // Duese nur beim laut Drucker tatsaechlich aktiven Fach zeigen
+    // ("tray_now", Nutzerwunsch 2026-08-24) -- vorher eine Mockformel
+    // (erstes belegtes Fach je AMS).
+    if (tray->isActiveNozzle) {
       lv_obj_remove_flag(nozzleIcon, LV_OBJ_FLAG_HIDDEN);
       lv_image_set_src(nozzleIcon, isLightBackground(backgroundColor)
                                         ? &img_3_d_printer_nozzle
@@ -3304,6 +3303,7 @@ void processUiCommand(const rtos::UiCommand& command) {
         }
         if (entry != nullptr) {
           entry->occupied = ((command.value - 300) & 1) != 0;
+          entry->isActiveNozzle = ((command.value - 300) & 2) != 0;
           entry->spoolId = command.spoolId;
           std::snprintf(entry->material, sizeof(entry->material), "%s",
                         command.title);
