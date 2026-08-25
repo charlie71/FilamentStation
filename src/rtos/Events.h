@@ -64,7 +64,14 @@ enum class AppEventType : std::uint8_t {
   // Firmware-Update-Versions-Check (TASKS.md Phase 13.2): "value" ist 1
   // (Update verfuegbar), 0 (Firmware aktuell) oder -1 (Fehler); "text"
   // traegt bei 1 die verfuegbare Version, bei -1 die Fehlermeldung.
-  UpdateCheckResult
+  UpdateCheckResult,
+  // Firmware-Update-Download (TASKS.md Phase 13.3): "value" ist der
+  // Fortschritt in Prozent (0-100), throttled auf
+  // kUpdateProgressReportIntervalMs.
+  UpdateDownloadProgress,
+  // "value" ist 1 (erfolgreich, Neustart folgt erst in Phase 13.5) oder 0
+  // (Fehler, "text" traegt die Fehlermeldung).
+  UpdateDownloadResult
 };
 
 constexpr EventBits_t EVENT_UI_READY = BIT0;

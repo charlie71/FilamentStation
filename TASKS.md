@@ -3917,12 +3917,88 @@ Build (0 Warnungen), 60 native Tests gruen, geflasht.
 
 ## 13.3 Download
 
-* [ ] .bin-Datei per HTTPS herunterladen
-* [ ] Fortschrittsanzeige (ShowProgress-Overlay analog Spoolman-/Bambu-
+* [x] .bin-Datei per HTTPS herunterladen
+* [x] Fortschrittsanzeige (ShowProgress-Overlay analog Spoolman-/Bambu-
   Workflows)
-* [ ] Verbindungs-/Speicherfehler behandeln (unterbrochener Download darf
+* [x] Verbindungs-/Speicherfehler behandeln (unterbrochener Download darf
   die laufende App-Partition nicht antasten -- Download in die inaktive
   OTA-Partition, siehe 13.5)
+
+**Nutzerentscheidung (2026-08-25):** Asset-Auswahl per Konvention -- das
+erste Release-Asset, dessen Dateiname auf ".bin" endet, wird verwendet
+(kein fester Dateiname erforderlich).
+
+**Umgesetzt, mit bewusster Abweichung von der urspruenglichen Phasen-
+Aufteilung:** Der Checklisten-Text von 13.3 selbst sagt bereits "Download
+in die inaktive OTA-Partition", waehrend 13.5 laut Plan
+`Update.begin()/write()/end()` besitzen sollte -- auf ESP32 sind Download
+und Partitions-Schreiben aber ein einziger, nicht sinnvoll ueber getrennte
+Nutzeraktionen aufteilbarer Streaming-Vorgang (der `Update`-Objekt-Zustand
+liesse sich nicht sauber ueber getrennte Tasksitzungen hinweg pausieren).
+Deshalb liefert 13.3 bereits die vollstaendige Download-und-Schreib-Pipette
+inklusive `Update.end()`-Abschluss; 13.5 bleibt fuer den tatsaechlichen
+Neustart in die neue Partition (`ESP.restart()`) reserviert -- das Geraet
+laeuft nach einem erfolgreichen 13.3-Download weiter auf der alten
+Firmware, bis 13.5 das ergaenzt.
+
+`UpdateTask::downloadUpdate()` (`UpdateTask.cpp`) macht bewusst eine
+eigene, frische Abfrage der Release-API (nicht die Daten aus einem
+vorherigen `CheckForUpdate` wiederverwendet, vermeidet eine veraltete
+Download-URL): Release-JSON mit Filter auf `assets[].name`/
+`assets[].browser_download_url`, erstes Asset mit ".bin"-Endung ausgewaehlt
+(Nutzerentscheidung oben), dann `HTTPClient` mit
+`setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS)` (GitHub-Asset-Downloads
+leiten per 302 auf eine host-fremde, signierte
+`objects.githubusercontent.com`-URL um -- ohne Force-Follow wuerde das
+fehlschlagen).
+
+`Update.begin(contentLength)` waehlt automatisch die inaktive OTA-Partition
+(`app0`/`app1`, Machbarkeits-Check aus Phase 13-Einleitung); Streaming-
+Schleife nutzt `Update.write(stream)` (Template-Ueberladung fuer
+Stream-Objekte, laut Kommentar in `Update.h` schneller als
+`writeStream()`). Speicherfehler: `Update.begin()`s Rueckgabewert plus
+`Update.errorString()` geprueft und als Fehlermeldung durchgereicht.
+Verbindungsfehler: `dataHttp.connected()` und ein
+`kUpdateStallTimeoutMs=30000`-Watchdog (keine Fortschrittsbewegung fuer
+30s gilt als haengende Verbindung) fuehren zu `Update.abort()` statt
+`Update.end()` -- die inaktive Partition wird dabei wieder freigegeben,
+die laufende App-Partition ist zu keinem Zeitpunkt betroffen (`Update`
+schreibt ausschliesslich in die inaktive OTA-Partition, niemals in die
+gerade laufende). `vTaskDelay(10ms)` statt Busy-Waiting, wenn der Stream
+gerade keine neuen Daten liefert (Allgemeine Regel "Busy Waiting
+verboten").
+
+Unbekannte Content-Length (GitHub setzt sie in der Praxis eigentlich immer,
+aber als Rueckfallpfad behandelt): `UPDATE_SIZE_UNKNOWN`
+(`Update.h`-Konstante) statt eines geratenen Werts; die Schleifen-
+Abbruchbedingung wechselt in diesem Fall von "erwartete Groesse erreicht"
+auf "Stream sauber zu Ende" (`!dataHttp.connected() && stream.available()
+== 0`), da `Update.remaining()` bei unbekannter Groesse sonst nie Null
+erreichen wuerde.
+
+Fortschritt: neuer `AppEventType::UpdateDownloadProgress`
+(throttled auf `kUpdateProgressReportIntervalMs=500`ms, gleiches
+Throttle-Prinzip wie `BambuAssignProgress`), von `AppTask` an das bereits
+offene `ShowProgress`-Overlay weitergereicht (`UiCommandType::
+UpdateProgress`, exakt derselbe generische Mechanismus wie bei Spoolman-/
+Bambu-Workflows -- kein neuer UI-Code noetig, `showOverlay()`/
+`UpdateProgress`-Handling in `UiBridge.cpp` sind bereits kind-generisch).
+
+UI-Ablauf: "Pr\xC3\xBC" "fen"-Taste auf SCR_SETTINGS_FIRMWARE verhaelt sich
+jetzt kontextabhaengig (`AppTask`s neues `updateAvailable`-Flag) -- ohne
+bekanntes Update loest sie weiterhin den Versions-Check aus (Phase 13.2);
+ist ein Update bereits bekannt, zeigt sie stattdessen einen neuen
+Best\xC3\xA4tigungsdialog (`UiOverlayKind::UpdateInstallConfirmation`,
+generisch ueber den bestehenden Confirm-Mechanismus, kein neuer
+UI-Sondercode). Neue Sperre `pendingUpdateDownloadRequestId` (Muster wie
+`pendingPrinterTestRequestId`) verhindert parallele Downloads.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht.
+
+Noch nicht am Geraet mit echtem Download verifiziert (kein Hardwarezugriff
+durch mich moeglich, und aktuell vermutlich noch kein GitHub-Release mit
+.bin-Anhang vorhanden) -- sollte vom Nutzer geprueft werden, sobald ein
+Release veroeffentlicht ist.
 
 ## 13.4 Verifikation
 
@@ -3931,11 +4007,14 @@ Build (0 Warnungen), 60 native Tests gruen, geflasht.
 
 ## 13.5 Flash
 
-* [ ] `Update`-Bibliothek (`Update.begin()/write()/end()`) nutzt die
-  inaktive OTA-Partition (`app0`/`app1`, siehe Machbarkeits-Check oben)
+* [x] `Update`-Bibliothek (`Update.begin()/write()/end()`) nutzt die
+  inaktive OTA-Partition (`app0`/`app1`, siehe Machbarkeits-Check oben) --
+  bereits in Phase 13.3 mitgeliefert (siehe dortige Begruendung: Download
+  und Partitions-Schreiben sind auf ESP32 ein einziger Streaming-Vorgang,
+  nicht sinnvoll auf zwei separate Nutzeraktionen aufteilbar)
 * [ ] Neustart in die neue Partition nach erfolgreichem Flash
   (`ESP.restart()`, direkt verzahnt mit der Neustart-Korrektur aus
-  Phase 12.1)
+  Phase 12.1) -- einzig verbleibender Punkt dieser Unterphase
 
 ## 13.6 Fehlerbehandlung und Rollback
 

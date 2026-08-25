@@ -103,6 +103,9 @@ enum class UiOverlayKind : std::uint8_t {
   TagResult,
   SpoolPicker,
   TagDefinitionImport,
+  // Firmware-Update (TASKS.md Phase 13.3).
+  UpdateInstallConfirmation,
+  UpdateDownload,
 };
 
 enum class UiActionType : std::uint8_t {
@@ -274,10 +277,14 @@ enum class BambuCommandType : std::uint8_t {
   Reconnect,
 };
 
-// Firmware-Update (TASKS.md Phase 13.2): CheckForUpdate fragt die in
-// config/UpdateConfig.h konfigurierte GitHub-Releases-API ab.
+// Firmware-Update (TASKS.md Phase 13.2/13.3): CheckForUpdate fragt die in
+// config/UpdateConfig.h konfigurierte GitHub-Releases-API ab. DownloadUpdate
+// loest eine eigene, frische Abfrage plus Download/Flash des ersten
+// .bin-Assets aus (kein Zustand aus einem vorherigen CheckForUpdate wird
+// wiederverwendet -- vermeidet veraltete Download-URLs).
 enum class UpdateCommandType : std::uint8_t {
   CheckForUpdate,
+  DownloadUpdate,
 };
 
 // Energiesparen (TASKS.md Phase 11.1): ReportInactivity liefert die von

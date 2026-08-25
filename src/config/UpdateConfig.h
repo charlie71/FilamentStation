@@ -17,4 +17,12 @@ constexpr char kUpdateApiHost[] = "api.github.com";
 constexpr char kUpdateUserAgent[] = "FilamentStation-OTA";
 constexpr std::uint32_t kUpdateCheckTimeoutMs = 8000;
 
+// Download/Flash (TASKS.md Phase 13.3).
+constexpr std::uint32_t kUpdateDownloadTimeoutMs = 15000;
+constexpr std::uint32_t kUpdateProgressReportIntervalMs = 500;
+// Keine Fortschrittsbewegung innerhalb dieser Zeit gilt als haengende
+// Verbindung und bricht den Download ab (Update.abort() gibt die
+// Partition wieder frei).
+constexpr std::uint32_t kUpdateStallTimeoutMs = 30000;
+
 }  // namespace filament_station::config

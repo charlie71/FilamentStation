@@ -105,6 +105,13 @@ bool pendingBambuSaveShowsResult = false;
 rtos::PrinterId pendingBambuSaveNotifyPrinterId = models::kInvalidPrinterId;
 std::uint32_t pendingPrinterTestRequestId = 0;
 std::uint32_t pendingUpdateCheckRequestId = 0;
+std::uint32_t pendingUpdateDownloadRequestId = 0;
+// Gesetzt sobald ein Versions-Check ein neueres Release meldet; ein
+// erneutes Antippen von "Pr\xC3\xBCfen" bietet dann Installieren statt
+// erneut Pr\xC3\xBCfen an (TASKS.md Phase 13.3). Wird beim Start eines
+// Downloads verworfen -- der Download loest ohnehin eine eigene, frische
+// Abfrage aus (siehe UpdateCommandType::DownloadUpdate).
+bool updateAvailable = false;
 constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;
 constexpr std::uint32_t kBambuLoadRequestId = 0x42414D01U;
 constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;
@@ -2588,6 +2595,25 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         ESP.restart();
         return;
       }
+      if (confirmedOverlay == rtos::UiOverlayKind::UpdateInstallConfirmation) {
+        updateAvailable = false;
+        rtos::UpdateCommand updateCommand{};
+        updateCommand.type = rtos::UpdateCommandType::DownloadUpdate;
+        updateCommand.requestId = action.requestId;
+        if (!sendUpdateCommand(ctx, updateCommand)) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Firmware-Update",
+                      "Der Auftrag konnte nicht an den UpdateTask gesendet werden.");
+          return;
+        }
+        pendingUpdateDownloadRequestId = action.requestId;
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::UpdateDownload, action.requestId,
+                    "Firmware-Update",
+                    "Firmware wird heruntergeladen...");
+        return;
+      }
       const char* result = "Mock-Aktion best\xC3\xA4tigt; keine reale Funktion ausgef\xC3\xBChrt.";
       if (confirmedOverlay == rtos::UiOverlayKind::WifiResetConfirmation) {
         rtos::NetworkCommand networkCommand{};
@@ -2859,6 +2885,24 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       if (action.type == rtos::UiActionType::CheckFirmwareUpdate) {
+        if (pendingUpdateDownloadRequestId != 0) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Firmware-Update",
+                      "Es l\xC3\xA4uft bereits ein Download.");
+          return;
+        }
+        // Ein vorheriger Check hat ein neueres Release gemeldet -- dieselbe
+        // Taste bietet jetzt Installieren statt erneut Pruefen an.
+        if (updateAvailable) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::UpdateInstallConfirmation,
+                      action.requestId, "Update installieren?",
+                      "Firmware wird heruntergeladen und installiert. Ein "
+                      "Neustart in die neue Version folgt erst in einer "
+                      "sp\xC3\xA4teren Phase (13.5).");
+          return;
+        }
         if (pendingUpdateCheckRequestId != 0) {
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
@@ -5515,6 +5559,7 @@ void appTask(void* parameter) {
       if (event->requestId == pendingUpdateCheckRequestId) {
         pendingUpdateCheckRequestId = 0;
       }
+      updateAvailable = event->value == 1;
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
       status.value =
@@ -5539,6 +5584,40 @@ void appTask(void* parameter) {
       }
       sendUiCommand(ctx, status, "AppTask: firmware update status overflow");
       sendUiCommand(ctx, available, "AppTask: firmware update available overflow");
+    } else if (event->type == rtos::AppEventType::UpdateDownloadProgress) {
+      // Ignoriert, falls dies ein veraltetes Ereignis fuer eine bereits
+      // abgeloeste Anfrage ist (gleiches Guard-Muster wie
+      // BambuAssignProgress oben, dort ueber pendingSlotAssignment).
+      if (pendingUpdateDownloadRequestId != 0 &&
+          event->requestId == pendingUpdateDownloadRequestId) {
+        rtos::UiCommand progress{};
+        progress.type = rtos::UiCommandType::UpdateProgress;
+        progress.requestId = event->requestId;
+        progress.value = event->value;
+        std::snprintf(progress.text, sizeof(progress.text),
+                      "Firmware wird heruntergeladen... %ld %%",
+                      static_cast<long>(event->value));
+        sendUiCommand(ctx, progress, "AppTask: update download progress overflow");
+      }
+    } else if (event->type == rtos::AppEventType::UpdateDownloadResult) {
+      if (event->requestId == pendingUpdateDownloadRequestId) {
+        pendingUpdateDownloadRequestId = 0;
+      }
+      rtos::UiCommand hide{};
+      hide.type = rtos::UiCommandType::HideProgress;
+      sendUiCommand(ctx, hide, "AppTask: update download hide overflow");
+      if (event->value == 1) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Success, event->requestId,
+                    "Firmware-Update",
+                    "Firmware wurde heruntergeladen und installiert. Der "
+                    "Neustart in die neue Version folgt erst in einer "
+                    "sp\xC3\xA4teren Phase (13.5) automatisch.");
+      } else {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event->requestId,
+                    "Firmware-Update fehlgeschlagen", event->text);
+      }
     } else if (event->type == rtos::AppEventType::BambuConnected ||
                event->type == rtos::AppEventType::BambuDisconnected ||
                event->type == rtos::AppEventType::BambuUpdate ||
