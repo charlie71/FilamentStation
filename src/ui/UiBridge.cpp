@@ -20,7 +20,7 @@
 #include "ui/generated/images.h"
 #include "ui/generated/styles.h"
 #include "ui/generated/ui.h"
-#include "ui/models/MockUiDataProvider.h"
+#include "ui/models/UiModels.h"
 
 extern "C" {
 extern const lv_font_t ui_font_ui_german16;

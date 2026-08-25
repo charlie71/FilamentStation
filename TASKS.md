@@ -3725,8 +3725,23 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 12.4 MockUiDataProvider entfernen
 
-* [ ] `src/ui/models/MockUiDataProvider.h`/`.cpp` vollstaendig entfernen,
+* [x] `src/ui/models/MockUiDataProvider.h`/`.cpp` vollstaendig entfernen,
   sobald 12.3 erledigt ist (letzter verbleibender Verbraucher)
+
+**Umgesetzt (2026-08-25):** Beide Dateien geloescht, `#include "ui/models/
+MockUiDataProvider.h"` aus `UiBridge.cpp` entfernt.
+
+Dabei ein Build-Fehler entdeckt und behoben: `MockUiDataProvider.h` band
+transitiv `ui/models/UiModels.h` ein, das `UiBridge.cpp` selbst nie direkt
+inkludiert hatte -- nach dem Entfernen brach der Build mit ~40 Fehlern
+("`UiConnectionState` in namespace ... does not name a type",
+`kMaximumFilamentColors` etc.), da diese Typen weiterhin aktiv genutzt
+werden (nicht mockspezifisch, sondern generelle UI-Modelltypen). Neuer
+direkter `#include "ui/models/UiModels.h"` in `UiBridge.cpp` behebt das --
+kein Verhaltensunterschied, nur die bisher versteckte transitive
+Abhaengigkeit jetzt explizit gemacht.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 12.5 Verwaiste Platzhalter-Datei
 
