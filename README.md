@@ -1,24 +1,85 @@
 # FilamentStation
 
-Grundgeruest einer eigenstaendigen Filamentverwaltungsstation auf Basis eines
-ESP32-S3 und Arduino/FreeRTOS. Phase 0 und 1 enthalten nur die RTOS- und
-Kommunikationsinfrastruktur; Hardwaredienste sind noch nicht implementiert.
+FilamentStation ist die Firmware für eine eigenständige
+Filamentverwaltungsstation: ein Touchscreen-Gerät auf Basis eines ESP32-S3
+(WT32-SC01 Plus), das Filamentspulen per NFC/RFID identifiziert, sie wiegt
+und ihre Zuordnung zentral in [Spoolman](https://github.com/Donkie/Spoolman)
+verwaltet -- inklusive direkter Slot-Zuordnung auf mehreren Bambu-Lab-3D-
+Druckern. Ziel ist, den bisher manuellen Weg "Spule identifizieren → Restgewicht
+prüfen → in Spoolman und am Drucker eintragen" auf ein Antippen zu reduzieren.
 
-## Build
+Die Firmware basiert auf Arduino/FreeRTOS; das UI ist mit
+[LVGL](https://lvgl.io/) und [EEZ Studio](https://www.envox.eu/eez-studio/)
+gebaut.
 
-Voraussetzung ist eine aktuelle PlatformIO-Installation. Im Projektverzeichnis:
+## Core Features
+
+- **NFC/RFID-Erkennung** eigener FilamentStation-Tags sowie Lesesupport für
+  original Bambu-Lab-RFID, OpenPrintTag, OpenTag3D und ein älteres
+  Legacy-Format -- Fremdformate bleiben grundsätzlich read-only.
+- **Spoolman-Integration**: Spulensuche, Zuordnung/Entfernung ausschließlich
+  über Spoolmans `extra.tag`-Feld (keine eigene lokale Zuordnungsdatenbank),
+  automatische Extrafeld-Einrichtung, Gewichtsaktualisierung.
+- **Waage** (HX711): Messen, Tarieren, Kalibrierung mit bekanntem
+  Referenzgewicht.
+- **Bambu-Lab-Mehrdruckerunterstützung** über das lokale LAN-MQTT-Protokoll:
+  Verbindung zu mehreren Druckern, AMS-/Tray-Übersicht, Slot-Zuordnung direkt
+  vom Gerät aus, lokal zwischengespeicherte Drucker-Fach-Zuordnung.
+- **Energiesparen**: Aktiv-/Gedimmt-/Sleep-Statemachine mit Touch-Wake.
+- **Firmware-Update über GitHub Releases**: Versionscheck, Download mit
+  SHA-256-Verifikation, App-Rollback-Absicherung -- direkt am Gerät auslösbar.
+- **SD-Karten-Speicherung** aller Konfigurationen mit atomarem Schreiben und
+  automatischem Backup/Wiederherstellung.
+
+Der vollständige, aktuelle Funktionsumfang steht in [`CHANGELOG.md`](CHANGELOG.md).
+
+## Schnellstart
+
+Voraussetzung ist eine aktuelle PlatformIO-Installation.
 
 ```text
-pio run
+pio run -e wt32-s3-wrover-n16r2 -t upload
 ```
 
-Das konfigurierte Environment ist `wt32-s3-wrover-n16r2`. Es verwendet das
-generische ESP32-S3-DevKitC als Toolchain-Grundlage und ist fuer das verbaute
-WT32-S3-WROVER-N16R2 mit 16 MB QIO-Flash und 2 MB QSPI-PSRAM konfiguriert.
+Details zu Build, Upload, Tests und dem Erweitern der Firmware (neuer
+Screen/Task/Tagparser/…) stehen im [Entwicklerhandbuch](docs/developer-guide.md).
+Für die Bedienung des fertigen Geräts (Ersteinrichtung, WLAN, Spoolman,
+Drucker hinzufügen, Firmware-Update, …) siehe die
+[Benutzeranleitung](docs/user-guide.md).
 
-Die Diagnoseausgabe verwendet die im ESP32-S3 integrierte Hardware-USB-CDC-
-Schnittstelle mit 115200 Baud. Upload und Monitor sind fuer das erkannte
-Entwicklungsboard auf COM4 konfiguriert. Der Monitor kann nach dem Upload mit
-`pio device monitor` gestartet werden. Falls er erst nach dem Programmstart
-geoeffnet wurde, muss einmal Reset gedrueckt werden, damit die Startmeldungen
-erneut ausgegeben werden.
+## Dokumentation
+
+**Für Nutzer:**
+
+- [Benutzeranleitung](docs/user-guide.md) -- Installation, WLAN, Spoolman,
+  Waage, NFC, Drucker, AMS, Firmware-Update.
+
+**Für Entwickler:**
+
+- [Entwicklerhandbuch](docs/developer-guide.md) -- Build, Upload, Tests, EEZ
+  Export, und wie ein neuer Screen/Action/Task/JSON-Dokument/Tagparser/
+  Spoolman-Extrafeld ergänzt wird.
+- [Architektur](docs/architecture.md) -- Tasks, Queues, Events, IRQ,
+  Prioritäten, Stacks.
+- [FreeRTOS-Grundarchitektur](docs/rtos.md), [Logging](docs/logging.md),
+  [Speicherung](docs/storage.md), [UI-Workflows](docs/workflows.md),
+  [Tag-Identität/Capabilities/Spoolman-Zuordnung](docs/tag-identity.md).
+- [Hardware](docs/hardware.md) -- Controller, Verdrahtung, GPIO-Übersicht,
+  Bill of Materials.
+- NFC-Tagformate: [eigenes Format](docs/nfc-tags.md),
+  [Bambu-RFID](docs/bambu-rfid.md), [OpenPrintTag](docs/openprinttag.md),
+  [OpenTag3D](docs/opentag3d.md),
+  [Legacy/Unbekannt](docs/legacy-and-unknown-tags.md).
+- [Bambu-LAN-MQTT-Protokoll](docs/bambu-protocol.md),
+  [Spoolman-API-Nutzung](docs/spoolman-api.md).
+- [Release-Prozess](docs/release.md) -- Lizenzen, Versionierung, Quellen,
+  Known Issues.
+
+Alle `docs/*.md`-Dateien sind das lebende Referenzwissen; die vollständige,
+chronologische Entwicklungshistorie mit Begründung jeder Einzelentscheidung
+steht in [`TASKS.md`](TASKS.md).
+
+## Lizenz
+
+MIT, siehe [`LICENSE`](LICENSE). Verwendete Drittanbieter-Lizenzen stehen in
+[`docs/release.md`](docs/release.md#lizenzen).
