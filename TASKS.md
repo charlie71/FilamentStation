@@ -14,6 +14,67 @@
 * Kein Offline-Spoolman-Betrieb.
 * Runtime-Logging ausschließlich über den zentralen Logger.
 * Nur tatsächlich erledigte Aufgaben abhaken.
+* Button-Beschriftungen (Label-Text) in SCR_SETTINGS_HOME, SCR_STAGING_DETAILS,
+  SCR_STAGING_ACTIONS, SCR_TRAY_ACTIONS, SCR_TAG_ACTION_SELECT, SCR_TAG_LEGACY,
+  SCR_TAG_DEFINITION_IMPORT, SCR_TAG_RESULT bleiben unverändert wie in EEZ
+  Studio gesetzt (Ausnahme: Header-Button). Programmatisch nur
+  Sichtbarkeit/Enabled-Zustand (`setLabelButtonAvailable()`) und
+  Hintergrund-/Textfarbe ändern, niemals den Text selbst -- insbesondere
+  nicht über `setControlText()`/`setButtonText()` (`UiBridge.cpp`).
+
+Nachtrag (2026-08-25, Nutzerwunsch, Korrektur): die erste Pruefung dieser
+Regel hatte nur direkte `lv_label_set_text(objects.X, ...)`-Aufrufe
+gegrept und daher `setControlText()`/`setButtonText()` uebersehen -- diese
+Wrapper loesen erst intern per `buttonLabel()` das Kind-Label auf, ein
+reiner `objects.X`-Textsuche findet sie nicht. Nutzer hat das anhand von
+`staging_details_quick_weight` konkret nachgewiesen (EEZ Studio:
+"Schnell-\nwiegen" mit Zeilenumbruch, Code ueberschrieb mit einzeiligem
+"Schnellwiegen"). Vollstaendige Nachpruefung ergab: `bindGeneratedWidgets()`
+(`UiBridge.cpp`) enthielt fuer alle acht Screens `setControlText()`-Aufrufe,
+die EEZ Studios bereits korrekten (teils mit bewusstem Zeilenumbruch
+formatierten) Text ueberschrieben -- entfernt fuer `staging_details_
+quick_weight`, `staging_action_advanced_weight`, `staging_action_link_tag`,
+`staging_action_unlink_tag`, `staging_action_erase_tag`, `tray_action_reset`,
+`tag_action_title/select_spool/use_last_spool/erase/back`, `tag_legacy_
+title/select_spool/import/erase/close`, `tag_definition_import_title/
+select_spool/spoolman/cancel`, `tag_result_title/quick_weight/advanced_
+weight/close`. Layout- (`lv_obj_set_pos`/`_set_size`), Flag- und Style-
+Aufrufe fuer dieselben Objekte blieben unveraendert (betreffen nicht den
+Text). `staging_action_write_tag` bewusst ausgenommen: nicht klickbar,
+dient als echte Laufzeit-Statusanzeige (wird ab `processUiCommand()` mit
+dem Tag-Schreibstatus befuellt, `assignmentStatus`), keine Button-
+Beschriftung im Sinne der Regel; der init-Aufruf war ohnehin redundant
+(identisch mit EEZ Studios eigenem Default).
+
+Zwei Faelle zeigten inhaltlich abweichenden statt nur reformatierten Text
+gegenueber EEZ Studio -- nach Entfernen der Ueberschreibung zeigt das
+Geraet jetzt EEZ Studios Version, zur Kenntnisnahme: `tag_definition_
+import_title` ("Bambu-Definition erkannt" statt bisher "Tagdefinition
+erkannt") und `tag_definition_import_spoolman`/`tag_legacy_import`
+("importieren" statt bisher "Nach Spoolman importieren"). Falls das nicht
+gewuenscht ist, muss der Text im EEZ-Projekt selbst angepasst werden, nicht
+im Code. SCR_SETTINGS_HOME hatte nie eine Ueberschreibung -- dort war die
+urspruengliche Pruefung bereits korrekt.
+
+Zwischenfall: nach dem ersten Build/Test/Flash dieser Korrektur war
+`UiBridge.cpp` beim naechsten Zugriff wieder exakt auf dem Stand des
+letzten Commits (`f70cd91 "phase 11.6"`) -- die Aenderung war im
+Arbeitsverzeichnis verloren (`git status` zeigte die Datei faelschlich als
+unveraendert), obwohl das vorherige Flash sie kurzzeitig auf dem Geraet
+hatte. Ursache nicht abschliessend geklaert (vermutlich ein Discard/
+Checkout ausserhalb dieser Session); Aenderung wurde ein zweites Mal
+angewendet und diesmal per `git status`/`git diff --stat` unmittelbar nach
+dem Edit verifiziert, bevor gebaut wurde. `TASKS.md` und die
+Halbgeviertstrich-Korrektur in `AppTask.cpp` waren von diesem Vorfall nicht
+betroffen. Da dieser Stand weiterhin nur im Arbeitsverzeichnis liegt (kein
+Commit durch mich ohne ausdrueckliche Anfrage), besteht bis zum naechsten
+Commit erneut das Risiko eines Verlusts.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht (Flash brauchte
+mehrere Versuche: zunaechst zweimal "Could not open COM5" trotz von Windows
+gelistetem Port, nach USB-Neustecken zweimal "No serial data received"
+beim Reset-in-Bootloader-Handshake, erst nach manueller BOOT/RESET-Taster-
+Sequenz erfolgreich -- kein Code-Zusammenhang).
 
 ---
 
@@ -1047,6 +1108,14 @@ Zeitangabe. Neuer, auf 1/s gedrosselter `AppEventType::BambuAssignProgress`
 bereits vorhandenen, zuvor nie bewegten Fortschrittsbalken
 (`overlayProgress`) sowie einen "noch N s"-Text. Details siehe
 docs/bambu-protocol.md.
+
+Nachtrag (2026-08-25, Nutzerwunsch): dieser Countdown-Text enthielt ein
+Halbgeviertstrich-Sonderzeichen ("\xE2\x80\x93", U+2013), das im
+verwendeten LVGL-Font fehlt und dadurch nicht darstellbar war -- die
+uebrige Oberflaeche verwendet durchgehend nur ASCII plus deutsche Umlaute/
+scharfes S (Latin-1-Bereich), dieses eine Vorkommen war die einzige
+Ausnahme (per Volltextsuche bestaetigt). Ersetzt durch einen normalen
+Bindestrich.
 
 ## 8.6 GUI
 
@@ -3497,7 +3566,16 @@ pruefen:**
   Timer das Geraet weckt).
 - Verhalten der USB-CDC-Seriellkonsole waehrend eines Light-Sleep-Zyklus
   (moeglicher kurzer sichtbarer Aussetzer im `pio device monitor`, kein
-  bekanntes Firmware-Risiko, aber nicht beobachtet).
+  bekanntes Firmware-Risiko, aber nicht beobachtet). **Erster Hinweis
+  bereits beobachtet:** beim naechsten Flash-Versuch nach dieser Phase
+  meldete `esptool` dreimal in Folge "Could not open COM5, the port
+  doesn't exist", obwohl Windows den Port weiterhin listete -- erst nach
+  physischem Aus-/Einstecken des USB-Kabels durch den Nutzer war COM5
+  wieder erreichbar. Passt zum erwarteten Risiko (Geraet vermutlich im
+  Light-Sleep, USB-CDC dadurch nicht ansprechbar); noch nicht als
+  ursaechlich bestaetigt, aber ein konkretes erstes Datenpunkt dafuer, dass
+  das Sicherheitsnetz (30s-Timer) fuer den Nutzer sichtbar wird, sobald
+  laenger unbeaufsichtigter Betrieb stattfindet.
 - Build/Test/Flash wie gewohnt gruen -- das ist kein Ersatz fuer echten
   Light-Sleep-Betrieb am Geraet, den ich selbst nicht ausloesen/beobachten
   kann.

@@ -1719,17 +1719,16 @@ void applyApplicationFont() {
 
 void bindGeneratedWidgets() {
   // EEZ identifiers remain stable; only the user-facing wording is localized.
-  setControlText(objects.staging_details_quick_weight, "Schnellwiegen");
-  setControlText(objects.staging_action_advanced_weight,
-                 "Erweitertes Wiegen");
-  setControlText(objects.staging_action_link_tag, "Tag zuordnen");
-  setControlText(objects.staging_action_unlink_tag,
-                 "Tag-Zuordnung entfernen");
+  // Ausnahme (Nutzerwunsch 2026-08-25): auf SCR_SETTINGS_HOME,
+  // SCR_STAGING_DETAILS, SCR_STAGING_ACTIONS, SCR_TRAY_ACTIONS,
+  // SCR_TAG_ACTION_SELECT, SCR_TAG_LEGACY, SCR_TAG_DEFINITION_IMPORT und
+  // SCR_TAG_RESULT bleibt die Beschriftung exakt wie in EEZ Studio gesetzt
+  // (Ausnahme: Header-Button) -- keine setControlText()-Ueberschreibung
+  // mehr fuer diese Screens, siehe TASKS.md "Allgemeine Regeln".
   lv_obj_set_pos(objects.staging_action_link_tag, 4, 100);
   lv_obj_set_size(objects.staging_action_link_tag, 232, 52);
   lv_obj_set_pos(objects.staging_action_unlink_tag, 244, 100);
   lv_obj_set_size(objects.staging_action_unlink_tag, 232, 52);
-  setControlText(objects.staging_action_write_tag, "Kein NFC-Tag erkannt");
   lv_obj_remove_flag(objects.staging_action_write_tag, LV_OBJ_FLAG_HIDDEN);
   lv_obj_remove_flag(objects.staging_action_write_tag, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_set_pos(objects.staging_action_write_tag, 4, 156);
@@ -1743,13 +1742,14 @@ void bindGeneratedWidgets() {
   lv_obj_set_style_text_align(objects.staging_action_write_tag,
                               LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
   lv_obj_set_style_radius(objects.staging_action_write_tag, 8, LV_PART_MAIN);
-  setControlText(objects.staging_action_erase_tag,
-                 "Spule ausw\xC3\xA4hlen");
+  // staging_action_write_tag bleibt eine echte Laufzeit-Statusanzeige (nicht
+  // klickbar, siehe oben) -- sie wird ab handleUiAction()/processUiCommand()
+  // dynamisch mit dem Tag-Schreibstatus befuellt (assignmentStatus), das
+  // faellt nicht unter die Button-Beschriftungsregel.
   lv_obj_remove_flag(objects.staging_action_erase_tag, LV_OBJ_FLAG_HIDDEN);
   lv_obj_set_pos(objects.staging_action_erase_tag, 4, 212);
   lv_obj_set_size(objects.staging_action_erase_tag, 472, 48);
   setControlText(objects.tray_select_external, "Extern");
-  setControlText(objects.tray_action_reset, "Slot zur\xC3\xBC" "cksetzen");
   setControlText(objects.scale_settings_reset,
                  "Zur\xC3\xBC" "cksetzen");
   constexpr lv_coord_t kScaleActionWidth = 115;
@@ -1772,13 +1772,7 @@ void bindGeneratedWidgets() {
       objects.tag_legacy_settings, objects.tag_unknown_settings,
   }};
   //for (lv_obj_t* control : tagSettings) setControlText(control, "Einst.");
-  setControlText(objects.tag_action_title, "NFC-Tag zuordnen");
-  setControlText(objects.tag_action_select_spool, "Tag zuordnen");
-  setControlText(objects.tag_action_use_last_spool,
-                 "Zuletzt verwendete Spule");
   lv_obj_add_flag(objects.tag_action_write, LV_OBJ_FLAG_HIDDEN);
-  setControlText(objects.tag_action_erase, "Tag-Zuordnung entfernen");
-  setControlText(objects.tag_action_back, "Zur\xC3\xBC" "ck");
   setControlText(objects.tag_review_title, "Tag-Zuordnung pr\xC3\xBC" "fen");
   setControlText(objects.tag_review_back, "Zur\xC3\xBC" "ck");
   setControlText(objects.tag_review_cancel, "Abbrechen");
@@ -1789,24 +1783,8 @@ void bindGeneratedWidgets() {
   setControlText(objects.tag_write_data, "Tag wird bei Bedarf aktualisiert");
   setControlText(objects.tag_write_verify, "Ergebnis wird gepr\xC3\xBC" "ft");
   setControlText(objects.tag_write_cancel, "Abbrechen");
-  setControlText(objects.tag_result_title, "NFC-Ergebnis");
-  setControlText(objects.tag_result_quick_weight, "Schnell wiegen");
-  setControlText(objects.tag_result_advanced_weight, "Erweitert wiegen");
-  setControlText(objects.tag_result_close, "Schlie\xC3\x9F" "en");
   //setControlText(objects.tag_definition_import_settings, "Einst.");
-  setControlText(objects.tag_definition_import_title,
-                 "Tagdefinition erkannt");
-  setControlText(objects.tag_definition_import_select_spool,
-                 "Tag zuordnen");
-  setControlText(objects.tag_definition_import_spoolman,
-                 "Nach Spoolman importieren");
-  setControlText(objects.tag_definition_import_cancel, "Abbrechen");
-  setControlText(objects.tag_legacy_title, "Legacy-Tag erkannt");
-  setControlText(objects.tag_legacy_select_spool, "Tag zuordnen");
-  setControlText(objects.tag_legacy_import, "Nach Spoolman importieren");
   lv_obj_add_flag(objects.tag_legacy_migrate, LV_OBJ_FLAG_HIDDEN);
-  setControlText(objects.tag_legacy_erase, "Tag-Zuordnung entfernen");
-  setControlText(objects.tag_legacy_close, "Schlie\xC3\x9F" "en");
   setControlText(objects.tag_unknown_title, "Unbekannter NFC-Tag");
   setControlText(objects.tag_unknown_select_spool, "Tag zuordnen");
   setControlText(objects.tag_unknown_close, "Schlie\xC3\x9F" "en");

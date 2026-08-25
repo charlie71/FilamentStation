@@ -5448,7 +5448,7 @@ void appTask(void* parameter) {
             static_cast<std::int64_t>(config::kBambuAssignConfirmTimeoutMs));
         std::snprintf(
             progress.text, sizeof(progress.text),
-            "Warte auf Best\xC3\xA4tigung vom Drucker \xE2\x80\x93 noch %ld s",
+            "Warte auf Best\xC3\xA4tigung vom Drucker - noch %ld s",
             static_cast<long>(remainingSeconds));
         sendUiCommand(ctx, progress, "AppTask: assign progress overflow");
       }
