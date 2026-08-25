@@ -64,13 +64,15 @@ bool RtosContext::createObjects() {
   spoolmanCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(SpoolmanCommand));
   bambuCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(BambuCommand));
   powerCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(PowerCommand));
+  updateCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(UpdateCommand));
   logQueue = xQueueCreate(config::kLogQueueLength, sizeof(LogMessage));
   systemEventGroup = xEventGroupCreate();
 
   return appEventQueue && uiCommandQueue && scaleCommandQueue && nfcCommandQueue &&
          storageCommandQueue && networkCommandQueue && networkQueuesReady &&
          spoolmanCommandQueue &&
-         bambuCommandQueue && powerCommandQueue && logQueue && systemEventGroup;
+         bambuCommandQueue && powerCommandQueue && updateCommandQueue && logQueue &&
+         systemEventGroup;
 }
 
 bool RtosContext::createUiTask() {
@@ -91,7 +93,8 @@ bool RtosContext::createServiceTasks() {
          createTask(tasks::networkTask, config::kNetworkTask, this, &networkTask) &&
          createTask(tasks::spoolmanTask, config::kSpoolmanTask, this, &spoolmanTask) &&
          createTask(tasks::bambuTask, config::kBambuTask, this, &bambuTask) &&
-         createTask(tasks::powerTask, config::kPowerTask, this, &powerTask);
+         createTask(tasks::powerTask, config::kPowerTask, this, &powerTask) &&
+         createTask(tasks::updateTask, config::kUpdateTask, this, &updateTask);
 }
 
 bool RtosContext::createTasks() {

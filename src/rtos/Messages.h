@@ -179,12 +179,17 @@ struct BambuCommand {
   std::uint16_t nozzleTempMinC = 0;
   std::uint16_t nozzleTempMaxC = 0;
 };
+struct UpdateCommand {
+  UpdateCommandType type;
+  std::uint32_t requestId;
+};
 
 static_assert(std::is_trivially_copyable_v<AppEvent>);
 static_assert(std::is_trivially_copyable_v<UiCommand>);
 static_assert(std::is_trivially_copyable_v<UiAction>);
 static_assert(std::is_trivially_copyable_v<StorageCommand>);
 static_assert(std::is_trivially_copyable_v<NetworkCommand>);
+static_assert(std::is_trivially_copyable_v<UpdateCommand>);
 static_assert(std::is_trivially_copyable_v<SpoolmanCommand>);
 static_assert(std::is_trivially_copyable_v<BambuCommand>);
 static_assert(std::is_trivially_copyable_v<PowerCommand>);

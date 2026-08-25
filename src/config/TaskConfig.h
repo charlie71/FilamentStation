@@ -64,6 +64,10 @@ constexpr TaskSettings kBambuTask{"BambuTask", 8192, 1, kNoCoreAffinity};
 // sendet/empfaengt ausschliesslich kleine PowerCommand-Werte -- kein
 // AppEvent-grosser Stack-Local wie bei den anderen Tasks noetig.
 constexpr TaskSettings kPowerTask{"PowerTask", 4096, 1, kNoCoreAffinity};
+// HTTPS (WiFiClientSecure, wie BambuTask) plus ArduinoJson-Parsing der
+// GitHub-Releases-Antwort; Groessenordnung analog zu kBambuTask/
+// kSpoolmanTask.
+constexpr TaskSettings kUpdateTask{"UpdateTask", 8192, 1, kNoCoreAffinity};
 
 // Queue-Laengen basieren auf geringer Last der Task-Gerueste und werden nach
 // Messung der maximalen Auslastung in spaeteren Phasen angepasst.

@@ -104,6 +104,7 @@ std::uint32_t pendingBambuSaveRequestId = 0;
 bool pendingBambuSaveShowsResult = false;
 rtos::PrinterId pendingBambuSaveNotifyPrinterId = models::kInvalidPrinterId;
 std::uint32_t pendingPrinterTestRequestId = 0;
+std::uint32_t pendingUpdateCheckRequestId = 0;
 constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;
 constexpr std::uint32_t kBambuLoadRequestId = 0x42414D01U;
 constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;
@@ -1344,6 +1345,18 @@ bool sendBambuCommand(rtos::RtosContext& ctx,
   }
   FS_LOGW(services::LogComponent::App,
           "Command enqueue failed queue=bambu command=%u",
+          static_cast<unsigned>(command.type));
+  return false;
+}
+
+bool sendUpdateCommand(rtos::RtosContext& ctx,
+                       const rtos::UpdateCommand& command) {
+  if (xQueueSend(ctx.updateCommandQueue, &command, pdMS_TO_TICKS(1000)) ==
+      pdPASS) {
+    return true;
+  }
+  FS_LOGW(services::LogComponent::App,
+          "Command enqueue failed queue=update command=%u",
           static_cast<unsigned>(command.type));
   return false;
 }
@@ -2845,12 +2858,37 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Der Neustart wird erst nach Best\xC3\xA4tigung ausgel\xC3\xB6st.");
         return;
       }
+      if (action.type == rtos::UiActionType::CheckFirmwareUpdate) {
+        if (pendingUpdateCheckRequestId != 0) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Firmware-Update",
+                      "Es l\xC3\xA4uft bereits eine Pr\xC3\xBC" "fung.");
+          return;
+        }
+        rtos::UpdateCommand updateCommand{};
+        updateCommand.type = rtos::UpdateCommandType::CheckForUpdate;
+        updateCommand.requestId = action.requestId;
+        if (!sendUpdateCommand(ctx, updateCommand)) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Firmware-Update",
+                      "Der Auftrag konnte nicht an den UpdateTask gesendet werden.");
+          return;
+        }
+        pendingUpdateCheckRequestId = action.requestId;
+        command.type = rtos::UiCommandType::ShowToast;
+        command.value =
+            300 + static_cast<std::int32_t>(rtos::UiActionType::CheckFirmwareUpdate);
+        std::snprintf(command.text, sizeof(command.text), "Wird gepr\xC3\xBC" "ft...");
+        sendUiCommand(ctx, command, "AppTask: firmware update check queue overflow");
+        return;
+      }
       command.type = rtos::UiCommandType::ShowToast;
       command.value = 300 + static_cast<std::int32_t>(action.type);
       const char* text = "Mock-Aktion vorgemerkt";
       if (action.type == rtos::UiActionType::StartWifiPortal) text = "WLAN-Konfiguration vorgemerkt";
       else if (action.type == rtos::UiActionType::ResetWifiCredentials) text = "WLAN-Zugangsdaten nicht zur\xC3\xBC" "ckgesetzt (Mock)";
-      else if (action.type == rtos::UiActionType::CheckFirmwareUpdate) text = "Firmware-Update noch nicht verf\xC3\xBCgbar";
       std::snprintf(command.text, sizeof(command.text), "%s", text);
       sendUiCommand(ctx, command, "AppTask: settings mock action queue overflow");
       return;
@@ -5469,6 +5507,38 @@ void appTask(void* parameter) {
             static_cast<long>(remainingSeconds));
         sendUiCommand(ctx, progress, "AppTask: assign progress overflow");
       }
+    } else if (event->type == rtos::AppEventType::UpdateCheckResult) {
+      // Firmware-Update-Versions-Check (TASKS.md Phase 13.2). Zwei separate
+      // Label-Updates (Status-Zeile + "Verfuegbar:"-Zeile auf
+      // SCR_SETTINGS_FIRMWARE), analog zum bereits vorhandenen value=300+
+      // actionType/value=400-Konventionsschema in UiBridge.cpp.
+      if (event->requestId == pendingUpdateCheckRequestId) {
+        pendingUpdateCheckRequestId = 0;
+      }
+      rtos::UiCommand status{};
+      status.type = rtos::UiCommandType::ShowStatus;
+      status.value =
+          300 + static_cast<std::int32_t>(rtos::UiActionType::CheckFirmwareUpdate);
+      rtos::UiCommand available{};
+      available.type = rtos::UiCommandType::ShowStatus;
+      available.value = 400;
+      if (event->value == 1) {
+        std::snprintf(status.text, sizeof(status.text),
+                      "Update verf\xC3\xBCgbar");
+        std::snprintf(available.text, sizeof(available.text),
+                      "Verf\xC3\xBCgbar: %s", event->text);
+      } else if (event->value == 0) {
+        std::snprintf(status.text, sizeof(status.text),
+                      "Firmware ist aktuell");
+        std::snprintf(available.text, sizeof(available.text),
+                      "Verf\xC3\xBCgbar: aktuell");
+      } else {
+        std::snprintf(status.text, sizeof(status.text), "%s", event->text);
+        std::snprintf(available.text, sizeof(available.text),
+                      "Verf\xC3\xBCgbar: nicht gepr\xC3\xBC" "ft");
+      }
+      sendUiCommand(ctx, status, "AppTask: firmware update status overflow");
+      sendUiCommand(ctx, available, "AppTask: firmware update available overflow");
     } else if (event->type == rtos::AppEventType::BambuConnected ||
                event->type == rtos::AppEventType::BambuDisconnected ||
                event->type == rtos::AppEventType::BambuUpdate ||

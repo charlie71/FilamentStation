@@ -3859,9 +3859,61 @@ Build (0 Warnungen), 60 native Tests gruen (davon 6 neu), geflasht.
 
 ## 13.2 Versions-Check
 
-* [ ] HTTP(S)-Abfrage der Update-Quelle -- neuer Task oder Erweiterung
+* [x] HTTP(S)-Abfrage der Update-Quelle -- neuer Task oder Erweiterung
   eines bestehenden (HTTPClient/WiFiClientSecure analog SpoolmanTask)
-* [ ] UI-Anzeige "Update verfuegbar: vX.Y.Z" vs. "Firmware aktuell"
+* [x] UI-Anzeige "Update verfuegbar: vX.Y.Z" vs. "Firmware aktuell"
+
+**Umgesetzt (2026-08-25):** Neuer eigener `UpdateTask` (analog zu Scale-/
+Nfc-/Network-/Power-Task ein eigenes Anliegen, statt einen bestehenden Task
+zu ueberladen) mit eigener Queue/Task-Handle in `RtosContext`, eigenen
+`config::kUpdateTask`-Settings (`TaskConfig.h`, 8192 Byte -- HTTPS+JSON
+analog zu `kBambuTask`/`kSpoolmanTask`) und neuer `LogComponent::Update`.
+
+Neuer `rtos::UpdateCommandType::CheckForUpdate` + `UpdateCommand`-Struct,
+neuer `rtos::AppEventType::UpdateCheckResult` (`value`: 1=Update
+verfuegbar/0=aktuell/-1=Fehler, `text`: Version bzw. Fehlermeldung).
+
+`UpdateTask::checkForUpdate()` (`UpdateTask.cpp`): baut die URL aus
+`config::kUpdateApiHost/kUpdateRepoOwner/kUpdateRepoName` (Phase 13.1),
+nutzt `WiFiClientSecure` mit `setInsecure()` (identisches Muster wie
+`BambuTask`, kein Security-Key/keine Zertifikatspflege geplant) plus
+`HTTPClient`, setzt den von GitHub zwingend geforderten `User-Agent`-
+Header, filtert die JSON-Antwort per `DeserializationOption::Filter` auf
+nur `tag_name` (die volle Release-Antwort ist mehrere KB gross und wird
+nicht gebraucht), vergleicht per `services::parseSemVer()`/
+`compareSemVer()` (Phase 13.1) gegen `config::kApplicationVersion`. HTTP
+404 (noch kein Release veroeffentlicht -- aktuell der erwartbare
+Normalfall fuer dieses Repo) wird als eigener, klar beschrifteter Fall
+behandelt statt als generischer HTTP-Fehler.
+
+`AppTask::handleUiAction()`s `CheckFirmwareUpdate`-Zweig sendet jetzt
+`UpdateCommand{CheckForUpdate}` statt der Mock-Meldung, mit
+`pendingUpdateCheckRequestId`-Sperre gegen parallele Anfragen (Muster wie
+`pendingPrinterTestRequestId` bei `TestPrinterConnection`) und sofortigem
+"Wird gepr\xC3\xBC" "ft..."-Toast. Neuer `AppEventType::UpdateCheckResult`-
+Handler im zentralen Event-Loop sendet zwei `ShowStatus`-Kommandos: die
+bereits vorhandene `value=300+CheckFirmwareUpdate`-Route
+(`firmware_settings_status`) sowie eine neue `value=400`-Route
+(`UiBridge.cpp`, neuer Zweig) fuer `firmware_settings_available` ("Update
+verf\xC3\xBCgbar: vX.Y.Z" / "Verf\xC3\xBCgbar: aktuell" / Fehlertext).
+
+**Stolperstein dabei gefunden und behoben:** ein `sendResult()`-Aufruf mit
+dem String "Keine Version ver\xC3\xB6ffentlicht" erzeugte eine Compiler-
+Warnung ("hex escape sequence out of range") -- `\xB6` gefolgt von `f`
+wird als durchgehende Hex-Escape-Sequenz `\xB6f` geparst (jede Hex-Ziffer
+inkl. a-f wird vom Escape verschluckt), nicht als `\xB6` + `f`. Behoben
+durch Aufsplitten in zwei String-Literale ("...\xC3\xB6" "ffentlicht"),
+identisches Muster wird an mehreren Stellen in `AppTask.cpp`/`UiBridge.cpp`
+bereits fuer genau dieses Problem verwendet (z.B. "Zur\xC3\xBC" "ck").
+
+Noch nicht am Geraet mit echtem Netzwerkzugriff verifiziert (kein
+Hardwarezugriff durch mich moeglich) -- sollte vom Nutzer geprueft werden:
+"Prüfen"-Button auf SCR_SETTINGS_FIRMWARE antippen, kurz "Wird geprüft..."
+sehen, danach entweder "Firmware ist aktuell"/"Verfügbar: aktuell" oder
+(da fuer dieses Repo aktuell wahrscheinlich noch kein GitHub-Release
+existiert) "Keine Version veröffentlicht".
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht.
 
 ## 13.3 Download
 

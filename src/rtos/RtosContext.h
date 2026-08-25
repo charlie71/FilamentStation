@@ -28,6 +28,7 @@ struct RtosContext {
   QueueHandle_t spoolmanCommandQueue = nullptr;
   QueueHandle_t bambuCommandQueue = nullptr;
   QueueHandle_t powerCommandQueue = nullptr;
+  QueueHandle_t updateCommandQueue = nullptr;
   QueueHandle_t logQueue = nullptr;
   EventGroupHandle_t systemEventGroup = nullptr;
   TaskHandle_t loggingTask = nullptr;
@@ -40,6 +41,7 @@ struct RtosContext {
   TaskHandle_t spoolmanTask = nullptr;
   TaskHandle_t bambuTask = nullptr;
   TaskHandle_t powerTask = nullptr;
+  TaskHandle_t updateTask = nullptr;
 
   bool createObjects();
   bool createUiTask();

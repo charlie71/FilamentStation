@@ -3672,6 +3672,11 @@ void processUiCommand(const rtos::UiCommand& command) {
       } else if (command.value == 300 + static_cast<std::int32_t>(
                                             rtos::UiActionType::CheckFirmwareUpdate)) {
         lv_label_set_text(objects.firmware_settings_status, command.text);
+      } else if (command.value == 400) {
+        // Firmware-Update-Versions-Check (TASKS.md Phase 13.2): eigener
+        // Wert, da diese "Verfuegbar: ..."-Zeile ein anderes Label ist als
+        // die Statuszeile direkt oberhalb.
+        lv_label_set_text(objects.firmware_settings_available, command.text);
       }
       if (command.value == 101 && command.title[0] != '\0') {
         char version[64];

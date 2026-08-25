@@ -10,4 +10,5 @@ void networkTask(void* parameter);
 void spoolmanTask(void* parameter);
 void bambuTask(void* parameter);
 void powerTask(void* parameter);
+void updateTask(void* parameter);
 }  // namespace filament_station::tasks

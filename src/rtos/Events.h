@@ -60,7 +60,11 @@ enum class AppEventType : std::uint8_t {
   // Periodic (throttled to ~1/s) remaining-time update while an AssignTray
   // awaits the printer's telemetry confirmation, see BambuTask::
   // serviceConnections(). "value" carries the remaining milliseconds.
-  BambuAssignProgress
+  BambuAssignProgress,
+  // Firmware-Update-Versions-Check (TASKS.md Phase 13.2): "value" ist 1
+  // (Update verfuegbar), 0 (Firmware aktuell) oder -1 (Fehler); "text"
+  // traegt bei 1 die verfuegbare Version, bei -1 die Fehlermeldung.
+  UpdateCheckResult
 };
 
 constexpr EventBits_t EVENT_UI_READY = BIT0;

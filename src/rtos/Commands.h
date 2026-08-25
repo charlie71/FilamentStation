@@ -274,6 +274,12 @@ enum class BambuCommandType : std::uint8_t {
   Reconnect,
 };
 
+// Firmware-Update (TASKS.md Phase 13.2): CheckForUpdate fragt die in
+// config/UpdateConfig.h konfigurierte GitHub-Releases-API ab.
+enum class UpdateCommandType : std::uint8_t {
+  CheckForUpdate,
+};
+
 // Energiesparen (TASKS.md Phase 11.1): ReportInactivity liefert die von
 // UiTask ueber LVGL `lv_display_get_inactive_time()` gemessene Zeit seit der
 // letzten Eingabe (einzige Stelle, die LVGL beruehrt, siehe "Nur UiTask
