@@ -5,7 +5,10 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <WiFiClientSecure.h>
+#include <mbedtls/sha256.h>
 
+#include <array>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 
@@ -37,6 +40,45 @@ void sendEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
             "Event enqueue failed queue=app_event type=%u",
             static_cast<unsigned>(type));
   }
+}
+
+// Prueft, ob "text" mit genau 64 Hex-Ziffern beginnt (ein SHA-256-Hash in
+// Hex-Darstellung) und kopiert sie kleingeschrieben nach out (65 Byte,
+// inkl. Nullterminator). sha256sum-Ausgaben haben oft noch " filename"
+// dahinter -- das wird ignoriert, nur die ersten 64 Zeichen zaehlen.
+bool extractHexSha256(const char* text, char* out) {
+  std::size_t index = 0;
+  for (; index < 64; ++index) {
+    const unsigned char c = static_cast<unsigned char>(text[index]);
+    if (c == '\0' || std::isxdigit(c) == 0) return false;
+    out[index] = static_cast<char>(std::tolower(c));
+  }
+  out[64] = '\0';
+  return true;
+}
+
+// Kleine reine Textantwort (kein JSON) -- eigene, einfachere Anfrage statt
+// getJson()-artiger Hilfsfunktion, da hier nur eine Zeile erwartet wird.
+bool fetchChecksum(const char* url, char* outHex64) {
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(config::kUpdateCheckTimeoutMs);
+  HTTPClient http;
+  http.setConnectTimeout(static_cast<int32_t>(config::kUpdateCheckTimeoutMs));
+  http.setTimeout(static_cast<uint16_t>(config::kUpdateCheckTimeoutMs));
+  http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+  if (!http.begin(client, url)) return false;
+  http.addHeader("User-Agent", config::kUpdateUserAgent);
+  const int status = http.GET();
+  if (status != HTTP_CODE_OK) {
+    FS_LOGW(services::LogComponent::Update,
+            "Checksum request failed url=\"%s\" status=%d", url, status);
+    http.end();
+    return false;
+  }
+  const String body = http.getString();
+  http.end();
+  return extractHexSha256(body.c_str(), outHex64);
 }
 
 void checkForUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
@@ -171,12 +213,14 @@ void downloadUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
 
   // Erstes Asset mit .bin-Endung (Nutzerentscheidung 2026-08-25).
   const char* assetUrl = nullptr;
+  char binAssetName[128]{};
   for (JsonObject asset : document["assets"].as<JsonArray>()) {
     const char* name = asset["name"];
     if (name == nullptr) continue;
     const std::size_t length = std::strlen(name);
     if (length >= 4 && std::strcmp(name + length - 4, ".bin") == 0) {
       assetUrl = asset["browser_download_url"];
+      std::snprintf(binAssetName, sizeof(binAssetName), "%s", name);
       break;
     }
   }
@@ -187,6 +231,38 @@ void downloadUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
   }
   char downloadUrl[256];
   std::snprintf(downloadUrl, sizeof(downloadUrl), "%s", assetUrl);
+
+  // Pruefsumme (TASKS.md Phase 13.4, Nutzerentscheidung 2026-08-25): zweites
+  // Asset "<binAssetName>.sha256", enthaelt nur den 64-stelligen Hex-Hash.
+  // Faehlt fehlend -> Update wird sicherheitshalber NICHT installiert
+  // (fail closed), nicht stillschweigend uebersprungen.
+  char checksumAssetName[144];
+  std::snprintf(checksumAssetName, sizeof(checksumAssetName), "%s.sha256",
+                binAssetName);
+  const char* checksumUrl = nullptr;
+  for (JsonObject asset : document["assets"].as<JsonArray>()) {
+    const char* name = asset["name"];
+    if (name != nullptr && std::strcmp(name, checksumAssetName) == 0) {
+      checksumUrl = asset["browser_download_url"];
+      break;
+    }
+  }
+  if (checksumUrl == nullptr) {
+    FS_LOGW(services::LogComponent::Update,
+            "Checksum asset not found expected_name=\"%s\"",
+            checksumAssetName);
+    sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0,
+              "Keine Pr\xC3\xBC" "fsumme ver\xC3\xB6" "ffentlicht");
+    return;
+  }
+  char checksumFetchUrl[256];
+  std::snprintf(checksumFetchUrl, sizeof(checksumFetchUrl), "%s", checksumUrl);
+  char expectedHashHex[65];
+  if (!fetchChecksum(checksumFetchUrl, expectedHashHex)) {
+    sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0,
+              "Pr\xC3\xBC" "fsumme konnte nicht geladen werden");
+    return;
+  }
 
   WiFiClientSecure dataClient;
   dataClient.setInsecure();
@@ -226,7 +302,16 @@ void downloadUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
     return;
   }
 
+  // Manuelles Puffern statt der bequemen Update.write(stream)-Ueberladung
+  // (Phase 13.3), da die Rohbytes fuer die laufende SHA-256-Berechnung
+  // sichtbar sein muessen (Phase 13.4) -- Update.write(stream) liest intern
+  // direkt vom Stream, ohne die Bytes an den Aufrufer zurueckzugeben.
+  mbedtls_sha256_context sha;
+  mbedtls_sha256_init(&sha);
+  mbedtls_sha256_starts_ret(&sha, 0);  // 0 = SHA-256 (nicht SHA-224)
+
   WiFiClient& stream = dataHttp.getStream();
+  std::array<std::uint8_t, 1024> buffer;
   std::uint32_t lastProgressReportMs = millis();
   std::uint32_t lastDataMs = millis();
   bool connectionLost = false;
@@ -242,7 +327,11 @@ void downloadUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
       vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
-    const std::size_t written = Update.write(stream);
+    const std::size_t toRead = available < buffer.size() ? available : buffer.size();
+    const std::size_t readBytes = stream.readBytes(buffer.data(), toRead);
+    if (readBytes == 0) continue;
+    const std::size_t written = Update.write(buffer.data(), readBytes);
+    mbedtls_sha256_update_ret(&sha, buffer.data(), readBytes);
     if (written > 0) lastDataMs = millis();
     const std::uint32_t now = millis();
     if (now - lastProgressReportMs >= config::kUpdateProgressReportIntervalMs) {
@@ -257,6 +346,14 @@ void downloadUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
     }
   }
   dataHttp.end();
+
+  std::uint8_t hash[32];
+  mbedtls_sha256_finish_ret(&sha, hash);
+  mbedtls_sha256_free(&sha);
+  char actualHashHex[65];
+  for (std::size_t index = 0; index < sizeof(hash); ++index) {
+    std::snprintf(actualHashHex + index * 2, 3, "%02x", hash[index]);
+  }
 
   const bool complete =
       connectionLost ? false
@@ -273,6 +370,16 @@ void downloadUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
     return;
   }
 
+  if (std::strcmp(actualHashHex, expectedHashHex) != 0) {
+    Update.abort();
+    FS_LOGE(services::LogComponent::Update,
+            "Checksum mismatch expected=%s actual=%s", expectedHashHex,
+            actualHashHex);
+    sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0,
+              "Pr\xC3\xBC" "fsumme stimmt nicht \xC3\xBC" "berein");
+    return;
+  }
+
   if (!Update.end(true) || Update.hasError()) {
     char error[96];
     std::snprintf(error, sizeof(error), "%s", Update.errorString());
@@ -281,7 +388,8 @@ void downloadUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
     return;
   }
 
-  FS_LOGI(services::LogComponent::Update, "Download complete bytes=%u",
+  FS_LOGI(services::LogComponent::Update,
+          "Download complete bytes=%u checksum_verified=true",
           static_cast<unsigned>(Update.progress()));
   sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 1, "");
 }

@@ -4002,8 +4002,48 @@ Release veroeffentlicht ist.
 
 ## 13.4 Verifikation
 
-* [ ] SHA-256-Pruefsummenvergleich gegen veroeffentlichten Wert (kein
+* [x] SHA-256-Pruefsummenvergleich gegen veroeffentlichten Wert (kein
   Security-Key/keine Signatur, siehe oben)
+
+**Nutzerentscheidung (2026-08-25):** Pr\xC3\xBCfsumme wird als zweites
+Release-Asset "<bin-dateiname>.sha256" ver\xC3\xB6ffentlicht (nur der
+64-stellige Hex-Hash als Inhalt, z.B. per `sha256sum firmware.bin >
+firmware.bin.sha256`). Fehlt dieses Asset, installiert das Ger\xC3\xA4t das
+Update NICHT (fail closed) -- keine stillschweigend unverifizierte
+Installation.
+
+**Umgesetzt (2026-08-25):** Da die Pr\xC3\xBCfsumme die tats\xC3\xA4chlich
+uebertragenen Rohbytes braucht, wurde die Download-Schleife aus Phase 13.3
+umgebaut: statt der bequemen `Update.write(stream)`-Stream-Ueberladung
+(die intern liest, ohne die Bytes an den Aufrufer zurueckzugeben) liest die
+Schleife jetzt manuell in einen 1&nbsp;KB-Puffer (`stream.readBytes()`)
+und uebergibt jeden Chunk sowohl an `Update.write(buffer, n)` als auch an
+`mbedtls_sha256_update_ret()` (laufender Hash waehrend des Downloads, kein
+zweiter Lesevorgang aus der frisch beschriebenen Partition noetig). Exakte
+mbedTLS-Funktionsnamen fuer diese Framework-Version direkt im vendorten
+Header (`mbedtls/sha256.h`) verifiziert (`_ret`-Suffix-Variante).
+
+Asset-Suche erweitert: nachdem das `.bin`-Asset gefunden ist, wird in
+derselben bereits geladenen Asset-Liste zusaetzlich nach
+"<bin-name>.sha256" gesucht; dessen Inhalt wird per neuer
+`fetchChecksum()`/`extractHexSha256()` (eigene kleine Klartext-Anfrage,
+kein JSON) geladen und auf 64 Hex-Ziffern validiert (sha256sum-typisches
+"hash  filename"-Format wird toleriert, nur die ersten 64 Zeichen zaehlen).
+
+Nach Abschluss des Downloads wird der berechnete Hash mit dem
+veroeffentlichten verglichen, bevor `Update.end()` aufgerufen wird -- bei
+einer Abweichung `Update.abort()` (identischer sicherer Rueckzug wie bei
+einem Verbindungsabbruch aus Phase 13.3) statt die Partition zu
+committen, mit klarer Fehlermeldung "Pr\xC3\xBCfsumme stimmt nicht
+\xC3\xBCberein".
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht.
+
+Noch nicht am Geraet mit einem echten veroeffentlichten Release verifiziert
+(kein Hardwarezugriff durch mich moeglich) -- sollte vom Nutzer geprueft
+werden, sobald ein Release mit .bin- und .sha256-Anhang existiert
+(sowohl der Erfolgsfall als auch eine absichtlich falsche Pruefsumme, um
+den Ablehnungspfad zu bestaetigen).
 
 ## 13.5 Flash
 
