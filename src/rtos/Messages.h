@@ -109,6 +109,10 @@ struct ScaleCommand {
   bool calibrated;
 };
 struct NfcCommand { NfcCommandType type; std::uint32_t requestId; std::uint32_t spoolId; };
+struct PowerCommand {
+  PowerCommandType type;
+  std::uint32_t inactiveMs;
+};
 
 enum class StorageDocumentType : std::uint8_t {
   Device,
@@ -181,5 +185,6 @@ static_assert(std::is_trivially_copyable_v<StorageCommand>);
 static_assert(std::is_trivially_copyable_v<NetworkCommand>);
 static_assert(std::is_trivially_copyable_v<SpoolmanCommand>);
 static_assert(std::is_trivially_copyable_v<BambuCommand>);
+static_assert(std::is_trivially_copyable_v<PowerCommand>);
 
 }  // namespace filament_station::rtos

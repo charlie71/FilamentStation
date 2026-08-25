@@ -2,9 +2,9 @@
 
 #include <Arduino.h>
 #include <cstdio>
-#include <limits>
 #include "config/AppConfig.h"
 #include "config/BoardConfig.h"
+#include "config/PowerConfig.h"
 #include "config/TaskConfig.h"
 #include "drivers/DisplayDriver.h"
 #include "rtos/Messages.h"
@@ -63,16 +63,33 @@ void uiTask(void* parameter) {
   }
 
   rtos::UiCommand command{};
+  TickType_t lastPowerReportAt = 0;
   for (;;) {
     const std::uint32_t requestedSleepMs = ui::runLvglTimers();
     const std::uint32_t sleepMs =
         requestedSleepMs < config::kLvglMinimumSleepMs
             ? config::kLvglMinimumSleepMs
             : requestedSleepMs;
-    const TickType_t waitTicks =
-        sleepMs == std::numeric_limits<std::uint32_t>::max()
-            ? portMAX_DELAY
-            : pdMS_TO_TICKS(sleepMs);
+    // Nach oben auf das Power-Report-Intervall begrenzt, damit die Schleife
+    // auch bei voelliger LVGL-Ruhe (sleepMs == UINT32_MAX) regelmaessig
+    // genug lv_display_get_inactive_time() an PowerTask meldet.
+    const std::uint32_t boundedSleepMs =
+        sleepMs > config::kPowerActivityReportIntervalMs
+            ? config::kPowerActivityReportIntervalMs
+            : sleepMs;
+    const TickType_t waitTicks = pdMS_TO_TICKS(boundedSleepMs);
+    const TickType_t now = xTaskGetTickCount();
+    if (static_cast<TickType_t>(now - lastPowerReportAt) >=
+        pdMS_TO_TICKS(config::kPowerActivityReportIntervalMs)) {
+      lastPowerReportAt = now;
+      rtos::PowerCommand powerCommand{};
+      powerCommand.type = rtos::PowerCommandType::ReportInactivity;
+      powerCommand.inactiveMs = ui::inputInactiveMs();
+      if (xQueueSend(ctx.powerCommandQueue, &powerCommand, 0) != pdPASS) {
+        FS_LOGW(services::LogComponent::Ui,
+                "Power queue full, dropped inactivity report");
+      }
+    }
     if (xQueueReceive(ctx.uiCommandQueue, &command,
                       waitTicks) == pdTRUE) {
       do {

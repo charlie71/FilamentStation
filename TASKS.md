@@ -3182,13 +3182,56 @@ zuerst als eigener Machbarkeits-Check vor dem Rest der Phase.
 
 ## 11.1 Konfiguration und Statemachine
 
-* [ ] `PowerConfig.h` (Timer-Konstanten: Dimm-Timeout, Sleep-Timeout,
+* [x] `PowerConfig.h` (Timer-Konstanten: Dimm-Timeout, Sleep-Timeout,
   gedimmte Zielhelligkeit)
-* [ ] `PowerTask` (neuer eigener Task, haelt Aktiv/Gedimmt/Sleep-Zustand)
-* [ ] Inaktivitaets-Erkennung ueber LVGL `lv_disp_get_inactive_time()`
-* [ ] neue Command-Typen (`PowerDown`/`PowerUp`) fuer Scale-/Nfc-/
+* [x] `PowerTask` (neuer eigener Task, haelt Aktiv/Gedimmt/Sleep-Zustand)
+* [x] Inaktivitaets-Erkennung ueber LVGL `lv_disp_get_inactive_time()`
+* [x] neue Command-Typen (`PowerDown`/`PowerUp`) fuer Scale-/Nfc-/
   Network-Task nach bestehendem Commands.h-Muster
-* [ ] Bestaetigungs-Events, bevor `PowerTask` tatsaechlich schlafen legt
+* [x] Bestaetigungs-Events, bevor `PowerTask` tatsaechlich schlafen legt
+
+**Umgesetzt (2026-08-25):** neue `PowerConfig.h`
+(`kPowerActivityReportIntervalMs=1000`, `kPowerDimTimeoutMs=30000`,
+`kPowerSleepTimeoutMs=180000`, `kPowerDimmedBrightness=38`). Neuer
+`PowerTask` (`PowerTask.cpp`) mit interner
+`enum class PowerState { Active, Dimmed, Sleep }` und reiner
+Zustandsuebergangs-Logik (`stateForInactivity()`), Uebergaenge werden
+geloggt (`FS_LOGI`, neue `LogComponent::Power`) -- die eigentlichen
+Aktionen (Dimmen, Peripherie/WiFi abschalten, Light-Sleep) folgen in
+11.2-11.6 und sind hier bewusst noch nicht verdrahtet.
+
+Inaktivitaet wird korrekt ueber LVGL 9.5 ermittelt: die im Konzept
+genannte `lv_disp_get_inactive_time()` ist in dieser LVGL-Version nur
+noch ein v8-Kompatibilitaetsmakro (`lv_api_map_v8.h`) fuer die echte
+Funktion `lv_display_get_inactive_time()` -- neuer Wrapper
+`ui::inputInactiveMs()` in `UiBridge.cpp` haelt den LVGL-Zugriff dabei
+weiterhin exklusiv in `UiTask`, per "Nur UiTask greift auf LVGL zu".
+`UiTask`s Hauptschleife (`UiTask.cpp`) begrenzt ihre Wartezeit neu
+zusaetzlich auf `kPowerActivityReportIntervalMs`, damit sie auch bei
+voelliger LVGL-Ruhe (vorher moeglich: `portMAX_DELAY`) regelmaessig genug
+`PowerCommandType::ReportInactivity` an den neuen `powerCommandQueue`
+sendet; der bisherige `std::numeric_limits`-Sonderfall entfaellt dadurch
+(totes `#include <limits>` entfernt).
+
+`PowerDown`/`PowerUp` wurden wie im Konzept beschrieben direkt in die
+bestehenden `ScaleCommandType`/`NfcCommandType`/`NetworkCommandType`
+erweitert (Commands.h) statt als neuer eigener Typ -- entspricht "nach
+bestehendem Commands.h-Muster"; noch ohne Handler in den jeweiligen
+Tasks (folgt 11.3-11.5). Neuer `PowerCommandType` (`ReportInactivity`,
+`PowerDownAcknowledged`) + `PowerCommand`-Struct (Messages.h) fuer den
+Kanal UiTask/Hardware-Tasks -> PowerTask; `PowerDownAcknowledged` ist
+strukturell vorhanden, wird aber erst ab 11.3-11.6 tatsaechlich gesendet,
+wenn PowerTask vor dem Light-Sleep auf Bestaetigungen wartet.
+
+Neuer Task ueberall nach bestehendem Muster eingehaengt: `RtosContext`
+(Queue + `TaskHandle_t`), `TaskConfig.h` (`kPowerTask`, 4096 Byte Stack --
+kleine Statemachine ohne AppEvent-grosse Stack-Locals), `Tasks.h`,
+`RtosContext::createServiceTasks()`. Neue `LogComponent::Power` in
+Logger.h/LoggerFormat.cpp ergaenzt (exhaustive Switches angepasst).
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht (2. Flash-Versuch
+erfolgreich -- 1. und 2. Versuch scheiterten an einem transienten
+"No serial data received" auf COM5, kein Code-Zusammenhang).
 
 ## 11.2 Bildschirm Dimmen/Aus
 

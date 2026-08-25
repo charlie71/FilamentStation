@@ -35,6 +35,7 @@ enum class LogComponent : std::uint8_t {
   Scale,
   Nfc,
   Bambu,
+  Power,
 };
 
 class Logger final {

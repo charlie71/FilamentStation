@@ -60,6 +60,10 @@ constexpr TaskSettings kSpoolmanTask{"SpoolmanTask", 10240, 1, kNoCoreAffinity};
 // sowie ArduinoJson-Parsing der Statusberichte benoetigen mehr Reserve als
 // das fruehere Taskgeruest; Groessenordnung analog zu kSpoolmanTask.
 constexpr TaskSettings kBambuTask{"BambuTask", 8192, 1, kNoCoreAffinity};
+// PowerTask haelt nur eine kleine Statemachine (Aktiv/Gedimmt/Sleep) und
+// sendet/empfaengt ausschliesslich kleine PowerCommand-Werte -- kein
+// AppEvent-grosser Stack-Local wie bei den anderen Tasks noetig.
+constexpr TaskSettings kPowerTask{"PowerTask", 4096, 1, kNoCoreAffinity};
 
 // Queue-Laengen basieren auf geringer Last der Task-Gerueste und werden nach
 // Messung der maximalen Auslastung in spaeteren Phasen angepasst.

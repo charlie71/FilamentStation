@@ -3213,6 +3213,10 @@ std::uint32_t runLvglTimers() {
   return lv_timer_handler();
 }
 
+std::uint32_t inputInactiveMs() {
+  return lv_display_get_inactive_time(lvglDisplay);
+}
+
 void processUiCommand(const rtos::UiCommand& command) {
   switch (command.type) {
     case rtos::UiCommandType::ShowProgress:

@@ -30,6 +30,7 @@ const char* componentText(LogComponent component) {
     case LogComponent::Scale: return "SCALE";
     case LogComponent::Nfc: return "NFC";
     case LogComponent::Bambu: return "BAMBU";
+    case LogComponent::Power: return "POWER";
   }
   return "UNKNOWN";
 }

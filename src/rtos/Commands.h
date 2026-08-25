@@ -202,12 +202,20 @@ enum class ScaleCommandType : std::uint8_t {
   ResetCalibration,
   RequestMeasurement,
   ApplyCalibration,
+  // Energiesparen (TASKS.md Phase 11.3): noch nicht verarbeitet, folgt mit
+  // dem HX711-Power-Down.
+  PowerDown,
+  PowerUp,
 };
 enum class NfcCommandType : std::uint8_t {
   StartReading,
   StopReading,
   WriteSpoolTag,
   EraseTag,
+  // Energiesparen (TASKS.md Phase 11.4): noch nicht verarbeitet, folgt mit
+  // dem PN532-Power-Down.
+  PowerDown,
+  PowerUp,
 };
 // CreateBackup wurde bewusst nicht aufgenommen: JsonStorage::atomicSave()
 // legt bei jedem Speichern bereits automatisch ein *.bak.json an (Phase 2.4,
@@ -224,6 +232,10 @@ enum class NetworkCommandType : std::uint8_t {
   StartPortal,
   StopPortal,
   ClearCredentials,
+  // Energiesparen (TASKS.md Phase 11.5): noch nicht verarbeitet, folgt mit
+  // der WiFi-Abschaltung.
+  PowerDown,
+  PowerUp,
 };
 enum class SpoolmanCommandType : std::uint8_t {
   ApplyConfiguration,
@@ -256,6 +268,18 @@ enum class BambuCommandType : std::uint8_t {
   AssignTray,
   Reset,
   Reconnect,
+};
+
+// Energiesparen (TASKS.md Phase 11.1): ReportInactivity liefert die von
+// UiTask ueber LVGL `lv_display_get_inactive_time()` gemessene Zeit seit der
+// letzten Eingabe (einzige Stelle, die LVGL beruehrt, siehe "Nur UiTask
+// greift auf LVGL zu"). PowerDownAcknowledged ist die Bestaetigung eines
+// Hardware-Tasks, dass er auf einen PowerDown-Befehl (Scale-/Nfc-/
+// NetworkCommandType) reagiert hat -- wird erst ab Phase 11.3-11.6 tatsaechlich
+// gesendet, wenn PowerTask vor dem Light-Sleep auf alle Bestaetigungen wartet.
+enum class PowerCommandType : std::uint8_t {
+  ReportInactivity,
+  PowerDownAcknowledged,
 };
 
 }  // namespace filament_station::rtos
