@@ -168,95 +168,105 @@ void checkForUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
 // aus einer vorherigen checkForUpdate()-Anfrage wird wiederverwendet --
 // vermeidet eine veraltete Download-URL, siehe UpdateCommandType).
 void downloadUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
-  char releaseUrl[128];
-  std::snprintf(releaseUrl, sizeof(releaseUrl),
-                "https://%s/repos/%s/%s/releases/latest",
-                config::kUpdateApiHost, config::kUpdateRepoOwner,
-                config::kUpdateRepoName);
+  // Jede TLS-Verbindung (Release-Metadaten, Pruefsumme, eigentlicher
+  // Download) steht in einem eigenen Block: WiFiClientSecure/HTTPClient
+  // muessen vor dem Aufbau der naechsten Verbindung vollstaendig zerstoert
+  // sein, sonst haelt der interne RAM zwei mbedTLS-Sitzungen gleichzeitig
+  // vor. Genau das fuehrte zu "esp-sha: Failed to allocate buf memory"
+  // beim Pruefsummen-Abruf, weil metaClient/metaHttp trotz metaHttp.end()
+  // bis zum Ende der Funktion am Leben geblieben waeren (Fund 2026-08-24).
+  char downloadUrl[256]{};
+  char checksumFetchUrl[256]{};
+  {
+    char releaseUrl[128];
+    std::snprintf(releaseUrl, sizeof(releaseUrl),
+                  "https://%s/repos/%s/%s/releases/latest",
+                  config::kUpdateApiHost, config::kUpdateRepoOwner,
+                  config::kUpdateRepoName);
 
-  WiFiClientSecure metaClient;
-  metaClient.setInsecure();
-  metaClient.setTimeout(config::kUpdateCheckTimeoutMs);
-  HTTPClient metaHttp;
-  metaHttp.setConnectTimeout(static_cast<int32_t>(config::kUpdateCheckTimeoutMs));
-  metaHttp.setTimeout(static_cast<uint16_t>(config::kUpdateCheckTimeoutMs));
-  if (!metaHttp.begin(metaClient, releaseUrl)) {
-    sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0,
-              "Verbindung zur Update-Quelle fehlgeschlagen");
-    return;
-  }
-  metaHttp.addHeader("User-Agent", config::kUpdateUserAgent);
-  const int metaStatus = metaHttp.GET();
-  if (metaStatus != HTTP_CODE_OK) {
-    char error[64];
-    std::snprintf(error, sizeof(error), "HTTP-Anfrage fehlgeschlagen (%d)",
-                  metaStatus);
+    WiFiClientSecure metaClient;
+    metaClient.setInsecure();
+    metaClient.setTimeout(config::kUpdateCheckTimeoutMs);
+    HTTPClient metaHttp;
+    metaHttp.setConnectTimeout(static_cast<int32_t>(config::kUpdateCheckTimeoutMs));
+    metaHttp.setTimeout(static_cast<uint16_t>(config::kUpdateCheckTimeoutMs));
+    if (!metaHttp.begin(metaClient, releaseUrl)) {
+      sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0,
+                "Verbindung zur Update-Quelle fehlgeschlagen");
+      return;
+    }
+    metaHttp.addHeader("User-Agent", config::kUpdateUserAgent);
+    const int metaStatus = metaHttp.GET();
+    if (metaStatus != HTTP_CODE_OK) {
+      char error[64];
+      std::snprintf(error, sizeof(error), "HTTP-Anfrage fehlgeschlagen (%d)",
+                    metaStatus);
+      metaHttp.end();
+      sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0, error);
+      return;
+    }
+
+    // Nur die Asset-Liste behalten (Name + Download-URL je Anhang) -- gleiche
+    // Filter-Idee wie in checkForUpdate().
+    JsonDocument filter;
+    filter["assets"][0]["name"] = true;
+    filter["assets"][0]["browser_download_url"] = true;
+    JsonDocument document;
+    const DeserializationError jsonError = deserializeJson(
+        document, metaHttp.getStream(), DeserializationOption::Filter(filter));
     metaHttp.end();
-    sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0, error);
-    return;
-  }
-
-  // Nur die Asset-Liste behalten (Name + Download-URL je Anhang) -- gleiche
-  // Filter-Idee wie in checkForUpdate().
-  JsonDocument filter;
-  filter["assets"][0]["name"] = true;
-  filter["assets"][0]["browser_download_url"] = true;
-  JsonDocument document;
-  const DeserializationError jsonError = deserializeJson(
-      document, metaHttp.getStream(), DeserializationOption::Filter(filter));
-  metaHttp.end();
-  if (jsonError) {
-    sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0,
-              "Ung\xC3\xBCltige Serverantwort");
-    return;
-  }
-
-  // Erstes Asset mit .bin-Endung (Nutzerentscheidung 2026-08-25).
-  const char* assetUrl = nullptr;
-  char binAssetName[128]{};
-  for (JsonObject asset : document["assets"].as<JsonArray>()) {
-    const char* name = asset["name"];
-    if (name == nullptr) continue;
-    const std::size_t length = std::strlen(name);
-    if (length >= 4 && std::strcmp(name + length - 4, ".bin") == 0) {
-      assetUrl = asset["browser_download_url"];
-      std::snprintf(binAssetName, sizeof(binAssetName), "%s", name);
-      break;
+    if (jsonError) {
+      sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0,
+                "Ung\xC3\xBCltige Serverantwort");
+      return;
     }
-  }
-  if (assetUrl == nullptr) {
-    sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0,
-              "Kein Firmware-Anhang gefunden");
-    return;
-  }
-  char downloadUrl[256];
-  std::snprintf(downloadUrl, sizeof(downloadUrl), "%s", assetUrl);
 
-  // Pruefsumme (TASKS.md Phase 13.4, Nutzerentscheidung 2026-08-25): zweites
-  // Asset "<binAssetName>.sha256", enthaelt nur den 64-stelligen Hex-Hash.
-  // Faehlt fehlend -> Update wird sicherheitshalber NICHT installiert
-  // (fail closed), nicht stillschweigend uebersprungen.
-  char checksumAssetName[144];
-  std::snprintf(checksumAssetName, sizeof(checksumAssetName), "%s.sha256",
-                binAssetName);
-  const char* checksumUrl = nullptr;
-  for (JsonObject asset : document["assets"].as<JsonArray>()) {
-    const char* name = asset["name"];
-    if (name != nullptr && std::strcmp(name, checksumAssetName) == 0) {
-      checksumUrl = asset["browser_download_url"];
-      break;
+    // Erstes Asset mit .bin-Endung (Nutzerentscheidung 2026-08-25).
+    const char* assetUrl = nullptr;
+    char binAssetName[128]{};
+    for (JsonObject asset : document["assets"].as<JsonArray>()) {
+      const char* name = asset["name"];
+      if (name == nullptr) continue;
+      const std::size_t length = std::strlen(name);
+      if (length >= 4 && std::strcmp(name + length - 4, ".bin") == 0) {
+        assetUrl = asset["browser_download_url"];
+        std::snprintf(binAssetName, sizeof(binAssetName), "%s", name);
+        break;
+      }
     }
-  }
-  if (checksumUrl == nullptr) {
-    FS_LOGW(services::LogComponent::Update,
-            "Checksum asset not found expected_name=\"%s\"",
-            checksumAssetName);
-    sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0,
-              "Keine Pr\xC3\xBC" "fsumme ver\xC3\xB6" "ffentlicht");
-    return;
-  }
-  char checksumFetchUrl[256];
-  std::snprintf(checksumFetchUrl, sizeof(checksumFetchUrl), "%s", checksumUrl);
+    if (assetUrl == nullptr) {
+      sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0,
+                "Kein Firmware-Anhang gefunden");
+      return;
+    }
+    std::snprintf(downloadUrl, sizeof(downloadUrl), "%s", assetUrl);
+
+    // Pruefsumme (TASKS.md Phase 13.4, Nutzerentscheidung 2026-08-25): zweites
+    // Asset "<binAssetName>.sha256", enthaelt nur den 64-stelligen Hex-Hash.
+    // Faehlt fehlend -> Update wird sicherheitshalber NICHT installiert
+    // (fail closed), nicht stillschweigend uebersprungen.
+    char checksumAssetName[144];
+    std::snprintf(checksumAssetName, sizeof(checksumAssetName), "%s.sha256",
+                  binAssetName);
+    const char* checksumUrl = nullptr;
+    for (JsonObject asset : document["assets"].as<JsonArray>()) {
+      const char* name = asset["name"];
+      if (name != nullptr && std::strcmp(name, checksumAssetName) == 0) {
+        checksumUrl = asset["browser_download_url"];
+        break;
+      }
+    }
+    if (checksumUrl == nullptr) {
+      FS_LOGW(services::LogComponent::Update,
+              "Checksum asset not found expected_name=\"%s\"",
+              checksumAssetName);
+      sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0,
+                "Keine Pr\xC3\xBC" "fsumme ver\xC3\xB6" "ffentlicht");
+      return;
+    }
+    std::snprintf(checksumFetchUrl, sizeof(checksumFetchUrl), "%s", checksumUrl);
+  }  // metaClient, metaHttp, filter, document werden hier zerstoert.
+
   char expectedHashHex[65];
   if (!fetchChecksum(checksumFetchUrl, expectedHashHex)) {
     sendEvent(ctx, rtos::AppEventType::UpdateDownloadResult, requestId, 0,

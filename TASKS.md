@@ -4000,6 +4000,33 @@ durch mich moeglich, und aktuell vermutlich noch kein GitHub-Release mit
 .bin-Anhang vorhanden) -- sollte vom Nutzer geprueft werden, sobald ein
 Release veroeffentlicht ist.
 
+**Nachtrag (2026-08-25, echter Testlauf durch den Nutzer, Fehler
+gefunden und behoben):** Der Nutzer ver\xC3\xB6ffentlichte ein echtes Release
+(v0.1.1), der Versions-Check funktionierte korrekt ("Update verfuegbar:
+v0.1.1"), aber der Installations-Bestaetigungsdialog zeigte nur einen
+"Schlie\xC3\x9F" "en"-Knopf statt "Best\xC3\xA4tigen" -- die Installation
+liess sich dadurch nie ausloesen. Ursache: `UiBridge.cpp::showOverlay()`
+entscheidet ueber eine fest codierte Liste von `UiOverlayKind`-Werten,
+fuer welche Dialoge der Best\xC3\xA4tigen-Knopf ueberhaupt sichtbar wird
+(`RestartConfirmation`, `WifiResetConfirmation`,
+`QuickWeightConfirmation`, ... ) -- das neue
+`UiOverlayKind::UpdateInstallConfirmation` aus dieser Phase fehlte in
+dieser Liste, existierte also nur als AppTask-seitige Logik, ohne dass die
+UI-Seite davon wusste. Diese versteckte Kopplung wurde beim urspruenglichen
+Schreiben dieser Phase nicht erkannt, da der generische Ueberlay-
+Mechanismus (Titel/Text/`ShowDialog`) an anderer Stelle tatsaechlich kind-
+unabhaengig funktioniert -- nur die Knopf-Sichtbarkeit selbst ist es
+nicht. Diagnostiziert per Live-Seriellmonitor (kein "UPDATE"-Log ueberhaupt
+sichtbar trotz best\xC3\xA4tigtem Dialog -- zeigte, dass `AppTask`s
+`UpdateInstallConfirmation`-Zweig nie erreicht wurde) und durch die exakte
+Nutzerbeschreibung ("hier gibt es nur einen schlie\xC3\x9Fen button")
+bestaetigt. Behoben durch Erg\xC3\xA4nzen von
+`UiOverlayKind::UpdateInstallConfirmation` in dieser Liste
+(`UiBridge.cpp`).
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht. Nutzer sollte den
+Installationsversuch jetzt erneut durchfuehren.
+
 ## 13.4 Verifikation
 
 * [x] SHA-256-Pruefsummenvergleich gegen veroeffentlichten Wert (kein
@@ -4044,6 +4071,34 @@ Noch nicht am Geraet mit einem echten veroeffentlichten Release verifiziert
 werden, sobald ein Release mit .bin- und .sha256-Anhang existiert
 (sowohl der Erfolgsfall als auch eine absichtlich falsche Pruefsumme, um
 den Ablehnungspfad zu bestaetigen).
+
+**Nachtrag (2026-08-25), Fehler bei echtem Hardwaretest gefunden und
+behoben:** Nutzer meldete beim echten Testlauf (Phase 13.8) einen Abbruch
+mit "Pr\xC3\xBC" "fsumme konnte nicht geladen werden", Log zeigte
+`E esp-sha: Failed to allocate buf memory` gefolgt von
+`Checksum request failed ... status=-1` -- ein interner
+ESP-IDF-Speicherfehler waehrend des TLS-Handshakes der
+Pruefsummen-Anfrage, nicht der eigentlichen `mbedtls_sha256_*`-Berechnung
+(die laeuft erst nach einem erfolgreichen Download). Ursache:
+`downloadUpdate()` haelt `metaClient`/`metaHttp` (Release-Metadaten-Abruf)
+als lokale Variablen ueber die gesamte Funktion am Leben -- obwohl
+`metaHttp.end()` aufgerufen wird, bleibt das `WiFiClientSecure`-Objekt
+selbst (und damit sein mbedTLS-Kontext/Puffer) bis zum Funktionsende
+bestehen. Als `fetchChecksum()` anschliessend eine EIGENE, ZWEITE
+TLS-Verbindung aufbauen wollte, waren beide Sitzungen gleichzeitig aktiv --
+zu viel interner RAM-Bedarf fuer die SHA-Pufferallokation des zweiten
+Handshakes.
+
+**Fix:** Release-Metadaten-Abruf (`metaClient`/`metaHttp`/`filter`/
+`document`) in einen eigenen Block `{ ... }` verschoben, sodass alle diese
+Objekte VOR dem Aufruf von `fetchChecksum()` zerstoert werden (nur noch
+`downloadUrl`/`checksumFetchUrl` als einfache `char[]`-Kopien ueberleben
+den Block). Damit ist zu jedem Zeitpunkt maximal eine TLS-Sitzung aktiv --
+Metadaten, dann Pruefsumme, dann der eigentliche Binaer-Download
+(`dataClient`/`dataHttp`, unveraendert als letzter Schritt).
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht (nach COM5-Reconnect,
+Upload beim zweiten Versuch erfolgreich).
 
 ## 13.5 Flash
 
@@ -4139,14 +4194,72 @@ zukuenftigen OTA-Zyklus end-to-end beobachten).
 
 ## 13.7 UI-Integration
 
-* [ ] SCR_SETTINGS_FIRMWARE: Fortschritt-/Bestaetigungs-/Fehler-Dialoge
-* [ ] "Neustart nach Update"-Bestaetigung nutzt die in Phase 12.1
+* [x] SCR_SETTINGS_FIRMWARE: Fortschritt-/Bestaetigungs-/Fehler-Dialoge
+* [x] "Neustart nach Update"-Bestaetigung nutzt die in Phase 12.1
   reparierte echte PrepareRestart-Funktion
+
+**Gepr\xC3\xBCft (2026-08-25):** Beide Punkte waren bereits vollstaendig
+durch die vorherigen Unterphasen erledigt -- keine neue Codeaenderung noetig,
+per gezielter Nachpruefung des bestehenden Codes bestaetigt statt einfach
+angenommen:
+- Fortschritt: `UiOverlayKind::UpdateDownload`-Overlay (Phase 13.3,
+  `AppTask.cpp:2631`).
+- Best\xC3\xA4tigung vor der Installation: `UiOverlayKind::
+  UpdateInstallConfirmation` (Phase 13.3, `AppTask.cpp:2617,2918`).
+- Fehler-Dialoge: `ShowDialog`/`Error` bei Download-/Verifikationsfehlern
+  (Phase 13.3/13.4, `AppTask.cpp:5643-5645`); Check-Fehler (Phase 13.2)
+  laufen bewusst weiterhin ueber die inline Status-/Verfuegbar-Labels auf
+  demselben Screen statt ueber ein Popup -- das entspricht dem bereits vor
+  dieser Session vorhandenen Bildschirm-Design (eigene
+  `firmware_settings_status`/`_available`-Labels) und wurde absichtlich so
+  beibehalten, nicht uebersehen.
+- Neustart-Best\xC3\xA4tigung: nutzt bereits seit Phase 13.5 exakt den
+  echten `RestartConfirmation`-Ablauf aus Phase 12.1 (`AppTask.cpp:5637-
+  5641`, inkl. dessen Confirm-Handler mit `kRestartDelayMs` + echtem
+  `ESP.restart()`), kein Mock-Pfad mehr vorhanden.
+
+Kein Build/Test/Flash noetig -- keine Codeaenderung in dieser Phase,
+Arbeitsverzeichnis war bereits sauber (`git status` leer).
 
 ## 13.8 Validierung
 
 * [ ] echter Update-Testlauf am Geraet (alter Stand -> neuer Stand)
 * [ ] Rollback-Test mit absichtlich fehlerhaftem Image
+
+Beides sind reine Nutzertests (kein Hardwarezugriff durch mich moeglich) --
+Checkboxen bleiben offen, bis der Nutzer beide Tests durchgefuehrt und
+bestaetigt hat. Testanleitung (2026-08-25):
+
+**1. Normaler Update-Testlauf:**
+1. `pio run -e wt32-s3-wrover-n16r2` -> `.pio/build/wt32-s3-wrover-n16r2/
+   firmware.bin`.
+2. Pr\xC3\xBCfsumme erzeugen (PowerShell, kein sha256sum noetig):
+   `(Get-FileHash firmware.bin -Algorithm SHA256).Hash.ToLower() |
+   Out-File -Encoding ascii firmware.bin.sha256`.
+3. GitHub-Release mit beiden Dateien unter einer hoeheren Versionsnummer
+   veroeffentlichen (z.B. `gh release create v0.1.1 firmware.bin
+   firmware.bin.sha256`) -- fuer den ersten Test reicht die unveraenderte
+   aktuelle Firmware unter neuer Versionsnummer, das prueft nur die
+   Mechanik. Dateinamen muessen exakt "firmware.bin"/"firmware.bin.sha256"
+   sein (Phase 13.3/13.4-Konvention: zweites Asset = erster Assetname +
+   ".sha256").
+4. Am Geraet: Einstellungen -> Firmware -> "Pr\xC3\xBCfen" -> sollte "Update
+   verf\xC3\xBCgbar: v0.1.1" zeigen -> nochmal "Pr\xC3\xBCfen" (jetzt
+   Installations-Bestaetigung) -> Best\xC3\xA4tigen -> Fortschrittsbalken
+   0-100% -> Erfolgsdialog -> Neustart bestaetigen.
+5. Nach dem Neustart: Einstellungen -> Ger\xC3\xA4t/Firmware sollte die neue
+   Versionsnummer zeigen (bestaetigt echten Wechsel auf die neue Partition).
+
+**2. Rollback-Test:** temporaer `abort();` als erste Zeile in `setup()`
+(`main.cpp`) einfuegen, als eigenen Release mit weiterer neuer
+Versionsnummer (z.B. `v0.1.2-broken-test`) veroeffentlichen, ueber den
+normalen Weg am Geraet installieren. Erwartung: Geraet stuerzt nach dem
+Neustart sofort ab, faellt automatisch auf die vorherige, funktionierende
+Partition zurueck (Bootloader-Mechanismus aus Phase 13.6). Anschliessend
+`abort();`-Zeile wieder entfernen (nie in main committen) und den
+Test-Release wieder entfernen. Falls der Rollback nicht greift: reine
+USB-Neuflashung (`pio run -t upload`) behebt das jederzeit, unabhaengig
+vom OTA-Mechanismus.
 
 ---
 

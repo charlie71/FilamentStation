@@ -3394,7 +3394,7 @@
                 {
                   "objID": "10000000-0179-4000-8000-000000000000",
                   "type": "LVGLLabelWidget",
-                  "left": 16,
+                  "left": 18,
                   "top": 1,
                   "width": 80,
                   "height": 20,
@@ -3484,7 +3484,7 @@
                 {
                   "objID": "10000000-0186-4000-8000-000000000000",
                   "type": "LVGLLabelWidget",
-                  "left": 0,
+                  "left": 15,
                   "top": 0,
                   "width": 56,
                   "height": 20,
@@ -4189,7 +4189,7 @@
             {
               "objID": "f82605a9-8407-4dd3-bda8-546091277164",
               "type": "LVGLImageWidget",
-              "left": 332,
+              "left": 347,
               "top": 104,
               "width": 31,
               "height": 25,

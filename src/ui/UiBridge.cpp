@@ -764,7 +764,12 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
         command.overlayKind == rtos::UiOverlayKind::WifiResetConfirmation ||
         command.overlayKind == rtos::UiOverlayKind::QuickWeightConfirmation ||
         command.overlayKind == rtos::UiOverlayKind::AdvancedWeightConfirmation ||
-        command.overlayKind == rtos::UiOverlayKind::TagDefinitionImport;
+        command.overlayKind == rtos::UiOverlayKind::TagDefinitionImport ||
+        // Firmware-Update (TASKS.md Phase 13.3/13.8-Fehlerkorrektur): fehlte
+        // hier, wodurch der Bestaetigen-Knopf fuer diesen Dialog unsichtbar
+        // blieb (nur "Schliessen"/Cancel war zu sehen) -- der eigentliche
+        // Installationsauftrag wurde dadurch nie ausgeloest.
+        command.overlayKind == rtos::UiOverlayKind::UpdateInstallConfirmation;
     if (confirmation) {
       lv_obj_remove_flag(overlayConfirm, LV_OBJ_FLAG_HIDDEN);
       lv_label_set_text(lv_obj_get_child(overlayCancel, 0), "Abbrechen");

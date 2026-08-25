@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/5",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/3",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/7",
     "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/4",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
@@ -131,7 +131,6 @@
                   "type": "tabset",
                   "id": "#e9618473-7f24-4b75-af7c-4b03ffdc25e5",
                   "weight": 2,
-                  "selected": 1,
                   "enableClose": false,
                   "children": [
                     {
@@ -198,17 +197,16 @@
               "type": "tabset",
               "id": "EDITORS",
               "weight": 49.8967350839487,
-              "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
                 {
                   "type": "tab",
                   "id": "#e368c9bf-289f-49c9-9192-04b65e68fad0",
-                  "name": "SCR_STAGING_ACTIONS",
+                  "name": "SCR_SETTINGS_HOME",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/5",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/3",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -235,7 +233,8 @@
                   },
                   "icon": "svg:page"
                 }
-              ]
+              ],
+              "active": true
             },
             {
               "type": "row",
@@ -255,8 +254,7 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ],
-                  "active": true
+                  ]
                 },
                 {
                   "type": "tabset",
@@ -1199,7 +1197,9 @@
           "9": {
             "0": {}
           },
-          "10": {},
+          "10": {
+            "$selected": true
+          },
           "14": {},
           "15": {},
           "16": {},
@@ -1208,7 +1208,7 @@
       },
       "transform": {
         "translate": {
-          "x": -126.81668158664968,
+          "x": -345.9056969342723,
           "y": -10.85788648163674
         },
         "scale": 1.25
@@ -1228,11 +1228,12 @@
             "1": {}
           },
           "1": {},
+          "2": {
+            "$selected": true
+          },
           "7": {},
           "8": {},
-          "14": {
-            "$selected": true
-          }
+          "14": {}
         }
       },
       "transform": {
@@ -1401,9 +1402,7 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {},
-        "1": {
-          "$selected": true
-        },
+        "1": {},
         "4": {},
         "6": {},
         "7": {},
@@ -1573,9 +1572,8 @@
             "0": {}
           },
           "3": {
-            "0": {
-              "$selected": true
-            }
+            "0": {},
+            "$selected": true
           },
           "5": {},
           "7": {},
@@ -1664,7 +1662,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1696,7 +1694,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1732,7 +1730,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1804,7 +1802,7 @@
           "x": -240,
           "y": -269.54450767381127
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1844,7 +1842,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1915,7 +1913,7 @@
           "x": -240,
           "y": -60.000003152642265
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1949,7 +1947,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -2019,7 +2017,7 @@
           "x": -240,
           "y": -259.99999684735775
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -2044,7 +2042,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 2.5
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -2076,9 +2074,9 @@
       "transform": {
         "translate": {
           "x": -240,
-          "y": -50.455492326188704
+          "y": -488.6335230214338
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -2110,9 +2108,9 @@
       "transform": {
         "translate": {
           "x": -240,
-          "y": -160
+          "y": -269.54450767381127
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -2155,7 +2153,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -2188,7 +2186,7 @@
           "x": -179.2998374135237,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -2225,7 +2223,7 @@
           "x": -240,
           "y": -269.54450767381127
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -2263,7 +2261,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
