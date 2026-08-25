@@ -192,6 +192,7 @@ void handleWifiSignal(rtos::RtosContext& ctx, WifiSignal signal,
 void sendPowerAck(rtos::RtosContext& ctx) {
   rtos::PowerCommand command{};
   command.type = rtos::PowerCommandType::PowerDownAcknowledged;
+  command.source = rtos::PowerPeripheral::Network;
   if (xQueueSend(ctx.powerCommandQueue, &command, pdMS_TO_TICKS(100)) !=
       pdPASS) {
     FS_LOGW(services::LogComponent::Net,

@@ -101,6 +101,7 @@ bool sendEvent(rtos::RtosContext& ctx, const rtos::AppEvent& event) {
 void sendPowerAck(rtos::RtosContext& ctx) {
   rtos::PowerCommand command{};
   command.type = rtos::PowerCommandType::PowerDownAcknowledged;
+  command.source = rtos::PowerPeripheral::Nfc;
   if (xQueueSend(ctx.powerCommandQueue, &command, pdMS_TO_TICKS(100)) !=
       pdPASS) {
     FS_LOGW(services::LogComponent::Nfc,

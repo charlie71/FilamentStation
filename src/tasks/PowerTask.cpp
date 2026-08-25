@@ -1,5 +1,10 @@
 #include "tasks/Tasks.h"
 
+#include <driver/gpio.h>
+#include <esp_sleep.h>
+
+#include <cstdio>
+
 #include "config/BoardConfig.h"
 #include "config/PowerConfig.h"
 #include "rtos/Messages.h"
@@ -10,9 +15,7 @@ namespace filament_station::tasks {
 namespace {
 
 // Statemachine aus dem Energiesparkonzept (TASKS.md Phase 11): AKTIV ->
-// GEDIMMT -> LIGHT-SLEEP, jeweils nach laenger werdender Inaktivitaet. Die
-// Peripherie-Abschaltung und der echte Light-Sleep folgen in den Phasen
-// 11.3-11.6; hier steht der Zustandsuebergang plus die Backlight-Stufe.
+// GEDIMMT -> LIGHT-SLEEP, jeweils nach laenger werdender Inaktivitaet.
 enum class PowerState : std::uint8_t { Active, Dimmed, Sleep };
 
 const char* powerStateName(PowerState state) {
@@ -49,6 +52,17 @@ void sendBrightness(rtos::RtosContext& ctx, std::uint8_t brightness) {
   }
 }
 
+void sendWakeToast(rtos::RtosContext& ctx) {
+  rtos::UiCommand command{};
+  command.type = rtos::UiCommandType::ShowToast;
+  std::snprintf(command.text, sizeof(command.text), "%s",
+                "Aufgewacht, verbinde...");
+  if (xQueueSend(ctx.uiCommandQueue, &command, pdMS_TO_TICKS(100)) != pdPASS) {
+    FS_LOGW(services::LogComponent::Power,
+            "Event enqueue failed queue=ui_command op=wake_toast");
+  }
+}
+
 void sendScalePower(rtos::RtosContext& ctx, rtos::ScaleCommandType type) {
   rtos::ScaleCommand command{};
   command.type = type;
@@ -79,6 +93,76 @@ void sendNetworkPower(rtos::RtosContext& ctx, rtos::NetworkCommandType type) {
   }
 }
 
+// Wartet, bis Scale-/Nfc-/NetworkTask ihren PowerDown tatsaechlich
+// abgeschlossen haben (PowerDownAcknowledged je Task), bevor der echte
+// Light-Sleep beginnt -- ein waehrend einer laufenden PN532-UART-Transaktion
+// oder eines HX711-SCK-Toggles angehaltener Prozessortakt koennte sonst eine
+// unvollstaendige Transaktion hinterlassen. Bricht nach
+// kPowerSleepAckTimeoutMs ohnehin ab (ein haengender/verlorener Ack darf den
+// Sleep nicht fuer immer blockieren); ReportInactivity-Meldungen, die genau
+// in dieser kurzen Phase eintreffen, werden verworfen -- UiTask sendet
+// ohnehin jede Sekunde erneut.
+void waitForSleepQuiescence(rtos::RtosContext& ctx) {
+  constexpr std::uint8_t kScaleBit =
+      1U << static_cast<std::uint8_t>(rtos::PowerPeripheral::Scale);
+  constexpr std::uint8_t kNfcBit =
+      1U << static_cast<std::uint8_t>(rtos::PowerPeripheral::Nfc);
+  constexpr std::uint8_t kNetworkBit =
+      1U << static_cast<std::uint8_t>(rtos::PowerPeripheral::Network);
+  constexpr std::uint8_t kAllBits = kScaleBit | kNfcBit | kNetworkBit;
+
+  std::uint8_t received = 0;
+  const TickType_t deadline =
+      xTaskGetTickCount() + pdMS_TO_TICKS(config::kPowerSleepAckTimeoutMs);
+  rtos::PowerCommand ack{};
+  while (received != kAllBits) {
+    const std::int32_t remaining =
+        static_cast<std::int32_t>(deadline - xTaskGetTickCount());
+    if (remaining <= 0) {
+      FS_LOGW(services::LogComponent::Power,
+              "Sleep quiescence timeout mask=0x%02X, sleeping anyway",
+              static_cast<unsigned>(received));
+      return;
+    }
+    if (xQueueReceive(ctx.powerCommandQueue, &ack,
+                       static_cast<TickType_t>(remaining)) != pdTRUE) {
+      continue;
+    }
+    if (ack.type == rtos::PowerCommandType::PowerDownAcknowledged) {
+      received = static_cast<std::uint8_t>(
+          received | (1U << static_cast<std::uint8_t>(ack.source)));
+    }
+  }
+}
+
+// Blockiert bis zu einem echten Touch-Wake (GPIO-Ursache). Ein periodischer
+// Timer-Wake dient als Sicherheitsnetz: das FT6336-INT-Verhalten (Pegel vs.
+// Puls, Polaritaet) ist am realen Board noch nicht verifiziert -- ohne dieses
+// Netz koennte ein falsch angenommener Wake-Pegel das Geraet dauerhaft im
+// Sleep belassen. GPIO_INTR_LOW_LEVEL passt zur bestehenden LovyanGFX-
+// Konfiguration des Pins als input_pullup (idle HIGH, siehe
+// Touch_FT5x06::wakeup()) -- ein aktives Signal zieht ihn LOW.
+void sleepUntilTouchWake(rtos::RtosContext& ctx) {
+  const gpio_num_t touchPin =
+      static_cast<gpio_num_t>(config::kTouchInterruptPin);
+  gpio_wakeup_enable(touchPin, GPIO_INTR_LOW_LEVEL);
+  esp_sleep_enable_gpio_wakeup();
+
+  for (;;) {
+    esp_sleep_enable_timer_wakeup(
+        static_cast<std::uint64_t>(config::kPowerSleepSafetyNetTimerMs) *
+        1000ULL);
+    esp_light_sleep_start();
+    const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+    if (cause == ESP_SLEEP_WAKEUP_GPIO) {
+      return;
+    }
+    FS_LOGD(services::LogComponent::Power,
+            "Sleep safety-net wake, no touch detected, resuming sleep cause=%d",
+            static_cast<int>(cause));
+  }
+}
+
 }  // namespace
 
 void powerTask(void* parameter) {
@@ -97,34 +181,44 @@ void powerTask(void* parameter) {
           inactiveMs = command.inactiveMs;
           break;
         case rtos::PowerCommandType::PowerDownAcknowledged:
-          // Das eigentliche Abwarten aller Bestaetigungen vor dem Light-
-          // Sleep folgt erst mit Phase 11.6; hier nur sichtbar im Log.
-          FS_LOGD(services::LogComponent::Power, "Power down acknowledged");
+          FS_LOGD(services::LogComponent::Power,
+                  "Power down acknowledged source=%u",
+                  static_cast<unsigned>(command.source));
           break;
       }
     }
 
     const PowerState nextState = stateForInactivity(inactiveMs);
-    if (nextState != state) {
-      FS_LOGI(services::LogComponent::Power,
-              "Power state changed from=%s to=%s inactive_ms=%lu",
-              powerStateName(state), powerStateName(nextState),
-              static_cast<unsigned long>(inactiveMs));
-      const bool enteringSleep = nextState == PowerState::Sleep;
-      const bool leavingSleep =
-          state == PowerState::Sleep && nextState != PowerState::Sleep;
-      state = nextState;
-      sendBrightness(ctx, brightnessForState(state));
-      if (enteringSleep) {
-        sendScalePower(ctx, rtos::ScaleCommandType::PowerDown);
-        sendNfcPower(ctx, rtos::NfcCommandType::PowerDown);
-        sendNetworkPower(ctx, rtos::NetworkCommandType::PowerDown);
-      } else if (leavingSleep) {
-        sendScalePower(ctx, rtos::ScaleCommandType::PowerUp);
-        sendNfcPower(ctx, rtos::NfcCommandType::PowerUp);
-        sendNetworkPower(ctx, rtos::NetworkCommandType::PowerUp);
-      }
-    }
+    if (nextState == state) continue;
+
+    FS_LOGI(services::LogComponent::Power,
+            "Power state changed from=%s to=%s inactive_ms=%lu",
+            powerStateName(state), powerStateName(nextState),
+            static_cast<unsigned long>(inactiveMs));
+    state = nextState;
+    sendBrightness(ctx, brightnessForState(state));
+    if (state != PowerState::Sleep) continue;
+
+    // LIGHT-SLEEP: Peripherie abschalten, auf Bestaetigung warten, dann
+    // tatsaechlich schlafen -- blockiert diesen (und wegen des gemeinsamen
+    // Prozessortakts effektiv jeden) Task, bis ein echter Touch-Wake
+    // eintrifft. Der Ruecksprung aus sleepUntilTouchWake() ist deshalb
+    // gleichbedeutend mit "Nutzer hat das Display beruehrt".
+    sendScalePower(ctx, rtos::ScaleCommandType::PowerDown);
+    sendNfcPower(ctx, rtos::NfcCommandType::PowerDown);
+    sendNetworkPower(ctx, rtos::NetworkCommandType::PowerDown);
+    waitForSleepQuiescence(ctx);
+
+    sleepUntilTouchWake(ctx);
+
+    FS_LOGI(services::LogComponent::Power, "Woken by touch, resuming");
+    inactiveMs = 0;
+    state = PowerState::Active;
+    sendBrightness(ctx, brightnessForState(state));
+    sendScalePower(ctx, rtos::ScaleCommandType::PowerUp);
+    sendNfcPower(ctx, rtos::NfcCommandType::PowerUp);
+    sendNetworkPower(ctx, rtos::NetworkCommandType::PowerUp);
+    sendWakeToast(ctx);
   }
 }
 

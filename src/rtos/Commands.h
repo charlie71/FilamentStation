@@ -286,4 +286,13 @@ enum class PowerCommandType : std::uint8_t {
   PowerDownAcknowledged,
 };
 
+// Energiesparen (TASKS.md Phase 11.6): identifiziert, welcher Hardware-Task
+// einen PowerDownAcknowledged geschickt hat, damit PowerTask vor dem echten
+// Light-Sleep auf alle drei wartet statt blind eine feste Zeit abzuwarten.
+enum class PowerPeripheral : std::uint8_t {
+  Scale,
+  Nfc,
+  Network,
+};
+
 }  // namespace filament_station::rtos

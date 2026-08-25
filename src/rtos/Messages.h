@@ -112,6 +112,8 @@ struct NfcCommand { NfcCommandType type; std::uint32_t requestId; std::uint32_t 
 struct PowerCommand {
   PowerCommandType type;
   std::uint32_t inactiveMs;
+  // Nur fuer type == PowerDownAcknowledged relevant.
+  PowerPeripheral source = PowerPeripheral::Scale;
 };
 
 enum class StorageDocumentType : std::uint8_t {

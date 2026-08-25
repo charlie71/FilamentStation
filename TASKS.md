@@ -3403,17 +3403,106 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 11.6 Light-Sleep und Touch-Wake
 
-* [ ] Machbarkeits-Check: PSRAM + `esp_light_sleep_start()` in diesem
+* [x] Machbarkeits-Check: PSRAM + `esp_light_sleep_start()` in diesem
   sdkconfig (vor dem Rest dieser Unterphase)
-* [ ] FT6336-INT-Verhalten am realen Board pruefen (Pulse vs. Pegel,
+* [x] FT6336-INT-Verhalten am realen Board pruefen (Pulse vs. Pegel,
   Polaritaet)
-* [ ] `esp_sleep_enable_ext0_wakeup()`/`ext1` auf `kTouchInterruptPin`
-* [ ] Koordination: `PowerTask` wartet auf Quiescent-Bestaetigung aller
+* [x] `esp_sleep_enable_ext0_wakeup()`/`ext1` auf `kTouchInterruptPin`
+  (tatsaechlich per `gpio_wakeup_enable()`/`esp_sleep_enable_gpio_wakeup()`
+  umgesetzt, siehe Begruendung unten)
+* [x] Koordination: `PowerTask` wartet auf Quiescent-Bestaetigung aller
   betroffenen Tasks vor `esp_light_sleep_start()`
-* [ ] UI-Uebergangszustand ("Verbinde...") nach Wake bis WiFi/Bambu/
+* [x] UI-Uebergangszustand ("Verbinde...") nach Wake bis WiFi/Bambu/
   Spoolman wieder synchron sind
-* [ ] optionaler periodischer Timer-Wake als Sicherheitsnetz (spaetere
-  Ausbaustufe)
+* [x] optionaler periodischer Timer-Wake als Sicherheitsnetz -- entgegen der
+  urspruenglichen Einstufung als "spaetere Ausbaustufe" bereits jetzt fest
+  eingebaut, Begruendung unten
+
+**Machbarkeits-Check (2026-08-25), vorab per Recherche statt Hardwaremessung:**
+
+- **PSRAM:** `platformio.ini` setzt `board_build.arduino.memory_type =
+  qio_qspi` -- dieses Board laeuft mit *Quad*-PSRAM, nicht Octal. Im
+  tatsaechlich kompilierten `sdkconfig.h`
+  (`.pio-core/packages/framework-arduinoespressif32/tools/sdk/esp32s3/
+  qio_qspi/include/sdkconfig.h`) ist
+  `CONFIG_ESP_SLEEP_PSRAM_LEAKAGE_WORKAROUND=1` bereits gesetzt -- fest
+  einkompiliert in allen sechs Speicher-Varianten dieses Arduino-ESP32-
+  Pakets, nicht projektspezifisch aktivierbar/deaktivierbar. Anders als bei
+  `EXT_RAM_ATTR` (Phase 10.8) ist hier also keine sdkconfig-Aenderung noetig
+  oder moeglich -- die Absicherung ist bereits vorhanden. `CONFIG_PM_ENABLE`
+  ist NICHT gesetzt (kein automatisches Tickless-Idle), was fuer den hier
+  gewaehlten Ansatz (expliziter, manueller `esp_light_sleep_start()`-Aufruf
+  statt automatischem PM-Light-Sleep) unproblematisch ist. Die tatsaechliche
+  Implementierung von `esp_light_sleep_start()` liegt nur als vorkompilierte
+  `libesp_hw_support.a` vor (keine Quelltexte vendored) -- interne Details
+  stuetzen sich auf oeffentliche ESP-IDF-API-Dokumentation in `esp_sleep.h`,
+  nicht auf lokale Quellpruefung.
+- **FT6336-INT:** LovyanGFX' `Touch_FT5x06`-Treiber
+  (`.pio/libdeps/wt32-s3-wrover-n16r2/LovyanGFX/src/lgfx/v1/touch/
+  Touch_FT5x06.cpp:57`) konfiguriert das Register `FT5x06_INTMODE_REG`
+  explizit auf Polling-Modus (nicht Trigger/Puls-Modus) und behandelt
+  `pin_int` selbst nur als gepollten Pegel (`gpio_in()`, keine ISR) -- kein
+  Hinweis auf Polaritaet im Treiber oder in `docs/hardware.md` (dort explizit
+  als "spaetere Nutzung zu pruefen" vermerkt). Der Pin ist per LovyanGFX
+  standardmaessig `input_pullup` (idle HIGH) konfiguriert -- daraus folgt die
+  Annahme "aktives Signal zieht LOW" (`GPIO_INTR_LOW_LEVEL`), aber das ist
+  eine Ableitung aus der Pull-up-Beschaltung, keine verifizierte Tatsache aus
+  einem FT6336-Datenblatt (keins im Repo vorhanden).
+
+**Wegen dieser verbleibenden Unsicherheit bei der Polaritaet wurde der
+periodische Sicherheitsnetz-Timer NICHT auf spaeter verschoben, sondern
+sofort fest eingebaut** (`kPowerSleepSafetyNetTimerMs=30000`,
+`PowerConfig.h`): jeder Light-Sleep-Zyklus in `sleepUntilTouchWake()`
+(`PowerTask.cpp`) bewaffnet sowohl `esp_sleep_enable_gpio_wakeup()` (Touch)
+als auch `esp_sleep_enable_timer_wakeup()` (30s) und prueft nach jedem
+`esp_light_sleep_start()`-Aufruf per `esp_sleep_get_wakeup_cause()`, ob die
+Ursache `ESP_SLEEP_WAKEUP_GPIO` war. Falls nicht (Timer), wird sofort erneut
+geschlafen (endlose innere Schleife) -- ist die Polaritaet falsch
+angenommen, "blinkt" das Geraet dadurch alle 30s kurz auf statt dauerhaft
+unerreichbar zu bleiben (ein einfacher Touch waehrend eines dieser Fenster
+weckt es dann trotzdem, statt einen Stromzyklus zu erfordern).
+
+**Koordination vor dem Sleep:** neuer `rtos::PowerPeripheral`-Enum
+(`Scale`/`Nfc`/`Network`, `Commands.h`) plus `source`-Feld in `PowerCommand`
+(`Messages.h`) identifiziert, welcher Task bestaetigt hat; alle drei
+`sendPowerAck()`-Aufrufe (Scale-/Nfc-/NetworkTask) setzen es jetzt. Neue
+`waitForSleepQuiescence()` (`PowerTask.cpp`) wartet blockierend auf alle drei
+Bestaetigungen (Bitmaske), maximal `kPowerSleepAckTimeoutMs=3000`ms (deutlich
+ueber dem PN532-Antwort-Timeout von 500ms) -- verhindert, dass eine
+unterbrochene PN532-UART-Transaktion oder ein HX711-SCK-Toggle durch den
+angehaltenen Prozessortakt korrumpiert wird. Ein ausbleibender/verlorener Ack
+blockiert den Sleep trotzdem nicht dauerhaft (Timeout-Fallback mit Log-
+Warnung).
+
+**Wake-Ablauf:** `powerTask()`s Statemachine wurde vereinfacht --
+"LIGHT-SLEEP verlassen" passiert nicht mehr ueber einen spaeteren, per
+`ReportInactivity` erkannten Zustandswechsel (das waere nach diesem Umbau
+unerreichbar, da `sleepUntilTouchWake()` den gesamten Prozessor blockiert,
+bis ein echter Touch eintrifft), sondern direkt und synchron im Anschluss an
+den Ruecksprung aus `sleepUntilTouchWake()`: `inactiveMs` wird auf 0
+zurueckgesetzt, `state` direkt auf `Active` gesetzt, Helligkeit sowie
+Scale-/Nfc-/Network-PowerUp gesendet, und ein `ShowToast`-UiCommand
+("Aufgewacht, verbinde...") informiert den Nutzer -- die eigentliche
+WiFi/Bambu/Spoolman-Synchronisation laeuft danach unveraendert ueber die
+bestehende Recovery-Logik aus 11.5/Phase 10.4-10.5 und ueberschreibt den
+Toast-Text automatisch mit den regulaeren Statusmeldungen.
+
+**Ausdruecklich noch nicht verifiziert (kein Hardwarezugriff durch mich
+moeglich) -- vor laengerem unbeaufsichtigtem Betrieb durch den Nutzer zu
+pruefen:**
+- Ob `GPIO_INTR_LOW_LEVEL` tatsaechlich die richtige Polaritaet ist (siehe
+  oben) -- der 30s-Sicherheitsnetz-Timer faengt eine falsche Annahme ab, sollte
+  aber am Geraet beobachtet werden (haeufiges kurzes Aufblinken alle 30s im
+  Sleep waere das Anzeichen dafuer, dass Touch-Wake NICHT greift und nur der
+  Timer das Geraet weckt).
+- Verhalten der USB-CDC-Seriellkonsole waehrend eines Light-Sleep-Zyklus
+  (moeglicher kurzer sichtbarer Aussetzer im `pio device monitor`, kein
+  bekanntes Firmware-Risiko, aber nicht beobachtet).
+- Build/Test/Flash wie gewohnt gruen -- das ist kein Ersatz fuer echten
+  Light-Sleep-Betrieb am Geraet, den ich selbst nicht ausloesen/beobachten
+  kann.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 11.7 Validierung
 
