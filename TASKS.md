@@ -3798,14 +3798,15 @@ keine kryptographische Signaturpruefung einplanen, nur
 Transportsicherheit (HTTPS) plus optionale SHA-256-Integritaetspruefung
 gegen eine veroeffentlichte Pruefsumme.
 
-**Noch zu klaeren (Nutzer):** Update-Quelle (z.B. GitHub-Releases-API
-eines bestimmten Repos, oder ein selbst gehosteter Endpunkt) -- ohne
-diese Angabe kann 13.2 nicht konkret umgesetzt werden. Keine URL wurde
-hier geraten/angenommen.
+**Update-Quelle geklaert (Nutzer, 2026-08-25):** GitHub-Releases-API.
+Repo-Pfad direkt aus dem konfigurierten git-Remote dieses Projekts
+uebernommen (`git remote -v` -> `origin` ->
+`git@github.com:charlie71/FilamentStation.git`) und vom Nutzer explizit
+bestaetigt, nicht geraten.
 
 ## 13.1 Grundlagen
 
-* [ ] Firmware-Versionierung einfuehren -- Korrektur (2026-08-25, waehrend
+* [x] Firmware-Versionierung einfuehren -- Korrektur (2026-08-25, waehrend
   Phase 12.1 entdeckt): `config::kApplicationVersion = "0.1.0-dev"`
   (`AppConfig.h:8`) existiert bereits (bisher nur fuer den Boot-Log in
   `main.cpp:42` genutzt); die urspruengliche Suche fuer diese Phase hatte
@@ -3813,10 +3814,48 @@ hier geraten/angenommen.
   camelCase-Namen mit anderem Praefix nicht gefunden. Diese Konstante
   direkt wiederverwenden statt einer neuen -- ggf. auf ein richtiges
   Semver-Schema pruefen/anpassen
-* [ ] Anzeige der aktuellen Version in SCR_SETTINGS_DEVICE/
+* [x] Anzeige der aktuellen Version in SCR_SETTINGS_DEVICE/
   SCR_SETTINGS_FIRMWARE
-* [ ] Update-Quelle mit Nutzer festlegen (siehe oben)
-* [ ] Versions-Vergleichslogik (Semver-Parsing)
+* [x] Update-Quelle mit Nutzer festlegen (siehe oben)
+* [x] Versions-Vergleichslogik (Semver-Parsing)
+
+**Umgesetzt (2026-08-25):**
+- Neue `config::kUpdateRepoOwner="charlie71"`/`kUpdateRepoName=
+  "FilamentStation"`/`kUpdateApiHost="api.github.com"` in neuer
+  `config/UpdateConfig.h`.
+- `objects.device_settings_version` (SCR_SETTINGS_DEVICE) und
+  `objects.firmware_settings_current` (SCR_SETTINGS_FIRMWARE) werden jetzt
+  beim Laden des jeweiligen Screens programmatisch aus
+  `config::kApplicationVersion` gesetzt (`UiBridge.cpp`, `ShowScreen`-Faelle)
+  statt sich auf EEZ Studios statischen Text zu verlassen (der zufaellig
+  schon "0.1.0-dev" zeigte, aber nach einem echten Update drift-anfaellig
+  waere). `firmware_settings_available`/`firmware_settings_status` bleiben
+  unveraendert -- das ist Phase 13.2.
+- Neue `services/SemVer.h`/`.cpp`: `parseSemVer()` (akzeptiert "vX.Y.Z",
+  "X.Y.Z", "X.Y.Z-suffix"/"X.Y.Z+meta") und `compareSemVer()`
+  (Kernversion numerisch, bei Gleichstand gilt "hat Suffix" als aelter,
+  passend zu Semver 1.0.0-alpha < 1.0.0). Volle Semver-Praerelease-
+  Identifier-Vergleiche bewusst nicht implementiert -- fuer
+  Firmware-Update-Zwecke reicht die vereinfachte Regel.
+- Neuer natives Testziel `test_semver` (6 Faelle: Parsing, Fehlerfaelle,
+  Kernversionsvergleich, Suffix-Regel), in `native-spoolman-tests`
+  (`platformio.ini`) aufgenommen -- 60 statt 54 native Tests insgesamt.
+
+**Stolperstein dabei gefunden und behoben:** `SemVer.h`/`.cpp` zunaechst
+mit der kompakten C++17-Syntax `namespace filament_station::services { }`
+geschrieben (wie es die `config/*.h`-Header in diesem Projekt bereits
+durchgehend tun) -- das native Testtoolchain (`toolchain-gccmingw32`, GCC
+5.1.0) unterstuetzt dieses gemeinsame C++17-Feature trotz `-std=gnu++17`
+nicht ("expected '{' before '::' token"), da diese GCC-Version aelter ist
+als die eigentliche Sprachfeature-Implementierung (kam erst in GCC 6).
+Alle bestehenden `services/*.h`-Dateien in diesem Projekt nutzen deshalb
+konsequent die verschachtelte Alt-Syntax (`namespace filament_station {
+namespace services { ... } }`) -- an diese Konvention angepasst. Betrifft
+nur `services/`-Header, die in native Tests landen; `config/*.h` bleibt bei
+der kompakten Syntax, da diese Header nie vom nativen Toolchain uebersetzt
+werden.
+
+Build (0 Warnungen), 60 native Tests gruen (davon 6 neu), geflasht.
 
 ## 13.2 Versions-Check
 

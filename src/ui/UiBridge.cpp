@@ -3037,9 +3037,17 @@ void showScreen(rtos::UiScreenId screenId) {
       updateWeightDisplays();
       loadScreen(SCREEN_ID_SCR_SETTINGS_SCALE);
       break;
-    case rtos::UiScreenId::SettingsDevice:
+    case rtos::UiScreenId::SettingsDevice: {
+      // Programmatisch statt nur EEZ-Studio-Statisch (TASKS.md Phase 13.1)
+      // -- vermeidet Drift, sobald ein echtes Firmware-Update
+      // config::kApplicationVersion aendert.
+      char versionText[48];
+      std::snprintf(versionText, sizeof(versionText), "Version: %s",
+                    config::kApplicationVersion);
+      lv_label_set_text(objects.device_settings_version, versionText);
       loadScreen(SCREEN_ID_SCR_SETTINGS_DEVICE);
       break;
+    }
     case rtos::UiScreenId::SettingsDiagnostics: {
       char text[72];
       std::snprintf(text, sizeof(text), "Heap: %lu B frei (min. %lu B)",
@@ -3061,9 +3069,14 @@ void showScreen(rtos::UiScreenId screenId) {
       loadScreen(SCREEN_ID_SCR_SETTINGS_DIAGNOSTICS);
       break;
     }
-    case rtos::UiScreenId::SettingsFirmware:
+    case rtos::UiScreenId::SettingsFirmware: {
+      char installedText[48];
+      std::snprintf(installedText, sizeof(installedText), "Installiert: %s",
+                    config::kApplicationVersion);
+      lv_label_set_text(objects.firmware_settings_current, installedText);
       loadScreen(SCREEN_ID_SCR_SETTINGS_FIRMWARE);
       break;
+    }
     case rtos::UiScreenId::TagActionSelect:
       loadScreen(SCREEN_ID_SCR_TAG_ACTION_SELECT);
       break;
