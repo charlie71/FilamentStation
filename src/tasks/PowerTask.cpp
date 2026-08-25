@@ -49,6 +49,16 @@ void sendBrightness(rtos::RtosContext& ctx, std::uint8_t brightness) {
   }
 }
 
+void sendScalePower(rtos::RtosContext& ctx, rtos::ScaleCommandType type) {
+  rtos::ScaleCommand command{};
+  command.type = type;
+  if (xQueueSend(ctx.scaleCommandQueue, &command, pdMS_TO_TICKS(100)) !=
+      pdPASS) {
+    FS_LOGW(services::LogComponent::Power,
+            "Event enqueue failed queue=scale_command op=power");
+  }
+}
+
 }  // namespace
 
 void powerTask(void* parameter) {
@@ -67,8 +77,9 @@ void powerTask(void* parameter) {
           inactiveMs = command.inactiveMs;
           break;
         case rtos::PowerCommandType::PowerDownAcknowledged:
-          // Erst ab Phase 11.3-11.6 relevant, sobald PowerTask vor dem
-          // Light-Sleep tatsaechlich auf Bestaetigungen wartet.
+          // Das eigentliche Abwarten aller Bestaetigungen vor dem Light-
+          // Sleep folgt erst mit Phase 11.6; hier nur sichtbar im Log.
+          FS_LOGD(services::LogComponent::Power, "Power down acknowledged");
           break;
       }
     }
@@ -79,8 +90,16 @@ void powerTask(void* parameter) {
               "Power state changed from=%s to=%s inactive_ms=%lu",
               powerStateName(state), powerStateName(nextState),
               static_cast<unsigned long>(inactiveMs));
+      const bool enteringSleep = nextState == PowerState::Sleep;
+      const bool leavingSleep =
+          state == PowerState::Sleep && nextState != PowerState::Sleep;
       state = nextState;
       sendBrightness(ctx, brightnessForState(state));
+      if (enteringSleep) {
+        sendScalePower(ctx, rtos::ScaleCommandType::PowerDown);
+      } else if (leavingSleep) {
+        sendScalePower(ctx, rtos::ScaleCommandType::PowerUp);
+      }
     }
   }
 }

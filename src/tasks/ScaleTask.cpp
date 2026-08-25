@@ -107,6 +107,16 @@ bool readHx711Sample(std::int32_t& rawCounts) {
   return true;
 }
 
+void sendPowerAck(rtos::RtosContext& ctx) {
+  rtos::PowerCommand command{};
+  command.type = rtos::PowerCommandType::PowerDownAcknowledged;
+  if (xQueueSend(ctx.powerCommandQueue, &command, pdMS_TO_TICKS(100)) !=
+      pdPASS) {
+    FS_LOGW(services::LogComponent::Scale,
+            "Event enqueue failed queue=power_command op=power_down_ack");
+  }
+}
+
 bool sendScaleEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
                     std::int32_t value, const char* text,
                     std::uint32_t requestId = 0) {
@@ -250,17 +260,48 @@ void scaleTask(void* parameter) {
   bool connectionErrorReported = false;
   bool measurementOverflowReported = false;
   bool hasMeasurement = false;
+  bool poweredDown = false;
   std::int32_t latestCounts = 0;
   std::uint32_t lastMeasurementMs = millis();
+  constexpr gpio_num_t clockPin =
+      static_cast<gpio_num_t>(config::kHx711ClockPin);
   for (;;) {
     ulTaskNotifyTake(
         pdTRUE, pdMS_TO_TICKS(config::kHx711ReadyTimeoutMs));
 
     rtos::ScaleCommand command{};
     while (xQueueReceive(ctx.scaleCommandQueue, &command, 0) == pdTRUE) {
+      // Energiesparen (TASKS.md Phase 11.3): SCK dauerhaft HIGH haelt das
+      // HX711 laut Datenblatt im Power-Down (>60us reichen, hier bleibt es
+      // fuer die gesamte Sleep-Dauer stehen). Waehrend dessen werden keine
+      // Samples gelesen und der Verbindungs-Timeout unten uebersprungen,
+      // damit das keinen "HX711 not responding"-Fehler ausloest.
+      if (command.type == rtos::ScaleCommandType::PowerDown) {
+        if (!poweredDown) {
+          poweredDown = true;
+          gpio_set_level(clockPin, 1);
+          connected = false;
+          hasMeasurement = false;
+          connectionErrorReported = false;
+          FS_LOGI(services::LogComponent::Scale, "HX711 powered down");
+          sendPowerAck(ctx);
+        }
+        continue;
+      }
+      if (command.type == rtos::ScaleCommandType::PowerUp) {
+        if (poweredDown) {
+          poweredDown = false;
+          gpio_set_level(clockPin, 0);
+          lastMeasurementMs = millis();
+          FS_LOGI(services::LogComponent::Scale,
+                  "HX711 powered up, waiting for first sample");
+        }
+        continue;
+      }
       processScaleCommand(ctx, command, hasMeasurement, latestCounts,
                           calibration, filter);
     }
+    if (poweredDown) continue;
 
     std::int32_t rawCounts = 0;
     if (readHx711Sample(rawCounts)) {

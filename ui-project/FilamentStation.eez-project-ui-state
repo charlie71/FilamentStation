@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/24",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/5",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/7",
     "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/4",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
@@ -205,10 +205,10 @@
                 {
                   "type": "tab",
                   "id": "#e368c9bf-289f-49c9-9192-04b65e68fad0",
-                  "name": "SCR_BAMBU_SPOOL_TYPE",
+                  "name": "SCR_STAGING_ACTIONS",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/24",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/5",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -235,8 +235,7 @@
                   },
                   "icon": "svg:page"
                 }
-              ],
-              "active": true
+              ]
             },
             {
               "type": "row",
@@ -256,7 +255,8 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ]
+                  ],
+                  "active": true
                 },
                 {
                   "type": "tabset",
@@ -1172,10 +1172,10 @@
       },
       "transform": {
         "translate": {
-          "x": -183.77533556673146,
-          "y": -151.60057444215036
+          "x": -24.211592620023993,
+          "y": -144.38496423610724
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1211,7 +1211,7 @@
           "x": -126.81668158664968,
           "y": -10.85788648163674
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1240,7 +1240,7 @@
           "x": -197.83240670015854,
           "y": -159.82127645612943
         },
-        "scale": 2.5
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1388,7 +1388,7 @@
           "x": -157.34782359575934,
           "y": -255.30327180262583
         },
-        "scale": 2.5
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1401,7 +1401,9 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {},
-        "1": {},
+        "1": {
+          "$selected": true
+        },
         "4": {},
         "6": {},
         "7": {},
@@ -1413,7 +1415,7 @@
           "x": -125.82143839518227,
           "y": -98.907834370931
         },
-        "scale": 2.5
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1568,11 +1570,13 @@
             "3": {}
           },
           "2": {
+            "0": {}
+          },
+          "3": {
             "0": {
               "$selected": true
             }
           },
-          "3": {},
           "5": {},
           "7": {},
           "9": {},
@@ -1587,7 +1591,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -2311,12 +2315,10 @@
   "selectedStylePropertyName": "",
   "lvglPart": "MAIN",
   "lvglState": "DEFAULT",
-  "lvglExpandedPropertiesGroup": [
-    "MISCELLANEOUS"
-  ],
+  "lvglExpandedPropertiesGroup": [],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,
-  "flowZoom": 2.5,
+  "flowZoom": 1.25,
   "implementationLanguage": "C",
   "openDialogDefaultPath": "C:\\VSCode\\Projects\\FilamentStation\\ui-project\\images\\3d-nozzle_W.png"
 }

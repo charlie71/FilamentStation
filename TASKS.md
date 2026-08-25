@@ -3262,8 +3262,42 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 11.3 Waage Power-Down
 
-* [ ] HX711 Power-Down vor Sleep (SCK-Pin dauerhaft HIGH)
-* [ ] Re-Init/erster Sample-Wait nach Wake
+* [x] HX711 Power-Down vor Sleep (SCK-Pin dauerhaft HIGH)
+* [x] Re-Init/erster Sample-Wait nach Wake
+
+**Umgesetzt (2026-08-25):** `PowerTask` sendet beim Uebergang in
+LIGHT-SLEEP `ScaleCommandType::PowerDown` und beim Verlassen von
+LIGHT-SLEEP `ScaleCommandType::PowerUp` an `scaleCommandQueue` (neue
+`sendScalePower()`, `PowerTask.cpp`) -- ausgeloest exakt am
+Sleep-Uebergang, nicht bei AKTIV<->GEDIMMT.
+
+`ScaleTask`s Hauptschleife (`ScaleTask.cpp`) behandelt beide Kommandos
+jetzt direkt (vor `processScaleCommand()`, da sie Schleifenzustand statt
+nur Kalibrierung betreffen): PowerDown haelt den SCK-Pin dauerhaft HIGH
+(laut HX711-Datenblatt reichen >60us fuer den Power-Down, hier bleibt er
+fuer die gesamte Sleep-Dauer stehen) und setzt `connected`/
+`hasMeasurement` zurueck; die Schleife ueberspringt waehrenddessen Sample-
+Lesung und den Verbindungs-Timeout komplett (`if (poweredDown) continue;`),
+damit das absichtliche Abschalten nicht als "HX711 not responding"-Fehler
+gemeldet wird. PowerUp setzt SCK zurueck auf LOW und `lastMeasurementMs`
+auf `millis()` -- kein separater Re-Init noetig, da der bereits dauerhaft
+installierte ISR-Handler (`gpio_isr_handler_add`, nie entfernt) automatisch
+wieder Notifies liefert, sobald das HX711 nach dem Aufwachen die naechste
+Konversion abschliesst; die bestehende "erstes Sample -> ScaleReady"-Logik
+im Hauptloop greift dann unveraendert.
+
+`ScaleTask` bestaetigt den Power-Down zusaetzlich ueber den in 11.1
+definierten Kanal (`PowerCommandType::PowerDownAcknowledged`, neue
+`sendPowerAck()`); `PowerTask` loggt den Erhalt jetzt (`FS_LOGD`) statt
+ihn stillschweigend zu verwerfen -- das tatsaechliche Abwarten aller
+Bestaetigungen vor dem echten Light-Sleep bleibt bewusst Phase 11.6.
+
+Noch nicht am Geraet verifiziert (kein Sichttest durch mich moeglich) --
+sollte vom Nutzer am realen Board bestaetigt werden: Waage zeigt nach
+Erreichen von LIGHT-SLEEP keine neuen Messwerte mehr, liefert nach einem
+Touch-Wake aber wieder normale Messungen.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 11.4 NFC Power-Down
 
