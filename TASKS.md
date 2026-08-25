@@ -3235,11 +3235,30 @@ erfolgreich -- 1. und 2. Versuch scheiterten an einem transienten
 
 ## 11.2 Bildschirm Dimmen/Aus
 
-* [ ] `UiCommandType::SetBrightness`, verarbeitet in `UiTask`
-* [ ] Laufzeit-Aufruf von `Light_PWM.setBrightness()` (bisher nur
+* [x] `UiCommandType::SetBrightness`, verarbeitet in `UiTask`
+* [x] Laufzeit-Aufruf von `Light_PWM.setBrightness()` (bisher nur
   einmalig beim Boot gesetzt)
-* [ ] Stufe GEDIMMT (reduzierte Helligkeit, Peripherie/WiFi unveraendert)
-* [ ] Stufe LIGHT-SLEEP (Helligkeit 0)
+* [x] Stufe GEDIMMT (reduzierte Helligkeit, Peripherie/WiFi unveraendert)
+* [x] Stufe LIGHT-SLEEP (Helligkeit 0)
+
+**Umgesetzt (2026-08-25):** neuer `UiCommandType::SetBrightness`
+(Commands.h) -- `value` traegt die Ziel-Helligkeit 0-255. Neuer Case in
+`ui::processUiCommand()` (`UiBridge.cpp`), ruft
+`drivers::displayDevice().setBrightness()` direkt zur Laufzeit auf
+(vorher nur einmalig beim Boot in `DisplayDriver.cpp::
+initializeDisplay()`); kein neuer Wrapper in `DisplayDriver.h` noetig,
+da `displayDevice()` bereits das volle `lgfx::LGFX_Device` zurueckgibt.
+
+`PowerTask` sendet dieses Kommando jetzt bei jedem Statemachine-Uebergang
+(neue `brightnessForState()`/`sendBrightness()` in `PowerTask.cpp`):
+AKTIV -> `kDisplayDefaultBrightness` (192, BoardConfig.h), GEDIMMT ->
+`kPowerDimmedBrightness` (38), SLEEP -> 0. Peripherie (Waage/NFC/WiFi)
+bleibt unveraendert an -- das ist bewusst erst 11.3-11.5. Noch nicht am
+Geraet visuell gegengeprueft (nur geflasht, kein Sichttest durch mich) --
+Verhalten am realen Board (Dimmen nach 30s, Aus nach 180s, Touch-Wake
+zurueck auf volle Helligkeit) sollte vom Nutzer noch bestaetigt werden.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 11.3 Waage Power-Down
 

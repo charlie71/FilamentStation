@@ -63,6 +63,10 @@ enum class UiCommandType : std::uint8_t {
   UpdateSpoolmanState,
   UpdateSpoolPicker,
   ShowToast,
+  // Energiesparen (TASKS.md Phase 11.2): value traegt die Ziel-Helligkeit
+  // (0-255, wie Light_PWM::setBrightness()), gesendet von PowerTask bei
+  // jedem Statemachine-Uebergang.
+  SetBrightness,
 };
 
 enum class UiNetworkState : std::uint8_t {

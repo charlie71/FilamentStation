@@ -3693,6 +3693,12 @@ void processUiCommand(const rtos::UiCommand& command) {
         lv_label_set_text(objects.spoolman_setting_version, "Server: -");
       }
       break;
+    case rtos::UiCommandType::SetBrightness: {
+      const std::int32_t clamped =
+          command.value < 0 ? 0 : (command.value > 255 ? 255 : command.value);
+      drivers::displayDevice().setBrightness(static_cast<std::uint8_t>(clamped));
+      break;
+    }
     default:
       break;
   }
