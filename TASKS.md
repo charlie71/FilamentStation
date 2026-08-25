@@ -3745,16 +3745,36 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 12.5 Verwaiste Platzhalter-Datei
 
-* [ ] `src/app/ApplicationController.cpp` entfernen -- leere Datei ("//
+* [x] `src/app/ApplicationController.cpp` entfernen -- leere Datei ("//
   Platzhalter fuer eine spaetere fachliche Zustandssteuerung."), nirgends
   inkludiert oder referenziert (per Volltextsuche bestaetigt)
 
+**Umgesetzt (2026-08-25):** Datei geloescht, vor dem Loeschen erneut per
+Volltextsuche bestaetigt, dass keine Referenz mehr existiert (ausser dieser
+TASKS.md-Erwaehnung). `src/app/ApplicationState.h` und `src/app/AppTask.h`
+im selben Verzeichnis referenzieren `ApplicationController` nicht und
+bleiben unveraendert -- ausserhalb des Umfangs dieser Phase.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
+
 ## 12.6 Firmware-Update-Platzhalter (Zwischenschritt)
 
-* [ ] `CheckFirmwareUpdate`-Toast-Text von "Update-Pr\xC3\xBCfung nicht
+* [x] `CheckFirmwareUpdate`-Toast-Text von "Update-Pr\xC3\xBCfung nicht
   ausgef\xC3\xBChrt (Mock)" auf ehrlichen Zwischenstand aendern (z.B.
   "Firmware-Update noch nicht verf\xC3\xBCgbar"), bis Phase 13 das echte
   Feature liefert
+
+**Umgesetzt (2026-08-25):** Toast-Text in `AppTask.cpp` (der einzige noch
+erreichbare Zweig dieses Fallback-Blocks -- StartWifiPortal/
+ResetWifiCredentials/PrepareRestart kehren alle schon vorher ueber ihren
+eigenen `if`-Zweig zurueck) auf "Firmware-Update noch nicht verf\xC3\xBCgbar"
+geaendert. Der EEZ-Studio-eigene Standardtext "Status: Mock, keine Update-
+Funktion" auf SCR_SETTINGS_FIRMWARE selbst (screens.c) bleibt unveraendert
+-- ausserhalb des Umfangs dieser Phase (kein Code setzt ihn zur Laufzeit,
+und eine EEZ-Projekt-Aenderung braucht den Export durch den Nutzer). Wird
+mit dem echten Feature in Phase 13 ohnehin ersetzt.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ---
 

@@ -2850,7 +2850,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       const char* text = "Mock-Aktion vorgemerkt";
       if (action.type == rtos::UiActionType::StartWifiPortal) text = "WLAN-Konfiguration vorgemerkt";
       else if (action.type == rtos::UiActionType::ResetWifiCredentials) text = "WLAN-Zugangsdaten nicht zur\xC3\xBC" "ckgesetzt (Mock)";
-      else if (action.type == rtos::UiActionType::CheckFirmwareUpdate) text = "Update-Prüfung nicht ausgeführt (Mock)";
+      else if (action.type == rtos::UiActionType::CheckFirmwareUpdate) text = "Firmware-Update noch nicht verf\xC3\xBCgbar";
       std::snprintf(command.text, sizeof(command.text), "%s", text);
       sendUiCommand(ctx, command, "AppTask: settings mock action queue overflow");
       return;
