@@ -3356,11 +3356,50 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 11.5 WiFi Abschaltung
 
-* [ ] `WiFi.mode(WIFI_OFF)` vor Sleep
-* [ ] `WiFi.mode(WIFI_STA)` + bestehender Reconnect-Mechanismus
+* [x] `WiFi.mode(WIFI_OFF)` vor Sleep
+* [x] `WiFi.mode(WIFI_STA)` + bestehender Reconnect-Mechanismus
   (`kWifiReconnectIntervalMs`) nach Wake
-* [ ] Bambu-MQTT- und Spoolman-Resync nach Wake ueber bestehende
+* [x] Bambu-MQTT- und Spoolman-Resync nach Wake ueber bestehende
   Recovery-Logik
+
+**Umgesetzt (2026-08-25):** `PowerTask` sendet beim Sleep-Uebergang
+zusaetzlich zu Scale/NFC jetzt auch `NetworkCommandType::PowerDown`/
+`PowerUp` an `networkCommandQueue` (neue `sendNetworkPower()`,
+`PowerTask.cpp`).
+
+`NetworkTask`s Hauptschleife (`NetworkTask.cpp`) behandelt beide
+Kommandos als neue Cases im bestehenden `networkCommandQueue`-Switch:
+PowerDown ruft `WiFi.mode(WIFI_OFF)`. Ein neues `poweredDown`-Flag
+verhindert dabei, dass der in Phase 10.4 gebaute automatische Reconnect
+(`kWifiReconnectIntervalMs`) sofort wieder dagegen ankaempft -- sowohl die
+Wartezeit-Berechnung (`disconnectedAndConfigured`) als auch der
+Reconnect-Versuch selbst sind jetzt zusaetzlich mit `!poweredDown`
+bedingt, damit die Schleife waehrend des Sleeps in `portMAX_DELAY`
+verharrt statt alle `kWifiReconnectIntervalMs` sinnlos aufzuwachen.
+
+PowerUp ruft `WiFi.mode(WIFI_STA)` und setzt `lastReconnectAttemptAt = 0`
+zurueck -- kein neuer Reconnect-Code noetig, das loest im naechsten
+Schleifendurchlauf einfach den ohnehin schon vorhandenen
+`WiFi.reconnect()`-Pfad aus Phase 10.4 aus (identisches "kein Sonderfall
+noetig"-Muster wie schon bei Scale/NFC in 11.3/11.4).
+
+Bambu-MQTT- und Spoolman-Resync brauchten wie im Konzept erwartet keinen
+neuen Code: sobald `WifiGotIp` erneut `EVENT_WIFI_CONNECTED` setzt,
+greifen die in Phase 10.4/10.5 gebauten Recovery-Mechanismen
+(`BambuTask::serviceConnections()`-Reconnect-Backoff,
+`AppTask`s Spoolman-Health-Check-Retry) automatisch, exakt wie nach jedem
+anderen WiFi-Verbindungsverlust.
+
+`NetworkTask` bestaetigt PowerDown ueber denselben Kanal wie 11.3/11.4
+(neue `sendPowerAck()`, analog zu Scale-/NfcTask).
+
+Noch nicht am Geraet verifiziert (kein Sichttest durch mich moeglich) --
+sollte vom Nutzer geprueft werden: WLAN trennt sich beim Erreichen von
+LIGHT-SLEEP sichtbar (z.B. im Router), verbindet sich nach Touch-Wake
+selbststaendig neu, und Drucker-/Spoolman-Status aktualisieren sich danach
+ohne manuelles Eingreifen.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 11.6 Light-Sleep und Touch-Wake
 

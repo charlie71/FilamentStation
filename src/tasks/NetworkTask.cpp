@@ -189,6 +189,16 @@ void handleWifiSignal(rtos::RtosContext& ctx, WifiSignal signal,
   }
 }
 
+void sendPowerAck(rtos::RtosContext& ctx) {
+  rtos::PowerCommand command{};
+  command.type = rtos::PowerCommandType::PowerDownAcknowledged;
+  if (xQueueSend(ctx.powerCommandQueue, &command, pdMS_TO_TICKS(100)) !=
+      pdPASS) {
+    FS_LOGW(services::LogComponent::Net,
+            "Event enqueue failed queue=power_command op=power_down_ack");
+  }
+}
+
 void startPortal(rtos::RtosContext& ctx, WiFiManager& manager,
                  const PortalCredentials& credentials,
                  const models::NetworkSettings& settings,
@@ -243,12 +253,15 @@ void networkTask(void* parameter) {
   // compiled out in this project, so a runtime WiFi loss is otherwise never
   // retried. 0 allows an immediate first attempt.
   TickType_t lastReconnectAttemptAt = 0;
+  // Energiesparen (TASKS.md Phase 11.5): waehrend absichtlich abgeschaltetem
+  // WiFi soll der bestehende Reconnect-Mechanismus nicht dagegen ankaempfen.
+  bool poweredDown = false;
 
   rtos::NetworkCommand command{};
   for (;;) {
     const bool portalActive = manager.getConfigPortalActive();
-    const bool disconnectedAndConfigured =
-        !portalActive && configurationApplied && WiFi.status() != WL_CONNECTED;
+    const bool disconnectedAndConfigured = !poweredDown && !portalActive &&
+        configurationApplied && WiFi.status() != WL_CONNECTED;
     const TickType_t wait =
         portalActive
             ? pdMS_TO_TICKS(config::kWifiPortalServiceIntervalMs)
@@ -319,6 +332,29 @@ void networkTask(void* parameter) {
                        command.requestId,
                        "Gespeicherte WLAN-Zugangsdaten wurden gel\xC3\xB6scht");
           break;
+        case rtos::NetworkCommandType::PowerDown:
+          if (!poweredDown) {
+            poweredDown = true;
+            WiFi.mode(WIFI_OFF);
+            FS_LOGI(services::LogComponent::Net,
+                    "WiFi powered off (energy saving)");
+            sendPowerAck(ctx);
+          }
+          break;
+        case rtos::NetworkCommandType::PowerUp:
+          if (poweredDown) {
+            poweredDown = false;
+            WiFi.mode(WIFI_STA);
+            // 0 loest im naechsten Schleifendurchlauf sofort den bestehenden
+            // Reconnect-Versuch aus (siehe lastReconnectAttemptAt oben),
+            // ohne eigenen Sonderpfad. Bambu-MQTT und Spoolman erkennen die
+            // Wiederverbindung selbststaendig ueber EVENT_WIFI_CONNECTED
+            // (bestehende Recovery-Logik aus Phase 10.4/10.5).
+            lastReconnectAttemptAt = 0;
+            FS_LOGI(services::LogComponent::Net,
+                    "WiFi powered on, reconnect scheduled");
+          }
+          break;
       }
     } else if (ready == wifiEventQueue) {
       WifiSignal signal{};
@@ -333,7 +369,7 @@ void networkTask(void* parameter) {
               "Event enqueue failed queue=wifi_event");
     }
 
-    if (!portalActive && configurationApplied &&
+    if (!poweredDown && !portalActive && configurationApplied &&
         WiFi.status() != WL_CONNECTED) {
       const TickType_t now = xTaskGetTickCount();
       if (static_cast<TickType_t>(now - lastReconnectAttemptAt) >=

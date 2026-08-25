@@ -69,6 +69,16 @@ void sendNfcPower(rtos::RtosContext& ctx, rtos::NfcCommandType type) {
   }
 }
 
+void sendNetworkPower(rtos::RtosContext& ctx, rtos::NetworkCommandType type) {
+  rtos::NetworkCommand command{};
+  command.type = type;
+  if (xQueueSend(ctx.networkCommandQueue, &command, pdMS_TO_TICKS(100)) !=
+      pdPASS) {
+    FS_LOGW(services::LogComponent::Power,
+            "Event enqueue failed queue=network_command op=power");
+  }
+}
+
 }  // namespace
 
 void powerTask(void* parameter) {
@@ -108,9 +118,11 @@ void powerTask(void* parameter) {
       if (enteringSleep) {
         sendScalePower(ctx, rtos::ScaleCommandType::PowerDown);
         sendNfcPower(ctx, rtos::NfcCommandType::PowerDown);
+        sendNetworkPower(ctx, rtos::NetworkCommandType::PowerDown);
       } else if (leavingSleep) {
         sendScalePower(ctx, rtos::ScaleCommandType::PowerUp);
         sendNfcPower(ctx, rtos::NfcCommandType::PowerUp);
+        sendNetworkPower(ctx, rtos::NetworkCommandType::PowerUp);
       }
     }
   }
