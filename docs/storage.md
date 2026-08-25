@@ -104,12 +104,52 @@ Entscheidung und die Abgrenzung zum flüchtigen UI-View-Zustand sind unter
 
 ## Erste Konfigurationsdateien
 
-Nach Mount und Verzeichnispruefung stellt der StorageTask die sechs Dateien
-`device.json`, `network.json`, `spoolman.json`, `ui.json`, `scale.json` und
-`nfc.json` unter `/config` bereit. Fehlt eine Datei, wird ihr dokumentierter
+Nach Mount und Verzeichnispruefung stellt der StorageTask die sieben Dateien
+`device.json`, `network.json`, `spoolman.json`, `bambu.json`, `ui.json`,
+`scale.json` und `nfc.json` unter `/config` sowie zusaetzlich
+`/mappings/printer-slots.json` bereit (`kInitialDocuments`,
+`StorageTask.cpp:30`). Fehlt eine Datei, wird ihr dokumentierter
 Standardinhalt atomar geschrieben und erneut validiert. Eine vorhandene gueltige
 Datei bleibt unveraendert. Vorhandene Temp- oder Backup-Dateien durchlaufen die
 Wiederherstellungslogik aus Phase 2.4.
+
+## Drucker/Fach->Spule-Zuordnung (`/mappings/printer-slots.json`)
+
+Nutzerwunsch vom 2026-08-24: bildet je Drucker/AMS/Fach die zuletzt bestaetigte
+Spoolman-`spoolId` ab, zusammen mit dem `material`/`colorHex`, das der Drucker
+zum Zuordnungszeitpunkt gemeldet hat (`models::TraySpoolCache`,
+`models/TraySpoolCache.h`). Ersetzt einen frueheren Versuch, dieselbe
+Zuordnung ueber ein eigenes MQTT-Feld im Drucker selbst zu speichern -- ein
+Hardwaretest zeigte, dass der Drucker das nicht dauerhaft haelt (siehe
+`docs/bambu-protocol.md`). Deshalb wird die Zuordnung stattdessen lokal auf
+der SD-Karte gehalten.
+
+Diese Datei liegt zwar im selben `/mappings`-Verzeichnis wie die drei
+obsoleten NFC-Migrationsdateien (`docs/legacy-and-unknown-tags.md`), hat
+aber nichts mit NFC-Tag-Identitaeten zu tun -- sie bildet ausschliesslich
+Drucker-Fach-Positionen auf Spoolman-Spulen ab. `StorageTask.cpp`s
+`isMappingPath()` (fuer die einmalige NFC-Legacy-Migration) prueft deshalb
+gezielt nur die drei NFC-Mapping-Pfade und schliesst
+`/mappings/printer-slots.json` nicht mit ein.
+
+Geschrieben wird bei jeder erfolgreich vom Drucker bestaetigten
+Fachzuordnung beziehungsweise -entfernung (`AppTask.cpp`,
+`persistTraySpoolCache()`) -- Fire-and-forget ohne Dialog/Pending-State:
+schlaegt das Speichern fehl, ist die Assoziation einfach noch nicht
+dauerhaft und wird bei der naechsten erfolgreichen Zuordnung erneut
+versucht. Beim Lesen (`resolveTraySpoolCacheSpoolId()`) wird ein Eintrag nur
+verwendet, wenn das aktuell vom Drucker gemeldete `material`/`colorHex`
+noch mit dem beim Speichern erfassten Stand uebereinstimmt -- eine
+Abweichung bedeutet, dass die physische Spule ausserhalb dieser App
+gewechselt wurde, und die Zuordnung gilt dann als unbekannt (Anzeige "?").
+
+Das ist bewusst **keine** Ausnahme von "kein persistenter
+Offline-Spoolman-Cache" (siehe Abschnitt "Spoolman-Daten" unten): persistiert
+wird ausschliesslich die Identitaets-Assoziation (welche `spoolId` gehoert zu
+diesem Fach), keine Spoolman-Stammdaten. Restgewicht und K-Faktor der so
+identifizierten Spule werden weiterhin bei jedem Start frisch von Spoolman
+geladen und nicht auf der SD-Karte gehalten (`traySpoolDetails` in
+`AppTask.cpp`, reiner RAM-Cache).
 
 Nach erfolgreichem SD-Mount fordert der AppTask die Netzwerkdatei an. Nur der
 StorageTask liest und validiert sie; anschließend sendet er eine wertbasierte

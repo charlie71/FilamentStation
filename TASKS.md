@@ -4223,7 +4223,7 @@ Arbeitsverzeichnis war bereits sauber (`git status` leer).
 
 ## 13.8 Validierung
 
-* [ ] echter Update-Testlauf am Geraet (alter Stand -> neuer Stand)
+* [x] echter Update-Testlauf am Geraet (alter Stand -> neuer Stand)
 * [ ] Rollback-Test mit absichtlich fehlerhaftem Image
 
 Beides sind reine Nutzertests (kein Hardwarezugriff durch mich moeglich) --
@@ -4250,6 +4250,10 @@ bestaetigt hat. Testanleitung (2026-08-25):
 5. Nach dem Neustart: Einstellungen -> Ger\xC3\xA4t/Firmware sollte die neue
    Versionsnummer zeigen (bestaetigt echten Wechsel auf die neue Partition).
 
+**Bestaetigt (2026-08-25):** Nutzer hat den normalen Update-Testlauf am
+Geraet durchgefuehrt -- Installation und Neustart auf die neue
+Firmware-Version erfolgreich. Rollback-Test steht noch aus.
+
 **2. Rollback-Test:** temporaer `abort();` als erste Zeile in `setup()`
 (`main.cpp`) einfuegen, als eigenen Release mit weiterer neuer
 Versionsnummer (z.B. `v0.1.2-broken-test`) veroeffentlichen, ueber den
@@ -4267,108 +4271,366 @@ vom OTA-Mechanismus.
 
 ## 14.1 Technik
 
-* [ ] Architektur
-* [ ] Tasks
-* [ ] Queues
-* [ ] Events
-* [ ] IRQ
-* [ ] Prioritäten
-* [ ] Stacks
-* [ ] GPIO
-* [ ] Verdrahtung
-* [ ] BOM
+* [x] Architektur
+* [x] Tasks
+* [x] Queues
+* [x] Events
+* [x] IRQ
+* [x] Prioritäten
+* [x] Stacks
+* [x] GPIO
+* [x] Verdrahtung
+* [x] BOM
+
+**Umgesetzt (2026-08-25):** `docs/architecture.md` um vier neue Abschnitte
+ergaenzt (Tasks inkl. Prioritaeten-Rationale, Queues, Events, IRQ) --
+konsolidierte Tabellen direkt aus dem aktuellen Code erzeugt
+(`src/config/TaskConfig.h`, `src/rtos/RtosContext.h`/`.cpp`,
+`src/rtos/Events.h`, `src/rtos/Commands.h`, `src/tasks/ScaleTask.cpp`), nicht
+freihaendig geschaetzt. Bestehende Detaildokus (`docs/rtos.md`,
+`docs/hardware.md`, `docs/bambu-protocol.md` etc.) bleiben die Quelle fuer
+Begruendungen/Historie einzelner Entscheidungen und werden aus den neuen
+Abschnitten heraus referenziert statt dupliziert.
+
+`docs/hardware.md` um eine konsolidierte GPIO-Gesamtuebersicht (alle
+`BoardConfig.h`-Pins in einer Tabelle, inkl. reservierter/freier Pins) und
+einen neuen BOM-Abschnitt (Hauptplatine, Display, Touch, SD, Waage, NFC-Leser
+je mit Anbindung) ergaenzt -- GPIO/Verdrahtung im Detail je Peripherie waren
+bereits durch die bestehenden Abschnitte abgedeckt.
+
+Reine Dokumentationsphase, kein Code geaendert -- `git status` zeigte vor der
+Aenderung nur die beiden docs-Dateien plus TASKS.md, kein Build/Test/Flash
+noetig.
 
 ## 14.2 Logging
 
-* [ ] kanonisches Format
-* [ ] Level
-* [ ] Components
-* [ ] Logger API
-* [ ] PlatformIO monitor_filters
-* [ ] WiFiManager-Debug
-* [ ] Debug/Release Level
-* [ ] sensitive Daten
+* [x] kanonisches Format
+* [x] Level
+* [x] Components
+* [x] Logger API
+* [x] PlatformIO monitor_filters
+* [x] WiFiManager-Debug
+* [x] Debug/Release Level
+* [x] sensitive Daten
+
+**Umgesetzt (2026-08-25):** `docs/logging.md` bestand bereits aus einer
+frueheren Phase, war aber seither nicht mehr aktualisiert worden. Beim
+Abgleich mit dem aktuellen Code (`src/services/Logger.h`,
+`LoggerFormat.cpp`, `platformio.ini`) zwei konkrete Luecken gefunden und
+behoben:
+
+- Komponentenliste war veraltet: `POWER` und `UPDATE` (aus Phase 11/13
+  hinzugekommen) fehlten in der Aufzaehlung.
+- Der neue `Logger::componentMinimumLevel()`-Mechanismus (Pro-Komponenten-
+  Obergrenze, aktuell nutzt ihn nur `UI`, auf `LogLevel::Error` begrenzt,
+  damit dessen Debug-Zeilen nicht andere Komponenten auf demselben Monitor
+  verdraengen) war bisher gar nicht dokumentiert.
+
+Ausserdem eigene Abschnitte fuer "Debug/Release Level" (kein separates
+Release-Environment vorhanden, `FS_LOG_LEVEL` bleibt ohne Override beim
+Header-Default 4/Debug, `CORE_DEBUG_LEVEL=0` betrifft nur das
+ESP-IDF-interne Logging und ist von `FS_LOG_LEVEL` unabhaengig) und
+"WiFiManager-Debug" (`setDebugOutput(false)`, `NetworkTask.cpp:247`)
+ergaenzt, vorher nur beilaeufig erwaehnt.
+
+**Testluecke gefunden, nicht behoben (ausserhalb dieser Doku-Phase):** die
+nativen Logger-Tests (`test/test_logger/test_main.cpp`) decken `POWER` und
+`UPDATE` nicht mit ab -- in `docs/logging.md` als bekannte, unkritische
+Luecke vermerkt (beide Komponenten durchlaufen denselben generischen
+Formatierungscode wie alle anderen).
+
+Reine Dokumentationsphase, kein Code geaendert -- kein Build/Test/Flash
+noetig.
 
 ## 14.3 NFC/RFID
 
-* [ ] Tagtechnologien
-* [ ] Tagformate
-* [ ] TagIdentity
-* [ ] UID-Normalisierung
-* [ ] Bambu UUID
-* [ ] FilamentStation Payload
-* [ ] Capabilities
-* [ ] Spoolman `extra.tag`
-* [ ] AssignTag
-* [ ] RemoveTagAssignment
-* [ ] Duplicate Handling
-* [ ] kein lokales Mapping
+* [x] Tagtechnologien
+* [x] Tagformate
+* [x] TagIdentity
+* [x] UID-Normalisierung
+* [x] Bambu UUID
+* [x] FilamentStation Payload
+* [x] Capabilities
+* [x] Spoolman `extra.tag`
+* [x] AssignTag
+* [x] RemoveTagAssignment
+* [x] Duplicate Handling
+* [x] kein lokales Mapping
+
+**Umgesetzt (2026-08-25):** Abgleich der bestehenden formatspezifischen
+Dokus (`docs/nfc-tags.md`, `docs/bambu-rfid.md`, `docs/openprinttag.md`,
+`docs/opentag3d.md`, `docs/legacy-and-unknown-tags.md`) gegen die aktuellen
+`TagTechnology`/`TagFormat`-Enums (`models/TagDefinition.h`) ergab keine
+Luecke -- Tagtechnologien, Tagformate, Bambu UUID und FilamentStation
+Payload waren bereits vollstaendig und aktuell dokumentiert. `AssignTag`,
+`RemoveTagAssignment` und "kein lokales Mapping" waren ebenfalls bereits
+durch `docs/workflows.md` bzw. `docs/legacy-and-unknown-tags.md`
+abgedeckt.
+
+Echte Luecke gefunden: die formatunabhaengige Schicht zwischen "Tag
+gelesen" und "Spoolman-Zuordnung" -- `TagIdentity`, UID-Normalisierung,
+`TagCapabilities` und Duplicate Handling -- war bisher nirgends als
+eigenes Thema dokumentiert, nur beilaeufig in `docs/workflows.md` erwaehnt.
+Neue Datei `docs/tag-identity.md` direkt aus dem Code erstellt
+(`models/TagIdentity.h`, `models/TagReadResult.h`,
+`services/TagIdentity.cpp`, `services/SpoolmanClient.cpp:111`
+`findSpoolByTag()`, `AppTask.cpp` Duplicate-Fehlermeldungen an allen drei
+Aufrufstellen):
+
+- `TagIdentity`/`TagIdentitySource`-Struktur und das "einmal beim Lesen
+  eingefroren, nie erneut abgeleitet"-Prinzip.
+- Die drei UID-Normalisierungsfunktionen (`tagIdentityFromUid()`, zwei
+  `tagIdentityFromBambuUuid()`-Ueberladungen) inkl. ihrer jeweiligen
+  Validierungsregeln (Hex-only, gerade Laenge, 16-Byte-Laenge fuer Bambu,
+  Ablehnung von durchgehend `0x00`/`0xFF`).
+- `TagCapabilities`-Felder und was sie jeweils freischalten.
+- Der exakte Spoolman-Filterpfad fuer `extra.tag`-Nachschlagen inkl.
+  client-seitiger Doppelpruefung des Serverergebnisses.
+- Duplicate Handling: `TagLookupStatus::Duplicate`-Ergebnis (≥2 Treffer)
+  wird nie automatisch aufgeloest, alle drei betroffenen Aktionen
+  (nativer Konsistenzcheck, `AssignTag`, `RemoveTagAssignment`) brechen
+  mit spezifischer Fehlermeldung ab und verweisen auf eine manuelle
+  Korrektur in Spoolman.
+
+Reine Dokumentationsphase, kein Code geaendert -- kein Build/Test/Flash
+noetig.
 
 ## 14.4 Daten
 
-* [ ] lokale JSON-Dateien
-* [ ] Verzeichnisse
-* [ ] Backup
-* [ ] keine NFC-Mapping-Dateien
-* [ ] kein Pending Spoolman Write
-* [ ] kein persistenter Offline-Spoolman-Cache
+* [x] lokale JSON-Dateien
+* [x] Verzeichnisse
+* [x] Backup
+* [x] keine NFC-Mapping-Dateien
+* [x] kein Pending Spoolman Write
+* [x] kein persistenter Offline-Spoolman-Cache
+
+**Umgesetzt (2026-08-25):** `docs/storage.md` gegen den aktuellen Code
+abgeglichen (`StorageTask.cpp`, `JsonStorage.cpp`, `AppTask.cpp`) --
+Verzeichnisse, Backup/atomares Speichern, "kein Pending Spoolman Write"
+(Abschnitt "Gewichtsaktualisierungen") und "kein persistenter
+Offline-Spoolman-Cache" (Abschnitt "Spoolman-Daten") waren bereits aktuell
+und korrekt.
+
+**Zwei echte Luecken gefunden und behoben:**
+
+1. Die Liste der initial angelegten `/config`-Dateien war veraltet (nannte
+   sechs Dateien, tatsaechlich sind es sieben -- `bambu.json` fehlte) und
+   nannte `/mappings/printer-slots.json` gar nicht, obwohl es seit
+   2026-08-24 (Nutzerwunsch, ausserhalb der bisherigen TASKS.md-Phasen
+   direkt umgesetzt) ebenfalls ein von `StorageTask` verwaltetes
+   Initialdokument ist (`StorageTask.cpp:30-38`, `kInitialDocuments`).
+   `docs/storage.md` um einen neuen Abschnitt "Drucker/Fach->Spule-
+   Zuordnung" ergaenzt: Zweck (`models::TraySpoolCache`, ersetzt einen per
+   Hardwaretest verworfenen Versuch, dieselbe Assoziation im Drucker selbst
+   zu speichern), Schreibtrigger (fire-and-forget bei jeder vom Drucker
+   bestaetigten Fachzuordnung/-entfernung), Lesepfad (Material/Farbe-
+   Abgleich erkennt eine ausserhalb der App gewechselte Spule als
+   veraltet) und explizite Abgrenzung von "kein persistenter
+   Offline-Spoolman-Cache" (persistiert wird nur die Identitaets-
+   Assoziation, Restgewicht/K-Faktor bleiben ein reiner, nicht
+   persistierter RAM-Cache).
+
+2. `docs/legacy-and-unknown-tags.md` behauptete noch (aus Phase 14.3,
+   ungeprueft aus einer aelteren Doku uebernommen): "`/mappings/
+   printer-slots.json` ... No current runtime implementation reads or
+   writes it." Das ist seit derselben 2026-08-24-Aenderung falsch --
+   richtiggestellt mit Verweis auf `docs/storage.md`, inklusive Klarstellung,
+   dass die Datei trotz des gemeinsamen `/mappings`-Verzeichnisses fachlich
+   nichts mit NFC-Tag-Identitaeten zu tun hat (`isMappingPath()` in
+   `StorageTask.cpp` schliesst sie explizit von der NFC-Legacy-Migration
+   aus).
+
+Reine Dokumentationsphase, kein Code geaendert -- kein Build/Test/Flash
+noetig.
 
 ## 14.5 Workflows
 
-* [ ] Screens
-* [ ] Navigation
-* [ ] Hauptworkflow
-* [ ] Staging
-* [ ] Slot
-* [ ] Tag zuordnen
-* [ ] Tag-Zuordnung entfernen
-* [ ] Bambu
-* [ ] OpenPrintTag
-* [ ] OpenTag3D
-* [ ] Legacy
-* [ ] Unknown
-* [ ] Mehrdrucker
-* [ ] Spoolman Offline Error Flow
+* [x] Screens
+* [x] Navigation
+* [x] Hauptworkflow
+* [x] Staging
+* [x] Slot
+* [x] Tag zuordnen
+* [x] Tag-Zuordnung entfernen
+* [x] Bambu
+* [x] OpenPrintTag
+* [x] OpenTag3D
+* [x] Legacy
+* [x] Unknown
+* [x] Mehrdrucker
+* [x] Spoolman Offline Error Flow
+
+**Umgesetzt (2026-08-25):** `docs/workflows.md` deckte bisher nur "Tag
+zuordnen"/"Tag-Zuordnung entfernen" plus Sicherheitsbedingungen ab. Alle
+uebrigen Checklistenpunkte fehlten komplett und wurden neu ergaenzt, direkt
+aus `AppTask.cpp`s Action-Dispatcher und Back-Handler erarbeitet (kein
+freihaendiger Text):
+
+- **Screens:** Tabelle aller `UiScreenId`-Werte mit Zweck, inkl.
+  `BambuSpoolType` (Leergewicht-Voreinstellung fuer importierte Bambu-Tags,
+  bisher nirgends dokumentiert).
+- **Navigation:** klargestellt, dass es keinen generischen Navigations-Stack
+  gibt, sondern eine feste Zurueck-Zuordnung je Screen plus einzelne
+  Sonderfaelle (uebersprungenes Staging, Tag-Aktionen-Herkunft,
+  Druckereinstellungen-Ruecksprung ueber `printerSettingsReturnScreen`).
+- **Hauptworkflow/Staging/Slot:** der zentrale Ablauf "Spule identifizieren
+  -> Slot zuordnen", der Staging-Zwischenzustand (`stagingSpoolId`, genau
+  eine angelegte Spule) und der zweistufige Slot-Commit
+  (`ConfigureSlot`/`TraySelect` -> `ConfigureSlotFromStaging`) inkl.
+  Reset/Untag/Reapply/Refresh-Unterschiede.
+- **Bambu/OpenPrintTag/OpenTag3D/Legacy/Unknown (als Scan-Ergebnis-Workflow,
+  nicht als Format-Parsing -- das steht bereits in den jeweiligen
+  Format-Dokus):** Tabelle, welcher Screen je Format bei bereits bekannter
+  vs. fehlender Zuordnung erscheint.
+- **Mehrdrucker:** Druckerverwaltung vs. Druckerwechsel, inkl. der
+  Zusicherung, dass ein Wechsel nie Daten eines anderen Druckers ueberschreibt
+  und Staging beim Wechsel erhalten bleibt.
+- **Spoolman Offline Error Flow:** die zwei getrennten Kanaele -- rein
+  informative laufende Statusanzeige versus das zentrale
+  `requireSpoolman()`-Gate am Anfang des Action-Dispatchers, das
+  online-pflichtige Aktionen einheitlich blockiert, statt dass jede Aktion
+  einzeln prueft.
+
+Reine Dokumentationsphase, kein Code geaendert -- kein Build/Test/Flash
+noetig.
 
 ## 14.6 Benutzeranleitung
 
-* [ ] Installation
-* [ ] WLAN
-* [ ] Spoolman
-* [ ] Extra-Feld `tag`
-* [ ] Waage
-* [ ] NFC
-* [ ] Tag zuordnen
-* [ ] Tag-Zuordnung entfernen
-* [ ] Bambu importieren
-* [ ] Drucker
-* [ ] AMS
-* [ ] Firmware
+* [x] Installation
+* [x] WLAN
+* [x] Spoolman
+* [x] Extra-Feld `tag`
+* [x] Waage
+* [x] NFC
+* [x] Tag zuordnen
+* [x] Tag-Zuordnung entfernen
+* [x] Bambu importieren
+* [x] Drucker
+* [x] AMS
+* [x] Firmware
+
+**Umgesetzt (2026-08-25):** Neue Datei `docs/user-guide.md` -- anders als
+alle bisherigen Phase-14-Dokus richtet sich diese an den Endnutzer, nicht an
+Entwickler (Alltagssprache, keine internen Bezeichner/Codepfade). Alle
+genannten Bildschirmtexte/Knopfbeschriftungen sind aus
+`src/ui/generated/screens.c` (`lv_label_set_text_static`) entnommen, nicht
+erfunden; Ablaufdetails aus `AppTask.cpp` (z. B. Kalibrierungs-Zahlentastatur
+mit Gueltigkeitsbereich 1-100000 g, `UiBridge.cpp:1220-1239`).
+
+Zwei fuer den Nutzer wichtige, aus dem Code/vorhandenen Dokus
+rekonstruierte Voraussetzungen explizit aufgenommen, die sonst nirgends
+nutzerfreundlich zusammengefasst waren:
+
+- **WLAN-Ersteinrichtung:** das vom Geraet selbst aufgespannte Portal-Netz
+  folgt dem Muster `FilamentStation-<6-stelliger Geraete-Suffix>` mit
+  Passwort `FS-<derselbe Suffix>` (`NetworkTask.cpp`,
+  `makePortalCredentials()`, `config/NetworkConfig.h`) -- exakt hergeleitet,
+  nicht geraten.
+- **Bambu Developer Mode:** ohne am Drucker aktivierten Developer Mode
+  lehnt aktuelle Bambu-Firmware Schreibkommandos (Slot-Zuordnung)
+  kryptografisch ab, obwohl Verbindung/Access-Code korrekt sind -- per
+  Hardwaretest bestaetigter Befund aus `docs/bambu-protocol.md`, bisher nur
+  dort in einem technischen Debugging-Abschnitt vergraben, nicht in einer
+  fuer Endnutzer auffindbaren Form.
+
+Reine Dokumentationsphase, kein Code geaendert -- kein Build/Test/Flash
+noetig.
 
 ## 14.7 Entwickler
 
-* [ ] Build
-* [ ] Upload
-* [ ] Tests
-* [ ] EEZ Export
-* [ ] Logger
-* [ ] Screen
-* [ ] Action
-* [ ] Task
-* [ ] JSON
-* [ ] Tagparser
-* [ ] Spoolman Extra Field
+* [x] Build
+* [x] Upload
+* [x] Tests
+* [x] EEZ Export
+* [x] Logger
+* [x] Screen
+* [x] Action
+* [x] Task
+* [x] JSON
+* [x] Tagparser
+* [x] Spoolman Extra Field
+
+**Umgesetzt (2026-08-25):** Neue Datei `docs/developer-guide.md` -- als
+"Kochbuch" angelegt (welche Dateien fuer welche Aenderung anzufassen sind),
+ergaenzend zu `docs/architecture.md` (Referenzwissen). Build/Upload/Tests
+direkt aus `platformio.ini` entnommen, inkl. der bisher nirgends
+gesammelten Tatsache, dass es **vier** getrennte native Testumgebungen mit
+je eigenem `build_src_filter` gibt (`native-spoolman-tests`,
+`native-scale-tests`, `native-nfc-tests`, `native-logger-tests`) -- der
+Session-Standardworkflow hat bisher nur `native-spoolman-tests` laufen
+lassen, was fuer alle Aenderungen dieser Session korrekt war (kein
+Scale-/NFC-/Logger-Code betroffen), fuer kuenftige Aenderungen an diesen
+Subsystemen aber die jeweils passende zusaetzliche Umgebung braucht.
+
+Die uebrigen Abschnitte (EEZ Export, Screen, Action, Task, JSON, Tagparser,
+Spoolman Extra Field) sind als konkrete Schritt-fuer-Schritt-Anleitungen
+geschrieben, jeweils an einem echten, kuerzlich in dieser Session
+umgesetzten Beispiel verifiziert (Task: `UpdateTask`/Phase 13; JSON:
+`TraySpoolCache`/Phase 14.4-Fund; Logger: `Power`/`Update`-Komponenten/
+Phase 14.2-Fund) statt freihaendig beschrieben. Der EEZ-Export-Abschnitt
+haelt insbesondere fest, dass der Export ein manueller Schritt in der
+EEZ-Studio-Desktop-App ist (nicht Teil des PlatformIO-Builds) -- mehrfach
+in dieser Session als Fehlerursache erlebt, wenn das vergessen wurde.
+
+Reine Dokumentationsphase, kein Code geaendert -- kein Build/Test/Flash
+noetig.
 
 ## 14.8 Release
 
-* [ ] Lizenzen
-* [ ] SpoolEase-Code nicht kopiert
-* [ ] Quellen
-* [ ] eigene Lizenz
-* [ ] Version
-* [ ] Changelog
-* [ ] Release
-* [ ] reproduzierbarer Build
-* [ ] Known Issues
-* [ ] kein Security-Key
-* [ ] keine lokale NFC-Zuordnungsdatenbank
+* [x] Lizenzen
+* [x] SpoolEase-Code nicht kopiert
+* [x] Quellen
+* [x] eigene Lizenz
+* [x] Version
+* [x] Changelog
+* [x] Release
+* [x] reproduzierbarer Build
+* [x] Known Issues
+* [x] kein Security-Key
+* [x] keine lokale NFC-Zuordnungsdatenbank
+
+**Nutzerentscheidung (2026-08-25):** MIT-Lizenz gewaehlt (Empfehlung,
+Begruendung: Kompatibilitaet mit allen verwendeten Abhaengigkeiten --
+ArduinoJson/LovyanGFX/lvgl/WiFiManager/PubSubClient sind MIT, das
+Arduino-ESP32-Framework selbst LGPL-2.1-or-later als separat gelinkte
+Komponente unproblematisch). Neue Datei `LICENSE` im Projektwurzel-
+verzeichnis angelegt.
+
+**Umgesetzt (2026-08-25):** Neue Dateien `docs/release.md` (deckt alle
+uebrigen Checklistenpunkte) und `CHANGELOG.md` (Projektwurzel, an Keep a
+Changelog angelehnt, bewusst zusammenfassend statt TASKS.md zu duplizieren).
+
+Alle Lizenzangaben direkt aus den bezogenen Bibliotheksversionen geprueft
+(`LICENSE`/`license.txt`-Dateien bzw. `license`-Feld in
+`library.json`/`package.json` unter `.pio/libdeps`/`.pio-core`), nicht aus
+dem Gedaechtnis behauptet -- dabei fuer LovyanGFX "MIT AND BSD-2-Clause"
+(nicht nur MIT) und fuer das Arduino-ESP32-Framework "LGPL-2.1-or-later"
+(`package.json`) bestaetigt.
+
+"SpoolEase-Code nicht kopiert" konkret belegt: die einzige Beruehrung mit
+`yanshay/spoolease`/`Fire-Devils/filaman-bambulab-plugin` war der bereits
+in `docs/bambu-protocol.md` dokumentierte Feld-fuer-Feld-Vergleich des
+MQTT-Kommandoaufbaus waehrend der Slot-Zuordnungs-Fehlersuche
+(2026-08-22) -- keine der beiden Bibliotheken ist eingebunden, kein
+Quellcode uebernommen.
+
+"Known Issues" direkt aus den einzigen noch unerledigten Checkboxen in
+`TASKS.md` konsolidiert (nicht neu erfunden): mehrstuendiger Dauertest
+(10.7), reale Strommessung je Energiesparstufe + Wake-Zuverlaessigkeit +
+das bewusst rein zeitbasierte Energiesparen ohne Druck-Aktiv-Signal
+(11.7), sowie der noch ausstehende OTA-Rollback-Test (13.8, normaler
+Update-Testlauf bereits vom Nutzer bestaetigt).
+
+"Kein Security-Key" als durchgaengige, bereits an zwei Stellen separat
+getroffene Entscheidung zusammengefuehrt: Bambu-MQTT
+(`WiFiClientSecure::setInsecure()`, Access-Code als Shared Secret) und
+Firmware-Update (HTTPS + SHA-256-Pruefsumme statt Signaturpruefung) folgen
+demselben Muster.
+
+Reine Dokumentationsphase, kein Firmware-Code geaendert (nur neue `LICENSE`/
+`CHANGELOG.md`/`docs/release.md`) -- kein Build/Test/Flash noetig.
+
+---
+
+**Phase 14 (Dokumentation und Release) vollstaendig abgeschlossen** --
+alle acht Unterphasen (14.1-14.8) umgesetzt und dokumentiert.

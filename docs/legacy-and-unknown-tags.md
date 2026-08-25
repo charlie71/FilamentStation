@@ -35,9 +35,11 @@ They are never queried or updated by normal NFC workflows. Each legacy file is
 removed only after every valid entry was transferred conflict-free to
 Spoolman. Missing files are the expected normal state.
 
-`/mappings/printer-slots.json` is unrelated to NFC identities. No current
-runtime implementation reads or writes it; it is therefore not retained as an
-NFC mapping source.
+`/mappings/printer-slots.json` is unrelated to NFC identities -- it is
+therefore not retained as an NFC mapping source. Unlike the three files
+above, it is **not** obsolete: since 2026-08-24 it holds the persisted
+printer/AMS/tray -> Spoolman-spool association (`models::TraySpoolCache`),
+see `docs/storage.md` for its schema, write trigger, and staleness check.
 
 ## Migration implementation inventory
 

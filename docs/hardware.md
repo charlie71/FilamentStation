@@ -9,6 +9,57 @@ PSRAM. Die native USB-CDC-Schnittstelle meldet COM4 nach einem Reset neu bei
 Windows an. Der Arduino-Setup-Task wartet deshalb nach `Serial.begin()` fest
 fuenf Sekunden, bevor er die Startdiagnose ausgibt.
 
+## GPIO-Gesamtuebersicht
+
+Konsolidierte Sicht ueber alle in `src/config/BoardConfig.h` vergebenen
+Pins (Details und Konfliktpruefung je Peripherie in den folgenden
+Abschnitten):
+
+| GPIO | Funktion |
+|---:|---|
+| 0 | Display RS/D-C (zugleich BOOT-Strapping-Pin) |
+| 3 | Display DB2 |
+| 4 | Display/Touch RESET (gemeinsam) |
+| 5 | Touch SCL (I2C) |
+| 6 | Touch SDA (I2C) |
+| 7 | Touch INT (verkabelt, aktuell ungenutzt -- siehe Architektur-Doku, Abschnitt IRQ) |
+| 8 | Display DB3 |
+| 9 | Display DB0 |
+| 10 | HX711 SCK (EXT_IO1) |
+| 11 | HX711 DOUT (EXT_IO2, Interrupt) |
+| 12 | PN532 UART TX (EXT_IO3) |
+| 13 | PN532 UART RX (EXT_IO4) |
+| 15 | Display DB7 |
+| 16 | Display DB6 |
+| 17 | Display DB5 |
+| 18 | Display DB4 |
+| 38 | SD MISO/DO |
+| 39 | SD CLK/SCK |
+| 40 | SD MOSI/DI |
+| 41 | SD CS |
+| 45 | Display Backlight (PWM, aktiv high) |
+| 46 | Display DB1 |
+| 47 | Display WR |
+| 48 | Display TE (optional, ungenutzt) |
+
+Reserviert und deshalb nicht fuer eigene Erweiterungen verfuegbar: GPIO1/2/42
+(RS485), GPIO35-37 (Audio). Frei herausgefuehrt und unbelegt: GPIO14, GPIO21
+(EXT-Anschluss).
+
+## BOM (Bill of Materials)
+
+| Komponente | Typ/Modell | Anbindung |
+|---|---|---|
+| Hauptplatine | WT32-SC01 Plus (WT32-S3-WROVER-N16R2, 16 MB Flash, 2 MB PSRAM) | -- |
+| Display | ST7796UI, 480x320, RGB565 | 8-Bit MCU8080 parallel |
+| Touch-Controller | FT6336U, kapazitiv, Single-Touch | I2C |
+| Speicherkarte | microSD (Standard-SPI-Modul, Teil des WT32-SC01-Plus-Boards) | SPI |
+| Wägezelle/Verstärker | HX711-Wägezellenverstärker + Lastzelle | 2 GPIO (Takt/Daten, bit-banged) |
+| NFC/RFID-Leser | Elechouse PN532 NFC RFID Module V3 | UART/HSU, 115200 Baud 8N1 |
+
+Quelle je Zeile: siehe die jeweiligen Abschnitte oben (Controller-Modul,
+Display und Touch, HX711-Anschluss, PN532-Anschluss).
+
 ## SD-Karte
 
 Die SD-Karte ist ueber SPI angebunden:
