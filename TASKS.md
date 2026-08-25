@@ -3165,9 +3165,86 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ---
 
-# Phase 11 – Dokumentation und Release
+# Phase 11 – Energiesparen
 
-## 11.1 Technik
+Konzept (Nutzerwunsch 2026-08-25): 3-Stufen-Statemachine AKTIV ->
+GEDIMMT -> LIGHT-SLEEP, Timer ab letzter Touch-Aktivitaet (LVGL
+`lv_disp_get_inactive_time()`), Wake ueber Touch-INT-Pin (GPIO7, RTC-
+faehig, ext0/ext1-Wakeup). Nutzerentscheidung: echter Light-Sleep,
+Drucker-/Spoolman-Ueberwachung darf dafuer waehrend des Sleeps
+unterbrochen werden (WiFi wird vollstaendig abgeschaltet). Aufwachen
+nutzt bestehende Reconnect-/Recovery-Logik aus Phase 10.4/10.5 (WiFi-
+Reconnect-Timer, PN532-Reconnect-Erkennung, Bambu-MQTT-Reconnect).
+Groesstes offenes Risiko: PSRAM-Kompatibilitaet mit `esp_light_sleep_
+start()` in diesem Arduino-Framework-Build (analog zum bereits in
+Phase 10.8 festgestellten `EXT_RAM_ATTR`-sdkconfig-Problem) -- daher
+zuerst als eigener Machbarkeits-Check vor dem Rest der Phase.
+
+## 11.1 Konfiguration und Statemachine
+
+* [ ] `PowerConfig.h` (Timer-Konstanten: Dimm-Timeout, Sleep-Timeout,
+  gedimmte Zielhelligkeit)
+* [ ] `PowerTask` (neuer eigener Task, haelt Aktiv/Gedimmt/Sleep-Zustand)
+* [ ] Inaktivitaets-Erkennung ueber LVGL `lv_disp_get_inactive_time()`
+* [ ] neue Command-Typen (`PowerDown`/`PowerUp`) fuer Scale-/Nfc-/
+  Network-Task nach bestehendem Commands.h-Muster
+* [ ] Bestaetigungs-Events, bevor `PowerTask` tatsaechlich schlafen legt
+
+## 11.2 Bildschirm Dimmen/Aus
+
+* [ ] `UiCommandType::SetBrightness`, verarbeitet in `UiTask`
+* [ ] Laufzeit-Aufruf von `Light_PWM.setBrightness()` (bisher nur
+  einmalig beim Boot gesetzt)
+* [ ] Stufe GEDIMMT (reduzierte Helligkeit, Peripherie/WiFi unveraendert)
+* [ ] Stufe LIGHT-SLEEP (Helligkeit 0)
+
+## 11.3 Waage Power-Down
+
+* [ ] HX711 Power-Down vor Sleep (SCK-Pin dauerhaft HIGH)
+* [ ] Re-Init/erster Sample-Wait nach Wake
+
+## 11.4 NFC Power-Down
+
+* [ ] RF-Feld aus vor Sleep (`setRfField(false)`, bereits vorhanden)
+* [ ] Polling pausiert waehrend Sleep
+* [ ] echtes PN532-PowerDown-Kommando (0x16) pruefen/implementieren
+* [ ] Re-Init nach Wake ueber bestehende `initializePn532()`/
+  `reportPn532Reconnected()`-Logik
+
+## 11.5 WiFi Abschaltung
+
+* [ ] `WiFi.mode(WIFI_OFF)` vor Sleep
+* [ ] `WiFi.mode(WIFI_STA)` + bestehender Reconnect-Mechanismus
+  (`kWifiReconnectIntervalMs`) nach Wake
+* [ ] Bambu-MQTT- und Spoolman-Resync nach Wake ueber bestehende
+  Recovery-Logik
+
+## 11.6 Light-Sleep und Touch-Wake
+
+* [ ] Machbarkeits-Check: PSRAM + `esp_light_sleep_start()` in diesem
+  sdkconfig (vor dem Rest dieser Unterphase)
+* [ ] FT6336-INT-Verhalten am realen Board pruefen (Pulse vs. Pegel,
+  Polaritaet)
+* [ ] `esp_sleep_enable_ext0_wakeup()`/`ext1` auf `kTouchInterruptPin`
+* [ ] Koordination: `PowerTask` wartet auf Quiescent-Bestaetigung aller
+  betroffenen Tasks vor `esp_light_sleep_start()`
+* [ ] UI-Uebergangszustand ("Verbinde...") nach Wake bis WiFi/Bambu/
+  Spoolman wieder synchron sind
+* [ ] optionaler periodischer Timer-Wake als Sicherheitsnetz (spaetere
+  Ausbaustufe)
+
+## 11.7 Validierung
+
+* [ ] reale Strommessung je Stufe (Aktiv/Gedimmt/Sleep)
+* [ ] Wake-Zuverlaessigkeit (mehrere Touch-Positionen, Dauerbetrieb)
+* [ ] Verhalten bei aktivem Druck dokumentieren (kein Print-Aktiv-Signal
+  vorhanden, daher rein Timer-basiert in V1 -- bewusste Einschraenkung)
+
+---
+
+# Phase 12 – Dokumentation und Release
+
+## 12.1 Technik
 
 * [ ] Architektur
 * [ ] Tasks
@@ -3180,7 +3257,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] Verdrahtung
 * [ ] BOM
 
-## 11.2 Logging
+## 12.2 Logging
 
 * [ ] kanonisches Format
 * [ ] Level
@@ -3191,7 +3268,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] Debug/Release Level
 * [ ] sensitive Daten
 
-## 11.3 NFC/RFID
+## 12.3 NFC/RFID
 
 * [ ] Tagtechnologien
 * [ ] Tagformate
@@ -3206,7 +3283,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] Duplicate Handling
 * [ ] kein lokales Mapping
 
-## 11.4 Daten
+## 12.4 Daten
 
 * [ ] lokale JSON-Dateien
 * [ ] Verzeichnisse
@@ -3215,7 +3292,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] kein Pending Spoolman Write
 * [ ] kein persistenter Offline-Spoolman-Cache
 
-## 11.5 Workflows
+## 12.5 Workflows
 
 * [ ] Screens
 * [ ] Navigation
@@ -3232,7 +3309,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] Mehrdrucker
 * [ ] Spoolman Offline Error Flow
 
-## 11.6 Benutzeranleitung
+## 12.6 Benutzeranleitung
 
 * [ ] Installation
 * [ ] WLAN
@@ -3247,7 +3324,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] AMS
 * [ ] Firmware
 
-## 11.7 Entwickler
+## 12.7 Entwickler
 
 * [ ] Build
 * [ ] Upload
@@ -3261,7 +3338,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] Tagparser
 * [ ] Spoolman Extra Field
 
-## 11.8 Release
+## 12.8 Release
 
 * [ ] Lizenzen
 * [ ] SpoolEase-Code nicht kopiert
