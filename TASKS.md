@@ -3655,10 +3655,52 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 12.2 Druckerbearbeitung-Status
 
-* [ ] `objects.printer_edit_status` zeigt beim Oeffnen von
+* [x] `objects.printer_edit_status` zeigt beim Oeffnen von
   SCR_SETTINGS_PRINTER_EDIT hart codiert "Status: Mock-Daten"
   (`UiBridge.cpp:3040`) -- durch neutralen/echten Text ersetzen (z.B. leer
   oder "Neuer Drucker" vs. bestehenden Eintrag unterscheiden)
+
+**Scope-Erweiterung waehrend der Umsetzung entdeckt (2026-08-25):** die
+urspruengliche Checkliste erfasste nur das Statuslabel, aber
+`loadPrinterUiDraft()` (`UiBridge.cpp`) enthielt zusaetzlich fuer jede
+Drucker-ID (1-3) hart codierte, komplett erfundene Beispieldrucker (Name,
+IP, Seriennummer, Access-Code -- z.B. "X1C Labor" / "192.168.1.51" /
+"00M987654321"), die beim Oeffnen des Editors fuer einen bestehenden
+Drucker angezeigt wurden. Meine urspruengliche Grep-Suche (`[Mm]ock|TODO|
+FIXME|...`) fand diese Stelle nicht, da dort nirgends das Wort "Mock"
+vorkommt. Nachverfolgung ergab: `AppTask`s `EditPrinter`/`AddPrinter`-
+Handler laden bereits die ECHTEN Werte (`loadPrinterDraft()`,
+`printerConfigs`) und schicken sie unmittelbar nach dem `ShowScreen`-
+Kommando ueber `sendPrinterDraftToUi()` (4x `UpdateSettings`) nach -- da
+`UiTask`s Hauptschleife die gesamte `uiCommandQueue` vor dem naechsten
+LVGL-Render leerraeumt, wurden die erfundenen Werte in der Praxis wohl nie
+sichtbar gerendert (reiner Zwischenzustand im Speicher). Trotzdem beseitigt:
+`loadPrinterUiDraft()` setzt jetzt fuer jede ID nur noch einen neutralen
+leeren Platzhalter, keine erfundenen Drucker mehr.
+
+Zweiter, tatsaechlich sichtbarer Bug dabei gefunden: derselbe
+`UpdateSettings`-Handler, der die echten Feldwerte uebernimmt, setzte
+IMMER "Status: ge\xC3\xA4ndert, nicht gespeichert" -- auch beim stillen
+Erstladevorgang eines unveraenderten, bestehenden Druckers. Ein frisch
+geoeffneter Editor zeigte also faelschlich sofort "ungespeicherte
+\xC3\x84nderungen", obwohl der Nutzer noch nichts getippt hatte. Behoben durch
+eine neue Unterscheidung ueber `command.amsId` (fuer `UpdateSettings` sonst
+ungenutzt): `AppTask::EditPrinterField` (echte Nutzeraenderung) setzt jetzt
+`amsId=1`, `sendPrinterDraftToUi()` (stiller Erstladevorgang) laesst es bei
+0 (Standardwert durch `UiCommand command{};`). `UiBridge.cpp`s Handler
+aktualisiert das Statuslabel nur noch bei `amsId != 0`.
+
+`objects.printer_edit_status` selbst zeigt jetzt beim Oeffnen neutral
+"Status: -" statt "Status: Mock-Daten", und wechselt erst bei einer
+tatsaechlichen Nutzeraenderung zu "Status: ge\xC3\xA4ndert, nicht gespeichert".
+
+Noch nicht am Geraet verifiziert (kein Sichttest durch mich moeglich) --
+sollte vom Nutzer bestaetigt werden: Editor eines bestehenden Druckers
+zeigt beim Oeffnen die echten gespeicherten Werte (nicht "X1C Labor" o.ae.)
+und "Status: -"; erst nach Aendern eines Feldes wechselt der Status auf
+"ge\xC3\xA4ndert, nicht gespeichert".
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 12.3 Tote Mock-Referenzen in trayClicked()
 

@@ -3029,6 +3029,10 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       command.type = rtos::UiCommandType::UpdateSettings;
       command.value = action.value;
       command.value = 20 + action.value;
+      // Markiert eine echte Nutzeraenderung, im Gegensatz zum stillen
+      // Erstladevorgang aus sendPrinterDraftToUi() (amsId bleibt dort 0) --
+      // siehe UiBridge.cpp::UpdateSettings-Handler (Nutzerwunsch 2026-08-25).
+      command.amsId = 1;
       std::snprintf(command.text, sizeof(command.text), "%s", destination);
       sendUiCommand(ctx, command, "AppTask: printer field queue overflow");
       return;

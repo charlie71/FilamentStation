@@ -1321,27 +1321,14 @@ std::size_t printerDraftCapacity(std::int32_t field) {
 void loadPrinterUiDraft(rtos::PrinterId id) {
   editingPrinterId = id;
   showPrinterAccessCode = false;
-  if (id == 2) {
-    std::snprintf(printerUiDraft.name, sizeof(printerUiDraft.name), "X1C Labor");
-    std::snprintf(printerUiDraft.host, sizeof(printerUiDraft.host), "192.168.1.51");
-    std::snprintf(printerUiDraft.serial, sizeof(printerUiDraft.serial), "00M987654321");
-    std::snprintf(printerUiDraft.accessCode, sizeof(printerUiDraft.accessCode), "87654321");
-  } else if (id == 3) {
-    std::snprintf(printerUiDraft.name, sizeof(printerUiDraft.name), "A1 Mini Büro");
-    std::snprintf(printerUiDraft.host, sizeof(printerUiDraft.host), "192.168.1.52");
-    std::snprintf(printerUiDraft.serial, sizeof(printerUiDraft.serial), "030123456789");
-    std::snprintf(printerUiDraft.accessCode, sizeof(printerUiDraft.accessCode), "11223344");
-  } else if (id == 4) {
-    std::snprintf(printerUiDraft.name, sizeof(printerUiDraft.name), "Neuer Drucker");
-    printerUiDraft.host[0] = '\0';
-    printerUiDraft.serial[0] = '\0';
-    printerUiDraft.accessCode[0] = '\0';
-  } else {
-    std::snprintf(printerUiDraft.name, sizeof(printerUiDraft.name), "P1S Werkstatt");
-    std::snprintf(printerUiDraft.host, sizeof(printerUiDraft.host), "192.168.1.50");
-    std::snprintf(printerUiDraft.serial, sizeof(printerUiDraft.serial), "01P123456789");
-    std::snprintf(printerUiDraft.accessCode, sizeof(printerUiDraft.accessCode), "12345678");
-  }
+  // Nur ein neutraler Platzhalter, bis AppTasks sendPrinterDraftToUi() im
+  // selben UI-Command-Burst direkt nach ShowScreen die echten Werte
+  // nachliefert (Nutzerwunsch 2026-08-25) -- vorher standen hier erfundene
+  // Beispieldrucker (Name/IP/Seriennummer/Access-Code) je nach ID.
+  printerUiDraft.name[0] = '\0';
+  printerUiDraft.host[0] = '\0';
+  printerUiDraft.serial[0] = '\0';
+  printerUiDraft.accessCode[0] = '\0';
 }
 
 void updatePrinterEditorContent() {
@@ -3037,7 +3024,13 @@ void showScreen(rtos::UiScreenId screenId) {
     case rtos::UiScreenId::SettingsPrinterEdit:
       closeSpoolmanEditor();
       updatePrinterEditorContent();
-      lv_label_set_text(objects.printer_edit_status, "Status: Mock-Daten");
+      // Neutral, bis entweder ein echter Feld-Update (Nutzer tippt etwas,
+      // markiert per command.amsId in UpdateSettings) oder gar nichts
+      // passiert -- der stille Erstladevorgang (AppTask::
+      // sendPrinterDraftToUi(), direkt nach diesem ShowScreen) setzt diesen
+      // Status bewusst nicht mehr auf "ge\xC3\xA4ndert" (Nutzerwunsch 2026-08-25,
+      // vorher hart codiert "Status: Mock-Daten").
+      lv_label_set_text(objects.printer_edit_status, "Status: -");
       loadScreen(SCREEN_ID_SCR_SETTINGS_PRINTER_EDIT);
       break;
     case rtos::UiScreenId::SettingsWifi:
@@ -3555,8 +3548,16 @@ void processUiCommand(const rtos::UiCommand& command) {
         std::snprintf(destination, capacity, "%s", command.text);
         if (printerFieldUpdate) {
           updatePrinterEditorContent();
-          lv_label_set_text(objects.printer_edit_status,
-                            "Status: geändert, nicht gespeichert");
+          // amsId dient hier als Marker "echte Nutzeraenderung" (gesetzt in
+          // AppTask::EditPrinterField) vs. "stiller Erstladevorgang" (0,
+          // AppTask::sendPrinterDraftToUi() nach EditPrinter/AddPrinter) --
+          // ohne diese Unterscheidung zeigte selbst ein frisch geoeffneter,
+          // unveraenderter Drucker sofort "ge\xC3\xA4ndert" (Nutzerwunsch
+          // 2026-08-25).
+          if (command.amsId != 0) {
+            lv_label_set_text(objects.printer_edit_status,
+                              "Status: geändert, nicht gespeichert");
+          }
         } else {
           updateSpoolmanSettingsContent();
           lv_label_set_text(objects.spoolman_setting_status,
