@@ -6,6 +6,7 @@
 #include <array>
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include "config/AppConfig.h"
 #include "config/BambuConfig.h"
 #include "config/NfcConfig.h"
 #include "config/ScaleConfig.h"
@@ -2559,10 +2560,23 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Gewichte werden an Spoolman gesendet und danach neu geladen.");
         return;
       }
-      const char* result = "Mock-Aktion best\xC3\xA4tigt; keine reale Funktion ausgef\xC3\xBChrt.";
       if (confirmedOverlay == rtos::UiOverlayKind::RestartConfirmation) {
-        result = "Neustart best\xC3\xA4tigt; im Mock nicht ausgef\xC3\xBChrt.";
-      } else if (confirmedOverlay == rtos::UiOverlayKind::WifiResetConfirmation) {
+        FS_LOGI(services::LogComponent::App,
+                "Device restart confirmed by user request_id=%lu",
+                static_cast<unsigned long>(action.requestId));
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Success, action.requestId,
+                    "Neustart", "Das Ger\xC3\xA4t startet jetzt neu.");
+        // Laesst die Meldung oben noch sichtbar werden und gibt laufenden
+        // StorageTask-Schreibvorgaengen Zeit zum Abschliessen (siehe
+        // kRestartDelayMs). Ein AppTask-weiter Block hier ist unproblematisch
+        // -- direkt danach wird der Prozessor ohnehin zurueckgesetzt.
+        vTaskDelay(pdMS_TO_TICKS(config::kRestartDelayMs));
+        ESP.restart();
+        return;
+      }
+      const char* result = "Mock-Aktion best\xC3\xA4tigt; keine reale Funktion ausgef\xC3\xBChrt.";
+      if (confirmedOverlay == rtos::UiOverlayKind::WifiResetConfirmation) {
         rtos::NetworkCommand networkCommand{};
         networkCommand.type = rtos::NetworkCommandType::ClearCredentials;
         networkCommand.requestId = action.requestId;
@@ -2828,7 +2842,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::RestartConfirmation,
                     action.requestId, "Ger\xC3\xA4t neu starten?",
-                    "Der Neustart wird erst nach Best\xC3\xA4tigung ausgel\xC3\xB6st (Mock)." );
+                    "Der Neustart wird erst nach Best\xC3\xA4tigung ausgel\xC3\xB6st.");
         return;
       }
       command.type = rtos::UiCommandType::ShowToast;
@@ -2836,7 +2850,6 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       const char* text = "Mock-Aktion vorgemerkt";
       if (action.type == rtos::UiActionType::StartWifiPortal) text = "WLAN-Konfiguration vorgemerkt";
       else if (action.type == rtos::UiActionType::ResetWifiCredentials) text = "WLAN-Zugangsdaten nicht zur\xC3\xBC" "ckgesetzt (Mock)";
-      else if (action.type == rtos::UiActionType::PrepareRestart) text = "Neustart nicht ausgeführt (Mock)";
       else if (action.type == rtos::UiActionType::CheckFirmwareUpdate) text = "Update-Prüfung nicht ausgeführt (Mock)";
       std::snprintf(command.text, sizeof(command.text), "%s", text);
       sendUiCommand(ctx, command, "AppTask: settings mock action queue overflow");

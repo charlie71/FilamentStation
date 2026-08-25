@@ -3591,9 +3591,196 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ---
 
-# Phase 12 – Dokumentation und Release
+# Phase 12 – Mock-Daten entfernen
 
-## 12.1 Technik
+Bestandsaufnahme (Nutzerwunsch 2026-08-25): vollstaendige Pruefung des
+Quellcodes auf verbliebene Mock-Daten/-Funktionen (Grep nach
+`[Mm]ock|TODO|FIXME|Platzhalter|Dummy` in `src/`, plus gezielte
+Nachverfolgung jedes Treffers bis zum tatsaechlichen Aufrufer). Ergebnis:
+die meisten frueheren Mock-Stellen sind bereits durch echte Daten ersetzt
+(z.B. `printerEntries`/`amsEntries` in `UiBridge.cpp`, per Kommentar
+bestaetigt: "no longer pre-seeds fake printers"). Fuenf echte Fundstellen
+verbleiben, alle unten einzeln behandelt. `docs/hardware.md`s offener
+Punkt zum Touch-INT-Verhalten ist kein Mock, sondern bereits unter
+Phase 11.6 dokumentiert.
+
+## 12.1 Echter Neustart
+
+* [x] `ESP.restart()` nach Bestaetigung des RestartConfirmation-Dialogs
+  tatsaechlich aufrufen (`AppTask.cpp:2563-2564`, aktuell nur
+  "Neustart best\xC3\xA4tigt; im Mock nicht ausgef\xC3\xBChrt.")
+* [x] Alle "(Mock)"-Texte rund um PrepareRestart entfernen
+  (`AppTask.cpp:2831,2839`)
+* [x] Kurze Verzoegerung/Log vor dem Neustart (laufende SD-/Spoolman-
+  Schreibvorgaenge sollten nicht mitten im Reset abgebrochen werden --
+  pruefen, ob ein "sauberer" Abschluss noetig ist oder ein sofortiger
+  Neustart unproblematisch ist)
+
+**Umgesetzt (2026-08-25):** Der `Confirm`-Handler fuer
+`RestartConfirmation` (`AppTask.cpp`) ruft jetzt tatsaechlich
+`ESP.restart()` auf, statt nur eine Mock-Erfolgsmeldung zu zeigen. Ablauf:
+`FS_LOGI`-Log mit `request_id`, `ShowDialog`/`Success`-Meldung "Das Ger\xC3\xA4t
+startet jetzt neu.", `vTaskDelay(kRestartDelayMs)` (neue Konstante,
+`AppConfig.h`, 1500ms), dann `ESP.restart()`. Die Verzoegerung dient zwei
+Zwecken: die Bestaetigungsmeldung wird noch sichtbar gerendert, und
+eventuell noch laufende `StorageTask`-Schreibvorgaenge bekommen Zeit zum
+Abschliessen -- ein AppTask-weiter Block ist hier unproblematisch, da der
+Prozessor direkt danach ohnehin zurueckgesetzt wird. Kein zusaetzlicher
+"saubere Beendigung"-Mechanismus noetig: `JsonStorage::atomicSave()` ist
+bereits schreib-dann-umbenennen-atomar (Phase 2.4, per Wiederherstellungs-
+test verifiziert), ein Reset mitten in einem Schreibvorgang hinterlaesst
+also so oder so nie eine korrupte Datei.
+
+Beide "(Mock)"-Texte entfernt: der Bestaetigungsdialog-Text (vorher "...
+ausgel\xC3\xB6st (Mock)") ist jetzt neutral, und der (ohnehin unerreichbare,
+da `PrepareRestart` immer ueber seinen eigenen fruehen `return` geht) Mock-
+Toast-Fallback-Eintrag fuer `PrepareRestart` wurde aus der Fallback-Liste
+entfernt (`ResetWifiCredentials`/`CheckFirmwareUpdate` dort unveraendert
+gelassen, ausserhalb des Umfangs dieser Phase).
+
+Nebenbefund: die Phase-13-Notiz "im gesamten Code keine einzige Versions-
+Konstante" war falsch -- `config::kApplicationVersion = "0.1.0-dev"`
+existiert bereits (`AppConfig.h:8`, genutzt in `main.cpp:42` fuer den
+Boot-Log). Meine urspruengliche Volltextsuche fuer Phase 13 hatte nach
+Mustern wie `FIRMWARE_VERSION`/`firmwareVersion` gesucht und diesen
+camelCase-Namen mit anderem Praefix nicht erfasst. Phase 13.1 kann diese
+Konstante direkt wiederverwenden, statt eine neue anzulegen.
+
+Noch nicht am Geraet verifiziert (kein Sichttest durch mich moeglich) --
+sollte vom Nutzer bestaetigt werden: nach Bestaetigen des Neustart-Dialogs
+erscheint kurz die Erfolgsmeldung, danach startet das Geraet tatsaechlich
+neu (Boot-Log erneut sichtbar).
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
+
+## 12.2 Druckerbearbeitung-Status
+
+* [ ] `objects.printer_edit_status` zeigt beim Oeffnen von
+  SCR_SETTINGS_PRINTER_EDIT hart codiert "Status: Mock-Daten"
+  (`UiBridge.cpp:3040`) -- durch neutralen/echten Text ersetzen (z.B. leer
+  oder "Neuer Drucker" vs. bestehenden Eintrag unterscheiden)
+
+## 12.3 Tote Mock-Referenzen in trayClicked()
+
+* [ ] `models::mock::findPrinter()`/`findTray()` in `trayClicked()`
+  (`UiBridge.cpp:987,993`) entfernen -- das daraus berechnete `spoolId`
+  wird von `AppTask`s `SelectTray`-Handler nachweislich nie gelesen
+  (`AppTask.cpp:3193-3205`), toter Code ohne Verhaltensaenderung beim
+  Entfernen
+
+## 12.4 MockUiDataProvider entfernen
+
+* [ ] `src/ui/models/MockUiDataProvider.h`/`.cpp` vollstaendig entfernen,
+  sobald 12.3 erledigt ist (letzter verbleibender Verbraucher)
+
+## 12.5 Verwaiste Platzhalter-Datei
+
+* [ ] `src/app/ApplicationController.cpp` entfernen -- leere Datei ("//
+  Platzhalter fuer eine spaetere fachliche Zustandssteuerung."), nirgends
+  inkludiert oder referenziert (per Volltextsuche bestaetigt)
+
+## 12.6 Firmware-Update-Platzhalter (Zwischenschritt)
+
+* [ ] `CheckFirmwareUpdate`-Toast-Text von "Update-Pr\xC3\xBCfung nicht
+  ausgef\xC3\xBChrt (Mock)" auf ehrlichen Zwischenstand aendern (z.B.
+  "Firmware-Update noch nicht verf\xC3\xBCgbar"), bis Phase 13 das echte
+  Feature liefert
+
+---
+
+# Phase 13 – Firmware-Update (OTA)
+
+Nutzerentscheidung (2026-08-25): echtes OTA-Update-System statt nur einer
+ehrlichen Platzhalter-Meldung, als eigene groessere Phase.
+
+**Machbarkeits-Check bereits durchgefuehrt:** `platformio.ini` setzt
+`board_build.partitions = default_16MB.csv`
+(`.pio-core/.../tools/partitions/default_16MB.csv`) -- diese Partitionstabelle
+hat bereits echtes Dual-OTA (`app0`/`app1`, je 0x640000 = 6.291.456 Byte
+~6.3 MB, plus `otadata`-Partition). Aktuelle Firmware belegt ~1,7 MB (26 %
+einer einzelnen App-Partition, Stand Phase 11.6) -- reichlich Reserve.
+**Keine Repartitionierung/kein einmaliger Seriell-Reflash bestehender
+Geraete noetig**, OTA kann direkt auf der vorhandenen Partitionstabelle
+aufbauen.
+
+Passend zu Phase 14.8s bereits bestehendem Punkt "kein Security-Key":
+keine kryptographische Signaturpruefung einplanen, nur
+Transportsicherheit (HTTPS) plus optionale SHA-256-Integritaetspruefung
+gegen eine veroeffentlichte Pruefsumme.
+
+**Noch zu klaeren (Nutzer):** Update-Quelle (z.B. GitHub-Releases-API
+eines bestimmten Repos, oder ein selbst gehosteter Endpunkt) -- ohne
+diese Angabe kann 13.2 nicht konkret umgesetzt werden. Keine URL wurde
+hier geraten/angenommen.
+
+## 13.1 Grundlagen
+
+* [ ] Firmware-Versionierung einfuehren -- Korrektur (2026-08-25, waehrend
+  Phase 12.1 entdeckt): `config::kApplicationVersion = "0.1.0-dev"`
+  (`AppConfig.h:8`) existiert bereits (bisher nur fuer den Boot-Log in
+  `main.cpp:42` genutzt); die urspruengliche Suche fuer diese Phase hatte
+  nach `FIRMWARE_VERSION`/`firmwareVersion` gesucht und diesen
+  camelCase-Namen mit anderem Praefix nicht gefunden. Diese Konstante
+  direkt wiederverwenden statt einer neuen -- ggf. auf ein richtiges
+  Semver-Schema pruefen/anpassen
+* [ ] Anzeige der aktuellen Version in SCR_SETTINGS_DEVICE/
+  SCR_SETTINGS_FIRMWARE
+* [ ] Update-Quelle mit Nutzer festlegen (siehe oben)
+* [ ] Versions-Vergleichslogik (Semver-Parsing)
+
+## 13.2 Versions-Check
+
+* [ ] HTTP(S)-Abfrage der Update-Quelle -- neuer Task oder Erweiterung
+  eines bestehenden (HTTPClient/WiFiClientSecure analog SpoolmanTask)
+* [ ] UI-Anzeige "Update verfuegbar: vX.Y.Z" vs. "Firmware aktuell"
+
+## 13.3 Download
+
+* [ ] .bin-Datei per HTTPS herunterladen
+* [ ] Fortschrittsanzeige (ShowProgress-Overlay analog Spoolman-/Bambu-
+  Workflows)
+* [ ] Verbindungs-/Speicherfehler behandeln (unterbrochener Download darf
+  die laufende App-Partition nicht antasten -- Download in die inaktive
+  OTA-Partition, siehe 13.5)
+
+## 13.4 Verifikation
+
+* [ ] SHA-256-Pruefsummenvergleich gegen veroeffentlichten Wert (kein
+  Security-Key/keine Signatur, siehe oben)
+
+## 13.5 Flash
+
+* [ ] `Update`-Bibliothek (`Update.begin()/write()/end()`) nutzt die
+  inaktive OTA-Partition (`app0`/`app1`, siehe Machbarkeits-Check oben)
+* [ ] Neustart in die neue Partition nach erfolgreichem Flash
+  (`ESP.restart()`, direkt verzahnt mit der Neustart-Korrektur aus
+  Phase 12.1)
+
+## 13.6 Fehlerbehandlung und Rollback
+
+* [ ] Pruefen, ob das Arduino-ESP32-Framework die App nach einem OTA-Boot
+  automatisch als "valid" markiert (ESP-IDFs App-Rollback-Mechanismus)
+  oder ob `esp_ota_mark_app_valid_cancel_rollback()` explizit in `setup()`
+  ergaenzt werden muss
+* [ ] Verhalten bei einer Firmware, die nach dem Update nicht mehr
+  boot-faehig ist (automatischer Rollback auf die vorherige Partition)
+
+## 13.7 UI-Integration
+
+* [ ] SCR_SETTINGS_FIRMWARE: Fortschritt-/Bestaetigungs-/Fehler-Dialoge
+* [ ] "Neustart nach Update"-Bestaetigung nutzt die in Phase 12.1
+  reparierte echte PrepareRestart-Funktion
+
+## 13.8 Validierung
+
+* [ ] echter Update-Testlauf am Geraet (alter Stand -> neuer Stand)
+* [ ] Rollback-Test mit absichtlich fehlerhaftem Image
+
+---
+
+# Phase 14 – Dokumentation und Release
+
+## 14.1 Technik
 
 * [ ] Architektur
 * [ ] Tasks
@@ -3606,7 +3793,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] Verdrahtung
 * [ ] BOM
 
-## 12.2 Logging
+## 14.2 Logging
 
 * [ ] kanonisches Format
 * [ ] Level
@@ -3617,7 +3804,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] Debug/Release Level
 * [ ] sensitive Daten
 
-## 12.3 NFC/RFID
+## 14.3 NFC/RFID
 
 * [ ] Tagtechnologien
 * [ ] Tagformate
@@ -3632,7 +3819,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] Duplicate Handling
 * [ ] kein lokales Mapping
 
-## 12.4 Daten
+## 14.4 Daten
 
 * [ ] lokale JSON-Dateien
 * [ ] Verzeichnisse
@@ -3641,7 +3828,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] kein Pending Spoolman Write
 * [ ] kein persistenter Offline-Spoolman-Cache
 
-## 12.5 Workflows
+## 14.5 Workflows
 
 * [ ] Screens
 * [ ] Navigation
@@ -3658,7 +3845,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] Mehrdrucker
 * [ ] Spoolman Offline Error Flow
 
-## 12.6 Benutzeranleitung
+## 14.6 Benutzeranleitung
 
 * [ ] Installation
 * [ ] WLAN
@@ -3673,7 +3860,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] AMS
 * [ ] Firmware
 
-## 12.7 Entwickler
+## 14.7 Entwickler
 
 * [ ] Build
 * [ ] Upload
@@ -3687,7 +3874,7 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 * [ ] Tagparser
 * [ ] Spoolman Extra Field
 
-## 12.8 Release
+## 14.8 Release
 
 * [ ] Lizenzen
 * [ ] SpoolEase-Code nicht kopiert
