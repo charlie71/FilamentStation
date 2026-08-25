@@ -4052,9 +4052,41 @@ den Ablehnungspfad zu bestaetigen).
   bereits in Phase 13.3 mitgeliefert (siehe dortige Begruendung: Download
   und Partitions-Schreiben sind auf ESP32 ein einziger Streaming-Vorgang,
   nicht sinnvoll auf zwei separate Nutzeraktionen aufteilbar)
-* [ ] Neustart in die neue Partition nach erfolgreichem Flash
+* [x] Neustart in die neue Partition nach erfolgreichem Flash
   (`ESP.restart()`, direkt verzahnt mit der Neustart-Korrektur aus
   Phase 12.1) -- einzig verbleibender Punkt dieser Unterphase
+
+**Umgesetzt (2026-08-25):** `AppTask`s `UpdateDownloadResult`-Handler
+zeigt bei Erfolg jetzt bewusst nicht mehr nur eine Erfolgsmeldung, sondern
+denselben `RestartConfirmation`-Dialog, der bereits in Phase 12.1 gebaut
+wurde (inkl. dessen Confirm-Handler mit `kRestartDelayMs`-Verzoegerung +
+`ESP.restart()`) -- kein neuer Bestaetigungs-/Neustart-Pfad noetig, ein
+Update-Neustart ist funktional derselbe Vorgang wie ein gewoehnlicher
+Neustart, nur mit anderem Anlass/Text ("Update installiert" /
+"Firmware wurde erfolgreich installiert und gepr\xC3\xBCft. Jetzt neu
+starten, um die neue Version zu verwenden?"). Der Nutzer kann den Dialog
+genauso mit "Abbrechen" verlassen und den Neustart sp\xC3\xA4ter manuell
+ueber die Ger\xC3\xA4te-Einstellungen ausl\xC3\xB6sen -- kein erzwungener
+sofortiger Neustart.
+
+Damit ist der End-to-End-OTA-Ablauf (Versions-Check -> Download+Flash+
+Pruefsummenverifikation -> Neustart-Bestaetigung -> tatsaechlicher
+Neustart in die neu geschriebene Partition) vollstaendig verdrahtet.
+
+**Stolperstein dabei gefunden und behoben:** derselbe "hex escape sequence
+out of range"-Fehler wie bereits in Phase 13.2/12.1 -- "gepr\xC3\xBCft."
+wurde als durchgehende Hex-Sequenz `\xBCf` geparst statt `\xBC` + `f`.
+Behoben durch Aufsplitten in zwei String-Literale, identisches Muster wie
+zuvor.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht.
+
+Noch nicht am Geraet mit einem echten Release-Update end-to-end verifiziert
+(kein Hardwarezugriff durch mich moeglich) -- sollte vom Nutzer geprueft
+werden: nach erfolgreicher Installation erscheint der Neustart-Dialog,
+Best\xC3\xA4tigen startet tats\xC3\xA4chlich in die neue Firmware-Version
+(sichtbar z.B. an `device_settings_version`/`firmware_settings_current`
+nach dem Neustart).
 
 ## 13.6 Fehlerbehandlung und Rollback
 

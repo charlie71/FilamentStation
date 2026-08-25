@@ -5607,12 +5607,19 @@ void appTask(void* parameter) {
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: update download hide overflow");
       if (event->value == 1) {
+        // Neustart-in-neue-Partition (TASKS.md Phase 13.5): nutzt bewusst
+        // denselben bereits bestehenden RestartConfirmation-Ablauf aus
+        // Phase 12.1 (inkl. dessen Confirm-Handler mit kRestartDelayMs +
+        // ESP.restart()) statt eines eigenen neuen Bestaetigungspfads --
+        // ein Update-Neustart ist funktional derselbe Vorgang wie ein
+        // gewoehnlicher Neustart, nur mit anderem Anlass. Der Nutzer kann
+        // hier genauso "Abbrechen" waehlen und spaeter manuell ueber die
+        // Geraete-Einstellungen neu starten.
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Success, event->requestId,
-                    "Firmware-Update",
-                    "Firmware wurde heruntergeladen und installiert. Der "
-                    "Neustart in die neue Version folgt erst in einer "
-                    "sp\xC3\xA4teren Phase (13.5) automatisch.");
+                    rtos::UiOverlayKind::RestartConfirmation, event->requestId,
+                    "Update installiert",
+                    "Firmware wurde erfolgreich installiert und gepr\xC3\xBC" "ft. "
+                    "Jetzt neu starten, um die neue Version zu verwenden?");
       } else {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, event->requestId,
