@@ -37,6 +37,13 @@ constexpr std::uint8_t kCommandInDataExchange = 0x40;
 constexpr std::uint8_t kCommandInCommunicateThru = 0x42;
 constexpr std::uint8_t kCommandInListPassiveTarget = 0x4A;
 constexpr std::uint8_t kCommandInRelease = 0x52;
+// Energiesparen (TASKS.md Phase 11.4). WakeUpEnable-Bitmap laut PN532-
+// Datenblatt (UM0701-02, 7.2.11 PowerDown): je ein Bit pro Interface, Bit4 =
+// HSU -- exakt das hier verwendete Transportinterface. Wake erfolgt danach
+// wie gewohnt ueber die bereits vorhandene Wake-Praeambel in
+// initializePn532() (UART-RX-Aktivitaet weckt den Chip).
+constexpr std::uint8_t kCommandPowerDown = 0x16;
+constexpr std::uint8_t kPn532WakeUpEnableHsu = 0x10;
 constexpr std::uint8_t kMifareRead = 0x30;
 constexpr std::uint8_t kMifareAuthenticateKeyA = 0x60;
 constexpr std::uint8_t kMifareWrite = 0xA2;
@@ -89,6 +96,16 @@ bool sendEvent(rtos::RtosContext& ctx, const rtos::AppEvent& event) {
           "Event enqueue failed queue=app_event event=%u",
           static_cast<unsigned>(event.type));
   return false;
+}
+
+void sendPowerAck(rtos::RtosContext& ctx) {
+  rtos::PowerCommand command{};
+  command.type = rtos::PowerCommandType::PowerDownAcknowledged;
+  if (xQueueSend(ctx.powerCommandQueue, &command, pdMS_TO_TICKS(100)) !=
+      pdPASS) {
+    FS_LOGW(services::LogComponent::Nfc,
+            "Event enqueue failed queue=power_command op=power_down_ack");
+  }
 }
 
 void sendError(rtos::RtosContext& ctx, std::uint32_t requestId,
@@ -344,6 +361,14 @@ bool setRfField(bool enabled) {
   std::uint8_t response[4]{};
   std::size_t length = 0;
   return transceive(kCommandRfConfiguration, params, sizeof(params), response,
+                    sizeof(response), length);
+}
+
+bool powerDown() {
+  const std::uint8_t params[] = {kPn532WakeUpEnableHsu};
+  std::uint8_t response[4]{};
+  std::size_t length = 0;
+  return transceive(kCommandPowerDown, params, sizeof(params), response,
                     sizeof(response), length);
 }
 
@@ -1142,6 +1167,7 @@ void nfcTask(void* parameter) {
   bool pn532Connected =
       initializationResult == Pn532InitializationResult::Ready;
   std::uint16_t sustainedCommErrors = 0;
+  bool poweredDown = false;
   rtos::NfcCommand command{};
   for (;;) {
     if (xQueueReceive(ctx.nfcCommandQueue, &command,
@@ -1152,6 +1178,44 @@ void nfcTask(void* parameter) {
           break;
         case rtos::NfcCommandType::StopReading:
           reading = false;
+          break;
+        case rtos::NfcCommandType::PowerDown:
+          if (!poweredDown) {
+            poweredDown = true;
+            setRfField(false);
+            if (!powerDown()) {
+              FS_LOGW(services::LogComponent::Nfc,
+                      "PN532 PowerDown command failed, RF field already off");
+            } else {
+              FS_LOGI(services::LogComponent::Nfc, "PN532 powered down");
+            }
+            xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_NFC_READY);
+            pn532Connected = false;
+            present = false;
+            active = {};
+            activeResult = {};
+            sendPowerAck(ctx);
+          }
+          break;
+        case rtos::NfcCommandType::PowerUp:
+          if (poweredDown) {
+            poweredDown = false;
+            const Pn532InitializationResult wakeResult = initializePn532();
+            if (wakeResult == Pn532InitializationResult::Ready) {
+              pn532Connected = true;
+              sustainedCommErrors = 0;
+              reportPn532Reconnected(ctx);
+            } else {
+              // Kein Sonderfall noetig: der naechste scanTarget()-Aufruf
+              // schlaegt einfach fehl und die bestehende Comm-Error-/
+              // Reconnect-Erkennung (notePn532CommError -> sustained ->
+              // reportPn532Disconnected) uebernimmt wie bei jeder anderen
+              // Transportstoerung.
+              FS_LOGW(services::LogComponent::Nfc,
+                      "PN532 wake re-init failed step=%s",
+                      initializationStep(wakeResult));
+            }
+          }
           break;
         case rtos::NfcCommandType::WriteSpoolTag:
           if (present && nfc::mayWriteTag(activeResult))
@@ -1172,6 +1236,7 @@ void nfcTask(void* parameter) {
       }
       continue;
     }
+    if (poweredDown) continue;
     if (!reading) continue;
 
     if (present) {

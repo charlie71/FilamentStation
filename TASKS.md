@@ -3301,11 +3301,58 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 11.4 NFC Power-Down
 
-* [ ] RF-Feld aus vor Sleep (`setRfField(false)`, bereits vorhanden)
-* [ ] Polling pausiert waehrend Sleep
-* [ ] echtes PN532-PowerDown-Kommando (0x16) pruefen/implementieren
-* [ ] Re-Init nach Wake ueber bestehende `initializePn532()`/
+* [x] RF-Feld aus vor Sleep (`setRfField(false)`, bereits vorhanden)
+* [x] Polling pausiert waehrend Sleep
+* [x] echtes PN532-PowerDown-Kommando (0x16) pruefen/implementieren
+* [x] Re-Init nach Wake ueber bestehende `initializePn532()`/
   `reportPn532Reconnected()`-Logik
+
+**Umgesetzt (2026-08-25):** `PowerTask` sendet beim Sleep-Uebergang
+zusaetzlich zu Scale jetzt auch `NfcCommandType::PowerDown`/`PowerUp` an
+`nfcCommandQueue` (neue `sendNfcPower()`, `PowerTask.cpp`).
+
+`NfcTask`s Hauptschleife (`NfcTask.cpp`) behandelt beide Kommandos als
+neue Cases direkt im bestehenden `nfcCommandQueue`-Switch: PowerDown
+schaltet zuerst das RF-Feld aus (`setRfField(false)`, bereits vorhanden),
+sendet danach das echte PN532-PowerDown-Kommando (`0x16`, neue
+`powerDown()`-Funktion neben `setRfField()`/`resetRfField()`) und pausiert
+das Polling ueber ein neues `poweredDown`-Flag (`if (poweredDown)
+continue;`, analog zum HX711-Muster aus 11.3). Ein bereits aktiv erkanntes
+Tag wird dabei zurueckgesetzt (`present=false`), da es waehrend des
+Power-Downs ohnehin nicht mehr abgefragt werden kann.
+
+**Zum PowerDown-Kommando (0x16):** Parameter ist ein WakeUpEnable-Bitmap
+laut PN532-Datenblatt (UM0701-02, 7.2.11); implementiert mit Bit4 (0x10)
+= HSU, dem hier tatsaechlich verwendeten Transportinterface -- der exakte
+Bit-Wert stammt aus dem Datenblatt, wurde aber nicht gegen ein
+Referenzsystem gegengeprueft. Deshalb bewusst mit Rueckfallebene gebaut:
+schlaegt das Kommando fehl oder ist der Bit-Wert falsch, bleibt das RF-Feld
+trotzdem aus (erste, garantiert wirksame Massnahme) und ein spaeterer
+Wake-Fehlversuch wird ueber die bestehende Comm-Error-/Reconnect-Erkennung
+(`notePn532CommError` -> `reportPn532Disconnected`) sichtbar gemeldet statt
+still zu haengen -- im schlechtesten Fall bleibt NFC bis zu einem manuellen
+Stromzyklus des PN532 unverfuegbar, aber klar erkennbar, nie stillschweigend
+tot.
+
+Wake/Re-Init nutzt exakt die im Konzept genannte bestehende Logik: PowerUp
+ruft `initializePn532()` direkt auf (die bereits mit der Wake-Praeambel
+`{0x55,0x55,0x00,0x00,0x00}` beginnt, die laut Datenblatt auch aus dem
+Power-Down weckt) und bei Erfolg `reportPn532Reconnected()` (setzt
+`EVENT_NFC_READY`, sendet `NfcInitialized`); bei Fehlschlag kein
+Sonderpfad -- der naechste normale `scanTarget()`-Versuch erkennt den
+Fehler ueber die bereits vorhandene `notePn532CommError()`/
+`sustainedCommErrors`-Maschinerie aus Phase 10.2, dieselbe, die auch jeden
+anderen Transportfehler zur Laufzeit erkennt.
+
+`NfcTask` bestaetigt PowerDown ueber denselben Kanal wie Phase 11.3
+(neue `sendPowerAck()`, analog zu `ScaleTask.cpp`).
+
+Noch nicht am Geraet verifiziert (kein Sichttest durch mich moeglich) --
+besonders das PowerDown-Kommando (0x16) sollte der Nutzer am realen Board
+pruefen: Tag-Erkennung stoppt in LIGHT-SLEEP, funktioniert nach Touch-Wake
+wieder normal, und es bleibt kein PN532-Fehlerzustand haengen.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 11.5 WiFi Abschaltung
 
