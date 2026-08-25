@@ -983,16 +983,12 @@ void amsClicked(lv_event_t* event) {
 void trayClicked(lv_event_t* event) {
   const auto trayId = static_cast<std::uint8_t>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
-  const models::UiPrinterSummary* printer =
-      models::mock::findPrinter(currentPrinterId);
-  const std::uint8_t amsId =
-      trayId == 0xFF
-          ? 0xFF
-          : (printer == nullptr ? 0 : currentAmsId);
-  const models::UiTraySummary* tray =
-      models::mock::findTray(currentPrinterId, amsId, trayId);
-  sendAction(rtos::UiActionType::SelectTray, currentPrinterId, amsId, trayId,
-             0, tray == nullptr ? 0 : tray->spoolId);
+  // spoolId wurde frueher aus models::mock::findTray() befuellt (TASKS.md
+  // Phase 12.3) -- AppTasks SelectTray-Handler liest action.spoolId
+  // nachweislich nie (AppTask.cpp, SelectTray-Case), toter Code ohne
+  // Verhaltensaenderung entfernt.
+  const std::uint8_t amsId = trayId == 0xFF ? 0xFF : currentAmsId;
+  sendAction(rtos::UiActionType::SelectTray, currentPrinterId, amsId, trayId);
 }
 
 void printerClicked(lv_event_t* event) {

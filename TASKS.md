@@ -3704,11 +3704,24 @@ Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 12.3 Tote Mock-Referenzen in trayClicked()
 
-* [ ] `models::mock::findPrinter()`/`findTray()` in `trayClicked()`
+* [x] `models::mock::findPrinter()`/`findTray()` in `trayClicked()`
   (`UiBridge.cpp:987,993`) entfernen -- das daraus berechnete `spoolId`
   wird von `AppTask`s `SelectTray`-Handler nachweislich nie gelesen
   (`AppTask.cpp:3193-3205`), toter Code ohne Verhaltensaenderung beim
   Entfernen
+
+**Umgesetzt (2026-08-25):** `trayClicked()` (`UiBridge.cpp`) ruft nicht
+mehr `models::mock::findPrinter()`/`findTray()` auf. `amsId` wird jetzt
+direkt aus `currentAmsId` abgeleitet (`trayId == 0xFF ? 0xFF :
+currentAmsId`) statt ueber einen Nullpruef-Umweg auf das mittlerweile
+unbenutzte Mock-Ergebnis; `spoolId` wird gar nicht mehr mitgeschickt
+(`sendAction()`s Default-Parameter greift, `SelectTray`-Handler liest ihn
+ohnehin nie). `MockUiDataProvider.h`-Include und die Datei selbst bleiben
+bewusst noch stehen -- das entfernt erst Phase 12.4, da hier
+"ausschliesslich Phase 12.3" gilt und der letzte Verbraucher gerade erst
+weggefallen ist.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
 ## 12.4 MockUiDataProvider entfernen
 
