@@ -1,7 +1,7 @@
 {
   "navigation": {
     "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/24",
-    "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/6",
+    "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/7",
     "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/4",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
     "selectedThemeColorObject": "[FilamentStation.eez-project]:/colors/6",
@@ -131,6 +131,7 @@
                   "type": "tabset",
                   "id": "#e9618473-7f24-4b75-af7c-4b03ffdc25e5",
                   "weight": 2,
+                  "selected": 1,
                   "enableClose": false,
                   "children": [
                     {
@@ -197,6 +198,7 @@
               "type": "tabset",
               "id": "EDITORS",
               "weight": 49.8967350839487,
+              "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
@@ -214,10 +216,10 @@
                 {
                   "type": "tab",
                   "id": "#8cca91c9-4476-4a6c-bd1a-9eefd8064973",
-                  "name": "CMP_TRAY_CARD",
+                  "name": "CMP_STAGING_CARD",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userWidgets/6",
+                    "objectPath": "[FilamentStation.eez-project]:/userWidgets/7",
                     "permanent": false
                   },
                   "icon": "svg:user_widget"
@@ -1238,7 +1240,7 @@
           "x": -197.83240670015854,
           "y": -159.82127645612943
         },
-        "scale": 0.9
+        "scale": 2.5
       },
       "timeline": {
         "isEditorActive": false,
@@ -1383,10 +1385,10 @@
       },
       "transform": {
         "translate": {
-          "x": -260.6707926663484,
-          "y": -208.5122397528617
+          "x": -157.34782359575934,
+          "y": -255.30327180262583
         },
-        "scale": 0.9
+        "scale": 2.5
       },
       "timeline": {
         "isEditorActive": false,
@@ -1400,9 +1402,7 @@
       "selectionBack": {
         "0": {},
         "1": {},
-        "4": {
-          "$selected": true
-        },
+        "4": {},
         "6": {},
         "7": {},
         "8": {},
@@ -1413,7 +1413,7 @@
           "x": -125.82143839518227,
           "y": -98.907834370931
         },
-        "scale": 3
+        "scale": 2.5
       },
       "timeline": {
         "isEditorActive": false,
@@ -2040,7 +2040,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 2.5
       },
       "timeline": {
         "isEditorActive": false,
@@ -2316,7 +2316,7 @@
   ],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,
-  "flowZoom": 0.9,
+  "flowZoom": 2.5,
   "implementationLanguage": "C",
   "openDialogDefaultPath": "C:\\VSCode\\Projects\\FilamentStation\\ui-project\\images\\3d-nozzle_W.png"
 }

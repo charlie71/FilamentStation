@@ -3098,6 +3098,71 @@ der Heap/PSRAM-Diagnose.
 
 Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
+## 10.8 RAM-Optimierung (Nutzerwunsch 2026-08-25)
+
+Untersucht, welche groesseren statischen RAM-Bloecke sich nach PSRAM
+verschieben lassen. Groesster (und einziger relevanter) Befund: 19
+funktionslokale `static rtos::AppEvent`-Puffer verteilt ueber
+`NfcTask.cpp` (8x), `SpoolmanTask.cpp` (9x), `BambuTask.cpp` (1x) und
+`AppTask.cpp` (1x, die Hauptschleife) -- `AppEvent` ist mit `PrinterState`,
+`BambuConfigCollection`, `TraySpoolCache`, `TagReadResult` u. a. als
+Werte eingebettet gross (~3KB je Instanz, durch bestehende Code-
+Kommentare "(~3KB)" bereits dokumentiert und durch den finalen RAM-
+Ruckgang exakt bestaetigt). Diese Puffer sind bewusst `static` (nicht
+stack-lokal), um fruehere Stack-Overflow-Abstuerze zu vermeiden -- als
+`static`/globales `.bss` landen sie aber IMMER im internen RAM, komplett
+unabhaengig von PSRAM-Einstellungen.
+
+Zwei moegliche Mechanismen geprueft:
+- `EXT_RAM_ATTR` (verschiebt `.bss`-Variablen automatisch nach PSRAM) --
+  **nicht wirksam in diesem Build**: das dafuer noetige
+  `CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY` ist im mitgelieferten
+  `sdkconfig` des Arduino-ESP32-S3-Frameworks nicht gesetzt (per
+  Volltextsuche im Framework-Paket bestaetigt), und laesst sich mit der
+  Arduino-Framework-Einbindung (kein reines ESP-IDF) nicht praktikabel
+  nachtraeglich aktivieren.
+- `heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)` -- **der
+  bereits bewaehrte Weg**, exakt das Muster, das `UiBridge.cpp::
+  initializeLvgl()` schon fuer die (deutlich groesseren) LVGL-Zeichenpuffer
+  nutzt. Automatisches Malloc-Routing (`CONFIG_SPIRAM_USE_MALLOC=y` ist
+  gesetzt) greift hier nicht, da dessen Schwelle
+  (`CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096`) ueber der AppEvent-Groesse
+  liegt -- explizite Allokation war also so oder so noetig.
+
+Umsetzung: neuer gemeinsamer Helfer `services/PsramAlloc.h`
+(`allocatePsramInstance<T>()`), alloziert einmalig eine Null-
+initialisierte PSRAM-Instanz per `heap_caps_malloc()` +
+Placement-New; schlaegt die Allokation fehl, haelt der *aufrufende* Task
+permanent an (`ulTaskNotifyTake(pdTRUE, portMAX_DELAY)`-Schleife, gleiches
+Fail-Fast-Muster wie bei anderen unwiederherstellbaren Init-Fehlern in
+diesem Projekt) -- liefert nie einen Null-Zeiger. Alle 19 Stellen
+umgebaut (`static T x{};` -> `static T* x = allocatePsramInstance<T>
+("...");`, jeder Feldzugriff von `x.feld` auf `x->feld`, `xQueueSend(...,
+&x, ...)` auf `xQueueSend(..., x, ...)`); fuer die 18 kurzen "einmal
+aufbauen, einmal senden"-Funktionen von Hand, fuer `AppTask::appTask()`s
+Hauptschleife (~2100 Zeilen, 480 Vorkommen von `event.`) gezielt per auf
+den Funktionskoerper begrenztem `sed 's/\bevent\./event->/g'` --
+selbstverifizierend, da jede vergessene Stelle ein Compilerfehler gewesen
+waere (keine einzige aufgetreten).
+
+Ergebnis (gemessener PlatformIO-RAM-Bericht, nicht geschaetzt): **RAM-
+Nutzung sank von 39,3 % (128.780 Byte) auf 21,3 % (69.804 Byte) --
+58.976 Byte (~57,6 KB) internes RAM freigemacht**, in zwei Bauschritten
+gemessen (SpoolmanTask.cpp allein: 128.780 -> 100.844 Byte, danach die
+restlichen drei Dateien: 100.844 -> 69.804 Byte). Deckt sich nahezu exakt
+mit der manuellen Vorabschaetzung (19 x ~3,1KB ~= 59KB).
+
+Kleinere, nicht mitgenommene Kandidaten fuer eine spaetere Runde (nicht
+Teil der genehmigten 19 AppEvent-Stellen): `NfcTask.cpp`s `static
+models::RawTagData raw{}` (~680 Byte, einmalig in `reportTag()`) und die
+NDEF-Puffer `bytes`/`verify` (`std::array<std::uint8_t,
+kNfcMaxNdefBytes=384>`, mehrfach in `handleWrite()`/`handleErase()`) sowie
+`StorageTask.cpp`s `static rtos::StorageCommand command{}`
+(~880 Byte, einmalig in der Hauptschleife) -- einzeln deutlich kleiner als
+AppEvent, in Summe aber noch ein paar KB.
+
+Build (0 Warnungen), 54 native Tests gruen, geflasht.
+
 ---
 
 # Phase 11 – Dokumentation und Release

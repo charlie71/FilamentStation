@@ -20,6 +20,7 @@
 #include "services/TagAssignmentPolicy.h"
 #include "services/TagIdentity.h"
 #include "services/Logger.h"
+#include "services/PsramAlloc.h"
 
 namespace filament_station::tasks {
 namespace {
@@ -3828,13 +3829,15 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
 void appTask(void* parameter) {
   auto& ctx = *static_cast<rtos::RtosContext*>(parameter);
   // One receiver owns this buffer for the complete task lifetime. Keeping the
-  // comparatively large value message in static storage avoids consuming the
-  // task stack before event-specific handlers run.
-  static rtos::AppEvent event{};
+  // comparatively large value message off both the task stack and internal
+  // RAM (PSRAM-backed, see services/PsramAlloc.h) avoids consuming the task
+  // stack before event-specific handlers run.
+  static rtos::AppEvent* event =
+      services::allocatePsramInstance<rtos::AppEvent>("AppTask.appTask");
   UBaseType_t reportedMinimumStack = static_cast<UBaseType_t>(~0U);
   TickType_t lastSpoolmanHealthCheckRetryAt = 0;
   for (;;) {
-    if (xQueueReceive(ctx.appEventQueue, &event,
+    if (xQueueReceive(ctx.appEventQueue, event,
                       pdMS_TO_TICKS(kAppTaskIdleTickMs)) != pdTRUE) {
       // Idle tick, no real event within the wait window -- see
       // kSpoolmanHealthCheckRetryIntervalMs above.
@@ -3847,65 +3850,65 @@ void appTask(void* parameter) {
       continue;
     }
 
-    if (event.type == rtos::AppEventType::UiAction) {
-      handleUiAction(ctx, event.uiAction);
-    } else if (event.type == rtos::AppEventType::ScaleMeasurement) {
-      scaleCounts = event.value;
+    if (event->type == rtos::AppEventType::UiAction) {
+      handleUiAction(ctx, event->uiAction);
+    } else if (event->type == rtos::AppEventType::ScaleMeasurement) {
+      scaleCounts = event->value;
       scaleError = false;
-      sendScaleUiState(ctx, event.requestId);
-    } else if (event.type == rtos::AppEventType::ScaleStable ||
-               event.type == rtos::AppEventType::ScaleUnstable) {
-      scaleCounts = event.value;
-      scaleStable = event.type == rtos::AppEventType::ScaleStable;
+      sendScaleUiState(ctx, event->requestId);
+    } else if (event->type == rtos::AppEventType::ScaleStable ||
+               event->type == rtos::AppEventType::ScaleUnstable) {
+      scaleCounts = event->value;
+      scaleStable = event->type == rtos::AppEventType::ScaleStable;
       scaleError = false;
-      sendScaleUiState(ctx, event.requestId);
-    } else if (event.type == rtos::AppEventType::ScaleTared ||
-               event.type == rtos::AppEventType::ScaleCalibrated ||
-               event.type == rtos::AppEventType::ScaleCalibrationReset) {
-      scaleOffsetCounts = event.scaleOffsetCounts;
-      scaleFactorCountsPerGram = event.scaleFactorCountsPerGram;
-      scaleCalibrated = event.scaleCalibrated;
+      sendScaleUiState(ctx, event->requestId);
+    } else if (event->type == rtos::AppEventType::ScaleTared ||
+               event->type == rtos::AppEventType::ScaleCalibrated ||
+               event->type == rtos::AppEventType::ScaleCalibrationReset) {
+      scaleOffsetCounts = event->scaleOffsetCounts;
+      scaleFactorCountsPerGram = event->scaleFactorCountsPerGram;
+      scaleCalibrated = event->scaleCalibrated;
       scaleStable = false;
       scaleError = false;
-      persistScaleConfiguration(ctx, event);
-      sendScaleUiState(ctx, event.requestId);
+      persistScaleConfiguration(ctx, *event);
+      sendScaleUiState(ctx, event->requestId);
       rtos::UiCommand result{};
       result.type = rtos::UiCommandType::ShowToast;
-      result.requestId = event.requestId;
+      result.requestId = event->requestId;
       result.value = 300 + static_cast<std::int32_t>(
-          event.type == rtos::AppEventType::ScaleTared
+          event->type == rtos::AppEventType::ScaleTared
               ? rtos::UiActionType::TareScale
-              : (event.type == rtos::AppEventType::ScaleCalibrated
+              : (event->type == rtos::AppEventType::ScaleCalibrated
                      ? rtos::UiActionType::StartScaleCalibration
                      : rtos::UiActionType::ResetScaleCalibration));
       std::snprintf(result.text, sizeof(result.text), "%s",
-                    event.type == rtos::AppEventType::ScaleTared
+                    event->type == rtos::AppEventType::ScaleTared
                         ? "Waage tariert"
-                        : (event.type == rtos::AppEventType::ScaleCalibrated
+                        : (event->type == rtos::AppEventType::ScaleCalibrated
                                ? "Kalibrierung gespeichert"
                                : "Kalibrierung zur\xC3\xBC" "ckgesetzt"));
       sendUiCommand(ctx, result, "AppTask: scale result UI queue overflow");
-    } else if (event.type == rtos::AppEventType::ScaleReady ||
-               event.type == rtos::AppEventType::ScaleError) {
-      if (event.type == rtos::AppEventType::ScaleReady) {
-        scaleCounts = event.value;
+    } else if (event->type == rtos::AppEventType::ScaleReady ||
+               event->type == rtos::AppEventType::ScaleError) {
+      if (event->type == rtos::AppEventType::ScaleReady) {
+        scaleCounts = event->value;
         scaleError = false;
       } else {
         scaleError = true;
         scaleStable = false;
       }
-      sendScaleUiState(ctx, event.requestId);
+      sendScaleUiState(ctx, event->requestId);
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
-      status.requestId = event.requestId;
+      status.requestId = event->requestId;
       std::snprintf(status.title, sizeof(status.title), "Scale");
-      std::snprintf(status.text, sizeof(status.text), "%s", event.text);
+      std::snprintf(status.text, sizeof(status.text), "%s", event->text);
       sendUiCommand(ctx, status, "AppTask: scale status UI queue overflow");
-      if (event.type == rtos::AppEventType::ScaleError &&
-          event.requestId != 0) {
+      if (event->type == rtos::AppEventType::ScaleError &&
+          event->requestId != 0) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
-                    "Waagenaktion fehlgeschlagen", event.text);
+                    rtos::UiOverlayKind::Error, event->requestId,
+                    "Waagenaktion fehlgeschlagen", event->text);
       }
       // ScaleReady repeats on every measurement (not a one-shot init
       // signal like NfcInitialized), so only the first occurrence updates
@@ -3913,20 +3916,20 @@ void appTask(void* parameter) {
       // needlessly re-send it.
       if (bootScaleStatus[0] == '\0') {
         std::snprintf(bootScaleStatus, sizeof(bootScaleStatus),
-                      event.type == rtos::AppEventType::ScaleReady
+                      event->type == rtos::AppEventType::ScaleReady
                           ? "Waage: bereit"
                           : "Waage: Fehler");
-        refreshBootProgress(ctx, event.requestId);
+        refreshBootProgress(ctx, event->requestId);
       }
-    } else if (event.type == rtos::AppEventType::NfcInitialized ||
-               event.type == rtos::AppEventType::NfcTagDetected ||
-               event.type == rtos::AppEventType::NfcTagRemoved ||
-               event.type == rtos::AppEventType::NfcTagRead ||
-               event.type == rtos::AppEventType::NfcTagWritten ||
-               event.type == rtos::AppEventType::NfcTagErased ||
-               event.type == rtos::AppEventType::NfcError) {
-      if (event.type == rtos::AppEventType::NfcTagRead) {
-        currentTag = event.tagReadResult;
+    } else if (event->type == rtos::AppEventType::NfcInitialized ||
+               event->type == rtos::AppEventType::NfcTagDetected ||
+               event->type == rtos::AppEventType::NfcTagRemoved ||
+               event->type == rtos::AppEventType::NfcTagRead ||
+               event->type == rtos::AppEventType::NfcTagWritten ||
+               event->type == rtos::AppEventType::NfcTagErased ||
+               event->type == rtos::AppEventType::NfcError) {
+      if (event->type == rtos::AppEventType::NfcTagRead) {
+        currentTag = event->tagReadResult;
         tagPresent = true;
         const bool nativeTechnology =
             currentTag.technology == models::TagTechnology::Ntag213 ||
@@ -3954,14 +3957,14 @@ void appTask(void* parameter) {
           if ((bits & required) == required) {
             pendingTagResolution = {};
             pendingTagResolution.active = true;
-            pendingTagResolution.requestId = event.requestId;
+            pendingTagResolution.requestId = event->requestId;
             pendingTagResolution.identity = currentTag.identity;
             pendingTagResolution.uidLength = currentTag.uidLength;
             std::memcpy(pendingTagResolution.uid.data(), currentTag.uid,
                         currentTag.uidLength);
             rtos::SpoolmanCommand lookup{};
             lookup.type = rtos::SpoolmanCommandType::FindSpoolByTag;
-            lookup.requestId = event.requestId;
+            lookup.requestId = event->requestId;
             lookup.tagIdentity = currentTag.identity;
             if (xQueueSend(ctx.spoolmanCommandQueue, &lookup,
                            pdMS_TO_TICKS(1000)) == pdPASS)
@@ -3984,7 +3987,7 @@ void appTask(void* parameter) {
                  rtos::EVENT_SPOOLMAN_TAG_FIELD_READY)) {
               pendingNativeConsistency = {};
               pendingNativeConsistency.active = true;
-              pendingNativeConsistency.requestId = event.requestId;
+              pendingNativeConsistency.requestId = event->requestId;
               pendingNativeConsistency.payloadSpoolId =
                   currentTag.definition.spoolId;
               pendingNativeConsistency.identity = currentTag.identity;
@@ -3993,13 +3996,13 @@ void appTask(void* parameter) {
                           currentTag.uidLength);
               rtos::SpoolmanCommand lookup{};
               lookup.type = rtos::SpoolmanCommandType::FindSpoolByTag;
-              lookup.requestId = event.requestId;
+              lookup.requestId = event->requestId;
               lookup.tagIdentity = currentTag.identity;
               if (xQueueSend(ctx.spoolmanCommandQueue, &lookup,
                              pdMS_TO_TICKS(1000)) == pdPASS) {
                 sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                             rtos::UiOverlayKind::SpoolmanRequest,
-                            event.requestId, "Tag-Zuordnung wird gepr\xC3\xBC" "ft",
+                            event->requestId, "Tag-Zuordnung wird gepr\xC3\xBC" "ft",
                             "NFC-Payload und Spoolman-Zuordnung werden verglichen.");
                 continue;
               }
@@ -4008,10 +4011,10 @@ void appTask(void* parameter) {
             resolvedTagIdentity = {};
             resolvedTagSpoolId = 0;
             showNativeTagAction(
-                ctx, event.requestId, 0,
+                ctx, event->requestId, 0,
                 "Spoolman-Zuordnung nicht pr\xC3\xBC" "fbar. NDEF wird nicht als Zuordnung verwendet.");
           } else {
-            showNativeTagAction(ctx, event.requestId,
+            showNativeTagAction(ctx, event->requestId,
                                 mappedNfcSpool(currentTag),
                                 mappedNfcSpool(currentTag) == 0
                                     ? "Nicht zugeordnet"
@@ -4038,8 +4041,8 @@ void appTask(void* parameter) {
             // act on whatever spool happened to already be staged. Same
             // pattern as showNativeTagAction's Phase 9.2 fix.
             if (pendingStagingSpoolRequestId == 0) {
-              if (requestStagingSpool(ctx, event.requestId, mappedSpool))
-                pendingStagingSpoolRequestId = event.requestId;
+              if (requestStagingSpool(ctx, event->requestId, mappedSpool))
+                pendingStagingSpoolRequestId = event->requestId;
             }
           } else {
             char summary[128]{};
@@ -4053,7 +4056,7 @@ void appTask(void* parameter) {
             rtos::UiCommand definition{};
             definition.type = rtos::UiCommandType::ShowScreen;
             definition.screenId = rtos::UiScreenId::TagDefinitionImport;
-            definition.requestId = event.requestId;
+            definition.requestId = event->requestId;
             std::snprintf(definition.text, sizeof(definition.text), "%s",
                           summary);
             if (sendUiCommand(ctx, definition,
@@ -4087,8 +4090,8 @@ void appTask(void* parameter) {
             // stagingActionClicked (Schnell/Erweitert wiegen) reads
             // stagingState.spoolId/stagingSpoolState, not command.spoolId.
             if (pendingStagingSpoolRequestId == 0) {
-              if (requestStagingSpool(ctx, event.requestId, mappedSpool))
-                pendingStagingSpoolRequestId = event.requestId;
+              if (requestStagingSpool(ctx, event->requestId, mappedSpool))
+                pendingStagingSpoolRequestId = event->requestId;
             }
           } else {
             char summary[128]{};
@@ -4104,7 +4107,7 @@ void appTask(void* parameter) {
             rtos::UiCommand definition{};
             definition.type = rtos::UiCommandType::ShowScreen;
             definition.screenId = rtos::UiScreenId::TagDefinitionImport;
-            definition.requestId = event.requestId;
+            definition.requestId = event->requestId;
             std::snprintf(definition.text, sizeof(definition.text), "%s",
                           summary);
             if (sendUiCommand(ctx, definition,
@@ -4119,7 +4122,7 @@ void appTask(void* parameter) {
           rtos::UiCommand legacy{};
           legacy.type = rtos::UiCommandType::ShowScreen;
           legacy.screenId = rtos::UiScreenId::TagLegacy;
-          legacy.requestId = event.requestId;
+          legacy.requestId = event->requestId;
           applyTagUiState(legacy);
           std::snprintf(
               legacy.text, sizeof(legacy.text),
@@ -4151,8 +4154,8 @@ void appTask(void* parameter) {
             // Erweitert wiegen) reads stagingState.spoolId/
             // stagingSpoolState, not command.spoolId.
             if (pendingStagingSpoolRequestId == 0) {
-              if (requestStagingSpool(ctx, event.requestId, mappedSpool))
-                pendingStagingSpoolRequestId = event.requestId;
+              if (requestStagingSpool(ctx, event->requestId, mappedSpool))
+                pendingStagingSpoolRequestId = event->requestId;
             }
           } else {
             char uid[32]{};
@@ -4165,7 +4168,7 @@ void appTask(void* parameter) {
             rtos::UiCommand unknown{};
             unknown.type = rtos::UiCommandType::ShowScreen;
             unknown.screenId = rtos::UiScreenId::TagUnknown;
-            unknown.requestId = event.requestId;
+            unknown.requestId = event->requestId;
             applyTagUiState(unknown);
             std::snprintf(
                 unknown.text, sizeof(unknown.text),
@@ -4181,11 +4184,11 @@ void appTask(void* parameter) {
             sendUiCommand(ctx, unknown, "AppTask: unknown screen overflow");
           }
         }
-      } else if (event.type == rtos::AppEventType::NfcTagRemoved) {
+      } else if (event->type == rtos::AppEventType::NfcTagRemoved) {
         const bool removalMatchesCurrentTag =
-            tagPresent && currentTag.uidLength == event.nfcUidLength &&
-            std::memcmp(currentTag.uid, event.nfcUid,
-                        event.nfcUidLength) == 0;
+            tagPresent && currentTag.uidLength == event->nfcUidLength &&
+            std::memcmp(currentTag.uid, event->nfcUid,
+                        event->nfcUidLength) == 0;
         if (!removalMatchesCurrentTag) {
           FS_LOGW(services::LogComponent::App,
                   "NFC removal ignored reason=stale_uid");
@@ -4230,7 +4233,7 @@ void appTask(void* parameter) {
         if (removalServerWasPending) pendingTagRemoval.tagRemoved = true;
         if (assignmentWriteWasPending) {
           reportAssignmentWriteFailure(
-              ctx, event.requestId,
+              ctx, event->requestId,
               "AppTask: AssignTag payload write failed because tag was removed; mapping retained",
               "Tag wurde zugeordnet.\nDer Tag wurde w\xC3\xA4hrend des Vorgangs entfernt. Die Tagdaten wurden nicht aktualisiert.");
         } else if (removalPayloadWasPending) {
@@ -4243,7 +4246,7 @@ void appTask(void* parameter) {
                         "AppTask: removal progress close overflow");
           sendOverlay(
               ctx, rtos::UiCommandType::ShowDialog,
-              rtos::UiOverlayKind::Error, event.requestId,
+              rtos::UiOverlayKind::Error, event->requestId,
               "Zuordnung teilweise entfernt",
               "Die Tag-Zuordnung wurde entfernt.\nDie FilamentStation-Daten konnten nicht vom Tag entfernt werden.");
         } else if (operationWasPending && !assignmentServerUpdateWasPending) {
@@ -4251,35 +4254,35 @@ void appTask(void* parameter) {
           hide.type = rtos::UiCommandType::HideProgress;
           sendUiCommand(ctx, hide, "AppTask: removed-tag progress close overflow");
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, event.requestId,
+                      rtos::UiOverlayKind::Error, event->requestId,
                       "NFC-Vorgang abgebrochen",
                       "Der Tag wurde w\xC3\xA4hrend des Vorgangs entfernt.");
         }
-      } else if (event.type == rtos::AppEventType::NfcTagWritten) {
+      } else if (event->type == rtos::AppEventType::NfcTagWritten) {
         const bool assignmentWrite =
             pendingTagAssignment.stage ==
             TagAssignmentStage::WritingPayload;
         if (assignmentWrite &&
-            (event.nfcUidLength != pendingTagAssignment.uidLength ||
-             std::memcmp(event.nfcUid, pendingTagAssignment.uid.data(),
+            (event->nfcUidLength != pendingTagAssignment.uidLength ||
+             std::memcmp(event->nfcUid, pendingTagAssignment.uid.data(),
                          pendingTagAssignment.uidLength) != 0)) {
           reportAssignmentWriteFailure(
-              ctx, event.requestId,
+              ctx, event->requestId,
               "AppTask: AssignTag UID verification failed; mapping retained",
               "Der urspr\xC3\xBCngliche Tag wurde zugeordnet.\nDie UID hat sich w\xC3\xA4hrend des Vorgangs ge\xC3\xA4ndert. Die Tagdaten wurden nicht aktualisiert.");
           continue;
         }
-        lastUsedTagSpoolId = event.spoolId;
+        lastUsedTagSpoolId = event->spoolId;
         const models::TagReadResult previousTag = currentTag;
-        currentTag = event.tagReadResult;
+        currentTag = event->tagReadResult;
         currentTag.technology = previousTag.technology;
         currentTag.ndefPresent = true;
         currentTag.ndefReadable = true;
         currentTag.physicalWritableKnown =
             previousTag.physicalWritableKnown;
         currentTag.physicalWritable = previousTag.physicalWritable;
-        currentTag.uidLength = event.nfcUidLength;
-        std::memcpy(currentTag.uid, event.nfcUid, event.nfcUidLength);
+        currentTag.uidLength = event->nfcUidLength;
+        std::memcpy(currentTag.uid, event->nfcUid, event->nfcUidLength);
         nfc::updateTagCapabilities(currentTag);
         tagPresent = true;
         pendingTagOperation = PendingTagOperation::None;
@@ -4289,27 +4292,27 @@ void appTask(void* parameter) {
         rtos::UiCommand result{};
         result.type = rtos::UiCommandType::ShowScreen;
         result.screenId = rtos::UiScreenId::TagResult;
-        result.requestId = event.requestId;
-        result.spoolId = event.spoolId;
+        result.requestId = event->requestId;
+        result.spoolId = event->spoolId;
         if (assignmentWrite) {
           std::snprintf(
               result.text, sizeof(result.text),
               "Tag erfolgreich Spule %lu zugeordnet und beschrieben.\nUID und Payload wurden verifiziert.",
-              static_cast<unsigned long>(event.spoolId));
+              static_cast<unsigned long>(event->spoolId));
           pendingTagAssignment = {};
         } else {
           std::snprintf(result.text, sizeof(result.text),
                         "Tag erfolgreich mit Spule %lu verbunden. UID und Payload wurden verifiziert.",
-                        static_cast<unsigned long>(event.spoolId));
+                        static_cast<unsigned long>(event->spoolId));
         }
         currentScreen = result.screenId;
         sendUiCommand(ctx, result, "AppTask: NFC result screen queue overflow");
-      } else if (event.type == rtos::AppEventType::NfcTagErased) {
+      } else if (event->type == rtos::AppEventType::NfcTagErased) {
         const bool assignmentRemoval =
             pendingTagRemoval.stage == TagRemovalStage::ClearingPayload;
         if (assignmentRemoval &&
-            (event.nfcUidLength != pendingTagRemoval.uidLength ||
-             std::memcmp(event.nfcUid, pendingTagRemoval.uid.data(),
+            (event->nfcUidLength != pendingTagRemoval.uidLength ||
+             std::memcmp(event->nfcUid, pendingTagRemoval.uid.data(),
                          pendingTagRemoval.uidLength) != 0)) {
           pendingTagOperation = PendingTagOperation::None;
           pendingTagRemoval = {};
@@ -4317,7 +4320,7 @@ void appTask(void* parameter) {
                   "Tag assignment removal verification failed mapping_removed=true reason=uid_mismatch");
           sendOverlay(
               ctx, rtos::UiCommandType::ShowDialog,
-              rtos::UiOverlayKind::Error, event.requestId,
+              rtos::UiOverlayKind::Error, event->requestId,
               "Zuordnung teilweise entfernt",
               "Die Tag-Zuordnung wurde entfernt.\nDie UID bei der L\xC3\xB6schverifikation stimmt nicht \xC3\xBC" "berein.");
           continue;
@@ -4337,7 +4340,7 @@ void appTask(void* parameter) {
         rtos::UiCommand result{};
         result.type = rtos::UiCommandType::ShowScreen;
         result.screenId = rtos::UiScreenId::TagResult;
-        result.requestId = event.requestId;
+        result.requestId = event->requestId;
         std::snprintf(
             result.text, sizeof(result.text),
             assignmentRemoval
@@ -4349,12 +4352,12 @@ void appTask(void* parameter) {
                   "Tag assignment removed mapping_removed=true payload_cleared=true verified=true");
         currentScreen = result.screenId;
         sendUiCommand(ctx, result, "AppTask: NFC erase result queue overflow");
-      } else if (event.type == rtos::AppEventType::NfcError &&
+      } else if (event->type == rtos::AppEventType::NfcError &&
                  pendingTagOperation != PendingTagOperation::None) {
         if (pendingTagAssignment.stage ==
             TagAssignmentStage::WritingPayload) {
           reportAssignmentWriteFailure(
-              ctx, event.requestId,
+              ctx, event->requestId,
               "AppTask: AssignTag payload write or verification failed; mapping retained");
           continue;
         }
@@ -4369,7 +4372,7 @@ void appTask(void* parameter) {
                         "AppTask: removal error progress close overflow");
           sendOverlay(
               ctx, rtos::UiCommandType::ShowDialog,
-              rtos::UiOverlayKind::Error, event.requestId,
+              rtos::UiOverlayKind::Error, event->requestId,
               "Zuordnung teilweise entfernt",
               "Die Tag-Zuordnung wurde entfernt.\nDie FilamentStation-Daten konnten nicht vom Tag entfernt werden.");
           continue;
@@ -4379,47 +4382,47 @@ void appTask(void* parameter) {
         hide.type = rtos::UiCommandType::HideProgress;
         sendUiCommand(ctx, hide, "AppTask: NFC error progress close overflow");
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
-                    "NFC-Vorgang fehlgeschlagen", event.text);
+                    rtos::UiOverlayKind::Error, event->requestId,
+                    "NFC-Vorgang fehlgeschlagen", event->text);
       }
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
-      status.requestId = event.requestId;
-      status.spoolId = event.spoolId;
+      status.requestId = event->requestId;
+      status.spoolId = event->spoolId;
       std::snprintf(status.title, sizeof(status.title), "NFC");
-      std::snprintf(status.text, sizeof(status.text), "%s", event.text);
+      std::snprintf(status.text, sizeof(status.text), "%s", event->text);
       sendUiCommand(ctx, status, "AppTask: NFC status UI queue overflow");
-      if (event.type == rtos::AppEventType::NfcInitialized) {
+      if (event->type == rtos::AppEventType::NfcInitialized) {
         std::snprintf(bootNfcStatus, sizeof(bootNfcStatus), "NFC: bereit");
-        refreshBootProgress(ctx, event.requestId);
-      } else if (event.type == rtos::AppEventType::NfcError &&
+        refreshBootProgress(ctx, event->requestId);
+      } else if (event->type == rtos::AppEventType::NfcError &&
                  bootNfcStatus[0] == '\0') {
         std::snprintf(bootNfcStatus, sizeof(bootNfcStatus), "NFC: Fehler");
-        refreshBootProgress(ctx, event.requestId);
+        refreshBootProgress(ctx, event->requestId);
       }
-    } else if (event.type == rtos::AppEventType::WifiStationConnected ||
-               event.type == rtos::AppEventType::WifiGotIp ||
-               event.type == rtos::AppEventType::WifiDisconnected ||
-               event.type == rtos::AppEventType::WifiLostIp ||
-               event.type == rtos::AppEventType::WifiConfigPortalStarted ||
-               event.type == rtos::AppEventType::WifiConfigPortalStopped ||
-               event.type == rtos::AppEventType::WifiConfigPortalTimedOut ||
-               event.type == rtos::AppEventType::WifiCredentialsCleared) {
+    } else if (event->type == rtos::AppEventType::WifiStationConnected ||
+               event->type == rtos::AppEventType::WifiGotIp ||
+               event->type == rtos::AppEventType::WifiDisconnected ||
+               event->type == rtos::AppEventType::WifiLostIp ||
+               event->type == rtos::AppEventType::WifiConfigPortalStarted ||
+               event->type == rtos::AppEventType::WifiConfigPortalStopped ||
+               event->type == rtos::AppEventType::WifiConfigPortalTimedOut ||
+               event->type == rtos::AppEventType::WifiCredentialsCleared) {
       rtos::UiCommand networkStatus{};
       networkStatus.type = rtos::UiCommandType::UpdateNetworkStatus;
-      networkStatus.requestId = event.requestId;
-      networkStatus.value = event.value;
+      networkStatus.requestId = event->requestId;
+      networkStatus.value = event->value;
       std::snprintf(networkStatus.title, sizeof(networkStatus.title), "%s",
-                    event.networkSsid);
+                    event->networkSsid);
       std::snprintf(networkStatus.text, sizeof(networkStatus.text), "%s",
-                    event.networkIp);
-      if (event.type == rtos::AppEventType::WifiGotIp) {
+                    event->networkIp);
+      if (event->type == rtos::AppEventType::WifiGotIp) {
         networkStatus.networkState = rtos::UiNetworkState::Online;
-      } else if (event.type == rtos::AppEventType::WifiStationConnected) {
+      } else if (event->type == rtos::AppEventType::WifiStationConnected) {
         networkStatus.networkState = rtos::UiNetworkState::Connecting;
-      } else if (event.type == rtos::AppEventType::WifiConfigPortalStarted) {
+      } else if (event->type == rtos::AppEventType::WifiConfigPortalStarted) {
         networkStatus.networkState = rtos::UiNetworkState::PortalActive;
-      } else if (event.type == rtos::AppEventType::WifiCredentialsCleared) {
+      } else if (event->type == rtos::AppEventType::WifiCredentialsCleared) {
         networkStatus.networkState = rtos::UiNetworkState::CredentialsCleared;
       } else {
         networkStatus.networkState = rtos::UiNetworkState::Offline;
@@ -4429,63 +4432,63 @@ void appTask(void* parameter) {
 
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
-      status.requestId = event.requestId;
+      status.requestId = event->requestId;
       std::snprintf(status.title, sizeof(status.title), "WLAN");
-      std::snprintf(status.text, sizeof(status.text), "%s", event.text);
+      std::snprintf(status.text, sizeof(status.text), "%s", event->text);
       sendUiCommand(ctx, status, "AppTask: WiFi status UI queue overflow");
 
-      if (event.type == rtos::AppEventType::WifiGotIp) {
+      if (event->type == rtos::AppEventType::WifiGotIp) {
         // Retry in case WiFi came up after bambu.json finished loading
         // (Connect is idempotent, see connectAllEnabledPrinters).
         connectAllEnabledPrinters(ctx);
         retrySpoolmanHealthCheckIfNeeded(ctx);
       }
 
-      if (event.type == rtos::AppEventType::WifiDisconnected ||
-          event.type == rtos::AppEventType::WifiLostIp ||
-          event.type == rtos::AppEventType::WifiCredentialsCleared) {
+      if (event->type == rtos::AppEventType::WifiDisconnected ||
+          event->type == rtos::AppEventType::WifiLostIp ||
+          event->type == rtos::AppEventType::WifiCredentialsCleared) {
         xEventGroupClearBits(ctx.systemEventGroup,
                              rtos::EVENT_SPOOLMAN_READY |
                                  rtos::EVENT_SPOOLMAN_TAG_FIELD_READY);
-        publishSpoolmanAppState(ctx, event.requestId);
+        publishSpoolmanAppState(ctx, event->requestId);
       }
 
-      if (event.type == rtos::AppEventType::WifiCredentialsCleared) {
+      if (event->type == rtos::AppEventType::WifiCredentialsCleared) {
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
         sendUiCommand(ctx, hide,
                       "AppTask: WiFi reset progress close overflow");
         pendingOverlay = rtos::UiOverlayKind::None;
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Success, event.requestId,
+                    rtos::UiOverlayKind::Success, event->requestId,
                     "WLAN-Zugangsdaten gel\xC3\xB6scht",
                     "Das Ger\xC3\xA4t ist nicht mehr mit dem bisherigen WLAN verbunden. Verwenden Sie Neu konfigurieren, um ein WLAN auszuw\xC3\xA4hlen.");
         continue;
       }
 
-      if (event.type == rtos::AppEventType::WifiConfigPortalStarted) {
+      if (event->type == rtos::AppEventType::WifiConfigPortalStarted) {
         wifiPortalRequested = false;
         wifiPortalActive = true;
-        wifiPortalRequestId = event.requestId;
-        if (event.requestId != 0) {
+        wifiPortalRequestId = event->requestId;
+        if (event->requestId != 0) {
           sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                       rtos::UiOverlayKind::ConnectionProgress,
-                      event.requestId, "WLAN konfigurieren", event.text);
+                      event->requestId, "WLAN konfigurieren", event->text);
         }
         continue;
       }
 
-      if (event.type == rtos::AppEventType::WifiStationConnected ||
-          ((event.type == rtos::AppEventType::WifiDisconnected ||
-            event.type == rtos::AppEventType::WifiLostIp) &&
+      if (event->type == rtos::AppEventType::WifiStationConnected ||
+          ((event->type == rtos::AppEventType::WifiDisconnected ||
+            event->type == rtos::AppEventType::WifiLostIp) &&
            wifiPortalActive)) {
         continue;
       }
 
       const bool wasInteractivePortal =
-          wifiPortalRequestId != 0 || event.requestId != 0;
+          wifiPortalRequestId != 0 || event->requestId != 0;
       const std::uint32_t resultRequestId =
-          event.requestId != 0 ? event.requestId : wifiPortalRequestId;
+          event->requestId != 0 ? event->requestId : wifiPortalRequestId;
       wifiPortalRequested = false;
       wifiPortalActive = false;
       wifiPortalRequestId = 0;
@@ -4495,16 +4498,16 @@ void appTask(void* parameter) {
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: WiFi progress close overflow");
       pendingOverlay = rtos::UiOverlayKind::None;
-      if (event.type == rtos::AppEventType::WifiGotIp) {
+      if (event->type == rtos::AppEventType::WifiGotIp) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Success, resultRequestId,
-                    "WLAN verbunden", event.text);
-      } else if (event.type ==
+                    "WLAN verbunden", event->text);
+      } else if (event->type ==
                  rtos::AppEventType::WifiConfigPortalTimedOut) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, resultRequestId,
-                    "WLAN-Portal beendet", event.text);
-      } else if (event.type ==
+                    "WLAN-Portal beendet", event->text);
+      } else if (event->type ==
                  rtos::AppEventType::WifiConfigPortalStopped) {
         rtos::UiCommand toast{};
         toast.type = rtos::UiCommandType::ShowToast;
@@ -4515,9 +4518,9 @@ void appTask(void* parameter) {
       } else {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, resultRequestId,
-                    "WLAN-Verbindung fehlgeschlagen", event.text);
+                    "WLAN-Verbindung fehlgeschlagen", event->text);
       }
-    } else if (event.type == rtos::AppEventType::SpoolmanWeightUpdated) {
+    } else if (event->type == rtos::AppEventType::SpoolmanWeightUpdated) {
       // Ignore a stale/superseded response: either the user cancelled this
       // weigh-wizard (Cancel resets weightUpdate, see there) or -- now that
       // starting a second one while the first is in flight is rejected
@@ -4525,80 +4528,80 @@ void appTask(void* parameter) {
       // arrived late. Applying it regardless would clobber whatever the
       // current wizard state actually is and pop an unexpected dialog
       // (Robustheit/Diagnose, TASKS.md 10.6).
-      if (!weightUpdate.active || event.requestId != weightUpdate.requestId) {
+      if (!weightUpdate.active || event->requestId != weightUpdate.requestId) {
         FS_LOGW(services::LogComponent::App,
                 "Ignoring stale SpoolmanWeightUpdated request_id=%lu "
                 "spool_id=%lu",
-                static_cast<unsigned long>(event.requestId),
-                static_cast<unsigned long>(event.spoolId));
+                static_cast<unsigned long>(event->requestId),
+                static_cast<unsigned long>(event->spoolId));
         continue;
       }
       const bool advanced = weightUpdate.advanced;
       weightUpdate = {};
       quickWeight.lastMeasurementGrams = scaleWeightGrams();
-      quickWeight.lastMeasurementSpoolId = event.spoolId;
+      quickWeight.lastMeasurementSpoolId = event->spoolId;
       quickWeight.hasLastMeasurement = true;
       if (advanced) advancedWeight.committed = true;
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: weight progress close overflow");
-      stagingSpoolId = event.spoolId;
+      stagingSpoolId = event->spoolId;
       rtos::UiCommand staging{};
       staging.type = rtos::UiCommandType::UpdateStaging;
-      staging.requestId = event.requestId;
-      staging.spoolId = event.spoolId;
-      staging.weightUpdate = event.weightUpdate;
-      staging.spoolColorCount = event.spoolColorCount;
-      for (std::uint8_t color = 0; color < event.spoolColorCount; ++color)
+      staging.requestId = event->requestId;
+      staging.spoolId = event->spoolId;
+      staging.weightUpdate = event->weightUpdate;
+      staging.spoolColorCount = event->spoolColorCount;
+      for (std::uint8_t color = 0; color < event->spoolColorCount; ++color)
         std::snprintf(staging.spoolColorHex[color],
                       sizeof(staging.spoolColorHex[color]), "%s",
-                      event.spoolColorHex[color]);
-      std::snprintf(staging.text, sizeof(staging.text), "%s", event.text);
+                      event->spoolColorHex[color]);
+      std::snprintf(staging.text, sizeof(staging.text), "%s", event->text);
       sendUiCommand(ctx, staging, "AppTask: staging weight update overflow");
       char result[144]{};
       std::snprintf(result, sizeof(result),
                     "Spule #%lu\nRestgewicht: %.1f g\nSpoolman-Daten wurden neu geladen.",
-                    static_cast<unsigned long>(event.spoolId),
-                    static_cast<double>(event.weightUpdate.remainingWeightGrams));
+                    static_cast<unsigned long>(event->spoolId),
+                    static_cast<double>(event->weightUpdate.remainingWeightGrams));
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                   advanced ? rtos::UiOverlayKind::AdvancedWeightResult
                            : rtos::UiOverlayKind::Success,
-                  event.requestId,
+                  event->requestId,
                   advanced ? "Erweitertes Wiegen gespeichert"
                            : "Messung gespeichert",
                   result);
-    } else if (event.type == rtos::AppEventType::SpoolmanImportCompleted) {
-      pendingTagSpoolId = event.spoolId;
-      currentTag.definition.hasSpoolId = event.spoolId != 0;
-      currentTag.definition.spoolId = event.spoolId;
+    } else if (event->type == rtos::AppEventType::SpoolmanImportCompleted) {
+      pendingTagSpoolId = event->spoolId;
+      currentTag.definition.hasSpoolId = event->spoolId != 0;
+      currentTag.definition.spoolId = event->spoolId;
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: import progress close overflow");
       rtos::UiCommand result{};
       result.type = rtos::UiCommandType::ShowScreen;
       result.screenId = rtos::UiScreenId::TagResult;
-      result.requestId = event.requestId;
-      result.spoolId = event.spoolId;
-      std::snprintf(result.text, sizeof(result.text), "%s", event.text);
+      result.requestId = event->requestId;
+      result.spoolId = event->spoolId;
+      std::snprintf(result.text, sizeof(result.text), "%s", event->text);
       previousScreen = currentScreen;
       currentScreen = result.screenId;
       sendUiCommand(ctx, result, "AppTask: import result UI overflow");
-    } else if (event.type == rtos::AppEventType::SpoolmanResponse &&
-               event.requestId >= kTraySpoolDetailsRequestIdBase &&
-               event.requestId < kTraySpoolDetailsRequestIdBase +
+    } else if (event->type == rtos::AppEventType::SpoolmanResponse &&
+               event->requestId >= kTraySpoolDetailsRequestIdBase &&
+               event->requestId < kTraySpoolDetailsRequestIdBase +
                                       kMaximumTraySpoolDetailsEntries) {
       // Response to resolveTraySpoolDetails()'s two-step fetch
       // (LoadSpool -> LoadFilament, see TraySpoolDetailsStage) -- store the
       // result and re-sync Home so the tray card picks it up without
       // waiting for the next unrelated report (Nutzerwunsch 2026-08-24).
-      const std::size_t index = event.requestId - kTraySpoolDetailsRequestIdBase;
+      const std::size_t index = event->requestId - kTraySpoolDetailsRequestIdBase;
       TraySpoolDetailsEntry& entry = traySpoolDetails[index];
       if (entry.stage == TraySpoolDetailsStage::LoadingSpool) {
-        if (event.value >= 0 && event.spool.id == entry.spoolId) {
-          entry.remainingWeightGrams = event.spool.remainingWeightGrams;
-          if (event.spool.filamentId != 0 &&
-              requestFilamentDetails(ctx, event.requestId,
-                                     event.spool.filamentId)) {
+        if (event->value >= 0 && event->spool.id == entry.spoolId) {
+          entry.remainingWeightGrams = event->spool.remainingWeightGrams;
+          if (event->spool.filamentId != 0 &&
+              requestFilamentDetails(ctx, event->requestId,
+                                     event->spool.filamentId)) {
             entry.stage = TraySpoolDetailsStage::LoadingFilament;
           } else {
             // No filament id, or the follow-up request couldn't be
@@ -4611,11 +4614,11 @@ void appTask(void* parameter) {
           entry = TraySpoolDetailsEntry{};
         }
       } else if (entry.stage == TraySpoolDetailsStage::LoadingFilament &&
-                 event.filament.id != 0) {
-        // event.filament.id != 0 excludes loadSpools()'s trailing "N Spulen
+                 event->filament.id != 0) {
+        // event->filament.id != 0 excludes loadSpools()'s trailing "N Spulen
         // gefunden" completion marker (see docs/bambu-protocol.md) -- it
         // reuses this same requestId (LoadSpool -> LoadFilament chain both
-        // key off event.requestId) and, for a single-spool LoadSpool, is
+        // key off event->requestId) and, for a single-spool LoadSpool, is
         // enqueued immediately after the real spool response, arriving here
         // well before the actual (HTTP-round-trip-bound) filament response.
         // Without this guard it was mistaken for "filament fetch done, no
@@ -4623,8 +4626,8 @@ void appTask(void* parameter) {
         // still false -- the real response then arrived to a stage that no
         // longer matched anything and was silently dropped (bug found via
         // Nutzer-Report 2026-08-24, staging card showed the same symptom).
-        entry.kFactorValid = event.filament.bambuKFactorValid;
-        entry.kFactor = event.filament.bambuKFactor;
+        entry.kFactorValid = event->filament.bambuKFactorValid;
+        entry.kFactor = event->filament.bambuKFactor;
         // Weight is already known from the first step regardless of
         // whether the filament fetch itself succeeded -- show what we
         // have instead of discarding it over a missing K-factor.
@@ -4632,20 +4635,20 @@ void appTask(void* parameter) {
         if (models::isValidPrinterId(printerCollection.activePrinterId))
           syncAmsToUi(ctx, printerCollection.activePrinterId);
       }
-    } else if (event.type == rtos::AppEventType::SpoolmanResponse &&
-               event.requestId == kLegacyMigrationLoadSpoolRequestId &&
+    } else if (event->type == rtos::AppEventType::SpoolmanResponse &&
+               event->requestId == kLegacyMigrationLoadSpoolRequestId &&
                legacyMigrationStage == LegacyMigrationStage::LoadingTarget) {
-      if (event.value < 0) {
-        if (event.spoolId == 0)
+      if (event->value < 0) {
+        if (event->spoolId == 0)
           finishLegacyMigrationEntry(ctx, false, "target_spool_not_found");
         continue;
       }
       const auto& mapping = legacyMappingFiles[legacyMigrationFileIndex]
                                 .mappings[legacyMigrationEntryIndex];
-      if (event.spool.id != mapping.spoolId) {
+      if (event->spool.id != mapping.spoolId) {
         finishLegacyMigrationEntry(ctx, false, "target_spool_mismatch");
       } else if (services::legacyMigrationDecision(
-                     event.spool.extraTagValid, event.spool.extraTag,
+                     event->spool.extraTagValid, event->spool.extraTag,
                      legacyMigrationIdentity.value) ==
                  services::LegacyMigrationDecision::SetTarget) {
         legacyMigrationStage = LegacyMigrationStage::SettingTarget;
@@ -4654,27 +4657,27 @@ void appTask(void* parameter) {
                 kLegacyMigrationSetTagRequestId, mapping.spoolId))
           finishLegacyMigrationEntry(ctx, false, "spoolman_queue_full");
       } else if (services::legacyMigrationDecision(
-                     event.spool.extraTagValid, event.spool.extraTag,
+                     event->spool.extraTagValid, event->spool.extraTag,
                      legacyMigrationIdentity.value) ==
                  services::LegacyMigrationDecision::AlreadyMigrated) {
         finishLegacyMigrationEntry(ctx, true, "already_assigned");
       } else {
         finishLegacyMigrationEntry(
-            ctx, false, event.spool.extraTagValid
+            ctx, false, event->spool.extraTagValid
                             ? "target_spool_has_other_tag"
                             : "target_spool_tag_field_invalid");
       }
       continue;
-    } else if (event.type == rtos::AppEventType::SpoolmanTagLookup &&
-               event.requestId == kLegacyMigrationLookupRequestId &&
+    } else if (event->type == rtos::AppEventType::SpoolmanTagLookup &&
+               event->requestId == kLegacyMigrationLookupRequestId &&
                legacyMigrationStage == LegacyMigrationStage::LookingUp) {
-      const auto status = static_cast<services::TagLookupStatus>(event.value);
+      const auto status = static_cast<services::TagLookupStatus>(event->value);
       const auto& mapping = legacyMappingFiles[legacyMigrationFileIndex]
                                 .mappings[legacyMigrationEntryIndex];
       if (status == services::TagLookupStatus::Found) {
         finishLegacyMigrationEntry(
-            ctx, event.spoolId == mapping.spoolId,
-            event.spoolId == mapping.spoolId ? "already_assigned"
+            ctx, event->spoolId == mapping.spoolId,
+            event->spoolId == mapping.spoolId ? "already_assigned"
                                              : "tag_assigned_elsewhere");
       } else if (status == services::TagLookupStatus::NotFound) {
         legacyMigrationStage = LegacyMigrationStage::LoadingTarget;
@@ -4686,20 +4689,20 @@ void appTask(void* parameter) {
         finishLegacyMigrationEntry(ctx, false, "tag_lookup_failed");
       }
       continue;
-    } else if (event.type == rtos::AppEventType::SpoolmanTagDuplicate &&
-               event.requestId == kLegacyMigrationLookupRequestId &&
+    } else if (event->type == rtos::AppEventType::SpoolmanTagDuplicate &&
+               event->requestId == kLegacyMigrationLookupRequestId &&
                legacyMigrationStage == LegacyMigrationStage::LookingUp) {
       finishLegacyMigrationEntry(ctx, false,
                                  "tag_assigned_to_multiple_spools");
       continue;
-    } else if (event.type == rtos::AppEventType::SpoolmanTagUpdated &&
-               event.requestId == kLegacyMigrationSetTagRequestId &&
+    } else if (event->type == rtos::AppEventType::SpoolmanTagUpdated &&
+               event->requestId == kLegacyMigrationSetTagRequestId &&
                legacyMigrationStage == LegacyMigrationStage::SettingTarget) {
       finishLegacyMigrationEntry(ctx, true, "assigned");
       continue;
-    } else if (event.type == rtos::AppEventType::SpoolmanTagLookup &&
+    } else if (event->type == rtos::AppEventType::SpoolmanTagLookup &&
                pendingTagResolution.active &&
-               event.requestId == pendingTagResolution.requestId) {
+               event->requestId == pendingTagResolution.requestId) {
       const auto pending = pendingTagResolution;
       pendingTagResolution = {};
       const bool sameTag =
@@ -4708,41 +4711,41 @@ void appTask(void* parameter) {
           currentTag.identity.source == pending.identity.source &&
           std::strcmp(currentTag.identity.value, pending.identity.value) == 0;
       if (!sameTag) continue;
-      const auto status = static_cast<services::TagLookupStatus>(event.value);
+      const auto status = static_cast<services::TagLookupStatus>(event->value);
       resolvedTagIdentity = pending.identity;
       resolvedTagSpoolId =
-          status == services::TagLookupStatus::Found ? event.spoolId : 0;
+          status == services::TagLookupStatus::Found ? event->spoolId : 0;
       rtos::AppEvent replay{};
       replay.type = rtos::AppEventType::NfcTagRead;
-      replay.requestId = event.requestId;
+      replay.requestId = event->requestId;
       replay.tagReadResult = currentTag;
       if (xQueueSend(ctx.appEventQueue, &replay, pdMS_TO_TICKS(1000)) != pdPASS)
         FS_LOGW(services::LogComponent::App,
                 "Event enqueue failed queue=app_event op=replay_tag_after_spoolman_lookup");
       continue;
-    } else if (event.type == rtos::AppEventType::SpoolmanTagDuplicate &&
+    } else if (event->type == rtos::AppEventType::SpoolmanTagDuplicate &&
                pendingTagResolution.active &&
-               event.requestId == pendingTagResolution.requestId) {
+               event->requestId == pendingTagResolution.requestId) {
       pendingTagResolution = {};
       resolvedTagIdentity = {};
       resolvedTagSpoolId = 0;
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                  rtos::UiOverlayKind::Error, event.requestId,
+                  rtos::UiOverlayKind::Error, event->requestId,
                   "Mehrdeutige Tag-Zuordnung",
                   "Diese Tag-ID ist mehreren Spulen in Spoolman zugeordnet. Bitte die Spoolman-Daten korrigieren.");
       continue;
-    } else if (event.type == rtos::AppEventType::SpoolmanResponse &&
+    } else if (event->type == rtos::AppEventType::SpoolmanResponse &&
                pendingSlotAssignment.stage ==
                    SlotAssignmentStage::LoadingSpool &&
-               event.requestId == pendingSlotAssignment.requestId) {
-      if (event.value < 0 || event.spool.id == 0) {
+               event->requestId == pendingSlotAssignment.requestId) {
+      if (event->value < 0 || event->spool.id == 0) {
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
         sendUiCommand(ctx, hide,
                       "AppTask: slot assignment progress close overflow");
         pendingSlotAssignment = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Slot nicht konfiguriert",
                     "Spulendaten konnten nicht geladen werden.");
         continue;
@@ -4754,19 +4757,19 @@ void appTask(void* parameter) {
       // eine Spoolman *Filament*-Eigenschaft (Nutzerhinweis 2026-08-24),
       // dafuer ein eigener Request statt sich auf das verschachtelte
       // filament-Objekt dieser Spool-Antwort zu verlassen.
-      pendingSlotAssignment.spoolId = event.spool.id;
+      pendingSlotAssignment.spoolId = event->spool.id;
       std::snprintf(pendingSlotAssignment.trayType,
                     sizeof(pendingSlotAssignment.trayType), "%s",
-                    event.spool.material);
+                    event->spool.material);
       std::snprintf(pendingSlotAssignment.trayColorHex,
                     sizeof(pendingSlotAssignment.trayColorHex), "%s",
-                    event.spool.colorCount > 0 ? event.spool.colorHex[0] : "");
-      if (event.spool.filamentId != 0 &&
-          requestFilamentDetails(ctx, event.requestId,
-                                 event.spool.filamentId)) {
+                    event->spool.colorCount > 0 ? event->spool.colorHex[0] : "");
+      if (event->spool.filamentId != 0 &&
+          requestFilamentDetails(ctx, event->requestId,
+                                 event->spool.filamentId)) {
         pendingSlotAssignment.stage = SlotAssignmentStage::LoadingFilament;
         sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                    rtos::UiOverlayKind::SpoolmanRequest, event.requestId,
+                    rtos::UiOverlayKind::SpoolmanRequest, event->requestId,
                     "Slot konfigurieren", "Filamentdaten werden geladen.");
         continue;
       }
@@ -4778,8 +4781,8 @@ void appTask(void* parameter) {
       FS_LOGD(services::LogComponent::App,
               "LoadFilament skipped request_id=%lu spool_filament_id=%lu -- "
               "proceeding without temperature",
-              static_cast<unsigned long>(event.requestId),
-              static_cast<unsigned long>(event.spool.filamentId));
+              static_cast<unsigned long>(event->requestId),
+              static_cast<unsigned long>(event->spool.filamentId));
       pendingSlotAssignment.tempFieldsMissing = true;
       {
         rtos::UiCommand hide{};
@@ -4787,29 +4790,29 @@ void appTask(void* parameter) {
         sendUiCommand(ctx, hide,
                       "AppTask: slot assignment progress close overflow");
       }
-      if (!sendPendingSlotAssignTray(ctx, event.requestId, 0, 0)) {
+      if (!sendPendingSlotAssignTray(ctx, event->requestId, 0, 0)) {
         pendingSlotAssignment = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Slot nicht konfiguriert",
                     "Der Auftrag konnte nicht an den Drucker gesendet werden.");
         continue;
       }
       pendingSlotAssignment.stage = SlotAssignmentStage::WritingSlot;
       sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                  rtos::UiOverlayKind::BambuConnection, event.requestId,
+                  rtos::UiOverlayKind::BambuConnection, event->requestId,
                   "Slot konfigurieren",
                   "Slotdaten werden an den Drucker gesendet.");
       continue;
-    } else if (event.type == rtos::AppEventType::SpoolmanResponse &&
+    } else if (event->type == rtos::AppEventType::SpoolmanResponse &&
                pendingSlotAssignment.stage ==
                    SlotAssignmentStage::LoadingFilament &&
-               event.requestId == pendingSlotAssignment.requestId &&
-               event.filament.id != 0) {
-      // event.filament.id != 0 excludes loadSpools()'s trailing "N Spulen
+               event->requestId == pendingSlotAssignment.requestId &&
+               event->filament.id != 0) {
+      // event->filament.id != 0 excludes loadSpools()'s trailing "N Spulen
       // gefunden" completion marker (see docs/bambu-protocol.md): the
       // preceding LoadSpool request (requestStagingSpool()) and this
-      // LoadFilament follow-up both key off event.requestId, and that
+      // LoadFilament follow-up both key off event->requestId, and that
       // marker -- always sent after a LoadSpool response, empty spool/
       // filament payload, value=-1 -- reaches this queue well before the
       // real (HTTP-round-trip-bound) filament response. Without this guard
@@ -4829,32 +4832,32 @@ void appTask(void* parameter) {
       // wird keine Temperatur erfunden.
       std::uint16_t nozzleTempMinC = 0;
       std::uint16_t nozzleTempMaxC = 0;
-      if (event.value >= 0 && event.filament.bambuTempFieldsValid) {
-        nozzleTempMinC = event.filament.bambuTempMinC;
-        nozzleTempMaxC = event.filament.bambuTempMaxC;
+      if (event->value >= 0 && event->filament.bambuTempFieldsValid) {
+        nozzleTempMinC = event->filament.bambuTempMinC;
+        nozzleTempMaxC = event->filament.bambuTempMaxC;
         pendingSlotAssignment.tempFieldsMissing = false;
       } else {
         pendingSlotAssignment.tempFieldsMissing = true;
       }
-      if (!sendPendingSlotAssignTray(ctx, event.requestId, nozzleTempMinC,
+      if (!sendPendingSlotAssignTray(ctx, event->requestId, nozzleTempMinC,
                                      nozzleTempMaxC)) {
         pendingSlotAssignment = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Slot nicht konfiguriert",
                     "Der Auftrag konnte nicht an den Drucker gesendet werden.");
         continue;
       }
       pendingSlotAssignment.stage = SlotAssignmentStage::WritingSlot;
       sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                  rtos::UiOverlayKind::BambuConnection, event.requestId,
+                  rtos::UiOverlayKind::BambuConnection, event->requestId,
                   "Slot konfigurieren",
                   "Slotdaten werden an den Drucker gesendet.");
       continue;
-    } else if (event.type == rtos::AppEventType::SpoolmanResponse) {
+    } else if (event->type == rtos::AppEventType::SpoolmanResponse) {
       if (pendingStagingSpoolRequestId != 0 &&
-          event.requestId == pendingStagingSpoolRequestId) {
-        if (event.value >= 0 && event.spool.id != 0) {
+          event->requestId == pendingStagingSpoolRequestId) {
+        if (event->value >= 0 && event->spool.id != 0) {
           pendingStagingSpoolRequestId = 0;
           rtos::UiCommand hide{};
           hide.type = rtos::UiCommandType::HideProgress;
@@ -4865,26 +4868,26 @@ void appTask(void* parameter) {
           // zuverlaessig genug (dasselbe Problem wie bei bambu_temp_min/
           // bambu_temp_max), daher ein eigener Folge-Request statt K-Faktor
           // wie zuvor als Mockdaten anzuzeigen.
-          if (event.spool.filamentId != 0 &&
-              requestFilamentDetails(ctx, event.requestId,
-                                     event.spool.filamentId)) {
+          if (event->spool.filamentId != 0 &&
+              requestFilamentDetails(ctx, event->requestId,
+                                     event->spool.filamentId)) {
             pendingStagingFilamentLoad.active = true;
-            pendingStagingFilamentLoad.requestId = event.requestId;
-            pendingStagingFilamentLoad.spool = event.spool;
+            pendingStagingFilamentLoad.requestId = event->requestId;
+            pendingStagingFilamentLoad.spool = event->spool;
           } else {
-            sendStagingUpdate(ctx, event.requestId, event.spool,
-                              event.spool.emptyWeightGrams, false, 0.0F);
+            sendStagingUpdate(ctx, event->requestId, event->spool,
+                              event->spool.emptyWeightGrams, false, 0.0F);
           }
         }
         continue;
       }
       if (pendingStagingFilamentLoad.active &&
-          event.requestId == pendingStagingFilamentLoad.requestId &&
-          event.filament.id != 0) {
-        // event.filament.id != 0 excludes loadSpools()'s trailing "N Spulen
+          event->requestId == pendingStagingFilamentLoad.requestId &&
+          event->filament.id != 0) {
+        // event->filament.id != 0 excludes loadSpools()'s trailing "N Spulen
         // gefunden" completion marker (see docs/bambu-protocol.md): the
         // preceding LoadSpool request and this LoadFilament follow-up both
-        // key off event.requestId, and that marker -- always sent right
+        // key off event->requestId, and that marker -- always sent right
         // after a LoadSpool response, empty spool/filament payload,
         // value=-1 -- reaches this queue well before the real (HTTP-round-
         // trip-bound) filament response. Without this guard it was
@@ -4896,48 +4899,48 @@ void appTask(void* parameter) {
         const models::SpoolmanSpool spool = pendingStagingFilamentLoad.spool;
         pendingStagingFilamentLoad = {};
         float emptyWeightGrams = spool.emptyWeightGrams;
-        if (event.filament.emptySpoolWeightGrams > 0.0F)
-          emptyWeightGrams = event.filament.emptySpoolWeightGrams;
-        sendStagingUpdate(ctx, event.requestId, spool, emptyWeightGrams,
-                          event.filament.bambuKFactorValid,
-                          event.filament.bambuKFactor);
+        if (event->filament.emptySpoolWeightGrams > 0.0F)
+          emptyWeightGrams = event->filament.emptySpoolWeightGrams;
+        sendStagingUpdate(ctx, event->requestId, spool, emptyWeightGrams,
+                          event->filament.bambuKFactorValid,
+                          event->filament.bambuKFactor);
         continue;
       }
       rtos::UiCommand picker{};
       picker.type = rtos::UiCommandType::UpdateSpoolPicker;
-      picker.requestId = event.requestId;
-      picker.value = event.value;
-      picker.spoolId = event.spoolId;
-      picker.spoolColorCount = event.spoolColorCount;
-      for (std::uint8_t color = 0; color < event.spoolColorCount; ++color)
+      picker.requestId = event->requestId;
+      picker.value = event->value;
+      picker.spoolId = event->spoolId;
+      picker.spoolColorCount = event->spoolColorCount;
+      for (std::uint8_t color = 0; color < event->spoolColorCount; ++color)
         std::snprintf(picker.spoolColorHex[color],
                       sizeof(picker.spoolColorHex[color]), "%s",
-                      event.spoolColorHex[color]);
-      std::snprintf(picker.text, sizeof(picker.text), "%s", event.text);
+                      event->spoolColorHex[color]);
+      std::snprintf(picker.text, sizeof(picker.text), "%s", event->text);
       sendUiCommand(ctx, picker, "AppTask: Spoolman picker result overflow");
-    } else if (event.type == rtos::AppEventType::SpoolmanTagDuplicate) {
+    } else if (event->type == rtos::AppEventType::SpoolmanTagDuplicate) {
       const bool nativeCheck =
           pendingNativeConsistency.active &&
-          event.requestId == pendingNativeConsistency.requestId &&
-          event.tagIdentity.source == pendingNativeConsistency.identity.source &&
-          std::strcmp(event.tagIdentity.value,
+          event->requestId == pendingNativeConsistency.requestId &&
+          event->tagIdentity.source == pendingNativeConsistency.identity.source &&
+          std::strcmp(event->tagIdentity.value,
                       pendingNativeConsistency.identity.value) == 0;
       const bool removalCheck =
           pendingTagRemoval.stage == TagRemovalStage::LookingUp &&
-          event.requestId == pendingTagRemoval.requestId &&
-          event.tagIdentity.source == pendingTagRemoval.identity.source &&
-          std::strcmp(event.tagIdentity.value,
+          event->requestId == pendingTagRemoval.requestId &&
+          event->tagIdentity.source == pendingTagRemoval.identity.source &&
+          std::strcmp(event->tagIdentity.value,
                       pendingTagRemoval.identity.value) == 0;
       const bool assignmentCheck =
           pendingTagAssignment.stage == TagAssignmentStage::LookingUp &&
-          event.requestId == pendingTagAssignment.requestId &&
-          event.tagIdentity.source == pendingTagAssignment.identity.source &&
-          std::strcmp(event.tagIdentity.value,
+          event->requestId == pendingTagAssignment.requestId &&
+          event->tagIdentity.source == pendingTagAssignment.identity.source &&
+          std::strcmp(event->tagIdentity.value,
                       pendingTagAssignment.identity.value) == 0;
       if (!nativeCheck && !removalCheck && !assignmentCheck) {
         FS_LOGW(services::LogComponent::App,
                 "Stale duplicate tag event ignored tag=%s matches=%ld",
-                event.tagIdentity.value, static_cast<long>(event.value));
+                event->tagIdentity.value, static_cast<long>(event->value));
         continue;
       }
       rtos::UiCommand hide{};
@@ -4948,7 +4951,7 @@ void appTask(void* parameter) {
         resolvedTagIdentity = {};
         resolvedTagSpoolId = 0;
         showNativeTagAction(
-            ctx, event.requestId, 0,
+            ctx, event->requestId, 0,
             "Konflikt: Diese Tag-ID ist mehreren Spulen in Spoolman zugeordnet.");
       }
       if (removalCheck) {
@@ -4958,17 +4961,17 @@ void appTask(void* parameter) {
       if (assignmentCheck) pendingTagAssignment = {};
       FS_LOGE(services::LogComponent::App,
               "Duplicate tag assignment blocked tag=%s matches=%ld operation=%s",
-              event.tagIdentity.value, static_cast<long>(event.value),
+              event->tagIdentity.value, static_cast<long>(event->value),
               nativeCheck ? "consistency"
                           : removalCheck ? "remove" : "assign");
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                  rtos::UiOverlayKind::Error, event.requestId,
+                  rtos::UiOverlayKind::Error, event->requestId,
                   "Mehrdeutige Tag-Zuordnung",
                   "Diese Tag-ID ist mehreren Spulen zugeordnet. Es wurde keine Spule ausgew\xC3\xA4hlt und keine Zuordnung ge\xC3\xA4ndert. Bitte die Spoolman-Daten korrigieren.");
       continue;
-    } else if (event.type == rtos::AppEventType::SpoolmanTagLookup &&
+    } else if (event->type == rtos::AppEventType::SpoolmanTagLookup &&
                pendingNativeConsistency.active &&
-               event.requestId == pendingNativeConsistency.requestId) {
+               event->requestId == pendingNativeConsistency.requestId) {
       const auto check = pendingNativeConsistency;
       pendingNativeConsistency = {};
       rtos::UiCommand hide{};
@@ -4981,20 +4984,20 @@ void appTask(void* parameter) {
           std::strcmp(currentTag.identity.value, check.identity.value) == 0;
       if (!sameTag) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Pr\xC3\xBC" "fung abgebrochen",
                     "Der NFC-Tag wurde w\xC3\xA4hrend der Pr\xC3\xBC" "fung entfernt oder ausgetauscht.");
         continue;
       }
-      const auto status = static_cast<services::TagLookupStatus>(event.value);
+      const auto status = static_cast<services::TagLookupStatus>(event->value);
       if (status == services::TagLookupStatus::Duplicate) {
         resolvedTagIdentity = {};
         resolvedTagSpoolId = 0;
         showNativeTagAction(
-            ctx, event.requestId, 0,
+            ctx, event->requestId, 0,
             "Konflikt: Diese Tag-ID ist mehreren Spulen in Spoolman zugeordnet.");
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Mehrdeutige Tag-Zuordnung",
                     "Diese Tag-ID ist mehreren Spulen zugeordnet. Der NDEF-Payload wird nicht als Zuordnung verwendet.");
         continue;
@@ -5006,64 +5009,64 @@ void appTask(void* parameter) {
         std::snprintf(conflict, sizeof(conflict),
                       "Konflikt: NDEF nennt Spule #%lu, in Spoolman fehlt die Zuordnung.",
                       static_cast<unsigned long>(check.payloadSpoolId));
-        showNativeTagAction(ctx, event.requestId, 0, conflict);
+        showNativeTagAction(ctx, event->requestId, 0, conflict);
         FS_LOGW(services::LogComponent::App,
                 "Native tag consistency mismatch reason=server_assignment_missing payload_spool_id=%lu tag=%s",
                 static_cast<unsigned long>(check.payloadSpoolId),
                 check.identity.value);
         continue;
       }
-      if (status == services::TagLookupStatus::Found && event.spoolId != 0) {
+      if (status == services::TagLookupStatus::Found && event->spoolId != 0) {
         resolvedTagIdentity = check.identity;
-        resolvedTagSpoolId = event.spoolId;
-        pendingTagSpoolId = event.spoolId;
+        resolvedTagSpoolId = event->spoolId;
+        pendingTagSpoolId = event->spoolId;
         char state[160]{};
-        if (event.spoolId == check.payloadSpoolId) {
+        if (event->spoolId == check.payloadSpoolId) {
           std::snprintf(state, sizeof(state),
                         "Konsistent zu Spule #%lu zugeordnet",
-                        static_cast<unsigned long>(event.spoolId));
+                        static_cast<unsigned long>(event->spoolId));
           FS_LOGI(services::LogComponent::App,
                   "Native tag consistency verified spool_id=%lu tag=%s",
-                  static_cast<unsigned long>(event.spoolId),
+                  static_cast<unsigned long>(event->spoolId),
                   check.identity.value);
         } else {
           std::snprintf(state, sizeof(state),
                         "Konflikt: NDEF #%lu, Spoolman-Zuordnung #%lu. Spoolman ist f\xC3\xBChrend.",
                         static_cast<unsigned long>(check.payloadSpoolId),
-                        static_cast<unsigned long>(event.spoolId));
+                        static_cast<unsigned long>(event->spoolId));
           FS_LOGW(services::LogComponent::App,
                   "Native tag consistency mismatch payload_spool_id=%lu server_spool_id=%lu tag=%s",
                   static_cast<unsigned long>(check.payloadSpoolId),
-                  static_cast<unsigned long>(event.spoolId),
+                  static_cast<unsigned long>(event->spoolId),
                   check.identity.value);
         }
-        showNativeTagAction(ctx, event.requestId, event.spoolId, state);
+        showNativeTagAction(ctx, event->requestId, event->spoolId, state);
         continue;
       }
       resolvedTagIdentity = {};
       resolvedTagSpoolId = 0;
-      showNativeTagAction(ctx, event.requestId, 0,
+      showNativeTagAction(ctx, event->requestId, 0,
                           "Spoolman-Zuordnung konnte nicht bestimmt werden.");
       continue;
-    } else if (event.type == rtos::AppEventType::SpoolmanTagLookup &&
+    } else if (event->type == rtos::AppEventType::SpoolmanTagLookup &&
                pendingTagRemoval.stage == TagRemovalStage::LookingUp &&
-               event.requestId == pendingTagRemoval.requestId) {
-      const auto status = static_cast<services::TagLookupStatus>(event.value);
+               event->requestId == pendingTagRemoval.requestId) {
+      const auto status = static_cast<services::TagLookupStatus>(event->value);
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: removal lookup close overflow");
       if (status == services::TagLookupStatus::Duplicate) {
         pendingTagRemoval = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Mehrdeutige Zuordnung",
                     "Diese Tag-ID ist mehreren Spulen zugeordnet. Bitte die Spoolman-Daten korrigieren.");
         continue;
       }
-      if (status != services::TagLookupStatus::Found || event.spoolId == 0) {
+      if (status != services::TagLookupStatus::Found || event->spoolId == 0) {
         pendingTagRemoval = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Keine Zuordnung gefunden",
                     "Dieser Tag ist in Spoolman keiner Spule zugeordnet.");
         continue;
@@ -5072,12 +5075,12 @@ void appTask(void* parameter) {
           !removalTagMatches(currentTag)) {
         pendingTagRemoval = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Entfernen abgebrochen",
                     "Der Tag wurde w\xC3\xA4hrend der Pr\xC3\xBC" "fung entfernt oder ausgetauscht.");
         continue;
       }
-      pendingTagRemoval.spoolId = event.spoolId;
+      pendingTagRemoval.spoolId = event->spoolId;
       pendingTagRemoval.stage = TagRemovalStage::AwaitingConfirmation;
       pendingUnlinkConfirmation = true;
       char confirmation[192]{};
@@ -5086,34 +5089,34 @@ void appTask(void* parameter) {
           pendingTagRemoval.clearPayload
               ? "Die Verbindung zu Spule #%lu wird entfernt.\nDie FilamentStation-Daten werden auch vom Tag entfernt."
               : "Die Verbindung zu Spule #%lu wird entfernt.\nDer originale Taginhalt wird nicht ver\xC3\xA4ndert.",
-          static_cast<unsigned long>(event.spoolId));
+          static_cast<unsigned long>(event->spoolId));
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                  rtos::UiOverlayKind::Confirmation, event.requestId,
+                  rtos::UiOverlayKind::Confirmation, event->requestId,
                   "Tag-Zuordnung entfernen?", confirmation);
       continue;
-    } else if (event.type == rtos::AppEventType::SpoolmanTagLookup &&
+    } else if (event->type == rtos::AppEventType::SpoolmanTagLookup &&
                pendingTagAssignment.stage == TagAssignmentStage::LookingUp &&
-               event.requestId == pendingTagAssignment.requestId) {
-      const auto status = static_cast<services::TagLookupStatus>(event.value);
+               event->requestId == pendingTagAssignment.requestId) {
+      const auto status = static_cast<services::TagLookupStatus>(event->value);
       if (status == services::TagLookupStatus::Duplicate) {
         pendingTagAssignment = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Mehrdeutige Zuordnung",
                     "Dieselbe Tag-ID ist mehreren Spulen zugeordnet. Bitte den Konflikt in Spoolman beheben.");
         continue;
       }
       if (status == services::TagLookupStatus::Found &&
-          event.spoolId == pendingTagAssignment.spoolId) {
+          event->spoolId == pendingTagAssignment.spoolId) {
         FS_LOGI(services::LogComponent::App,
                 "AssignTag idempotent spool_id=%lu tag=%s",
-                static_cast<unsigned long>(event.spoolId),
+                static_cast<unsigned long>(event->spoolId),
                 pendingTagAssignment.identity.value);
         continueAssignmentAfterSpoolmanUpdate(ctx);
         continue;
       }
       if (status == services::TagLookupStatus::Found) {
-        pendingTagAssignment.previousSpoolId = event.spoolId;
+        pendingTagAssignment.previousSpoolId = event->spoolId;
         pendingTagAssignment.stage =
             TagAssignmentStage::AwaitingReassignmentConfirmation;
         pendingServerReassignmentConfirmation = true;
@@ -5123,10 +5126,10 @@ void appTask(void* parameter) {
         char question[192]{};
         std::snprintf(question, sizeof(question),
                       "Dieser Tag ist Spule %lu zugeordnet. Die Zuordnung durch Spule %lu ersetzen?",
-                      static_cast<unsigned long>(event.spoolId),
+                      static_cast<unsigned long>(event->spoolId),
                       static_cast<unsigned long>(pendingTagAssignment.spoolId));
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Confirmation, event.requestId,
+                    rtos::UiOverlayKind::Confirmation, event->requestId,
                     "Zuordnung ersetzen", question);
         continue;
       }
@@ -5135,23 +5138,23 @@ void appTask(void* parameter) {
                                     pendingTagAssignment.spoolId)) {
         pendingTagAssignment = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Zuordnung fehlgeschlagen",
                     "Die Spoolman-Aktualisierung konnte nicht gestartet werden.");
       }
       continue;
-    } else if (event.type == rtos::AppEventType::SpoolmanTagUpdated &&
+    } else if (event->type == rtos::AppEventType::SpoolmanTagUpdated &&
                pendingTagRemoval.stage ==
                    TagRemovalStage::ClearingServerAssignment &&
-               event.requestId == pendingTagRemoval.requestId) {
+               event->requestId == pendingTagRemoval.requestId) {
       FS_LOGI(services::LogComponent::App,
               "Tag assignment removed from Spoolman spool_id=%lu tag=%s",
               static_cast<unsigned long>(pendingTagRemoval.spoolId),
               pendingTagRemoval.identity.value);
       continueRemovalAfterSpoolmanUpdate(ctx);
       continue;
-    } else if (event.type == rtos::AppEventType::SpoolmanTagUpdated &&
-               event.requestId == pendingTagAssignment.requestId) {
+    } else if (event->type == rtos::AppEventType::SpoolmanTagUpdated &&
+               event->requestId == pendingTagAssignment.requestId) {
       if (pendingTagAssignment.stage == TagAssignmentStage::ClearingPrevious) {
         pendingTagAssignment.stage = TagAssignmentStage::SettingTarget;
         if (!sendTagAssignmentCommand(ctx, rtos::SpoolmanCommandType::SetSpoolTag,
@@ -5162,7 +5165,7 @@ void appTask(void* parameter) {
                   pendingTagAssignment.previousSpoolId)) {
             pendingTagAssignment = {};
             sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                        rtos::UiOverlayKind::Error, event.requestId,
+                        rtos::UiOverlayKind::Error, event->requestId,
                         "Zuordnung inkonsistent",
                         "Die vorherige Spoolman-Zuordnung konnte nicht wiederhergestellt werden. Bitte Spoolman pr\xC3\xBC" "fen.");
           }
@@ -5181,32 +5184,32 @@ void appTask(void* parameter) {
           TagAssignmentStage::RollingBackPrevious) {
         pendingTagAssignment = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Zuordnung fehlgeschlagen",
                     "Die neue Zuordnung schlug fehl. Die vorherige Spoolman-Zuordnung wurde wiederhergestellt.");
         continue;
       }
-    } else if (event.type == rtos::AppEventType::SpoolmanConnected) {
+    } else if (event->type == rtos::AppEventType::SpoolmanConnected) {
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: Spoolman progress close overflow");
       if (pendingTagResolution.active &&
-          event.requestId == pendingTagResolution.requestId) {
+          event->requestId == pendingTagResolution.requestId) {
         resolvedTagIdentity = pendingTagResolution.identity;
         resolvedTagSpoolId = 0;
         pendingTagResolution = {};
         FS_LOGW(services::LogComponent::App,
                 "Tag resolution unavailable source=spoolman error=%s",
-                event.text);
+                event->text);
         rtos::AppEvent replay{};
         replay.type = rtos::AppEventType::NfcTagRead;
-        replay.requestId = event.requestId;
+        replay.requestId = event->requestId;
         replay.tagReadResult = currentTag;
         xQueueSend(ctx.appEventQueue, &replay, pdMS_TO_TICKS(1000));
         continue;
       }
       char serverVersion[32] = "unbekannt";
-      const char* version = std::strstr(event.text, "Version ");
+      const char* version = std::strstr(event->text, "Version ");
       if (version != nullptr) {
         version += 8;
         const char* end = std::strstr(version, " | ");
@@ -5216,71 +5219,71 @@ void appTask(void* parameter) {
         std::snprintf(serverVersion, sizeof(serverVersion), "%.*s",
                       static_cast<int>(length), version);
       }
-      publishSpoolmanAppState(ctx, event.requestId, serverVersion);
+      publishSpoolmanAppState(ctx, event->requestId, serverVersion);
       // The silent boot-time/apply-configuration health check (see
       // SpoolmanTask::ApplyConfiguration) reuses this exact event type so
       // EVENT_SPOOLMAN_READY/EVENT_SPOOLMAN_TAG_FIELD_READY get set without
       // requiring the user to press "Verbindung testen" after every
       // restart -- but it must not pop an unprompted "Spoolman verbunden"
       // dialog on every startup the way a manual test intentionally does.
-      if (event.requestId != kSpoolmanLoadRequestId) {
+      if (event->requestId != kSpoolmanLoadRequestId) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Success, event.requestId,
-                    "Spoolman verbunden", event.text);
+                    rtos::UiOverlayKind::Success, event->requestId,
+                    "Spoolman verbunden", event->text);
       }
       tryStartLegacyMigration(ctx);
-    } else if (event.type == rtos::AppEventType::SpoolmanTagFieldReady) {
-      publishSpoolmanAppState(ctx, event.requestId);
-    } else if (event.type == rtos::AppEventType::SpoolmanError) {
-      if ((event.requestId == kLegacyMigrationLookupRequestId ||
-           event.requestId == kLegacyMigrationLoadSpoolRequestId ||
-           event.requestId == kLegacyMigrationSetTagRequestId) &&
+    } else if (event->type == rtos::AppEventType::SpoolmanTagFieldReady) {
+      publishSpoolmanAppState(ctx, event->requestId);
+    } else if (event->type == rtos::AppEventType::SpoolmanError) {
+      if ((event->requestId == kLegacyMigrationLookupRequestId ||
+           event->requestId == kLegacyMigrationLoadSpoolRequestId ||
+           event->requestId == kLegacyMigrationSetTagRequestId) &&
           legacyMigrationStage != LegacyMigrationStage::Complete) {
         FS_LOGW(services::LogComponent::App,
                 "Legacy mapping migration request failed request_id=%lu error=%s",
-                static_cast<unsigned long>(event.requestId), event.text);
+                static_cast<unsigned long>(event->requestId), event->text);
         finishLegacyMigrationEntry(
             ctx, false,
-            event.text[0] != '\0' ? event.text : "spoolman_request_failed");
+            event->text[0] != '\0' ? event->text : "spoolman_request_failed");
         continue;
       }
       rtos::UiCommand hide{};
       hide.type = rtos::UiCommandType::HideProgress;
       sendUiCommand(ctx, hide, "AppTask: Spoolman progress close overflow");
       if (pendingNativeConsistency.active &&
-          event.requestId == pendingNativeConsistency.requestId) {
+          event->requestId == pendingNativeConsistency.requestId) {
         pendingNativeConsistency = {};
         resolvedTagIdentity = {};
         resolvedTagSpoolId = 0;
         if (tagPresent) {
           showNativeTagAction(
-              ctx, event.requestId, 0,
+              ctx, event->requestId, 0,
               "Spoolman-Pr\xC3\xBC" "fung fehlgeschlagen. NDEF wird nicht als Zuordnung verwendet.");
         }
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Zuordnung nicht pr\xC3\xBC" "fbar",
-                    event.text[0] != '\0' ? event.text
+                    event->text[0] != '\0' ? event->text
                                            : "Spoolman-Anfrage fehlgeschlagen.");
         continue;
       }
       if ((pendingTagRemoval.stage == TagRemovalStage::LookingUp ||
            pendingTagRemoval.stage ==
                TagRemovalStage::ClearingServerAssignment) &&
-          event.requestId == pendingTagRemoval.requestId) {
+          event->requestId == pendingTagRemoval.requestId) {
         pendingTagRemoval = {};
         pendingUnlinkConfirmation = false;
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Entfernen fehlgeschlagen",
-                    event.text[0] != '\0' ? event.text
+                    event->text[0] != '\0' ? event->text
                                            : "Spoolman-Anfrage fehlgeschlagen.");
         continue;
       }
       if (pendingTagAssignment.stage != TagAssignmentStage::None &&
           pendingTagAssignment.stage != TagAssignmentStage::SelectingSpool &&
           pendingTagAssignment.stage != TagAssignmentStage::WritingPayload &&
-          event.requestId == pendingTagAssignment.requestId) {
+          event->requestId == pendingTagAssignment.requestId) {
         if (pendingTagAssignment.stage == TagAssignmentStage::SettingTarget &&
             pendingTagAssignment.previousSpoolId != 0) {
           pendingTagAssignment.stage = TagAssignmentStage::RollingBackPrevious;
@@ -5294,7 +5297,7 @@ void appTask(void* parameter) {
           }
           pendingTagAssignment = {};
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, event.requestId,
+                      rtos::UiOverlayKind::Error, event->requestId,
                       "Zuordnung inkonsistent",
                       "Neue Zuordnung und Wiederherstellung konnten nicht abgeschlossen werden. Bitte Spoolman pr\xC3\xBC" "fen.");
           continue;
@@ -5303,44 +5306,44 @@ void appTask(void* parameter) {
             pendingTagAssignment.stage == TagAssignmentStage::RollingBackPrevious;
         pendingTagAssignment = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     rollbackFailed ? "Zuordnung inkonsistent"
                                    : "Zuordnung fehlgeschlagen",
                     rollbackFailed
                         ? "Die vorherige Spoolman-Zuordnung konnte nicht wiederhergestellt werden. Bitte Spoolman pr\xC3\xBC" "fen."
-                        : (event.text[0] != '\0' ? event.text
+                        : (event->text[0] != '\0' ? event->text
                                                  : "Spoolman-Anfrage fehlgeschlagen."));
         continue;
       }
-      if (weightUpdate.active && event.requestId == weightUpdate.requestId) {
+      if (weightUpdate.active && event->requestId == weightUpdate.requestId) {
         const bool permanentMissingSpool =
-            std::strstr(event.text, "HTTP 404") != nullptr;
+            std::strstr(event->text, "HTTP 404") != nullptr;
         weightUpdate = {};
         char message[192]{};
         std::snprintf(message, sizeof(message), "%s\n%s",
-                      event.text[0] != '\0'
-                          ? event.text
+                      event->text[0] != '\0'
+                          ? event->text
                           : "Unbekannter Spoolman-Fehler",
                       permanentMissingSpool
                           ? "Bitte eine vorhandene Spule neu ausw\xC3\xA4hlen."
                           : "Bitte den Wiegevorgang manuell erneut ausf\xC3\xBChren.");
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     permanentMissingSpool ? "Spule nicht gefunden"
                                           : "Gewicht nicht gespeichert",
                     message);
         continue;
       }
       if (pendingStagingSpoolRequestId != 0 &&
-          event.requestId == pendingStagingSpoolRequestId) {
+          event->requestId == pendingStagingSpoolRequestId) {
         pendingStagingSpoolRequestId = 0;
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
-                    "Spule konnte nicht geladen werden", event.text);
+                    rtos::UiOverlayKind::Error, event->requestId,
+                    "Spule konnte nicht geladen werden", event->text);
         continue;
       }
       if (pendingStagingFilamentLoad.active &&
-          event.requestId == pendingStagingFilamentLoad.requestId) {
+          event->requestId == pendingStagingFilamentLoad.requestId) {
         // Filament fetch failed (network hiccup etc.) -- spool data is
         // already known from the LoadSpool step, so show the staged spool
         // anyway without empty-weight/K-Faktor rather than abandoning the
@@ -5348,23 +5351,23 @@ void appTask(void* parameter) {
         // LoadingFilament error path above).
         const models::SpoolmanSpool spool = pendingStagingFilamentLoad.spool;
         pendingStagingFilamentLoad = {};
-        sendStagingUpdate(ctx, event.requestId, spool,
+        sendStagingUpdate(ctx, event->requestId, spool,
                           spool.emptyWeightGrams, false, 0.0F);
         continue;
       }
       if (pendingSlotAssignment.stage == SlotAssignmentStage::LoadingSpool &&
-          event.requestId == pendingSlotAssignment.requestId) {
+          event->requestId == pendingSlotAssignment.requestId) {
         pendingSlotAssignment = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
+                    rtos::UiOverlayKind::Error, event->requestId,
                     "Slot nicht konfiguriert",
-                    event.text[0] != '\0'
-                        ? event.text
+                    event->text[0] != '\0'
+                        ? event->text
                         : "Spulendaten konnten nicht geladen werden.");
         continue;
       }
       if (pendingSlotAssignment.stage == SlotAssignmentStage::LoadingFilament &&
-          event.requestId == pendingSlotAssignment.requestId) {
+          event->requestId == pendingSlotAssignment.requestId) {
         // Filament fetch failed (network hiccup etc.) -- material/color are
         // already known from the LoadingSpool step, so proceed without a
         // temperature range instead of abandoning an otherwise-successful
@@ -5375,27 +5378,27 @@ void appTask(void* parameter) {
         hide.type = rtos::UiCommandType::HideProgress;
         sendUiCommand(ctx, hide,
                       "AppTask: slot assignment progress close overflow");
-        if (!sendPendingSlotAssignTray(ctx, event.requestId, 0, 0)) {
+        if (!sendPendingSlotAssignTray(ctx, event->requestId, 0, 0)) {
           pendingSlotAssignment = {};
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, event.requestId,
+                      rtos::UiOverlayKind::Error, event->requestId,
                       "Slot nicht konfiguriert",
                       "Der Auftrag konnte nicht an den Drucker gesendet werden.");
           continue;
         }
         pendingSlotAssignment.stage = SlotAssignmentStage::WritingSlot;
         sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                    rtos::UiOverlayKind::BambuConnection, event.requestId,
+                    rtos::UiOverlayKind::BambuConnection, event->requestId,
                     "Slot konfigurieren",
                     "Slotdaten werden an den Drucker gesendet.");
         continue;
       }
-      if (event.requestId >= kTraySpoolDetailsRequestIdBase &&
-          event.requestId < kTraySpoolDetailsRequestIdBase +
+      if (event->requestId >= kTraySpoolDetailsRequestIdBase &&
+          event->requestId < kTraySpoolDetailsRequestIdBase +
                                  kMaximumTraySpoolDetailsEntries) {
         // resolveTraySpoolDetails()'s LoadSpool or LoadFilament step failed.
         const std::size_t index =
-            event.requestId - kTraySpoolDetailsRequestIdBase;
+            event->requestId - kTraySpoolDetailsRequestIdBase;
         TraySpoolDetailsEntry& entry = traySpoolDetails[index];
         if (entry.stage == TraySpoolDetailsStage::LoadingFilament) {
           // Weight is already known from the completed LoadingSpool step --
@@ -5411,22 +5414,22 @@ void appTask(void* parameter) {
       if (currentScreen == rtos::UiScreenId::TagDefinitionImport ||
           currentScreen == rtos::UiScreenId::TagLegacy) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
-                    "Import fehlgeschlagen", event.text);
+                    rtos::UiOverlayKind::Error, event->requestId,
+                    "Import fehlgeschlagen", event->text);
         continue;
       }
-      publishSpoolmanAppState(ctx, event.requestId);
+      publishSpoolmanAppState(ctx, event->requestId);
       // Silent boot-time/apply-configuration health check (see the matching
       // guard in the SpoolmanConnected branch above) -- a failed automatic
       // check must not pop an error dialog on every offline startup; the
       // status bar/Settings screen already reflect "Spoolman: offline" via
       // publishSpoolmanAppState().
-      if (event.requestId != kSpoolmanLoadRequestId) {
+      if (event->requestId != kSpoolmanLoadRequestId) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
-                    "Spoolman nicht erreichbar", event.text);
+                    rtos::UiOverlayKind::Error, event->requestId,
+                    "Spoolman nicht erreichbar", event->text);
       }
-    } else if (event.type == rtos::AppEventType::BambuAssignProgress) {
+    } else if (event->type == rtos::AppEventType::BambuAssignProgress) {
       // Countdown feedback for the "Wird an den Drucker uebertragen"
       // progress overlay while AppTask waits for BambuTask's telemetry
       // confirmation (see PendingTrayAssignment in BambuTask.cpp). Ignored
@@ -5434,12 +5437,12 @@ void appTask(void* parameter) {
       // stage no longer WritingSlot) or this is a stale event for an
       // already-superseded request.
       if (pendingSlotAssignment.stage == SlotAssignmentStage::WritingSlot &&
-          event.requestId == pendingSlotAssignment.requestId) {
-        const std::int32_t remainingMs = event.value;
+          event->requestId == pendingSlotAssignment.requestId) {
+        const std::int32_t remainingMs = event->value;
         const std::int32_t remainingSeconds = (remainingMs + 999) / 1000;
         rtos::UiCommand progress{};
         progress.type = rtos::UiCommandType::UpdateProgress;
-        progress.requestId = event.requestId;
+        progress.requestId = event->requestId;
         progress.value = static_cast<std::int32_t>(
             (static_cast<std::int64_t>(remainingMs) * 100) /
             static_cast<std::int64_t>(config::kBambuAssignConfirmTimeoutMs));
@@ -5449,24 +5452,24 @@ void appTask(void* parameter) {
             static_cast<long>(remainingSeconds));
         sendUiCommand(ctx, progress, "AppTask: assign progress overflow");
       }
-    } else if (event.type == rtos::AppEventType::BambuConnected ||
-               event.type == rtos::AppEventType::BambuDisconnected ||
-               event.type == rtos::AppEventType::BambuUpdate ||
-               event.type == rtos::AppEventType::BambuTestResult ||
-               event.type == rtos::AppEventType::BambuError) {
+    } else if (event->type == rtos::AppEventType::BambuConnected ||
+               event->type == rtos::AppEventType::BambuDisconnected ||
+               event->type == rtos::AppEventType::BambuUpdate ||
+               event->type == rtos::AppEventType::BambuTestResult ||
+               event->type == rtos::AppEventType::BambuError) {
       // BambuTestResult carries an empty PrinterState (ephemeral connection
       // test, see BambuTask::handleTestConnection) and must not overwrite a
       // tracked printer's live data.
-      if (event.type != rtos::AppEventType::BambuTestResult &&
-          models::isValidPrinterId(event.printerId)) {
-        models::PrinterState& entry = printerEntry(event.printerId);
-        if (event.type == rtos::AppEventType::BambuError) {
+      if (event->type != rtos::AppEventType::BambuTestResult &&
+          models::isValidPrinterId(event->printerId)) {
+        models::PrinterState& entry = printerEntry(event->printerId);
+        if (event->type == rtos::AppEventType::BambuError) {
           entry.connectionState = models::PrinterConnectionState::Error;
         } else {
           const bool wasActive =
-              printerCollection.activePrinterId == event.printerId;
-          entry = event.printerState;
-          entry.printerId = event.printerId;
+              printerCollection.activePrinterId == event->printerId;
+          entry = event->printerState;
+          entry.printerId = event->printerId;
           entry.isActive = wasActive;
         }
       }
@@ -5475,10 +5478,10 @@ void appTask(void* parameter) {
       // assignment is shown regardless of which printer is currently in
       // focus (the user is explicitly waiting on this one operation).
       if (pendingSlotAssignment.stage == SlotAssignmentStage::WritingSlot &&
-          event.requestId == pendingSlotAssignment.requestId &&
-          (event.type == rtos::AppEventType::BambuUpdate ||
-           event.type == rtos::AppEventType::BambuError)) {
-        const bool success = event.type == rtos::AppEventType::BambuUpdate;
+          event->requestId == pendingSlotAssignment.requestId &&
+          (event->type == rtos::AppEventType::BambuUpdate ||
+           event->type == rtos::AppEventType::BambuError)) {
+        const bool success = event->type == rtos::AppEventType::BambuUpdate;
         // ResetSlot/UntagSlot (Phase 9.9) run through this same AssignTray
         // completion path with spoolId == 0 -- distinguish the dialog
         // wording without adding a second pending-state machine.
@@ -5579,8 +5582,8 @@ void appTask(void* parameter) {
           }
         } else {
           std::snprintf(resultText, sizeof(resultText), "%s",
-                        event.text[0] != '\0'
-                            ? event.text
+                        event->text[0] != '\0'
+                            ? event->text
                             : "Der Drucker hat die Slotdaten nicht angenommen.");
         }
         sendOverlay(
@@ -5588,7 +5591,7 @@ void appTask(void* parameter) {
             rtos::UiCommandType::ShowDialog,
             success ? rtos::UiOverlayKind::Success
                     : rtos::UiOverlayKind::Error,
-            event.requestId,
+            event->requestId,
             success ? (wasClearing ? "Slot zur\xC3\xBC" "ckgesetzt"
                                    : "Slot konfiguriert")
                     : "Slot nicht konfiguriert",
@@ -5599,31 +5602,31 @@ void appTask(void* parameter) {
       // testen (Phase 8.6): TestConnection is ephemeral and never touches
       // printerCollection (see the BambuTestResult exclusion above); its
       // result is only ever this dialog.
-      if (event.type == rtos::AppEventType::BambuTestResult &&
+      if (event->type == rtos::AppEventType::BambuTestResult &&
           pendingPrinterTestRequestId != 0 &&
-          event.requestId == pendingPrinterTestRequestId) {
+          event->requestId == pendingPrinterTestRequestId) {
         pendingPrinterTestRequestId = 0;
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
         sendUiCommand(ctx, hide, "AppTask: printer test progress close overflow");
-        const bool success = event.value != 0;
+        const bool success = event->value != 0;
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     success ? rtos::UiOverlayKind::Success
                             : rtos::UiOverlayKind::Error,
-                    event.requestId, "Bambu-Verbindung", event.text);
+                    event->requestId, "Bambu-Verbindung", event->text);
         continue;
       }
 
-      if (event.type == rtos::AppEventType::BambuError) {
+      if (event->type == rtos::AppEventType::BambuError) {
         // Printer connectivity is routinely absent (LAN-only, not always
         // reachable/configured yet); log for diagnosis instead of an
         // intrusive dialog.
         FS_LOGW(services::LogComponent::App,
                 "Bambu request failed printer_id=%u error=\"%s\"",
-                static_cast<unsigned>(event.printerId), event.text);
+                static_cast<unsigned>(event->printerId), event->text);
       } else {
         const models::PrinterState* runtimeState =
-            models::findPrinter(printerCollection, event.printerId);
+            models::findPrinter(printerCollection, event->printerId);
         std::uint8_t presentAmsCount = 0;
         std::uint8_t occupiedTotal = 0;
         if (runtimeState != nullptr) {
@@ -5638,8 +5641,8 @@ void appTask(void* parameter) {
                 "Bambu event received type=%u printer_id=%u "
                 "connection_state=%u ams_present=%u trays_occupied=%u "
                 "external_state=%u focused=%s",
-                static_cast<unsigned>(event.type),
-                static_cast<unsigned>(event.printerId),
+                static_cast<unsigned>(event->type),
+                static_cast<unsigned>(event->printerId),
                 runtimeState != nullptr
                     ? static_cast<unsigned>(runtimeState->connectionState)
                     : 0U,
@@ -5648,37 +5651,37 @@ void appTask(void* parameter) {
                 runtimeState != nullptr
                     ? static_cast<unsigned>(runtimeState->externalSlot.state)
                     : 0U,
-                event.printerId == printerCollection.activePrinterId ? "yes"
+                event->printerId == printerCollection.activePrinterId ? "yes"
                                                                      : "no");
       }
 
-      if (event.type != rtos::AppEventType::BambuTestResult)
-        syncPrinterEntryToUi(ctx, event.printerId);
+      if (event->type != rtos::AppEventType::BambuTestResult)
+        syncPrinterEntryToUi(ctx, event->printerId);
 
       // Stale Responses: printerCollection above is always kept current for
       // whichever printer the event is about, but the visible Header/AMS
       // overview only refreshes if that printer is still the one in focus;
       // otherwise this is a background update about a printer the user has
       // since switched away from.
-      if (event.type == rtos::AppEventType::BambuTestResult ||
-          event.printerId != printerCollection.activePrinterId) {
+      if (event->type == rtos::AppEventType::BambuTestResult ||
+          event->printerId != printerCollection.activePrinterId) {
         continue;
       }
-      if (event.type == rtos::AppEventType::BambuConnected ||
-          event.type == rtos::AppEventType::BambuUpdate ||
-          event.type == rtos::AppEventType::BambuDisconnected) {
+      if (event->type == rtos::AppEventType::BambuConnected ||
+          event->type == rtos::AppEventType::BambuUpdate ||
+          event->type == rtos::AppEventType::BambuDisconnected) {
         rtos::UiCommand header{};
         header.type = rtos::UiCommandType::UpdateHeader;
-        header.printerId = event.printerId;
+        header.printerId = event->printerId;
         sendUiCommand(ctx, header, "AppTask: Bambu header update overflow");
-        syncAmsToUi(ctx, event.printerId);
+        syncAmsToUi(ctx, event->printerId);
       }
-    } else if (event.type == rtos::AppEventType::UiCommunicationTest) {
+    } else if (event->type == rtos::AppEventType::UiCommunicationTest) {
       uiStartupReady = true;
-      publishSpoolmanAppState(ctx, event.requestId);
+      publishSpoolmanAppState(ctx, event->requestId);
       rtos::UiCommand response{};
       response.type = rtos::UiCommandType::CommunicationTestResponse;
-      response.requestId = event.requestId;
+      response.requestId = event->requestId;
       std::snprintf(response.title, sizeof(response.title), "RTOS test");
       std::snprintf(response.text, sizeof(response.text), "AppTask acknowledged event");
       if (sendUiCommand(ctx, response,
@@ -5687,45 +5690,45 @@ void appTask(void* parameter) {
                 "Communication test response sent request_id=%lu",
                 static_cast<unsigned long>(response.requestId));
       }
-      refreshBootProgress(ctx, event.requestId);
+      refreshBootProgress(ctx, event->requestId);
       showHomeWhenStartupReady(ctx);
-    } else if (event.type == rtos::AppEventType::SdMounted ||
-               event.type == rtos::AppEventType::SdRemoved ||
-               event.type == rtos::AppEventType::SdReinserted ||
-               event.type == rtos::AppEventType::SdError ||
-               event.type == rtos::AppEventType::StorageReadCompleted ||
-               event.type == rtos::AppEventType::StorageWriteCompleted ||
-               event.type == rtos::AppEventType::StorageRequestError) {
-      if (event.requestId == kObsoletePendingWeightDeleteRequestId ||
-          event.requestId ==
+    } else if (event->type == rtos::AppEventType::SdMounted ||
+               event->type == rtos::AppEventType::SdRemoved ||
+               event->type == rtos::AppEventType::SdReinserted ||
+               event->type == rtos::AppEventType::SdError ||
+               event->type == rtos::AppEventType::StorageReadCompleted ||
+               event->type == rtos::AppEventType::StorageWriteCompleted ||
+               event->type == rtos::AppEventType::StorageRequestError) {
+      if (event->requestId == kObsoletePendingWeightDeleteRequestId ||
+          event->requestId ==
               kObsoletePendingMeasurementsDeleteRequestId ||
-          event.requestId == kObsoleteSpoolCacheDeleteRequestId ||
-          event.requestId == kObsoleteFilamentCacheDeleteRequestId ||
-          event.requestId == kObsoleteVendorCacheDeleteRequestId) {
-        if (event.type == rtos::AppEventType::StorageWriteCompleted)
+          event->requestId == kObsoleteSpoolCacheDeleteRequestId ||
+          event->requestId == kObsoleteFilamentCacheDeleteRequestId ||
+          event->requestId == kObsoleteVendorCacheDeleteRequestId) {
+        if (event->type == rtos::AppEventType::StorageWriteCompleted)
           FS_LOGI(services::LogComponent::App,
                   "Obsolete storage file removed request_id=%lu",
-                  static_cast<unsigned long>(event.requestId));
+                  static_cast<unsigned long>(event->requestId));
         else
           FS_LOGW(services::LogComponent::App,
                   "Obsolete storage file cleanup failed request_id=%lu",
-                  static_cast<unsigned long>(event.requestId));
+                  static_cast<unsigned long>(event->requestId));
         continue;
       }
-      if (auto* legacyFile = legacyFileForLoadRequest(event.requestId);
+      if (auto* legacyFile = legacyFileForLoadRequest(event->requestId);
           legacyFile != nullptr) {
         legacyFile->loadFinished = true;
         legacyFile->loadFailed =
-            event.type == rtos::AppEventType::StorageRequestError;
+            event->type == rtos::AppEventType::StorageRequestError;
         legacyFile->exists =
-            event.type == rtos::AppEventType::StorageReadCompleted &&
-            event.value >= 0;
+            event->type == rtos::AppEventType::StorageReadCompleted &&
+            event->value >= 0;
         legacyFile->count = 0;
         if (legacyFile->exists) {
-          legacyFile->count = event.legacyNfcMappingCount;
+          legacyFile->count = event->legacyNfcMappingCount;
           for (std::uint8_t index = 0;
-               index < event.legacyNfcMappingCount; ++index)
-            legacyFile->mappings[index] = event.legacyNfcMappings[index];
+               index < event->legacyNfcMappingCount; ++index)
+            legacyFile->mappings[index] = event->legacyNfcMappings[index];
           FS_LOGI(services::LogComponent::App,
                   "Legacy mapping file detected path=%s entries=%u",
                   legacyFile->path,
@@ -5741,13 +5744,13 @@ void appTask(void* parameter) {
         tryStartLegacyMigration(ctx);
         continue;
       }
-      if (event.requestId >= kLegacyMigrationDeleteRequestBase &&
-          event.requestId <
+      if (event->requestId >= kLegacyMigrationDeleteRequestBase &&
+          event->requestId <
               kLegacyMigrationDeleteRequestBase + legacyMappingFiles.size()) {
         const std::uint8_t index = static_cast<std::uint8_t>(
-            event.requestId - kLegacyMigrationDeleteRequestBase);
+            event->requestId - kLegacyMigrationDeleteRequestBase);
         auto& file = legacyMappingFiles[index];
-        if (event.type == rtos::AppEventType::StorageWriteCompleted) {
+        if (event->type == rtos::AppEventType::StorageWriteCompleted) {
           FS_LOGI(services::LogComponent::App,
                   "Legacy mapping file deleted after complete migration path=%s entries=%u",
                   file.path, static_cast<unsigned>(file.count));
@@ -5765,50 +5768,50 @@ void appTask(void* parameter) {
         advanceLegacyMigration(ctx);
         continue;
       }
-      if (event.type == rtos::AppEventType::StorageReadCompleted &&
-          event.requestId == kNetworkLoadRequestId) {
+      if (event->type == rtos::AppEventType::StorageReadCompleted &&
+          event->requestId == kNetworkLoadRequestId) {
         rtos::NetworkCommand networkCommand{};
         networkCommand.type = rtos::NetworkCommandType::ApplyConfiguration;
-        networkCommand.requestId = event.requestId;
-        networkCommand.settings = event.networkSettings;
+        networkCommand.requestId = event->requestId;
+        networkCommand.settings = event->networkSettings;
         sendNetworkCommand(ctx, networkCommand);
-      } else if (event.type == rtos::AppEventType::StorageReadCompleted &&
-                 event.requestId == kSpoolmanLoadRequestId) {
-        applySpoolmanSettingsToDraft(event.spoolmanSettings);
+      } else if (event->type == rtos::AppEventType::StorageReadCompleted &&
+                 event->requestId == kSpoolmanLoadRequestId) {
+        applySpoolmanSettingsToDraft(event->spoolmanSettings);
         sendSpoolmanDraftToUi(ctx);
         rtos::SpoolmanCommand spoolman{};
         spoolman.type = rtos::SpoolmanCommandType::ApplyConfiguration;
-        spoolman.requestId = event.requestId;
-        spoolman.settings = event.spoolmanSettings;
+        spoolman.requestId = event->requestId;
+        spoolman.settings = event->spoolmanSettings;
         if (xQueueSend(ctx.spoolmanCommandQueue, &spoolman,
                        pdMS_TO_TICKS(1000)) != pdPASS)
           FS_LOGW(services::LogComponent::App,
                   "Command enqueue failed queue=spoolman op=apply_configuration");
       } else if (pendingSpoolmanSaveRequestId != 0 &&
-                 event.requestId == pendingSpoolmanSaveRequestId &&
-                 event.type == rtos::AppEventType::StorageWriteCompleted) {
+                 event->requestId == pendingSpoolmanSaveRequestId &&
+                 event->type == rtos::AppEventType::StorageWriteCompleted) {
         models::SpoolmanSettings settings{};
         spoolmanSettingsFromDraft(settings);
         rtos::SpoolmanCommand spoolman{};
         spoolman.type = rtos::SpoolmanCommandType::ApplyConfiguration;
-        spoolman.requestId = event.requestId;
+        spoolman.requestId = event->requestId;
         spoolman.settings = settings;
         xQueueSend(ctx.spoolmanCommandQueue, &spoolman, pdMS_TO_TICKS(1000));
         pendingSpoolmanSaveRequestId = 0;
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Success, event.requestId,
+                    rtos::UiOverlayKind::Success, event->requestId,
                     "Spoolman gespeichert",
                     "Die normalisierte Server-URL und das Timeout wurden gespeichert.");
       } else if (pendingSpoolmanSaveRequestId != 0 &&
-                 event.requestId == pendingSpoolmanSaveRequestId &&
-                 event.type == rtos::AppEventType::StorageRequestError) {
+                 event->requestId == pendingSpoolmanSaveRequestId &&
+                 event->type == rtos::AppEventType::StorageRequestError) {
         pendingSpoolmanSaveRequestId = 0;
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
-                    "Speichern fehlgeschlagen", event.text);
-      } else if (event.type == rtos::AppEventType::StorageReadCompleted &&
-                 event.requestId == kBambuLoadRequestId) {
-        printerConfigs = event.bambuConfigs;
+                    rtos::UiOverlayKind::Error, event->requestId,
+                    "Speichern fehlgeschlagen", event->text);
+      } else if (event->type == rtos::AppEventType::StorageReadCompleted &&
+                 event->requestId == kBambuLoadRequestId) {
+        printerConfigs = event->bambuConfigs;
         // Bridges the persisted selection into the Phase 8.4 runtime
         // pointer, matching SetActivePrinter's behavior; falls back to the
         // default printer so Home shows something without an extra tap even
@@ -5822,12 +5825,12 @@ void appTask(void* parameter) {
         }
         syncAllPrinterEntriesToUi(ctx);
         connectAllEnabledPrinters(ctx);
-      } else if (event.type == rtos::AppEventType::StorageReadCompleted &&
-                 event.requestId == kTraySpoolCacheLoadRequestId) {
-        traySpoolCache = event.traySpoolCache;
+      } else if (event->type == rtos::AppEventType::StorageReadCompleted &&
+                 event->requestId == kTraySpoolCacheLoadRequestId) {
+        traySpoolCache = event->traySpoolCache;
       } else if (pendingBambuSaveRequestId != 0 &&
-                 event.requestId == pendingBambuSaveRequestId &&
-                 event.type == rtos::AppEventType::StorageWriteCompleted) {
+                 event->requestId == pendingBambuSaveRequestId &&
+                 event->type == rtos::AppEventType::StorageWriteCompleted) {
         pendingBambuSaveRequestId = 0;
         if (pendingBambuSaveShowsResult) {
           if (models::isValidPrinterId(pendingBambuSaveNotifyPrinterId)) {
@@ -5835,41 +5838,41 @@ void appTask(void* parameter) {
             pendingBambuSaveNotifyPrinterId = models::kInvalidPrinterId;
           }
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Success, event.requestId,
+                      rtos::UiOverlayKind::Success, event->requestId,
                       "Drucker gespeichert",
                       "Die Druckerkonfiguration wurde gespeichert.");
         }
       } else if (pendingBambuSaveRequestId != 0 &&
-                 event.requestId == pendingBambuSaveRequestId &&
-                 event.type == rtos::AppEventType::StorageRequestError) {
+                 event->requestId == pendingBambuSaveRequestId &&
+                 event->type == rtos::AppEventType::StorageRequestError) {
         pendingBambuSaveRequestId = 0;
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event.requestId,
-                    "Speichern fehlgeschlagen", event.text);
-      } else if (event.type == rtos::AppEventType::StorageReadCompleted &&
-          event.requestId == kScaleLoadRequestId) {
-        scaleOffsetCounts = event.scaleOffsetCounts;
-        scaleFactorCountsPerGram = event.scaleFactorCountsPerGram;
-        scaleCalibrated = event.scaleCalibrated;
+                    rtos::UiOverlayKind::Error, event->requestId,
+                    "Speichern fehlgeschlagen", event->text);
+      } else if (event->type == rtos::AppEventType::StorageReadCompleted &&
+          event->requestId == kScaleLoadRequestId) {
+        scaleOffsetCounts = event->scaleOffsetCounts;
+        scaleFactorCountsPerGram = event->scaleFactorCountsPerGram;
+        scaleCalibrated = event->scaleCalibrated;
         rtos::ScaleCommand scaleCommand{};
         scaleCommand.type = rtos::ScaleCommandType::ApplyCalibration;
-        scaleCommand.requestId = event.requestId;
-        scaleCommand.offsetCounts = event.scaleOffsetCounts;
-        scaleCommand.factorCountsPerGram = event.scaleFactorCountsPerGram;
-        scaleCommand.calibrated = event.scaleCalibrated;
+        scaleCommand.requestId = event->requestId;
+        scaleCommand.offsetCounts = event->scaleOffsetCounts;
+        scaleCommand.factorCountsPerGram = event->scaleFactorCountsPerGram;
+        scaleCommand.calibrated = event->scaleCalibrated;
         sendScaleCommand(ctx, scaleCommand);
-        sendScaleUiState(ctx, event.requestId);
+        sendScaleUiState(ctx, event->requestId);
       }
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
-      status.requestId = event.requestId;
+      status.requestId = event->requestId;
       std::snprintf(status.title, sizeof(status.title), "Storage");
-      std::snprintf(status.text, sizeof(status.text), "%s", event.text);
+      std::snprintf(status.text, sizeof(status.text), "%s", event->text);
       sendUiCommand(ctx, status,
                     "AppTask: storage status UI queue timeout/overflow");
-      if (event.type == rtos::AppEventType::SdMounted) {
+      if (event->type == rtos::AppEventType::SdMounted) {
         std::snprintf(bootSdStatus, sizeof(bootSdStatus), "SD-Karte: bereit");
-        refreshBootProgress(ctx, event.requestId);
+        refreshBootProgress(ctx, event->requestId);
         storageStartupReady = true;
         requestNetworkConfiguration(ctx);
         requestSpoolmanConfiguration(ctx);

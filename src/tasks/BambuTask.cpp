@@ -14,6 +14,7 @@
 #include "rtos/RtosContext.h"
 #include "services/BambuProtocol.h"
 #include "services/Logger.h"
+#include "services/PsramAlloc.h"
 
 // LAN-Mode MQTT connection handling for Bambu Lab printers. The protocol
 // (topics, payload shapes, credential scheme) is community-reverse-engineered
@@ -81,21 +82,23 @@ void publishBambuEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
                        std::uint32_t requestId, rtos::PrinterId printerId,
                        const models::PrinterState& state, const char* text,
                        std::int32_t value = 0) {
-  // static: BambuTask processes exactly one command/report at a time
-  // (single FreeRTOS consumer, never re-entrant); this large (~3KB)
-  // AppEvent was a stack-local here, the same latent bug pattern already
-  // fixed in AppTask/ScaleTask/NfcTask/SpoolmanTask this session, just
-  // never triggered yet because this function's own call depth stayed
-  // shallow enough until now.
-  static rtos::AppEvent event{};
-  event = rtos::AppEvent{};
-  event.type = type;
-  event.requestId = requestId;
-  event.value = value;
-  event.printerId = printerId;
-  event.printerState = state;
-  std::snprintf(event.text, sizeof(event.text), "%s", text);
-  if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS) {
+  // static, PSRAM-backed (services/PsramAlloc.h): BambuTask processes
+  // exactly one command/report at a time (single FreeRTOS consumer, never
+  // re-entrant); this large (~3KB) AppEvent was a stack-local here, the
+  // same latent bug pattern already fixed in AppTask/ScaleTask/NfcTask/
+  // SpoolmanTask this session, just never triggered yet because this
+  // function's own call depth stayed shallow enough until now.
+  static rtos::AppEvent* event =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "BambuTask.publishBambuEvent");
+  *event = rtos::AppEvent{};
+  event->type = type;
+  event->requestId = requestId;
+  event->value = value;
+  event->printerId = printerId;
+  event->printerState = state;
+  std::snprintf(event->text, sizeof(event->text), "%s", text);
+  if (xQueueSend(ctx.appEventQueue, event, pdMS_TO_TICKS(1000)) != pdPASS) {
     FS_LOGW(services::LogComponent::Bambu,
             "Event enqueue failed queue=app_event event=%u printer_id=%u",
             static_cast<unsigned>(type), static_cast<unsigned>(printerId));

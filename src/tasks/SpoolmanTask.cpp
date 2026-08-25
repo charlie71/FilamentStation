@@ -9,9 +9,10 @@
 #include "models/SpoolmanSpool.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
+#include "services/Logger.h"
+#include "services/PsramAlloc.h"
 #include "services/SpoolmanCatalog.h"
 #include "services/SpoolmanClient.h"
-#include "services/Logger.h"
 
 namespace filament_station::tasks {
 namespace {
@@ -20,20 +21,26 @@ models::SpoolmanSettings activeSettings{};
 void sendResult(rtos::RtosContext& ctx, rtos::AppEventType type,
                 std::uint32_t requestId, const char* text,
                 std::int32_t value = 0) {
-  // static: AppEvent is a large (~3KB), single-threaded, non-reentrant
-  // message struct (SpoolmanTask processes exactly one command at a time).
-  // Kept off this task's stack for the same reason NfcTask/ScaleTask/
-  // AppTask's AppEvent locals were made static earlier this project --
-  // healthCheck() (called from ApplyConfiguration since the Spoolman
-  // auto-connect fix, i.e. on every boot now, not just on a rare manual
-  // "Verbindung testen") triggered a real stack-overflow reboot loop here.
-  static rtos::AppEvent event{};
-  event = rtos::AppEvent{};
-  event.type = type;
-  event.requestId = requestId;
-  event.value = value;
-  std::snprintf(event.text, sizeof(event.text), "%s", text);
-  if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
+  // static, PSRAM-backed (services/PsramAlloc.h): AppEvent is a large
+  // (~3KB), single-threaded, non-reentrant message struct (SpoolmanTask
+  // processes exactly one command at a time). Kept off this task's stack
+  // for the same reason NfcTask/ScaleTask/AppTask's AppEvent locals were
+  // made static earlier this project -- healthCheck() (called from
+  // ApplyConfiguration since the Spoolman auto-connect fix, i.e. on every
+  // boot now, not just on a rare manual "Verbindung testen") triggered a
+  // real stack-overflow reboot loop here. Moved off internal RAM entirely
+  // (RAM-Optimierung 2026-08-25): 19 such buffers across the project added
+  // up to tens of KB permanently reserved in internal DRAM for state that
+  // is only ever bulk-copied through a queue.
+  static rtos::AppEvent* event =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "SpoolmanTask.sendResult");
+  *event = rtos::AppEvent{};
+  event->type = type;
+  event->requestId = requestId;
+  event->value = value;
+  std::snprintf(event->text, sizeof(event->text), "%s", text);
+  if (xQueueSend(ctx.appEventQueue, event, pdMS_TO_TICKS(1000)) != pdPASS)
     FS_LOGW(services::LogComponent::Spoolman,
             "Event enqueue failed queue=app_event result=generic");
 }
@@ -388,14 +395,17 @@ bool catalogAvailable(rtos::RtosContext& ctx,
 void sendCatalogItem(rtos::RtosContext& ctx, rtos::AppEventType type,
                      std::uint32_t requestId, std::int32_t index,
                      std::uint32_t id, const char* text) {
-  static rtos::AppEvent event{};
-  event = rtos::AppEvent{};
-  event.type = type;
-  event.requestId = requestId;
-  event.value = index;
-  event.spoolId = id;
-  std::snprintf(event.text, sizeof(event.text), "%s", text);
-  if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
+  // static, PSRAM-backed: see sendResult() above / services/PsramAlloc.h.
+  static rtos::AppEvent* event =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "SpoolmanTask.sendCatalogItem");
+  *event = rtos::AppEvent{};
+  event->type = type;
+  event->requestId = requestId;
+  event->value = index;
+  event->spoolId = id;
+  std::snprintf(event->text, sizeof(event->text), "%s", text);
+  if (xQueueSend(ctx.appEventQueue, event, pdMS_TO_TICKS(1000)) != pdPASS)
     FS_LOGW(services::LogComponent::Spoolman,
             "Event enqueue failed queue=app_event result=catalog");
 }
@@ -810,14 +820,17 @@ void importTagDefinition(rtos::RtosContext& ctx,
                "Spulenantwort enthaelt keine ID");
     return;
   }
-  static rtos::AppEvent completed{};
-  completed = rtos::AppEvent{};
-  completed.type = rtos::AppEventType::SpoolmanImportCompleted;
-  completed.requestId = command.requestId;
-  completed.spoolId = spoolId;
-  completed.value = (reusedVendor ? 1 : 0) | (reusedFilament ? 2 : 0);
+  // static, PSRAM-backed: see sendResult() above / services/PsramAlloc.h.
+  static rtos::AppEvent* completed =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "SpoolmanTask.importCompleted");
+  *completed = rtos::AppEvent{};
+  completed->type = rtos::AppEventType::SpoolmanImportCompleted;
+  completed->requestId = command.requestId;
+  completed->spoolId = spoolId;
+  completed->value = (reusedVendor ? 1 : 0) | (reusedFilament ? 2 : 0);
   std::snprintf(
-      completed.text, sizeof(completed.text),
+      completed->text, sizeof(completed->text),
       "Spule #%lu angelegt. Hersteller: %s. Filament: %s.%s",
       static_cast<unsigned long>(spoolId),
       reusedVendor ? "vorhanden" : "neu",
@@ -825,7 +838,7 @@ void importTagDefinition(rtos::RtosContext& ctx,
       reusedVendor || reusedFilament
           ? " Vorhandene Katalogdaten wurden wiederverwendet."
           : "");
-  if (xQueueSend(ctx.appEventQueue, &completed,
+  if (xQueueSend(ctx.appEventQueue, completed,
                  pdMS_TO_TICKS(1000)) != pdPASS)
     FS_LOGW(services::LogComponent::Spoolman,
             "Event enqueue failed queue=app_event result=import");
@@ -833,41 +846,47 @@ void importTagDefinition(rtos::RtosContext& ctx,
 
 void sendSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
                std::int32_t index, const models::SpoolmanSpool& spool) {
-  static rtos::AppEvent event{};
-  event = rtos::AppEvent{};
-  event.type = rtos::AppEventType::SpoolmanResponse;
-  event.requestId = requestId;
-  event.value = index;
-  event.spoolId = spool.id;
-  event.spool = spool;
-  event.spoolColorCount = spool.colorCount;
+  // static, PSRAM-backed: see sendResult() above / services/PsramAlloc.h.
+  static rtos::AppEvent* event =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "SpoolmanTask.sendSpool");
+  *event = rtos::AppEvent{};
+  event->type = rtos::AppEventType::SpoolmanResponse;
+  event->requestId = requestId;
+  event->value = index;
+  event->spoolId = spool.id;
+  event->spool = spool;
+  event->spoolColorCount = spool.colorCount;
   for (std::uint8_t color = 0; color < spool.colorCount; ++color)
-    std::snprintf(event.spoolColorHex[color],
-                  sizeof(event.spoolColorHex[color]), "%s",
+    std::snprintf(event->spoolColorHex[color],
+                  sizeof(event->spoolColorHex[color]), "%s",
                   spool.colorHex[color]);
-  std::snprintf(event.text, sizeof(event.text),
+  std::snprintf(event->text, sizeof(event->text),
                 "#%lu  %.16s %.20s \xC2\xB7 %.10s \xC2\xB7 %.0f g%s",
                 static_cast<unsigned long>(spool.id), spool.vendor,
                 spool.filament, spool.material,
                 static_cast<double>(spool.remainingWeightGrams),
                 spool.archived ? " \xC2\xB7 archiviert" : "");
-  if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
+  if (xQueueSend(ctx.appEventQueue, event, pdMS_TO_TICKS(1000)) != pdPASS)
     FS_LOGW(services::LogComponent::Spoolman,
             "Event enqueue failed queue=app_event result=spool");
 }
 
 void sendFilamentDetails(rtos::RtosContext& ctx, std::uint32_t requestId,
                          const models::SpoolmanFilament& filament) {
-  static rtos::AppEvent event{};
-  event = rtos::AppEvent{};
-  event.type = rtos::AppEventType::SpoolmanResponse;
-  event.requestId = requestId;
-  event.value = 0;
-  event.filament = filament;
-  std::snprintf(event.text, sizeof(event.text), "#%lu  %.32s \xC2\xB7 %.20s",
+  // static, PSRAM-backed: see sendResult() above / services/PsramAlloc.h.
+  static rtos::AppEvent* event =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "SpoolmanTask.sendFilamentDetails");
+  *event = rtos::AppEvent{};
+  event->type = rtos::AppEventType::SpoolmanResponse;
+  event->requestId = requestId;
+  event->value = 0;
+  event->filament = filament;
+  std::snprintf(event->text, sizeof(event->text), "#%lu  %.32s \xC2\xB7 %.20s",
                static_cast<unsigned long>(filament.id), filament.name,
                filament.material);
-  if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
+  if (xQueueSend(ctx.appEventQueue, event, pdMS_TO_TICKS(1000)) != pdPASS)
     FS_LOGW(services::LogComponent::Spoolman,
             "Event enqueue failed queue=app_event result=filament_details");
 }
@@ -1005,15 +1024,18 @@ void loadSpools(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
             static_cast<unsigned long>(command.requestId), url,
             static_cast<long>(count));
   }
-  static rtos::AppEvent completed{};
-  completed = rtos::AppEvent{};
-  completed.type = rtos::AppEventType::SpoolmanResponse;
-  completed.requestId = command.requestId;
-  completed.value = -1;
-  completed.spoolId = static_cast<rtos::SpoolId>(count);
-  std::snprintf(completed.text, sizeof(completed.text), "%ld Spulen gefunden",
+  // static, PSRAM-backed: see sendResult() above / services/PsramAlloc.h.
+  static rtos::AppEvent* completed =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "SpoolmanTask.loadSpools.completed");
+  *completed = rtos::AppEvent{};
+  completed->type = rtos::AppEventType::SpoolmanResponse;
+  completed->requestId = command.requestId;
+  completed->value = -1;
+  completed->spoolId = static_cast<rtos::SpoolId>(count);
+  std::snprintf(completed->text, sizeof(completed->text), "%ld Spulen gefunden",
                 static_cast<long>(count));
-  if (xQueueSend(ctx.appEventQueue, &completed, pdMS_TO_TICKS(1000)) != pdPASS)
+  if (xQueueSend(ctx.appEventQueue, completed, pdMS_TO_TICKS(1000)) != pdPASS)
     FS_LOGW(services::LogComponent::Spoolman,
             "Event enqueue failed queue=app_event result=completion");
 }
@@ -1044,14 +1066,17 @@ void updateWeight(rtos::RtosContext& ctx,
   char error[128]{};
   if (!patchJson(url, settings.timeoutMs, request, response, error,
                  sizeof(error))) {
-    static rtos::AppEvent failed{};
-    failed = rtos::AppEvent{};
-    failed.type = rtos::AppEventType::SpoolmanError;
-    failed.requestId = command.requestId;
-    failed.spoolId = update.spoolId;
-    failed.weightUpdate = update;
-    std::snprintf(failed.text, sizeof(failed.text), "%s", error);
-    if (xQueueSend(ctx.appEventQueue, &failed, pdMS_TO_TICKS(1000)) != pdPASS)
+    // static, PSRAM-backed: see sendResult() above / services/PsramAlloc.h.
+    static rtos::AppEvent* failed =
+        services::allocatePsramInstance<rtos::AppEvent>(
+            "SpoolmanTask.updateWeight.failed");
+    *failed = rtos::AppEvent{};
+    failed->type = rtos::AppEventType::SpoolmanError;
+    failed->requestId = command.requestId;
+    failed->spoolId = update.spoolId;
+    failed->weightUpdate = update;
+    std::snprintf(failed->text, sizeof(failed->text), "%s", error);
+    if (xQueueSend(ctx.appEventQueue, failed, pdMS_TO_TICKS(1000)) != pdPASS)
       FS_LOGW(services::LogComponent::Spoolman,
               "Event enqueue failed queue=app_event result=weight_error");
     return;
@@ -1066,23 +1091,26 @@ void updateWeight(rtos::RtosContext& ctx,
       return;
     }
   }
-  static rtos::AppEvent completed{};
-  completed = rtos::AppEvent{};
-  completed.type = rtos::AppEventType::SpoolmanWeightUpdated;
-  completed.requestId = command.requestId;
-  completed.spoolId = spool.id;
-  completed.weightUpdate = update;
-  completed.weightUpdate.remainingWeightGrams = spool.remainingWeightGrams;
-  completed.spoolColorCount = spool.colorCount;
+  // static, PSRAM-backed: see sendResult() above / services/PsramAlloc.h.
+  static rtos::AppEvent* completed =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "SpoolmanTask.updateWeight.completed");
+  *completed = rtos::AppEvent{};
+  completed->type = rtos::AppEventType::SpoolmanWeightUpdated;
+  completed->requestId = command.requestId;
+  completed->spoolId = spool.id;
+  completed->weightUpdate = update;
+  completed->weightUpdate.remainingWeightGrams = spool.remainingWeightGrams;
+  completed->spoolColorCount = spool.colorCount;
   for (std::uint8_t index = 0; index < spool.colorCount; ++index)
-    std::snprintf(completed.spoolColorHex[index],
-                  sizeof(completed.spoolColorHex[index]), "%s",
+    std::snprintf(completed->spoolColorHex[index],
+                  sizeof(completed->spoolColorHex[index]), "%s",
                   spool.colorHex[index]);
-  std::snprintf(completed.text, sizeof(completed.text),
+  std::snprintf(completed->text, sizeof(completed->text),
                 "%s|%s|%s|%.1f|%.1f", spool.vendor, spool.filament,
                 spool.material, static_cast<double>(spool.emptyWeightGrams),
                 static_cast<double>(spool.initialWeightGrams));
-  if (xQueueSend(ctx.appEventQueue, &completed,
+  if (xQueueSend(ctx.appEventQueue, completed,
                  pdMS_TO_TICKS(1000)) != pdPASS)
     FS_LOGW(services::LogComponent::Spoolman,
             "Event enqueue failed queue=app_event result=weight");
@@ -1096,44 +1124,47 @@ void executeTagClientCommand(rtos::RtosContext& ctx,
   if (!catalogAvailable(ctx, settings, command.requestId)) return;
   TaskSpoolmanTransport transport(settings);
   services::SpoolmanClient client(transport);
-  static rtos::AppEvent event{};
-  event = rtos::AppEvent{};
-  event.requestId = command.requestId;
-  event.tagIdentity = command.tagIdentity;
+  // static, PSRAM-backed: see sendResult() above / services/PsramAlloc.h.
+  static rtos::AppEvent* event =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "SpoolmanTask.executeTagClientCommand");
+  *event = rtos::AppEvent{};
+  event->requestId = command.requestId;
+  event->tagIdentity = command.tagIdentity;
 
   if (command.type == rtos::SpoolmanCommandType::EnsureTagExtraField) {
     char error[96]{};
     const auto status = client.ensureTagExtraField(error, sizeof(error));
-    event.value = static_cast<std::int32_t>(status);
+    event->value = static_cast<std::int32_t>(status);
     if (status == services::TagExtraFieldStatus::Available ||
         status == services::TagExtraFieldStatus::Created) {
-      event.type = rtos::AppEventType::SpoolmanTagFieldReady;
+      event->type = rtos::AppEventType::SpoolmanTagFieldReady;
       xEventGroupSetBits(ctx.systemEventGroup,
                          rtos::EVENT_SPOOLMAN_TAG_FIELD_READY);
-      std::snprintf(event.text, sizeof(event.text), "%s",
+      std::snprintf(event->text, sizeof(event->text), "%s",
                     status == services::TagExtraFieldStatus::Created
                         ? "Spoolman tag field created"
                         : "Spoolman tag field ready");
     } else {
-      event.type = rtos::AppEventType::SpoolmanError;
+      event->type = rtos::AppEventType::SpoolmanError;
       xEventGroupClearBits(ctx.systemEventGroup,
                            rtos::EVENT_SPOOLMAN_TAG_FIELD_READY);
-      std::snprintf(event.text, sizeof(event.text), "%s",
+      std::snprintf(event->text, sizeof(event->text), "%s",
                     status == services::TagExtraFieldStatus::Incompatible
                         ? "Spoolman extra field 'tag' must have type text"
                         : error);
     }
   } else if (command.type == rtos::SpoolmanCommandType::FindSpoolByTag) {
     const auto result = client.findSpoolByTag(command.tagIdentity.value);
-    event.spoolId = result.spoolId;
+    event->spoolId = result.spoolId;
     if (result.status == services::TagLookupStatus::Error) {
-      event.value = static_cast<std::int32_t>(result.status);
-      event.type = rtos::AppEventType::SpoolmanError;
-      std::snprintf(event.text, sizeof(event.text), "%s", result.error);
+      event->value = static_cast<std::int32_t>(result.status);
+      event->type = rtos::AppEventType::SpoolmanError;
+      std::snprintf(event->text, sizeof(event->text), "%s", result.error);
     } else if (result.status == services::TagLookupStatus::Duplicate) {
-      event.type = rtos::AppEventType::SpoolmanTagDuplicate;
-      event.value = static_cast<std::int32_t>(result.matches);
-      std::snprintf(event.text, sizeof(event.text),
+      event->type = rtos::AppEventType::SpoolmanTagDuplicate;
+      event->value = static_cast<std::int32_t>(result.matches);
+      std::snprintf(event->text, sizeof(event->text),
                     "Duplicate tag assignment: %u matching spools",
                     static_cast<unsigned>(result.matches));
       FS_LOGE(services::LogComponent::Spoolman,
@@ -1141,9 +1172,9 @@ void executeTagClientCommand(rtos::RtosContext& ctx,
               command.tagIdentity.value,
               static_cast<unsigned>(result.matches));
     } else {
-      event.value = static_cast<std::int32_t>(result.status);
-      event.type = rtos::AppEventType::SpoolmanTagLookup;
-      std::snprintf(event.text, sizeof(event.text), "matches=%u",
+      event->value = static_cast<std::int32_t>(result.status);
+      event->type = rtos::AppEventType::SpoolmanTagLookup;
+      std::snprintf(event->text, sizeof(event->text), "matches=%u",
                     static_cast<unsigned>(result.matches));
     }
   } else {
@@ -1151,14 +1182,14 @@ void executeTagClientCommand(rtos::RtosContext& ctx,
                             ? client.setSpoolTag(command.spoolId,
                                                  command.tagIdentity.value)
                             : client.clearSpoolTag(command.spoolId);
-    event.spoolId = command.spoolId;
-    event.type = result.success ? rtos::AppEventType::SpoolmanTagUpdated
+    event->spoolId = command.spoolId;
+    event->type = result.success ? rtos::AppEventType::SpoolmanTagUpdated
                                 : rtos::AppEventType::SpoolmanError;
-    std::snprintf(event.text, sizeof(event.text), "%s",
+    std::snprintf(event->text, sizeof(event->text), "%s",
                   result.success ? "Spoolman tag assignment updated"
                                  : result.error);
   }
-  if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
+  if (xQueueSend(ctx.appEventQueue, event, pdMS_TO_TICKS(1000)) != pdPASS)
     FS_LOGW(services::LogComponent::Spoolman,
             "Event enqueue failed queue=app_event result=tag_client");
 }

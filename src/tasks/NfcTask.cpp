@@ -18,9 +18,10 @@
 #include "nfc/TagWritePolicy.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
+#include "services/Logger.h"
 #include "services/NfcPayload.h"
 #include "services/Ntag21x.h"
-#include "services/Logger.h"
+#include "services/PsramAlloc.h"
 
 namespace filament_station::tasks {
 namespace {
@@ -92,15 +93,16 @@ bool sendEvent(rtos::RtosContext& ctx, const rtos::AppEvent& event) {
 
 void sendError(rtos::RtosContext& ctx, std::uint32_t requestId,
                const char* text) {
-  // static, not a task-stack local: see the AppEvent size note on
-  // reportTag()'s `detected`/`read` below -- the same reasoning applies to
-  // every AppEvent this task builds.
-  static rtos::AppEvent event{};
-  event = rtos::AppEvent{};
-  event.type = rtos::AppEventType::NfcError;
-  event.requestId = requestId;
-  std::snprintf(event.text, sizeof(event.text), "%s", text);
-  sendEvent(ctx, event);
+  // static, PSRAM-backed (services/PsramAlloc.h): see the AppEvent size
+  // note on reportTag()'s `detected`/`read` below -- the same reasoning
+  // applies to every AppEvent this task builds.
+  static rtos::AppEvent* event =
+      services::allocatePsramInstance<rtos::AppEvent>("NfcTask.sendError");
+  *event = rtos::AppEvent{};
+  event->type = rtos::AppEventType::NfcError;
+  event->requestId = requestId;
+  std::snprintf(event->text, sizeof(event->text), "%s", text);
+  sendEvent(ctx, *event);
 }
 
 // PN532 runtime disconnect/reconnect (Robustheit/Diagnose, TASKS.md 10.2):
@@ -122,11 +124,14 @@ void reportPn532Disconnected(rtos::RtosContext& ctx) {
 void reportPn532Reconnected(rtos::RtosContext& ctx) {
   xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_NFC_READY);
   FS_LOGI(services::LogComponent::Nfc, "PN532 responding again");
-  static rtos::AppEvent event{};
-  event = rtos::AppEvent{};
-  event.type = rtos::AppEventType::NfcInitialized;
-  std::snprintf(event.text, sizeof(event.text), "PN532 ready");
-  sendEvent(ctx, event);
+  // static, PSRAM-backed: see sendError() above / services/PsramAlloc.h.
+  static rtos::AppEvent* event =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "NfcTask.reportPn532Reconnected");
+  *event = rtos::AppEvent{};
+  event->type = rtos::AppEventType::NfcInitialized;
+  std::snprintf(event->text, sizeof(event->text), "PN532 ready");
+  sendEvent(ctx, *event);
 }
 
 void notePn532Responding(rtos::RtosContext& ctx, bool& pn532Connected,
@@ -823,18 +828,21 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
   char uid[config::kNfcMaxUidLength * 3]{};
   formatUid(target, uid, sizeof(uid));
 
-  // static: AppEvent is large and this function's own call chain (MIFARE
-  // auth, HKDF-SHA256, TagParserRegistry::parse) is already stack-heavy;
-  // a stack-local AppEvent here previously caused a canary-triggered crash
-  // once AppEvent grew past the task's stack budget.
-  static rtos::AppEvent detected{};
-  detected = rtos::AppEvent{};
-  detected.type = rtos::AppEventType::NfcTagDetected;
-  fillTarget(detected, target);
-  std::snprintf(detected.text, sizeof(detected.text),
+  // static, PSRAM-backed (services/PsramAlloc.h): AppEvent is large and
+  // this function's own call chain (MIFARE auth, HKDF-SHA256,
+  // TagParserRegistry::parse) is already stack-heavy; a stack-local
+  // AppEvent here previously caused a canary-triggered crash once AppEvent
+  // grew past the task's stack budget.
+  static rtos::AppEvent* detected =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "NfcTask.reportTag.detected");
+  *detected = rtos::AppEvent{};
+  detected->type = rtos::AppEventType::NfcTagDetected;
+  fillTarget(*detected, target);
+  std::snprintf(detected->text, sizeof(detected->text),
                 "Tag erkannt: UID=%s, %u Byte, SAK=%02X", uid,
                 target.uidLength, target.sak);
-  sendEvent(ctx, detected);
+  sendEvent(ctx, *detected);
 
   // RawTagData contains the complete NDEF buffer and decrypted MIFARE blocks.
   // It is only used by this single NfcTask, so keep it out of the task stack;
@@ -896,33 +904,36 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
                                          ? result.definition.spoolId
                                          : 0U));
 
-  static rtos::AppEvent read{};
-  read = rtos::AppEvent{};
-  read.type = rtos::AppEventType::NfcTagRead;
-  fillTarget(read, target);
-  read.tagReadResult = result;
-  read.nfcTagType = legacyType(result.format);
-  read.spoolId = result.definition.hasSpoolId ? result.definition.spoolId : 0;
+  // static, PSRAM-backed: see `detected` above / services/PsramAlloc.h.
+  static rtos::AppEvent* read =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "NfcTask.reportTag.read");
+  *read = rtos::AppEvent{};
+  read->type = rtos::AppEventType::NfcTagRead;
+  fillTarget(*read, target);
+  read->tagReadResult = result;
+  read->nfcTagType = legacyType(result.format);
+  read->spoolId = result.definition.hasSpoolId ? result.definition.spoolId : 0;
   if (result.technology == models::TagTechnology::MifareClassic1K ||
       result.technology == models::TagTechnology::MifareClassic4K) {
-    std::snprintf(read.text, sizeof(read.text),
+    std::snprintf(read->text, sizeof(read->text),
                   "UID=%s: MIFARE Classic, Inhalt nicht gelesen", uid);
   } else if (!result.ndefReadable) {
-    std::snprintf(read.text, sizeof(read.text),
+    std::snprintf(read->text, sizeof(read->text),
                   "UID=%s: kein lesbares Type-2-NDEF", uid);
   } else if (!result.payloadValid) {
-    std::snprintf(read.text, sizeof(read.text),
+    std::snprintf(read->text, sizeof(read->text),
                   "UID=%s: ungueltige FilamentStation-Payload", uid);
   } else if (result.definition.hasSpoolId) {
-    std::snprintf(read.text, sizeof(read.text), "UID=%s: %s, ID=%lu", uid,
+    std::snprintf(read->text, sizeof(read->text), "UID=%s: %s, ID=%lu", uid,
                   formatDescription(result.format),
                   static_cast<unsigned long>(result.definition.spoolId));
   } else {
-    std::snprintf(read.text, sizeof(read.text), "UID=%s: %s (%u Byte)", uid,
+    std::snprintf(read->text, sizeof(read->text), "UID=%s: %s (%u Byte)", uid,
                   formatDescription(result.format),
                   static_cast<unsigned>(raw.ndefLength));
   }
-  sendEvent(ctx, read);
+  sendEvent(ctx, *read);
   return result;
 }
 
@@ -1002,32 +1013,36 @@ void handleWrite(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
     sendError(ctx, command.requestId, "NFC tag verification failed");
     return;
   }
-  static rtos::AppEvent event{};
-  event = rtos::AppEvent{};
-  event.type = rtos::AppEventType::NfcTagWritten;
-  event.requestId = command.requestId;
-  event.spoolId = command.spoolId;
-  event.nfcTagType = rtos::NfcTagType::Spoolman;
-  event.tagReadResult = activeResult;
-  event.tagReadResult.format = models::TagFormat::FilamentStation;
-  event.tagReadResult.knownFormat = true;
-  event.tagReadResult.ndefPresent = true;
-  event.tagReadResult.ndefReadable = true;
-  event.tagReadResult.payloadValid = true;
-  event.tagReadResult.writable = true;
-  event.tagReadResult.erasable = true;
-  event.tagReadResult.definition.format = models::TagFormat::FilamentStation;
-  event.tagReadResult.definition.hasSpoolId = true;
-  event.tagReadResult.definition.spoolId = command.spoolId;
-  event.tagReadResult.uidLength = verifiedTarget.uidLength;
-  std::memcpy(event.tagReadResult.uid, verifiedTarget.uid.data(),
+  // static, PSRAM-backed: see reportTag()'s `detected` above /
+  // services/PsramAlloc.h.
+  static rtos::AppEvent* event =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "NfcTask.handleWrite");
+  *event = rtos::AppEvent{};
+  event->type = rtos::AppEventType::NfcTagWritten;
+  event->requestId = command.requestId;
+  event->spoolId = command.spoolId;
+  event->nfcTagType = rtos::NfcTagType::Spoolman;
+  event->tagReadResult = activeResult;
+  event->tagReadResult.format = models::TagFormat::FilamentStation;
+  event->tagReadResult.knownFormat = true;
+  event->tagReadResult.ndefPresent = true;
+  event->tagReadResult.ndefReadable = true;
+  event->tagReadResult.payloadValid = true;
+  event->tagReadResult.writable = true;
+  event->tagReadResult.erasable = true;
+  event->tagReadResult.definition.format = models::TagFormat::FilamentStation;
+  event->tagReadResult.definition.hasSpoolId = true;
+  event->tagReadResult.definition.spoolId = command.spoolId;
+  event->tagReadResult.uidLength = verifiedTarget.uidLength;
+  std::memcpy(event->tagReadResult.uid, verifiedTarget.uid.data(),
               verifiedTarget.uidLength);
-  nfc::updateTagCapabilities(event.tagReadResult);
+  nfc::updateTagCapabilities(event->tagReadResult);
   target = verifiedTarget;
-  activeResult = event.tagReadResult;
-  fillTarget(event, verifiedTarget);
-  std::snprintf(event.text, sizeof(event.text), "NFC tag written and verified");
-  sendEvent(ctx, event);
+  activeResult = event->tagReadResult;
+  fillTarget(*event, verifiedTarget);
+  std::snprintf(event->text, sizeof(event->text), "NFC tag written and verified");
+  sendEvent(ctx, *event);
 }
 
 void handleErase(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
@@ -1047,11 +1062,15 @@ void handleErase(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
     sendError(ctx, command.requestId, "NFC tag erase verification failed");
     return;
   }
-  static rtos::AppEvent event{};
-  event = rtos::AppEvent{};
-  event.type = rtos::AppEventType::NfcTagErased;
-  event.requestId = command.requestId;
-  fillTarget(event, verifiedTarget);
+  // static, PSRAM-backed: see reportTag()'s `detected` above /
+  // services/PsramAlloc.h.
+  static rtos::AppEvent* event =
+      services::allocatePsramInstance<rtos::AppEvent>(
+          "NfcTask.handleErase");
+  *event = rtos::AppEvent{};
+  event->type = rtos::AppEventType::NfcTagErased;
+  event->requestId = command.requestId;
+  fillTarget(*event, verifiedTarget);
   target = verifiedTarget;
   activeResult.format = models::TagFormat::EmptyNdef;
   activeResult.knownFormat = true;
@@ -1060,8 +1079,8 @@ void handleErase(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
   activeResult.payloadValid = true;
   activeResult.definition = {};
   nfc::updateTagCapabilities(activeResult);
-  std::snprintf(event.text, sizeof(event.text), "NFC tag erased and verified");
-  sendEvent(ctx, event);
+  std::snprintf(event->text, sizeof(event->text), "NFC tag erased and verified");
+  sendEvent(ctx, *event);
 }
 
 }  // namespace
@@ -1097,11 +1116,15 @@ void nfcTask(void* parameter) {
   } else {
     FS_LOGI(services::LogComponent::Nfc, "PN532 ready");
     xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_NFC_READY);
-    static rtos::AppEvent event{};
-    event = rtos::AppEvent{};
-    event.type = rtos::AppEventType::NfcInitialized;
-    std::snprintf(event.text, sizeof(event.text), "PN532 ready");
-    sendEvent(ctx, event);
+    // static, PSRAM-backed: see reportTag()'s `detected` above /
+    // services/PsramAlloc.h.
+    static rtos::AppEvent* event =
+        services::allocatePsramInstance<rtos::AppEvent>(
+            "NfcTask.nfcTask.initialized");
+    *event = rtos::AppEvent{};
+    event->type = rtos::AppEventType::NfcInitialized;
+    std::snprintf(event->text, sizeof(event->text), "PN532 ready");
+    sendEvent(ctx, *event);
   }
 
   FS_LOGD(services::LogComponent::Nfc,
@@ -1204,15 +1227,19 @@ void nfcTask(void* parameter) {
         continue;
       }
 
-      static rtos::AppEvent event{};
-      event = rtos::AppEvent{};
-      event.type = rtos::AppEventType::NfcTagRemoved;
-      fillTarget(event, removalCandidate);
+      // static, PSRAM-backed: see reportTag()'s `detected` above /
+      // services/PsramAlloc.h.
+      static rtos::AppEvent* event =
+          services::allocatePsramInstance<rtos::AppEvent>(
+              "NfcTask.nfcTask.tagRemoved");
+      *event = rtos::AppEvent{};
+      event->type = rtos::AppEventType::NfcTagRemoved;
+      fillTarget(*event, removalCandidate);
       char uid[config::kNfcMaxUidLength * 3]{};
       formatUid(removalCandidate, uid, sizeof(uid));
-      std::snprintf(event.text, sizeof(event.text), "Tag entfernt: UID=%s", uid);
+      std::snprintf(event->text, sizeof(event->text), "Tag entfernt: UID=%s", uid);
       FS_LOGI(services::LogComponent::Nfc, "Tag removed uid=%s", uid);
-      sendEvent(ctx, event);
+      sendEvent(ctx, *event);
       present = false;
       active = {};
       activeResult = {};

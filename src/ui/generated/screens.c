@@ -6320,7 +6320,7 @@ void create_user_widget_cmp_tray_card(lv_obj_t *parent_obj, int startWidgetIndex
             // spoolmanager_id_container
             lv_obj_t *obj = lv_obj_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 3] = obj;
-            lv_obj_set_pos(obj, 6, 2);
+            lv_obj_set_pos(obj, 6, 5);
             lv_obj_set_size(obj, 55, 22);
             lv_obj_set_style_pad_left(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_pad_top(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -6337,7 +6337,7 @@ void create_user_widget_cmp_tray_card(lv_obj_t *parent_obj, int startWidgetIndex
             // spoolmanager_id
             lv_obj_t *obj = lv_label_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 4] = obj;
-            lv_obj_set_pos(obj, 8, -42);
+            lv_obj_set_pos(obj, 8, -39);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             add_style_label_standart(obj);
             lv_obj_set_style_align(obj, LV_ALIGN_LEFT_MID, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -6348,7 +6348,7 @@ void create_user_widget_cmp_tray_card(lv_obj_t *parent_obj, int startWidgetIndex
             // nozzle_icon
             lv_obj_t *obj = lv_image_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 5] = obj;
-            lv_obj_set_pos(obj, 66, 2);
+            lv_obj_set_pos(obj, 66, 6);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_image_set_src(obj, &img_3_d_printer_nozzle_w);
         }
@@ -6356,7 +6356,7 @@ void create_user_widget_cmp_tray_card(lv_obj_t *parent_obj, int startWidgetIndex
             // material
             lv_obj_t *obj = lv_label_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 6] = obj;
-            lv_obj_set_pos(obj, 6, 28);
+            lv_obj_set_pos(obj, 6, 29);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             add_style_label_standart_w(obj);
             lv_label_set_text_static(obj, "ABS");
@@ -6365,7 +6365,7 @@ void create_user_widget_cmp_tray_card(lv_obj_t *parent_obj, int startWidgetIndex
             // weight
             lv_obj_t *obj = lv_label_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 7] = obj;
-            lv_obj_set_pos(obj, 6, 48);
+            lv_obj_set_pos(obj, 6, 49);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             add_style_label_standart_w(obj);
             lv_label_set_text_static(obj, "500g");
@@ -6374,7 +6374,7 @@ void create_user_widget_cmp_tray_card(lv_obj_t *parent_obj, int startWidgetIndex
             // k_factor
             lv_obj_t *obj = lv_label_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 8] = obj;
-            lv_obj_set_pos(obj, 6, 67);
+            lv_obj_set_pos(obj, 6, 68);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             add_style_label_standart_w(obj);
             lv_label_set_text_static(obj, "K (0.020)");
@@ -6419,7 +6419,7 @@ void create_user_widget_cmp_staging_card(lv_obj_t *parent_obj, int startWidgetIn
             // color_3
             lv_obj_t *obj = lv_obj_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 1] = obj;
-            lv_obj_set_pos(obj, 32, 80);
+            lv_obj_set_pos(obj, 32, 88);
             lv_obj_set_size(obj, 40, 20);
             lv_obj_set_style_pad_left(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_pad_top(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -6434,7 +6434,7 @@ void create_user_widget_cmp_staging_card(lv_obj_t *parent_obj, int startWidgetIn
             // color_4
             lv_obj_t *obj = lv_obj_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 2] = obj;
-            lv_obj_set_pos(obj, 73, 87);
+            lv_obj_set_pos(obj, 73, 89);
             lv_obj_set_size(obj, 40, 20);
             lv_obj_set_style_pad_left(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_pad_top(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -6449,7 +6449,7 @@ void create_user_widget_cmp_staging_card(lv_obj_t *parent_obj, int startWidgetIn
             // spoolmanager_id_container
             lv_obj_t *obj = lv_obj_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 3] = obj;
-            lv_obj_set_pos(obj, 32, 2);
+            lv_obj_set_pos(obj, 32, 6);
             lv_obj_set_size(obj, 55, 22);
             lv_obj_set_style_pad_left(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_pad_top(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -6466,7 +6466,7 @@ void create_user_widget_cmp_staging_card(lv_obj_t *parent_obj, int startWidgetIn
             // spoolmanager_id
             lv_obj_t *obj = lv_label_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 4] = obj;
-            lv_obj_set_pos(obj, 34, -42);
+            lv_obj_set_pos(obj, 34, -38);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             add_style_label_standart(obj);
             lv_obj_set_style_align(obj, LV_ALIGN_LEFT_MID, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -6477,7 +6477,7 @@ void create_user_widget_cmp_staging_card(lv_obj_t *parent_obj, int startWidgetIn
             // STAGING_LABEL
             lv_obj_t *obj = lv_label_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 5] = obj;
-            lv_obj_set_pos(obj, -22, 40);
+            lv_obj_set_pos(obj, -19, 39);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             add_style_label_header_w(obj);
             lv_obj_set_style_transform_rotation(obj, 2700, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -6490,7 +6490,7 @@ void create_user_widget_cmp_staging_card(lv_obj_t *parent_obj, int startWidgetIn
             // material
             lv_obj_t *obj = lv_label_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 6] = obj;
-            lv_obj_set_pos(obj, 32, 26);
+            lv_obj_set_pos(obj, 32, 30);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             add_style_label_standart_w(obj);
             lv_label_set_text_static(obj, "ABS");
@@ -6499,7 +6499,7 @@ void create_user_widget_cmp_staging_card(lv_obj_t *parent_obj, int startWidgetIn
             // weight
             lv_obj_t *obj = lv_label_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 7] = obj;
-            lv_obj_set_pos(obj, 32, 47);
+            lv_obj_set_pos(obj, 32, 51);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             add_style_label_standart_w(obj);
             lv_label_set_text_static(obj, "500g");
