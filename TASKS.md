@@ -4090,12 +4090,52 @@ nach dem Neustart).
 
 ## 13.6 Fehlerbehandlung und Rollback
 
-* [ ] Pruefen, ob das Arduino-ESP32-Framework die App nach einem OTA-Boot
+* [x] Pruefen, ob das Arduino-ESP32-Framework die App nach einem OTA-Boot
   automatisch als "valid" markiert (ESP-IDFs App-Rollback-Mechanismus)
   oder ob `esp_ota_mark_app_valid_cancel_rollback()` explizit in `setup()`
   ergaenzt werden muss
-* [ ] Verhalten bei einer Firmware, die nach dem Update nicht mehr
+* [x] Verhalten bei einer Firmware, die nach dem Update nicht mehr
   boot-faehig ist (automatischer Rollback auf die vorherige Partition)
+
+**Rechercheergebnis (2026-08-25):** `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=1`
+ist im vendorten sdkconfig fuer dieses exakte Board bereits gesetzt
+(`.pio-core/.../esp32s3/qio_qspi/include/sdkconfig.h:27`) -- der
+ESP-IDF-Rollback-Mechanismus ist also grundsaetzlich aktiv. Arduino-ESP32s
+eigenes `initArduino()` (`esp32-hal-misc.c:222-238`, laeuft automatisch vor
+`setup()`) markiert eine frisch per OTA geschriebene Partition dabei aber
+standardmaessig SOFORT als gueltig, noch bevor `setup()` ueberhaupt startet
+-- die Default-Implementierung der (als "weak" ueberschreibbaren)
+`verifyOta()` liefert unbedingt `true`. Das entwertet den Rollback-Schutz
+fast vollstaendig: ein Update, das erst waehrend `setup()`/dem RTOS-Start
+abstuerzt oder haengen bleibt, waere trotzdem schon bestaetigt und wuerde
+nie automatisch zurueckgerollt.
+
+**Umgesetzt:** neue `extern "C" bool verifyRollbackLater() { return true;
+}`-Ueberschreibung in `main.cpp` (der Original-Deklaration in einer
+`.c`-Datei folgend `extern "C"`, sonst wuerde C++-Namensverstuemmelung die
+Ueberschreibung stillschweigend wirkungslos machen -- direkt getestet:
+sauberer Build ohne Duplicate-Symbol-/Linker-Fehler bestaetigt die korrekte
+Ueberschreibung). Das verschiebt die Bestaetigung auf einen echten "App
+laeuft nachweislich"-Zeitpunkt: `AppTask::showHomeWhenStartupReady()`
+(`AppTask.cpp`) ruft `esp_ota_mark_app_valid_cancel_rollback()` jetzt erst
+auf, nachdem UI und Storage tatsaechlich bereit sind und der Home-Screen
+gesendet wurde -- geschuetzt durch eine `ESP_OTA_IMG_PENDING_VERIFY`-Pruefung
+(kein Effekt bei einem normalen, nicht per OTA gestarteten Boot).
+
+Der zweite Checklistenpunkt (Rollback bei nicht boot-faehiger Firmware)
+braucht dadurch keinen eigenen Code: st\xC3\xBCrzt die neue Firmware
+irgendwo VOR diesem Bestaetigungspunkt ab oder bleibt haengen (Absturz,
+Panic, Watchdog, Brownout -- jede Art von Reset), bleibt die Partition im
+`PENDING_VERIFY`-Zustand; der ESP-IDF-Bootloader erkennt das beim naechsten
+Start automatisch und faellt selbstaendig auf die vorherige Partition
+zurueck. Das ist Standard-ESP-IDF-Verhalten, sobald das verfruehte
+automatische Bestaetigen (der eigentliche, jetzt behobene Fehler) nicht
+mehr im Weg steht.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht (regul\xC3\xA4rer
+USB-Flash, kein OTA-Boot -- die `PENDING_VERIFY`-Pruefung greift dabei
+erwartungsgem\xC3\xA4\xC3\x9F nicht, das laesst sich nur durch einen echten
+zukuenftigen OTA-Zyklus end-to-end beobachten).
 
 ## 13.7 UI-Integration
 

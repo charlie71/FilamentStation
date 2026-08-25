@@ -9,6 +9,29 @@
 #include "services/Logger.h"
 
 #ifndef PIO_UNIT_TESTING
+// Firmware-Update-Rollback (TASKS.md Phase 13.6): Arduino-ESP32s initArduino()
+// markiert eine frisch per OTA geschriebene Partition standardmaessig SOFORT
+// als gueltig (verifyOta() ist eine "weak"-Funktion mit Default-Rueckgabe
+// true, noch bevor setup() ueberhaupt laeuft) -- das entwertet den in diesem
+// Framework bereits aktivierten Bootloader-Rollback-Mechanismus
+// (CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=1, per sdkconfig fuer dieses Board
+// bestaetigt) fast vollstaendig: ein Update, das erst WAEHREND setup()/dem
+// RTOS-Start abstuerzt oder haengen bleibt, waere trotzdem schon als
+// "gueltig" markiert und wuerde nie automatisch zurueckgerollt. Diese
+// "weak"-Ueberschreibung (extern "C", da das Original in einer .c-Datei
+// deklariert ist -- ohne extern "C" wuerde C++-Namensverstuemmelung die
+// Ueberschreibung stillschweigend wirkungslos machen) verschiebt die
+// Bestaetigung stattdessen auf einen echten "App laeuft nachweislich"-
+// Zeitpunkt: AppTask::showHomeWhenStartupReady() ruft
+// esp_ota_mark_app_valid_cancel_rollback() erst auf, nachdem UI und Storage
+// tatsaechlich bereit sind und der Home-Screen gezeigt wird. Ein Absturz vor
+// diesem Punkt loest ueber den Bootloader-Mechanismus automatisch einen
+// Rueckfall auf die vorherige Partition aus -- kein eigener Rollback-Code
+// noetig, nur das verfrühte automatische Bestaetigen verhindern.
+#ifdef CONFIG_APP_ROLLBACK_ENABLE
+extern "C" bool verifyRollbackLater() { return true; }
+#endif
+
 namespace {
 void haltStartup(const char* reason) {
   auto& ctx = filament_station::rtos::context();

@@ -6,6 +6,7 @@
 #include <array>
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <esp_ota_ops.h>
 #include "config/AppConfig.h"
 #include "config/BambuConfig.h"
 #include "config/NfcConfig.h"
@@ -1939,6 +1940,24 @@ void showHomeWhenStartupReady(rtos::RtosContext& ctx) {
     startupNavigationSent = true;
     currentScreen = rtos::UiScreenId::Home;
     previousScreen = rtos::UiScreenId::Home;
+#ifdef CONFIG_APP_ROLLBACK_ENABLE
+    // Firmware-Update-Rollback (TASKS.md Phase 13.6): erst hier, an einem
+    // echten "App laeuft nachweislich" Zeitpunkt (UI + Storage bereit, Home
+    // wird gezeigt), die frisch per OTA geschriebene Partition als gueltig
+    // bestaetigen -- siehe die ausfuehrliche Begruendung bei
+    // verifyRollbackLater() in main.cpp. Kein Effekt, falls diese Partition
+    // ganz normal (nicht per OTA) gestartet wurde -- der Zustand ist dann
+    // bereits ESP_OTA_IMG_VALID, nicht PENDING_VERIFY.
+    const esp_partition_t* runningPartition = esp_ota_get_running_partition();
+    esp_ota_img_states_t otaState;
+    if (runningPartition != nullptr &&
+        esp_ota_get_state_partition(runningPartition, &otaState) == ESP_OK &&
+        otaState == ESP_OTA_IMG_PENDING_VERIFY) {
+      esp_ota_mark_app_valid_cancel_rollback();
+      FS_LOGI(services::LogComponent::App,
+              "OTA rollback: partition confirmed valid after successful boot");
+    }
+#endif
   }
 }
 
