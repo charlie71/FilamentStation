@@ -1,3 +1,7 @@
+/**
+ * @file
+ * @brief Implements the services::*TagIdentity* normalization functions.
+ */
 #include "services/TagIdentity.h"
 
 #include <cctype>

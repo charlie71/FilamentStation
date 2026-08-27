@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements tasks::uiTask(): display/LVGL bring-up and the main
+ *        UI-command processing loop.
+ */
 #include "tasks/Tasks.h"
 
 #include <Arduino.h>

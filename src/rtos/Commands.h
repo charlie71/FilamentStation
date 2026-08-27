@@ -1,3 +1,9 @@
+/**
+ * @file
+ * @brief UI-facing screen/command/action enums and the per-service command
+ *        type enums, plus the value types carried on the corresponding
+ *        command queues. See docs/architecture.md, section "Queues".
+ */
 #pragma once
 
 #include <cstdint>
@@ -6,14 +12,16 @@
 
 namespace filament_station::rtos {
 
-using PrinterId = models::PrinterId;
-using SpoolId = std::uint32_t;
+using PrinterId = models::PrinterId;  ///< Re-exported for rtos-layer code that doesn't otherwise depend on models::.
+using SpoolId = std::uint32_t;        ///< Spoolman spool id.
 
-constexpr std::int32_t UI_TAG_CAP_WRITE = 1 << 0;
-constexpr std::int32_t UI_TAG_CAP_LINK = 1 << 1;
-constexpr std::int32_t UI_TAG_CAP_UNLINK = 1 << 2;
-constexpr std::int32_t UI_TAG_CAP_ERASE = 1 << 3;
+constexpr std::int32_t UI_TAG_CAP_WRITE = 1 << 0;   ///< Bit flag: the tag may be written.
+constexpr std::int32_t UI_TAG_CAP_LINK = 1 << 1;    ///< Bit flag: the tag identity may be linked to a spool.
+constexpr std::int32_t UI_TAG_CAP_UNLINK = 1 << 2;  ///< Bit flag: an existing link may be removed.
+constexpr std::int32_t UI_TAG_CAP_ERASE = 1 << 3;   ///< Bit flag: the tag's native payload may be erased.
 
+/// @brief Every LVGL screen the UI can navigate to. See docs/workflows.md,
+///        section "Screens", for what each one shows.
 enum class UiScreenId : std::uint8_t {
   Boot,
   Home,
@@ -42,6 +50,7 @@ enum class UiScreenId : std::uint8_t {
   BambuSpoolType,
 };
 
+/// @brief Every command AppTask can send to UiTask via rtos::UiCommand.
 enum class UiCommandType : std::uint8_t {
   CommunicationTestResponse,
   ShowStatus,
@@ -69,6 +78,7 @@ enum class UiCommandType : std::uint8_t {
   SetBrightness,
 };
 
+/// @brief Network status shown in the UI header/WiFi settings.
 enum class UiNetworkState : std::uint8_t {
   Offline,
   Connecting,
@@ -77,6 +87,8 @@ enum class UiNetworkState : std::uint8_t {
   CredentialsCleared,
 };
 
+/// @brief Which overlay dialog UiBridge::showOverlay() should display; see
+///        docs/workflows.md.
 enum class UiOverlayKind : std::uint8_t {
   None,
   BootProgress,
@@ -108,6 +120,10 @@ enum class UiOverlayKind : std::uint8_t {
   UpdateDownload,
 };
 
+/// @brief Every user-initiated action UiTask can send to AppTask via
+///        rtos::UiAction. See docs/workflows.md for the corresponding
+///        end-user workflows and rtos::requiresOnlineSpoolman() for which
+///        of these require an online Spoolman connection.
 enum class UiActionType : std::uint8_t {
   SelectPrinter,
   SelectAms,
@@ -163,11 +179,20 @@ enum class UiActionType : std::uint8_t {
   CheckFirmwareUpdate,
 };
 
+/// @brief Whether a UiActionType is one of the two public tag-assignment
+///        actions (AssignTag/RemoveTagAssignment).
+/// @param type Action to check.
+/// @return True for AssignTag or RemoveTagAssignment.
 constexpr bool isPublicTagAssignmentAction(UiActionType type) {
   return type == UiActionType::AssignTag ||
          type == UiActionType::RemoveTagAssignment;
 }
 
+/// @brief Whether a UiActionType requires an online, tag-field-ready
+///        Spoolman connection before it may proceed (see
+///        docs/workflows.md, section "Spoolman Offline Error Flow").
+/// @param type Action to check.
+/// @return True if the action is gated on Spoolman being ready.
 constexpr bool requiresOnlineSpoolman(UiActionType type) {
   switch (type) {
     case UiActionType::AssignTag:
@@ -193,16 +218,21 @@ static_assert(requiresOnlineSpoolman(UiActionType::AssignTag));
 static_assert(requiresOnlineSpoolman(UiActionType::QuickWeight));
 static_assert(!requiresOnlineSpoolman(UiActionType::OpenSpoolmanSettings));
 
+/// @brief One user-initiated action, sent from UiTask to AppTask on
+///        rtos::RtosContext::uiCommandQueue's reverse counterpart (the
+///        action path uses appEventQueue via AppEventType::UiAction).
 struct UiAction {
-  UiActionType type = UiActionType::Back;
-  std::uint32_t requestId = 0;
-  PrinterId printerId = 0;
-  SpoolId spoolId = 0;
-  std::uint8_t amsId = 0;
-  std::uint8_t trayId = 0;
-  std::int32_t value = 0;
-  char text[64]{};
+  UiActionType type = UiActionType::Back;  ///< Which action this is.
+  std::uint32_t requestId = 0;  ///< Correlation id echoed back in the eventual response.
+  PrinterId printerId = 0;      ///< Target printer, if applicable.
+  SpoolId spoolId = 0;          ///< Target Spoolman spool, if applicable.
+  std::uint8_t amsId = 0;       ///< Target AMS index (1-based on the UI side), or models::kExternalTraySentinel.
+  std::uint8_t trayId = 0;      ///< Target tray index, or models::kExternalTraySentinel.
+  std::int32_t value = 0;       ///< Generic numeric payload, meaning depends on #type.
+  char text[64]{};              ///< Generic text payload, meaning depends on #type.
 };
+
+/// @brief Commands AppTask can send to tasks::scaleTask().
 enum class ScaleCommandType : std::uint8_t {
   Tare,
   StartCalibration,
@@ -214,6 +244,8 @@ enum class ScaleCommandType : std::uint8_t {
   PowerDown,
   PowerUp,
 };
+
+/// @brief Commands AppTask can send to tasks::nfcTask().
 enum class NfcCommandType : std::uint8_t {
   StartReading,
   StopReading,
@@ -224,6 +256,8 @@ enum class NfcCommandType : std::uint8_t {
   PowerDown,
   PowerUp,
 };
+
+/// @brief Commands AppTask can send to tasks::storageTask().
 // CreateBackup wurde bewusst nicht aufgenommen: JsonStorage::atomicSave()
 // legt bei jedem Speichern bereits automatisch ein *.bak.json an (Phase 2.4,
 // per Wiederherstellungstest verifiziert; recoverAtomicSave() nutzt es beim
@@ -231,6 +265,8 @@ enum class NfcCommandType : std::uint8_t {
 // manueller Trigger auf demselben Pfad wuerde mit diesem Mechanismus
 // kollidieren, siehe TASKS.md 10.2.
 enum class StorageCommandType : std::uint8_t { LoadJson, SaveJson, DeleteJson };
+
+/// @brief Commands AppTask can send to tasks::networkTask().
 enum class NetworkCommandType : std::uint8_t {
   ApplyConfiguration,
   RequestStatus,
@@ -244,6 +280,8 @@ enum class NetworkCommandType : std::uint8_t {
   PowerDown,
   PowerUp,
 };
+
+/// @brief Commands AppTask can send to tasks::spoolmanTask().
 enum class SpoolmanCommandType : std::uint8_t {
   ApplyConfiguration,
   HealthCheck,
@@ -261,12 +299,17 @@ enum class SpoolmanCommandType : std::uint8_t {
   UpdateWeight,
   ImportTagDefinition,
 };
+
+/// @brief Which field a SpoolmanCommandType::SearchSpools/SearchFilaments
+///        request filters by.
 enum class SpoolmanSearchFilter : std::uint8_t {
   FilamentName,
   Material,
   Vendor,
   Id,
 };
+
+/// @brief Commands AppTask can send to tasks::bambuTask().
 enum class BambuCommandType : std::uint8_t {
   Connect,
   Disconnect,
@@ -277,6 +320,7 @@ enum class BambuCommandType : std::uint8_t {
   Reconnect,
 };
 
+/// @brief Commands AppTask can send to tasks::updateTask().
 // Firmware-Update (TASKS.md Phase 13.2/13.3): CheckForUpdate fragt die in
 // config/UpdateConfig.h konfigurierte GitHub-Releases-API ab. DownloadUpdate
 // loest eine eigene, frische Abfrage plus Download/Flash des ersten
@@ -287,6 +331,8 @@ enum class UpdateCommandType : std::uint8_t {
   DownloadUpdate,
 };
 
+/// @brief Commands sent to/from tasks::powerTask() for the Energiesparen
+///        state machine (see tasks::PowerState).
 // Energiesparen (TASKS.md Phase 11.1): ReportInactivity liefert die von
 // UiTask ueber LVGL `lv_display_get_inactive_time()` gemessene Zeit seit der
 // letzten Eingabe (einzige Stelle, die LVGL beruehrt, siehe "Nur UiTask
@@ -299,6 +345,8 @@ enum class PowerCommandType : std::uint8_t {
   PowerDownAcknowledged,
 };
 
+/// @brief Identifies which hardware task a PowerCommandType::
+///        PowerDownAcknowledged came from.
 // Energiesparen (TASKS.md Phase 11.6): identifiziert, welcher Hardware-Task
 // einen PowerDownAcknowledged geschickt hat, damit PowerTask vor dem echten
 // Light-Sleep auf alle drei wartet statt blind eine feste Zeit abzuwarten.

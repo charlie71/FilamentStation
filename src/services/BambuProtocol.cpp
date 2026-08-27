@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the Bambu LAN-Mode MQTT protocol encode/decode helpers
+ *        declared in services/BambuProtocol.h.
+ */
 #include "services/BambuProtocol.h"
 
 #include <array>
@@ -10,10 +15,13 @@ namespace filament_station {
 namespace services {
 namespace {
 
-// Case-insensitive "does material start with prefix" check. Spoolman
-// material strings are free text (e.g. "PLA", "PLA Basic", "PETG-CF"), so
-// this matches on the material family prefix rather than requiring an
-// exact string.
+/// @brief Case-insensitive "does material start with prefix" check.
+/// @param material Free-text material name to test (e.g. "PLA Basic").
+/// @param prefix Material family prefix to match (e.g. "PLA").
+/// @return true if `material` starts with `prefix`, ignoring case.
+// Spoolman material strings are free text (e.g. "PLA", "PLA Basic",
+// "PETG-CF"), so this matches on the material family prefix rather than
+// requiring an exact string.
 bool materialStartsWithCaseInsensitive(const char* material,
                                        const char* prefix) {
   std::size_t index = 0;
@@ -26,6 +34,12 @@ bool materialStartsWithCaseInsensitive(const char* material,
   return true;
 }
 
+/// @brief Parses a tray/AMS index that may be encoded as a JSON number or
+///        as text, rejecting anything at/above `maxExclusive`.
+/// @param value JSON value to parse.
+/// @param maxExclusive Exclusive upper bound on the accepted index.
+/// @param out Out parameter receiving the parsed index.
+/// @return false if `value` is not a number/numeric string, or is out of range.
 bool parseTrayIndex(JsonVariantConst value, std::uint8_t maxExclusive,
                     std::uint8_t& out) {
   if (value.is<std::uint8_t>()) {
@@ -46,10 +60,13 @@ bool parseTrayIndex(JsonVariantConst value, std::uint8_t maxExclusive,
   return false;
 }
 
-// Same as parseTrayIndex(), but for "tray_now" -- its valid range is the
-// full 0..255 (254/255 are sentinels, see models::kActiveTrayNowExternal/
-// kActiveTrayNowNone), which doesn't fit parseTrayIndex()'s uint8_t
-// maxExclusive bound.
+/// @brief Parses "tray_now", whose valid range is the full 0..255
+///        (254/255 are sentinels, see models::kActiveTrayNowExternal/
+///        kActiveTrayNowNone) -- doesn't fit parseTrayIndex()'s uint8_t
+///        maxExclusive bound, hence a separate function.
+/// @param value JSON value to parse.
+/// @param out Out parameter receiving the parsed index.
+/// @return false if `value` is not a number/numeric string, or out of the uint8_t range.
 bool parseTrayNow(JsonVariantConst value, std::uint8_t& out) {
   if (value.is<std::uint8_t>()) {
     out = value.as<std::uint8_t>();
@@ -66,12 +83,13 @@ bool parseTrayNow(JsonVariantConst value, std::uint8_t& out) {
   return false;
 }
 
+/// @brief One (material family prefix, generic profile id) mapping entry.
 struct GenericMaterialMapping {
-  const char* material;
-  const char* trayInfoIdx;
+  const char* material;     ///< Material family prefix, matched case-insensitively (see materialStartsWithCaseInsensitive()).
+  const char* trayInfoIdx;  ///< Bambu generic filament profile "setting_id" for this material.
 };
 
-// Bambu Studio's built-in *generic* (non-brand) filament profile ids,
+/// @brief Bambu Studio's built-in *generic* (non-brand) filament profile ids.
 // community-documented via Bambu-Research-Group/RFID-Tag-Guide and the
 // WolfWithSword Home Assistant Bambu Lab integration (see
 // docs/bambu-protocol.md) -- not from Bambu Lab directly. Composite
@@ -93,6 +111,12 @@ constexpr GenericMaterialMapping kGenericMaterialMappings[] = {
     
 };
 
+/// @brief Merges one tray's occupancy/material/color fields from a status
+///        report into a slot's state.
+/// @param trayJson The tray's JSON object from the report (an AMS tray or "vt_tray").
+/// @param slot Slot state to update in place.
+/// @note `slot.spoolId` is deliberately never touched here -- see
+///       bambuApplyReport()'s doc comment.
 void applyTrayOccupancy(JsonObjectConst trayJson,
                         models::PrinterSlotStateData& slot) {
   const char* trayType = trayJson["tray_type"] | "";

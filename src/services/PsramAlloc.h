@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief PSRAM-backed placement-new allocation helper for large
+ *        function-local message buffers (see allocatePsramInstance()).
+ */
 #pragma once
 
 #include <esp_heap_caps.h>
@@ -38,6 +43,10 @@ namespace filament_station::services {
 // other unrecoverable init failures in this project (e.g. NfcTask's
 // initializeUart(), ScaleTask's initializeHx711PinsAndInterrupt()) --
 // never returns nullptr.
+/// @brief Allocates and default-constructs one PSRAM-backed instance of T.
+/// @tparam T Trivially copyable, aggregate/value-constructible type.
+/// @param debugName Human-readable name logged on allocation failure.
+/// @return Pointer to the constructed instance; never null (halts the calling task on failure).
 template <typename T>
 T* allocatePsramInstance(const char* debugName) {
   void* raw =

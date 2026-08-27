@@ -1,3 +1,10 @@
+/**
+ * @file
+ * @brief Implements tasks::spoolmanTask(): the HTTP client for every
+ *        Spoolman API operation (catalog search/create, spool load/search,
+ *        weight updates, tag-identity field/lookup/assignment, and the
+ *        connection health check).
+ */
 #include "tasks/Tasks.h"
 
 #include <ArduinoJson.h>
@@ -16,8 +23,14 @@
 
 namespace filament_station::tasks {
 namespace {
-models::SpoolmanSettings activeSettings{};
+models::SpoolmanSettings activeSettings{};  ///< Settings from the most recent ApplyConfiguration, used as the fallback when a command carries no explicit settings.
 
+/// @brief Sends a simple numeric/text AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param type Event type.
+/// @param requestId Correlation id.
+/// @param text Text payload.
+/// @param value Numeric payload.
 void sendResult(rtos::RtosContext& ctx, rtos::AppEventType type,
                 std::uint32_t requestId, const char* text,
                 std::int32_t value = 0) {
@@ -45,6 +58,13 @@ void sendResult(rtos::RtosContext& ctx, rtos::AppEventType type,
             "Event enqueue failed queue=app_event result=generic");
 }
 
+/// @brief Performs a GET request and parses the response body as JSON.
+/// @param url Full request URL.
+/// @param timeoutMs Connect/response timeout in milliseconds.
+/// @param document Out parameter receiving the parsed response.
+/// @param error Destination buffer for an error message on failure.
+/// @param errorCapacity Size of `error` in bytes.
+/// @return false on any request or parse failure.
 bool getJson(const char* url, std::uint32_t timeoutMs, JsonDocument& document,
              char* error, std::size_t errorCapacity) {
   HTTPClient http;
@@ -79,6 +99,14 @@ bool getJson(const char* url, std::uint32_t timeoutMs, JsonDocument& document,
   return true;
 }
 
+/// @brief Serializes a JSON body and performs a POST request, parsing the response as JSON.
+/// @param url Full request URL.
+/// @param timeoutMs Connect/response timeout in milliseconds.
+/// @param request Request body to serialize and send.
+/// @param response Out parameter receiving the parsed response.
+/// @param error Destination buffer for an error message on failure.
+/// @param errorCapacity Size of `error` in bytes.
+/// @return false on any serialization, request, or parse failure.
 bool postJson(const char* url, std::uint32_t timeoutMs,
               const JsonDocument& request, JsonDocument& response,
               char* error, std::size_t errorCapacity) {
@@ -114,6 +142,15 @@ bool postJson(const char* url, std::uint32_t timeoutMs,
   return true;
 }
 
+/// @brief Serializes a JSON body and performs a PATCH request, parsing the
+///        response as JSON and extracting a server-provided error message on failure.
+/// @param url Full request URL.
+/// @param timeoutMs Connect/response timeout in milliseconds.
+/// @param request Request body to serialize and send.
+/// @param response Out parameter receiving the parsed response.
+/// @param error Destination buffer for an error message on failure.
+/// @param errorCapacity Size of `error` in bytes.
+/// @return false on any serialization, request, or parse failure.
 bool patchJson(const char* url, std::uint32_t timeoutMs,
                const JsonDocument& request, JsonDocument& response,
                char* error, std::size_t errorCapacity) {
@@ -160,8 +197,11 @@ bool patchJson(const char* url, std::uint32_t timeoutMs,
   return true;
 }
 
+/// @brief SpoolmanHttpTransport implementation backed by getJson()/postJson()/patchJson().
 class TaskSpoolmanTransport final : public services::SpoolmanHttpTransport {
  public:
+  /// @brief Constructs a transport bound to the given settings (base URL/timeout).
+  /// @param settings Settings supplying the server URL and timeout; must outlive this transport.
   explicit TaskSpoolmanTransport(const models::SpoolmanSettings& settings)
       : settings_(settings) {}
 
@@ -191,6 +231,13 @@ class TaskSpoolmanTransport final : public services::SpoolmanHttpTransport {
   }
 
  private:
+  /// @brief Concatenates the configured server URL with an API path.
+  /// @param path API path to append.
+  /// @param url Destination buffer receiving the full URL.
+  /// @param capacity Size of `url` in bytes.
+  /// @param error Destination buffer for an error message on failure.
+  /// @param errorCapacity Size of `error` in bytes.
+  /// @return false if the result would not fit `url`.
   bool makeUrl(const char* path, char* url, std::size_t capacity, char* error,
                std::size_t errorCapacity) const {
     const int written = std::snprintf(url, capacity, "%s%s",
@@ -199,9 +246,14 @@ class TaskSpoolmanTransport final : public services::SpoolmanHttpTransport {
     std::snprintf(error, errorCapacity, "Spoolman URL is too long");
     return false;
   }
-  const models::SpoolmanSettings& settings_;
+  const models::SpoolmanSettings& settings_;  ///< Settings supplying the server URL and timeout.
 };
 
+/// @brief Percent-encodes and appends `source` to `destination`.
+/// @param destination Buffer to append to; must already be NUL-terminated.
+/// @param capacity Size of `destination` in bytes.
+/// @param source Text to encode and append.
+/// @return false if the result would not fit `destination`.
 bool appendUrlEncoded(char* destination, std::size_t capacity,
                       const char* source) {
   constexpr char digits[] = "0123456789ABCDEF";
@@ -225,6 +277,11 @@ bool appendUrlEncoded(char* destination, std::size_t capacity,
   return true;
 }
 
+/// @brief Normalizes a color-hex string (strips '#'/spaces, uppercases, validates length) into a fixed buffer.
+/// @param destination Destination buffer, 9 bytes.
+/// @param source Source color string.
+/// @param length Length of `source` to consider, or 0 to use its full NUL-terminated length.
+/// @return false if `source` is null or not a valid 6/8-digit hex string.
 bool copyColorHex(char destination[9], const char* source,
                   std::size_t length = 0) {
   if (source == nullptr) return false;
@@ -241,6 +298,9 @@ bool copyColorHex(char destination[9], const char* source,
   return true;
 }
 
+/// @brief Parses a spool's color(s) from its filament's multi_color_hexes/color_hex fields.
+/// @param filament Filament JSON object from a spool response.
+/// @param spool Out parameter receiving the parsed colors in `colorHex`/`colorCount`.
 void parseSpoolColors(JsonObjectConst filament, models::SpoolmanSpool& spool) {
   const JsonVariantConst multi = filament["multi_color_hexes"];
   if (multi.is<JsonArrayConst>()) {
@@ -268,6 +328,10 @@ void parseSpoolColors(JsonObjectConst filament, models::SpoolmanSpool& spool) {
     spool.colorCount = 1;
 }
 
+/// @brief Parses a Spoolman "/spool" response into a models::SpoolmanSpool.
+/// @param source Parsed JSON spool object.
+/// @param spool Out parameter receiving the decoded fields.
+/// @return false if required fields (id, filament object) are missing/invalid.
 bool parseSpool(JsonVariantConst source, models::SpoolmanSpool& spool) {
   if (!source["id"].is<std::uint32_t>() ||
       !source["filament"].is<JsonObjectConst>())
@@ -305,6 +369,10 @@ bool parseSpool(JsonVariantConst source, models::SpoolmanSpool& spool) {
   return spool.id != 0;
 }
 
+/// @brief Parses a Spoolman "/vendor" response into a models::SpoolmanVendor.
+/// @param source Parsed JSON vendor object.
+/// @param vendor Out parameter receiving the decoded fields.
+/// @return false if required fields (id, name) are missing/invalid.
 bool parseVendor(JsonVariantConst source, models::SpoolmanVendor& vendor) {
   if (!source["id"].is<std::uint32_t>() ||
       !source["name"].is<const char*>())
@@ -316,6 +384,11 @@ bool parseVendor(JsonVariantConst source, models::SpoolmanVendor& vendor) {
   return vendor.id != 0;
 }
 
+/// @brief Parses a Spoolman "/filament" response into a models::SpoolmanFilament,
+///        including the project-specific Bambu temperature/K-factor extra fields.
+/// @param source Parsed JSON filament object.
+/// @param filament Out parameter receiving the decoded fields.
+/// @return false if the required "id" field is missing/invalid.
 bool parseFilament(JsonVariantConst source,
                    models::SpoolmanFilament& filament) {
   if (!source["id"].is<std::uint32_t>()) return false;
@@ -375,6 +448,11 @@ bool parseFilament(JsonVariantConst source,
   return filament.id != 0;
 }
 
+/// @brief Checks WiFi connectivity and Spoolman configuration, sending a SpoolmanError if unavailable.
+/// @param ctx Owning RTOS context.
+/// @param settings Settings to check.
+/// @param requestId Correlation id for the error event.
+/// @return true if a request can proceed.
 bool catalogAvailable(rtos::RtosContext& ctx,
                       const models::SpoolmanSettings& settings,
                       std::uint32_t requestId) {
@@ -392,6 +470,13 @@ bool catalogAvailable(rtos::RtosContext& ctx,
   return true;
 }
 
+/// @brief Sends one search-result/catalog-action AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param type Event type.
+/// @param requestId Correlation id.
+/// @param index Result index (or 0 for a single-item action).
+/// @param id Vendor/filament/spool id.
+/// @param text Text payload (display line, or status message).
 void sendCatalogItem(rtos::RtosContext& ctx, rtos::AppEventType type,
                      std::uint32_t requestId, std::int32_t index,
                      std::uint32_t id, const char* text) {
@@ -410,6 +495,11 @@ void sendCatalogItem(rtos::RtosContext& ctx, rtos::AppEventType type,
             "Event enqueue failed queue=app_event result=catalog");
 }
 
+/// @brief Percent-encodes and appends `"value"` (double-quoted, for an exact-match filter) to a URL.
+/// @param url Buffer to append to; must already be NUL-terminated.
+/// @param capacity Size of `url` in bytes.
+/// @param value Text to quote, encode, and append.
+/// @return false if the result would not fit.
 bool appendQuotedSearch(char* url, std::size_t capacity, const char* value) {
   char exact[68]{};
   const int written = std::snprintf(exact, sizeof(exact), "\"%s\"", value);
@@ -417,6 +507,9 @@ bool appendQuotedSearch(char* url, std::size_t capacity, const char* value) {
          appendUrlEncoded(url, capacity, exact);
 }
 
+/// @brief Handles SpoolmanCommandType::SearchVendors: queries and reports matching vendors.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
 void searchVendors(rtos::RtosContext& ctx,
                    const rtos::SpoolmanCommand& command) {
   const auto& settings = command.settings.serverUrl[0] != '\0'
@@ -458,6 +551,9 @@ void searchVendors(rtos::RtosContext& ctx,
              message);
 }
 
+/// @brief Handles SpoolmanCommandType::SearchFilaments: queries and reports matching filaments.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
 void searchFilaments(rtos::RtosContext& ctx,
                      const rtos::SpoolmanCommand& command) {
   const auto& settings = command.settings.serverUrl[0] != '\0'
@@ -509,6 +605,9 @@ void searchFilaments(rtos::RtosContext& ctx,
              message);
 }
 
+/// @brief Handles SpoolmanCommandType::CreateVendor: finds-or-creates a vendor, reporting duplicate/created.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
 void createVendor(rtos::RtosContext& ctx,
                   const rtos::SpoolmanCommand& command) {
   const auto& settings = command.settings.serverUrl[0] != '\0'
@@ -572,6 +671,9 @@ void createVendor(rtos::RtosContext& ctx,
                   "Hersteller wurde angelegt");
 }
 
+/// @brief Handles SpoolmanCommandType::CreateFilament: finds-or-creates a filament, reporting duplicate/created.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
 void createFilament(rtos::RtosContext& ctx,
                     const rtos::SpoolmanCommand& command) {
   const auto& settings = command.settings.serverUrl[0] != '\0'
@@ -652,6 +754,13 @@ void createFilament(rtos::RtosContext& ctx,
                   "Filament wurde angelegt");
 }
 
+/// @brief Searches for a matching existing vendor during tag import.
+/// @param settings Settings supplying the server URL/timeout.
+/// @param wanted Vendor to search for.
+/// @param result Out parameter receiving the matching vendor, if found (result.id stays 0 if not found).
+/// @param error Destination buffer for an error message on request failure.
+/// @param errorCapacity Size of `error` in bytes.
+/// @return false only on a request failure (not-found is not a failure).
 bool findImportVendor(const models::SpoolmanSettings& settings,
                       const models::SpoolmanVendor& wanted,
                       models::SpoolmanVendor& result, char* error,
@@ -678,6 +787,13 @@ bool findImportVendor(const models::SpoolmanSettings& settings,
   return true;
 }
 
+/// @brief Creates a new vendor during tag import.
+/// @param settings Settings supplying the server URL/timeout.
+/// @param wanted Vendor fields to create.
+/// @param result Out parameter receiving the created vendor.
+/// @param error Destination buffer for an error message on failure.
+/// @param errorCapacity Size of `error` in bytes.
+/// @return false on request failure or an incomplete response.
 bool createImportVendor(const models::SpoolmanSettings& settings,
                         const models::SpoolmanVendor& wanted,
                         models::SpoolmanVendor& result, char* error,
@@ -696,6 +812,13 @@ bool createImportVendor(const models::SpoolmanSettings& settings,
                          "Herstellerantwort ist unvollstaendig"), false));
 }
 
+/// @brief Searches for a matching existing filament during tag import.
+/// @param settings Settings supplying the server URL/timeout.
+/// @param wanted Filament to search for (its vendorId must already be resolved).
+/// @param result Out parameter receiving the matching filament, if found (result.id stays 0 if not found).
+/// @param error Destination buffer for an error message on request failure.
+/// @param errorCapacity Size of `error` in bytes.
+/// @return false only on a request failure (not-found is not a failure).
 bool findImportFilament(const models::SpoolmanSettings& settings,
                         const models::SpoolmanFilament& wanted,
                         models::SpoolmanFilament& result, char* error,
@@ -724,6 +847,13 @@ bool findImportFilament(const models::SpoolmanSettings& settings,
   return true;
 }
 
+/// @brief Creates a new filament during tag import.
+/// @param settings Settings supplying the server URL/timeout.
+/// @param wanted Filament fields to create.
+/// @param result Out parameter receiving the created filament.
+/// @param error Destination buffer for an error message on failure.
+/// @param errorCapacity Size of `error` in bytes.
+/// @return false on request failure or an incomplete response.
 bool createImportFilament(const models::SpoolmanSettings& settings,
                           const models::SpoolmanFilament& wanted,
                           models::SpoolmanFilament& result, char* error,
@@ -750,6 +880,11 @@ bool createImportFilament(const models::SpoolmanSettings& settings,
                          "Filamentantwort ist unvollstaendig"), false));
 }
 
+/// @brief Handles SpoolmanCommandType::ImportTagDefinition: maps the tag
+///        data, finds-or-creates the vendor/filament, and creates a new
+///        spool from it.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
 void importTagDefinition(rtos::RtosContext& ctx,
                          const rtos::SpoolmanCommand& command) {
   const auto& settings = command.settings.serverUrl[0] != '\0'
@@ -844,6 +979,11 @@ void importTagDefinition(rtos::RtosContext& ctx,
             "Event enqueue failed queue=app_event result=import");
 }
 
+/// @brief Sends one spool as a SpoolmanResponse AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param index Result index within a search, or 0 for a single-spool load.
+/// @param spool Spool to send.
 void sendSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
                std::int32_t index, const models::SpoolmanSpool& spool) {
   // static, PSRAM-backed: see sendResult() above / services/PsramAlloc.h.
@@ -872,6 +1012,10 @@ void sendSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
             "Event enqueue failed queue=app_event result=spool");
 }
 
+/// @brief Sends a filament as a SpoolmanResponse AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param filament Filament to send.
 void sendFilamentDetails(rtos::RtosContext& ctx, std::uint32_t requestId,
                          const models::SpoolmanFilament& filament) {
   // static, PSRAM-backed: see sendResult() above / services/PsramAlloc.h.
@@ -891,10 +1035,13 @@ void sendFilamentDetails(rtos::RtosContext& ctx, std::uint32_t requestId,
             "Event enqueue failed queue=app_event result=filament_details");
 }
 
-// SpoolmanCommandType::LoadFilament: GET /filament/{id} directly, instead of
-// trusting the (possibly incomplete) nested filament object embedded in a
-// spool response -- bambu_temp_min/bambu_temp_max/flow_dynamics_k_factor are
-// filament properties, see docs/bambu-protocol.md.
+/// @brief Handles SpoolmanCommandType::LoadFilament: GET /filament/{id} directly.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
+// GET /filament/{id} directly, instead of trusting the (possibly
+// incomplete) nested filament object embedded in a spool response --
+// bambu_temp_min/bambu_temp_max/flow_dynamics_k_factor are filament
+// properties, see docs/bambu-protocol.md.
 void loadFilamentDetails(rtos::RtosContext& ctx,
                          const rtos::SpoolmanCommand& command) {
   if ((xEventGroupGetBits(ctx.systemEventGroup) & rtos::EVENT_WIFI_CONNECTED) == 0) {
@@ -945,6 +1092,10 @@ void loadFilamentDetails(rtos::RtosContext& ctx,
   sendFilamentDetails(ctx, command.requestId, filament);
 }
 
+/// @brief Handles SpoolmanCommandType::LoadSpool/SearchSpools: loads a
+///        single spool by id, or searches with the given filter/text.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
 void loadSpools(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
   if ((xEventGroupGetBits(ctx.systemEventGroup) & rtos::EVENT_WIFI_CONNECTED) == 0) {
     sendResult(ctx, rtos::AppEventType::SpoolmanError, command.requestId,
@@ -1040,6 +1191,9 @@ void loadSpools(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
             "Event enqueue failed queue=app_event result=completion");
 }
 
+/// @brief Handles SpoolmanCommandType::UpdateWeight: PATCHes remaining/initial/empty-spool weight.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
 void updateWeight(rtos::RtosContext& ctx,
                   const rtos::SpoolmanCommand& command) {
   const auto& settings = command.settings.serverUrl[0] != '\0'
@@ -1116,6 +1270,10 @@ void updateWeight(rtos::RtosContext& ctx,
             "Event enqueue failed queue=app_event result=weight");
 }
 
+/// @brief Handles the tag-identity commands (EnsureTagExtraField/FindSpoolByTag/SetSpoolTag/ClearSpoolTag)
+///        via services::SpoolmanClient.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
 void executeTagClientCommand(rtos::RtosContext& ctx,
                              const rtos::SpoolmanCommand& command) {
   const auto& settings = command.settings.serverUrl[0] != '\0'
@@ -1194,6 +1352,11 @@ void executeTagClientCommand(rtos::RtosContext& ctx,
             "Event enqueue failed queue=app_event result=tag_client");
 }
 
+/// @brief Handles SpoolmanCommandType::ApplyConfiguration/HealthCheck:
+///        checks /health and /info, ensures the tag extra field, and
+///        updates EVENT_SPOOLMAN_READY/EVENT_SPOOLMAN_TAG_FIELD_READY.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
 void healthCheck(rtos::RtosContext& ctx, const rtos::SpoolmanCommand& command) {
   if ((xEventGroupGetBits(ctx.systemEventGroup) & rtos::EVENT_WIFI_CONNECTED) == 0) {
     xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SPOOLMAN_READY |

@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements nfc::TagParserRegistry: parser dispatch and the shared
+ *        early-out handling for empty/unknown tags.
+ */
 #include "nfc/TagParserRegistry.h"
 
 #include <cstring>
@@ -10,6 +15,9 @@ namespace filament_station {
 namespace nfc {
 
 namespace {
+/// @brief Fills in TagReadResult::capabilities before returning a result.
+/// @param result Result assembled so far.
+/// @return `result` with nfc::updateTagCapabilities() applied.
 models::TagReadResult finalize(models::TagReadResult result) {
   updateTagCapabilities(result);
   return result;

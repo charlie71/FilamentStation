@@ -92,6 +92,24 @@ in `TASKS.md` und würde hier nur dupliziert.
 
 ## Release
 
+**Automatisiert:** `scripts/release.ps1` deckt die Schritte 1 und 3-5 unten
+in einem Aufruf ab -- Versionsformat- und sauberer-Arbeitsbaum-Prüfung,
+Versions-Bump, alle vier nativen Testumgebungen, Build mit
+0-Warnungen-Prüfung, `firmware.bin`/`firmware.bin.sha256`. Ohne `-Publish`
+ist es ein reiner Probelauf (nichts wird committet/getaggt/veröffentlicht);
+erst mit `-Publish` committet, taggt, pusht und veröffentlicht es das
+GitHub-Release wirklich:
+
+```powershell
+./scripts/release.ps1 -Version 0.2.0            # Probelauf
+./scripts/release.ps1 -Version 0.2.0 -Publish    # echter Release
+```
+
+`CHANGELOG.md` (Schritt 2 unten) wird bewusst nicht automatisiert --
+sinnvolle Änderungstexte lassen sich nicht generisch generieren.
+
+**Manueller Ablauf** (falls das Skript nicht verfügbar/gewünscht ist):
+
 1. `config::kApplicationVersion` (`config/AppConfig.h`) auf die neue Version
    anheben (kein `-dev`-Anhang für einen echten Release).
 2. `CHANGELOG.md` um einen neuen Abschnitt für die Version ergänzen.

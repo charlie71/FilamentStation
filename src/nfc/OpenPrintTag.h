@@ -1,3 +1,7 @@
+/**
+ * @file
+ * @brief Decoder for the third-party OpenPrintTag MIME/CBOR NDEF format.
+ */
 #pragma once
 
 #include <cstddef>
@@ -8,8 +12,17 @@
 namespace filament_station {
 namespace nfc {
 
+/// @brief Checks whether an NDEF message contains an OpenPrintTag MIME record.
+/// @param data Raw NDEF message bytes.
+/// @param size Length of `data` in bytes.
+/// @return true if a matching MIME record is present.
 bool containsOpenPrintTagMimeRecord(const std::uint8_t* data,
                                     std::size_t size);
+/// @brief Decodes an OpenPrintTag MIME/CBOR NDEF message.
+/// @param data Raw NDEF message bytes.
+/// @param size Length of `data` in bytes.
+/// @param definition Out parameter receiving the decoded fields on success.
+/// @return true if a valid OpenPrintTag record was found and decoded.
 bool parseOpenPrintTagNdef(const std::uint8_t* data, std::size_t size,
                            models::TagDefinition& definition);
 

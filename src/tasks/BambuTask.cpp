@@ -1,3 +1,14 @@
+/**
+ * @file
+ * @brief Implements tasks::bambuTask(): LAN-Mode MQTT connection handling
+ *        for Bambu Lab printers. The protocol (topics, payload shapes,
+ *        credential scheme) is community-reverse-engineered and
+ *        unverified against real hardware; see docs/bambu-protocol.md.
+ *        Every on-wire detail is confined to services/BambuProtocol.{h,cpp}
+ *        so this file only owns the MQTT/TLS transport and the
+ *        per-printerId command/event plumbing required by the FreeRTOS
+ *        task architecture.
+ */
 #include "tasks/Tasks.h"
 
 #include <ArduinoJson.h>
@@ -16,68 +27,72 @@
 #include "services/Logger.h"
 #include "services/PsramAlloc.h"
 
-// LAN-Mode MQTT connection handling for Bambu Lab printers. The protocol
-// (topics, payload shapes, credential scheme) is community-reverse-engineered
-// and unverified against real hardware; see docs/bambu-protocol.md. Every
-// on-wire detail is confined to services/BambuProtocol.{h,cpp} so this file
-// only owns the MQTT/TLS transport and the per-printerId command/event
-// plumbing required by the FreeRTOS task architecture.
-
 namespace filament_station::tasks {
 namespace {
 
+/// @brief Tracks an in-flight AssignTray until the printer's own telemetry
+///        confirms it, or it times out.
 // publish() succeeding only confirms the MQTT broker accepted the packet,
 // not that the printer applied it (a rejected/unsigned command looks
 // identical on the wire, see docs/bambu-protocol.md). An AssignTray is
 // therefore tracked as pending until either a subsequent report's tray
 // telemetry matches what was sent, or kBambuAssignConfirmTimeoutMs elapses.
 struct PendingTrayAssignment {
-  bool active = false;
-  std::uint32_t requestId = 0;
-  std::uint8_t amsId = 0;
-  std::uint8_t trayId = 0;
+  bool active = false;              ///< Whether a confirmation is currently being awaited.
+  std::uint32_t requestId = 0;      ///< Correlation id to report back once confirmed/failed.
+  std::uint8_t amsId = 0;           ///< Target AMS index (wire-encoded).
+  std::uint8_t trayId = 0;          ///< Target tray index (wire-encoded).
   // No spoolId field here on purpose -- BambuTask only confirms that the
   // printer's own tray_type/tray_color telemetry now matches what was sent
   // (see checkPendingTrayAssignment() below); the Spoolman association
   // itself is tracked and persisted entirely by AppTask, see
   // models/TraySpoolCache.h.
   // Empty expectedTrayType means "confirm the slot becomes empty" (Reset).
-  char expectedTrayType[16]{};
-  char expectedColorHex[9]{};
-  TickType_t startedAtTicks = 0;
+  char expectedTrayType[16]{};      ///< Material telemetry must report before this is considered confirmed.
+  char expectedColorHex[9]{};       ///< Color telemetry must report before this is considered confirmed.
+  TickType_t startedAtTicks = 0;    ///< Tick count when this assignment was sent, for the timeout check.
   // Throttles BambuAssignProgress events to once per whole second of
   // remaining time instead of every ~200ms serviceConnections() tick; -1
   // never matches a real remaining-seconds value, so the first tick always
   // sends.
-  std::int32_t lastReportedRemainingSeconds = -1;
+  std::int32_t lastReportedRemainingSeconds = -1;  ///< Last remaining-seconds value reported via BambuAssignProgress.
 };
 
+/// @brief One printer's MQTT connection, state, and in-flight assignment tracking.
 struct PrinterConnection {
-  bool inUse = false;
-  bool reportedConnected = false;
-  models::BambuPrinterConfig config{};
-  models::PrinterState state{};
-  WiFiClientSecure tlsClient;
-  PubSubClient mqttClient{tlsClient};
-  char reportTopic[config::kBambuTopicCapacity]{};
-  char requestTopic[config::kBambuTopicCapacity]{};
-  char clientId[32]{};
+  bool inUse = false;               ///< Whether this slot is currently assigned to a printer.
+  bool reportedConnected = false;   ///< Whether a BambuConnected event has been sent for the current session.
+  models::BambuPrinterConfig config{};  ///< Connection configuration (host, credentials, ...).
+  models::PrinterState state{};     ///< Accumulated printer/AMS/tray state from reports.
+  WiFiClientSecure tlsClient;       ///< TLS transport for the MQTT connection.
+  PubSubClient mqttClient{tlsClient};  ///< MQTT client bound to #tlsClient.
+  char reportTopic[config::kBambuTopicCapacity]{};   ///< Subscribed topic the printer publishes status reports on.
+  char requestTopic[config::kBambuTopicCapacity]{};  ///< Topic used to publish commands to the printer.
+  char clientId[32]{};               ///< MQTT client id used for this connection.
   // "print.sequence_id" on the wire; community docs (OpenBambuAPI) call for
   // incrementing by 1 per command. Reset to 1 on every (re)connect, a fresh
   // MQTT session.
-  std::uint32_t nextSequenceId = 1;
-  PendingTrayAssignment pending{};
+  std::uint32_t nextSequenceId = 1;  ///< Next "print.sequence_id" value to send.
+  PendingTrayAssignment pending{};   ///< In-flight AssignTray confirmation state, if any.
   // See kBambuReconnectIntervalMs (Robustheit/Diagnose, TASKS.md 10.4): a
   // dropped MQTT session (printer reboot, LAN hiccup) was previously never
   // retried on its own -- only an explicit BambuCommandType::Connect
   // (AppTask's connectAllEnabledPrinters(), itself only fired at boot and on
   // WifiGotIp) ever reconnected. 0 allows an immediate first retry.
-  TickType_t lastReconnectAttemptAt = 0;
+  TickType_t lastReconnectAttemptAt = 0;  ///< Tick count of the last automatic reconnect attempt.
 };
 
 using PrinterConnections =
-    std::array<PrinterConnection, models::kMaximumPrinters>;
+    std::array<PrinterConnection, models::kMaximumPrinters>;  ///< Fixed-size pool of printer connection slots.
 
+/// @brief Sends a printer-state AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param type Event type.
+/// @param requestId Correlation id.
+/// @param printerId Printer this event concerns.
+/// @param state Printer state snapshot to report.
+/// @param text Text payload.
+/// @param value Numeric payload.
 void publishBambuEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
                        std::uint32_t requestId, rtos::PrinterId printerId,
                        const models::PrinterState& state, const char* text,
@@ -105,12 +120,22 @@ void publishBambuEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
   }
 }
 
+/// @brief Sends a BambuError AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param printerId Printer this error concerns.
+/// @param text Error text.
 void publishBambuError(rtos::RtosContext& ctx, std::uint32_t requestId,
                        rtos::PrinterId printerId, const char* text) {
   publishBambuEvent(ctx, rtos::AppEventType::BambuError, requestId, printerId,
                     models::PrinterState{}, text);
 }
 
+/// @brief Publishes a request payload to a printer's request topic.
+/// @param conn Connection to publish on.
+/// @param printerId Printer id, for logging.
+/// @param payload JSON payload to publish.
+/// @return true if the MQTT broker accepted the packet (not proof the printer applied it).
 // Single choke point for every outgoing MQTT publish so the exact bytes
 // sent to the printer are always visible in the log, not just for the one
 // command that happened to have ad-hoc logging added -- own log line with
@@ -130,6 +155,11 @@ bool publishBambuRequest(PrinterConnection& conn, rtos::PrinterId printerId,
   return published;
 }
 
+/// @brief Finds the connection slot for a printer id, optionally allocating a free one.
+/// @param connections Connection pool to search.
+/// @param printerId Printer id to find.
+/// @param allowCreate Whether to allocate and return a free slot if none is in use for `printerId`.
+/// @return Pointer to the connection, or nullptr if not found and (no free slot or `allowCreate` is false).
 PrinterConnection* connectionFor(PrinterConnections& connections,
                                  rtos::PrinterId printerId, bool allowCreate) {
   for (auto& conn : connections) {
@@ -142,6 +172,10 @@ PrinterConnection* connectionFor(PrinterConnections& connections,
   return nullptr;
 }
 
+/// @brief Checks whether a pending AssignTray's expected material/color now
+///        matches the printer's own telemetry, and if so, confirms it to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param conn Connection whose pending assignment to check.
 // Compares a pending AssignTray's expected tray_type/tray_color against
 // what the printer's own telemetry now reports for that slot; on a match,
 // commits the Spoolman association and reports success to AppTask. Called
@@ -183,6 +217,12 @@ void checkPendingTrayAssignment(rtos::RtosContext& ctx,
                     "Slot vom Drucker best\xC3\xA4tigt");
 }
 
+/// @brief MQTT callback for a message on a printer's report topic: parses,
+///        applies, and logs it, then checks any pending assignment.
+/// @param ctx Owning RTOS context.
+/// @param conn Connection the message arrived on.
+/// @param payload Raw (not NUL-terminated) MQTT payload bytes.
+/// @param length Length of `payload` in bytes.
 void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
                          const std::uint8_t* payload, unsigned int length) {
   FS_LOGT(services::LogComponent::Bambu,
@@ -278,6 +318,12 @@ void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
                     conn.config.printerId, conn.state, "Statusbericht empfangen");
 }
 
+/// @brief Establishes the MQTT/TLS connection for a printer, subscribes,
+///        and requests an initial full status report.
+/// @param ctx Owning RTOS context.
+/// @param conn Connection to establish; its `config` must already be set.
+/// @param requestId Correlation id to report success/failure with.
+/// @return true if the connection and subscription succeeded.
 bool doConnect(rtos::RtosContext& ctx, PrinterConnection& conn,
               std::uint32_t requestId) {
   std::snprintf(conn.clientId, sizeof(conn.clientId), "FS-%06lX-%u",
@@ -341,6 +387,10 @@ bool doConnect(rtos::RtosContext& ctx, PrinterConnection& conn,
   return true;
 }
 
+/// @brief Fails and clears a connection's pending AssignTray, if any, reporting `reason` to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param conn Connection whose pending assignment to fail.
+/// @param reason Error text to report.
 // A pending AssignTray confirmation left dangling (disconnect/reconnect
 // before the printer's telemetry confirmed or timed it out) would strand
 // AppTask's progress dialog on that requestId forever -- fail it explicitly
@@ -353,6 +403,9 @@ void failPendingAssignment(rtos::RtosContext& ctx, PrinterConnection& conn,
   publishBambuError(ctx, requestId, conn.config.printerId, reason);
 }
 
+/// @brief Disconnects a printer's MQTT session and fails any pending assignment.
+/// @param ctx Owning RTOS context.
+/// @param conn Connection to disconnect.
 void disconnectPrinter(rtos::RtosContext& ctx, PrinterConnection& conn) {
   if (conn.mqttClient.connected()) conn.mqttClient.disconnect();
   conn.reportedConnected = false;
@@ -360,6 +413,10 @@ void disconnectPrinter(rtos::RtosContext& ctx, PrinterConnection& conn) {
   failPendingAssignment(ctx, conn, "Verbindung getrennt");
 }
 
+/// @brief Handles BambuCommandType::Connect: allocates/refreshes a connection and connects.
+/// @param ctx Owning RTOS context.
+/// @param connections Connection pool.
+/// @param command Command to process.
 void handleConnect(rtos::RtosContext& ctx, PrinterConnections& connections,
                    const rtos::BambuCommand& command) {
   PrinterConnection* conn = connectionFor(connections, command.printerId, true);
@@ -386,6 +443,10 @@ void handleConnect(rtos::RtosContext& ctx, PrinterConnections& connections,
   doConnect(ctx, *conn, command.requestId);
 }
 
+/// @brief Handles BambuCommandType::Disconnect: disconnects and frees the connection slot.
+/// @param ctx Owning RTOS context.
+/// @param connections Connection pool.
+/// @param command Command to process.
 void handleDisconnect(rtos::RtosContext& ctx, PrinterConnections& connections,
                       const rtos::BambuCommand& command) {
   PrinterConnection* conn =
@@ -404,6 +465,10 @@ void handleDisconnect(rtos::RtosContext& ctx, PrinterConnections& connections,
                     "Drucker getrennt");
 }
 
+/// @brief Handles BambuCommandType::TestConnection: connects and immediately
+///        disconnects an ephemeral connection to verify credentials.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
 void handleTestConnection(rtos::RtosContext& ctx,
                           const rtos::BambuCommand& command) {
   // Ephemeral, not stored in the connection slots: verifies credentials
@@ -420,6 +485,10 @@ void handleTestConnection(rtos::RtosContext& ctx,
       ok ? 1 : 0);
 }
 
+/// @brief Handles BambuCommandType::RequestStatus: publishes a pushall request.
+/// @param ctx Owning RTOS context.
+/// @param connections Connection pool.
+/// @param command Command to process.
 void handleRequestStatus(rtos::RtosContext& ctx,
                          PrinterConnections& connections,
                          const rtos::BambuCommand& command) {
@@ -440,6 +509,12 @@ void handleRequestStatus(rtos::RtosContext& ctx,
   }
 }
 
+/// @brief Handles BambuCommandType::AssignTray: sends
+///        ams_filament_setting+extrusion_cali_sel and starts tracking a
+///        PendingTrayAssignment for confirmation.
+/// @param ctx Owning RTOS context.
+/// @param connections Connection pool.
+/// @param command Command to process.
 void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
                       const rtos::BambuCommand& command) {
   PrinterConnection* conn =
@@ -543,6 +618,10 @@ void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
   // Raw wire payload already logged by publishBambuRequest() above.
 }
 
+/// @brief Handles BambuCommandType::Reset: disconnects and clears all state for a printer.
+/// @param ctx Owning RTOS context.
+/// @param connections Connection pool.
+/// @param command Command to process.
 void handleReset(rtos::RtosContext& ctx, PrinterConnections& connections,
                  const rtos::BambuCommand& command) {
   PrinterConnection* conn =
@@ -564,6 +643,10 @@ void handleReset(rtos::RtosContext& ctx, PrinterConnections& connections,
                     "Zustand zur\xC3\xBC" "ckgesetzt");
 }
 
+/// @brief Handles BambuCommandType::Reconnect: forces a disconnect+reconnect cycle.
+/// @param ctx Owning RTOS context.
+/// @param connections Connection pool.
+/// @param command Command to process.
 void handleReconnect(rtos::RtosContext& ctx, PrinterConnections& connections,
                      const rtos::BambuCommand& command) {
   PrinterConnection* conn =
@@ -577,6 +660,10 @@ void handleReconnect(rtos::RtosContext& ctx, PrinterConnections& connections,
   doConnect(ctx, *conn, command.requestId);
 }
 
+/// @brief Validates the printer id and dispatches a BambuCommand to its handler.
+/// @param ctx Owning RTOS context.
+/// @param connections Connection pool.
+/// @param command Command to process.
 void handleCommand(rtos::RtosContext& ctx, PrinterConnections& connections,
                    const rtos::BambuCommand& command) {
   if (!models::isValidPrinterId(command.printerId)) {
@@ -609,6 +696,11 @@ void handleCommand(rtos::RtosContext& ctx, PrinterConnections& connections,
   }
 }
 
+/// @brief Per-loop maintenance for every connection: services the MQTT
+///        client, checks pending-assignment timeouts/progress, detects
+///        connection loss, and drives the reconnect backoff.
+/// @param ctx Owning RTOS context.
+/// @param connections Connection pool.
 void serviceConnections(rtos::RtosContext& ctx, PrinterConnections& connections) {
   for (auto& conn : connections) {
     if (!conn.inUse) continue;

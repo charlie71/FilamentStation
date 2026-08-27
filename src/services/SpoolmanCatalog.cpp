@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the services::validateVendor()/validateFilament()/
+ *        validateWeightUpdate()/mapTagDefinition() catalog helpers.
+ */
 #include "services/SpoolmanCatalog.h"
 
 #include <cctype>
@@ -8,17 +13,27 @@ namespace filament_station {
 namespace services {
 namespace {
 
+/// @brief Advances past leading whitespace.
+/// @param value NUL-terminated string.
+/// @return Pointer to the first non-whitespace character, or the terminating NUL.
 const char* skipSpaces(const char* value) {
   while (*value != '\0' && std::isspace(static_cast<unsigned char>(*value)))
     ++value;
   return value;
 }
 
+/// @brief Whether a string is empty or contains only whitespace.
+/// @param value NUL-terminated string.
+/// @return true if blank.
 bool isBlank(const char* value) {
   value = skipSpaces(value);
   return *value == '\0';
 }
 
+/// @brief Case-insensitive comparison, ignoring leading/trailing whitespace.
+/// @param left First string.
+/// @param right Second string.
+/// @return true if they are equal once trimmed and case-folded.
 bool equalNormalized(const char* left, const char* right) {
   left = skipSpaces(left);
   right = skipSpaces(right);
@@ -39,6 +54,10 @@ bool equalNormalized(const char* left, const char* right) {
   return true;
 }
 
+/// @brief Whether a color code is empty, or a valid 6/8-digit hex string
+///        with an optional leading '#'.
+/// @param color NUL-terminated color string.
+/// @return true if valid or empty.
 bool validColor(const char* color) {
   if (color[0] == '\0') return true;
   if (color[0] == '#') ++color;
@@ -50,6 +69,10 @@ bool validColor(const char* color) {
   return true;
 }
 
+/// @brief Compares two color codes ignoring a leading '#' and formatting.
+/// @param left First color string.
+/// @param right Second color string.
+/// @return true if they represent the same color.
 bool equalColor(const char* left, const char* right) {
   while (*left == '#') ++left;
   while (*right == '#') ++right;
@@ -129,8 +152,16 @@ WeightUpdateValidationError validateWeightUpdate(
 }
 
 namespace {
+/// @brief Looks up a hardcoded typical density for a known filament material.
+/// @param material Material name (case-insensitive, e.g. "PLA").
+/// @return Density in g/cm3, or 0.0F if the material is not recognized (used
+///         to reject import of materials with no safe default density).
 float materialDensity(const char* material) {
-  struct Entry { const char* name; float density; };
+  /// @brief One (material name, density) lookup entry for materialDensity().
+  struct Entry {
+    const char* name;  ///< Material name, matched case-insensitively.
+    float density;     ///< Density in g/cm3.
+  };
   static const Entry entries[] = {
       {"PLA", 1.24F}, {"PETG", 1.27F}, {"ABS", 1.04F},
       {"ASA", 1.07F}, {"TPU", 1.21F}, {"PA", 1.14F},
@@ -142,6 +173,9 @@ float materialDensity(const char* material) {
   return 0.0F;
 }
 
+/// @brief Whether a tag format is one Spoolman import currently supports.
+/// @param format Tag format to check.
+/// @return true for BambuLab/OpenPrintTag/OpenTag3D/Legacy.
 bool supportedImportFormat(models::TagFormat format) {
   return format == models::TagFormat::BambuLab ||
          format == models::TagFormat::OpenPrintTag ||

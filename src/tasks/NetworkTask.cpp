@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements tasks::networkTask(): WiFiManager-based station
+ *        connection/reconnect and captive-portal lifecycle.
+ */
 #include <Arduino.h>
 #include <WiFiManager.h>
 
@@ -14,22 +19,29 @@ namespace filament_station::tasks {
 
 namespace {
 
+/// @brief The generated captive-portal SSID/password for this device.
 struct PortalCredentials {
-  char ssid[33]{};
-  char password[16]{};
+  char ssid[33]{};      ///< Portal SSID, derived from settings.portalName plus a MAC-derived suffix.
+  char password[16]{};  ///< Portal password, derived from config::kWifiPortalPasswordPrefix plus the same suffix.
 };
 
+/// @brief Simplified WiFi station event, forwarded from the Arduino WiFi
+///        event callback (which runs on a different task) to networkTask()
+///        via #wifiEventQueue.
 enum class WifiSignal : std::uint8_t {
-  StationConnected,
-  GotIp,
-  Disconnected,
-  LostIp,
+  StationConnected,  ///< Associated with the AP, IP not yet assigned.
+  GotIp,              ///< IP address acquired; connection is fully usable.
+  Disconnected,       ///< Lost the AP association.
+  LostIp,             ///< Still associated, but the IP address was lost.
 };
 static_assert(sizeof(WifiSignal) == sizeof(std::uint8_t));
 
-QueueHandle_t wifiEventQueue = nullptr;
-volatile bool wifiEventQueueOverflow = false;
+QueueHandle_t wifiEventQueue = nullptr;  ///< Copy of rtos::RtosContext::wifiEventQueue, set at task startup for wifiEventCallback() to use.
+volatile bool wifiEventQueueOverflow = false;  ///< Set by wifiEventCallback() when #wifiEventQueue is full; polled and logged once per occurrence by networkTask().
 
+/// @brief Arduino WiFi event callback; classifies and forwards relevant events to #wifiEventQueue.
+/// @param event Raw Arduino WiFi event id.
+/// @note Runs on the Arduino WiFi event task, not an ISR; kept bounded (one enqueue, no blocking).
 void wifiEventCallback(arduino_event_id_t event) {
   WifiSignal signal{};
   switch (event) {
@@ -55,6 +67,9 @@ void wifiEventCallback(arduino_event_id_t event) {
   }
 }
 
+/// @brief Derives the captive-portal SSID/password from settings and the device's MAC.
+/// @param settings Network settings supplying the portal name.
+/// @return The generated credentials.
 PortalCredentials makePortalCredentials(
     const models::NetworkSettings& settings) {
   PortalCredentials credentials{};
@@ -69,6 +84,10 @@ PortalCredentials makePortalCredentials(
   return credentials;
 }
 
+/// @brief Applies network settings (hostname, timeouts, static IP if not DHCP) to WiFiManager.
+/// @param manager WiFiManager instance to configure.
+/// @param settings Settings to apply.
+/// @return false if the hostname was rejected, or (for static IP) any address failed to parse.
 bool configureManager(WiFiManager& manager,
                       const models::NetworkSettings& settings) {
   manager.setConfigPortalBlocking(false);
@@ -91,8 +110,15 @@ bool configureManager(WiFiManager& manager,
   return true;
 }
 
-rtos::AppEvent networkEvent{};
+rtos::AppEvent networkEvent{};  ///< Reused scratch AppEvent for publishEvent(), avoiding a large stack allocation per call.
 
+/// @brief Fills in and sends a WiFi-status AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param type Event type.
+/// @param requestId Correlation id.
+/// @param text Status text.
+/// @param ssidOverride SSID to report instead of the current station SSID, or null.
+/// @param ipOverride IP to report instead of the current station IP, or null.
 void publishEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
                   std::uint32_t requestId, const char* text,
                   const char* ssidOverride = nullptr,
@@ -118,6 +144,11 @@ void publishEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
   }
 }
 
+/// @brief Publishes a WifiConfigPortalStarted event with the portal's SSID/password/AP-IP.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param credentials Portal credentials to report.
+/// @param settings Settings supplying the portal timeout to report.
 void publishPortalStarted(rtos::RtosContext& ctx, std::uint32_t requestId,
                           const PortalCredentials& credentials,
                           const models::NetworkSettings& settings) {
@@ -130,6 +161,15 @@ void publishPortalStarted(rtos::RtosContext& ctx, std::uint32_t requestId,
                status, credentials.ssid, WiFi.softAPIP().toString().c_str());
 }
 
+/// @brief Attempts a station connection via WiFiManager::autoConnect(),
+///        falling back to the captive portal on failure.
+/// @param ctx Owning RTOS context.
+/// @param manager WiFiManager instance to drive.
+/// @param credentials Portal credentials to use if a portal is started.
+/// @param settings Settings supplying the portal timeout.
+/// @param requestId Correlation id.
+/// @param portalStartedAt Out parameter set to the current tick count if a portal was started.
+/// @param portalRequestId Out parameter set to `requestId` if a portal was started.
 void connectOrStartPortal(rtos::RtosContext& ctx, WiFiManager& manager,
                           const PortalCredentials& credentials,
                           const models::NetworkSettings& settings,
@@ -158,6 +198,10 @@ void connectOrStartPortal(rtos::RtosContext& ctx, WiFiManager& manager,
                "WLAN-Verbindung konnte nicht hergestellt werden");
 }
 
+/// @brief Applies one WifiSignal: updates the ready event bit and publishes the corresponding AppEvent.
+/// @param ctx Owning RTOS context.
+/// @param signal Signal to handle.
+/// @param portalRequestId Correlation id to report; cleared once GotIp is reached.
 void handleWifiSignal(rtos::RtosContext& ctx, WifiSignal signal,
                       std::uint32_t& portalRequestId) {
   switch (signal) {
@@ -189,6 +233,8 @@ void handleWifiSignal(rtos::RtosContext& ctx, WifiSignal signal,
   }
 }
 
+/// @brief Sends a PowerDownAcknowledged command to PowerTask.
+/// @param ctx Owning RTOS context.
 void sendPowerAck(rtos::RtosContext& ctx) {
   rtos::PowerCommand command{};
   command.type = rtos::PowerCommandType::PowerDownAcknowledged;
@@ -200,6 +246,14 @@ void sendPowerAck(rtos::RtosContext& ctx) {
   }
 }
 
+/// @brief Explicitly starts (or reports the already-active) captive portal.
+/// @param ctx Owning RTOS context.
+/// @param manager WiFiManager instance to drive.
+/// @param credentials Portal credentials to use.
+/// @param settings Settings supplying the portal timeout.
+/// @param requestId Correlation id.
+/// @param portalStartedAt Out parameter set to the current tick count.
+/// @param portalRequestId Out parameter set to `requestId`.
 void startPortal(rtos::RtosContext& ctx, WiFiManager& manager,
                  const PortalCredentials& credentials,
                  const models::NetworkSettings& settings,

@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the five built-in ITagParser classes declared in
+ *        nfc/TagParsers.h.
+ */
 #include "nfc/TagParsers.h"
 
 #include <cstdio>
@@ -11,11 +16,22 @@ namespace filament_station {
 namespace nfc {
 namespace {
 
+/// @brief Parses the tag's Type 2 NDEF content, if any.
+/// @param tag Raw tag data as read from the PN532.
+/// @return Parsed payload info, or a default-constructed (Empty/Invalid) result if no NDEF is present.
 services::NfcPayloadInfo payload(const models::RawTagData& tag) {
   if (!tag.ndefPresent || !tag.ndefReadable) return {};
   return services::parseType2Ndef(tag.ndef, tag.ndefLength);
 }
 
+/// @brief Shared parse() body for the simple NDEF-marker-based formats
+///        (FilamentStation, Bambu marker, legacy).
+/// @param tag Raw tag data as read from the PN532.
+/// @param expected Payload type this parser recognizes.
+/// @param format Format identifier to stamp onto `result` on success.
+/// @param description Human-readable source description to record.
+/// @param result Out parameter receiving the decoded fields.
+/// @return TagParseResult::Parsed if `tag`'s payload matched `expected`, otherwise TagParseResult::NoMatch.
 TagParseResult parseKnownPayload(const models::RawTagData& tag,
                                  services::NfcPayloadType expected,
                                  models::TagFormat format,

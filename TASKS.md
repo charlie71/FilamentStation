@@ -5079,3 +5079,347 @@ Reine Dokumentationsphase, kein Firmware-Code geaendert (nur neue `LICENSE`/
 
 **Phase 14 (Dokumentation und Release) vollstaendig abgeschlossen** --
 alle acht Unterphasen (14.1-14.8) umgesetzt und dokumentiert.
+
+---
+
+# Phase 15 – Doxygen-Softwaredokumentation
+
+Nutzerwunsch (2026-08-27): vollstaendige Doxygen-Dokumentation aller
+Dateien/Funktionen/globalen Variablen/Definitionen in `src/` (ausser
+`src/ui/generated/`), plus `@dot`-Statediagramme fuer alle echten
+State-Machines. Plan unter `C:\Users\karl\.claude\plans\
+glittery-foraging-stardust.md` erarbeitet und vom Nutzer bestaetigt.
+Nutzerentscheidungen: Kommentare auf Englisch (bewusst abweichend vom
+sonstigen Deutsch dieses Projekts), generierte HTML-Ausgabe gitignored/nur
+lokal gebaut, Ausfuehrung Phase fuer Phase durch mich selbst.
+
+## 15.0 Setup
+
+* [x] Graphviz installiert
+* [x] Doxyfile angelegt
+* [x] .gitignore ergaenzt
+* [x] Build-Skript
+* [x] Baseline-Lauf
+
+**Umgesetzt (2026-08-27):** `winget install Graphviz.Graphviz` (16.0.0,
+war als "bereits vorhanden" erkannt aber nicht im PATH dieser Session --
+`DOT_PATH` im Doxyfile deshalb explizit auf `C:/Program Files/Graphviz/bin`
+gesetzt statt auf PATH-Aufloesung zu vertrauen). Neue `Doxyfile` im
+Projektwurzelverzeichnis: `INPUT=src`, `EXCLUDE=src/ui/generated`,
+`EXCLUDE_PATTERNS=*/test/*`, `EXTRACT_ALL=NO` + `WARN_IF_UNDOCUMENTED=YES`
+(macht fehlende Dokumentation als Warnung sichtbar statt sie stillschweigend
+zu uebernehmen), `WARN_LOGFILE=doxygen-warnings.log`, `HAVE_DOT=YES`,
+Ausgabe nach `doxygen-output/` (HTML, SVG-Diagramme). `doxygen-output/` und
+`doxygen-warnings.log` in `.gitignore` ergaenzt. Neues
+`scripts/build-docs.ps1` (analog zu `scripts/release.ps1`): fuehrt
+`doxygen Doxyfile` aus und fasst die Warnzahl aus dem Logfile zusammen --
+das ist ab jetzt das Fortschritts-/Vollstaendigkeitsmass fuer diese Phase,
+analog zur 0-Compilerwarnungen-Regel der Firmware selbst.
+
+**Baseline-Lauf:** 1831 Warnungen (durchgaengig undokumentierter Code, wie
+erwartet vor Beginn der eigentlichen Kommentierung). Keine
+Graphviz/dot-Fehler im Log -- Diagramm-Rendering-Pfad grundsaetzlich
+funktionsfaehig (echte `@dot`-Bloecke folgen ab Phase 15.7).
+
+Kein Firmware-Build/Flash noetig (reine Tooling-/Doku-Infrastruktur, keine
+Aenderung an `src/`).
+
+## 15.1 config/
+
+* [x] Alle 10 Dateien dokumentiert
+
+**Umgesetzt (2026-08-27):** `@file`-Header plus `@brief`/`///<`-Kommentare
+fuer jede Konstante/jeden Struct in allen 10 Dateien
+(`AppConfig.h`/`BoardConfig.h`/`PowerConfig.h`/`ScaleConfig.h`/
+`NfcConfig.h`/`NetworkConfig.h`/`BambuConfig.h`/`TaskConfig.h`/
+`UpdateConfig.h`/`Secrets.example.h`). Bestehende deutsche
+Begruendungskommentare unveraendert stehen gelassen, Doxygen-Bloecke
+ergaenzen sie nur um die kurze englische Strukturzusammenfassung.
+`src/config/` zeigt danach 0 Doxygen-Warnungen. `pio test -e
+native-spoolman-tests` weiterhin 60/60 gruen (config/-Header werden breit
+eingebunden, Kompilierbarkeit damit sichergestellt).
+
+## 15.2 models/
+
+* [x] Alle 16 Dateien dokumentiert
+
+**Umgesetzt (2026-08-27):** `@file`/`@brief`-Bloecke fuer alle 16 Dateien.
+State-Diagramm fuer `SpoolmanAppState` (`AppState.h`) ergaenzt. Bei
+`PrinterConnectionState`/`AmsConnectionState` (`PrinterState.h`) den
+tatsaechlichen Code gegengeprueft, statt den geplanten vollen
+Diagrammumfang blind umzusetzen: `PrinterConnectionState::Disabled`/
+`Connecting` und praktisch alle `AmsConnectionState`-Werte ausser
+`Unavailable`/`Connected` werden im Code nirgends tatsaechlich gesetzt --
+das Diagramm bzw. der `@note` zeigt nur die wirklich implementierten
+Uebergaenge, nicht den vollen, teils ungenutzten Enum-Wertebereich.
+
+**Fuenf tote Dateien gefunden:** `Spool.h`, `Filament.h`, `AmsTray.h`,
+`NfcTag.h`, `ScaleMeasurement.h` -- fruehe Scaffolding-Platzhalter,
+nirgends im Code referenziert (durch die jeweils passenden echten Typen
+ersetzt: `SpoolmanSpool`/`SpoolmanCatalog`, `PrinterSlotStateData`/
+`TraySpoolCacheEntry`, `TagReadResult`/`TagIdentity`, `rtos::AppEvent`-
+Felder). Mit `@deprecated`-Verweis auf den jeweils tatsaechlich
+verwendeten Ersatztyp dokumentiert statt geloescht (ausserhalb des
+Auftrags dieser reinen Doku-Phase).
+
+**Stolperstein:** `spoolman:<id>`/`spool:<id>` in Freitext-Kommentaren
+wurde von Doxygen als ungueltiges HTML-Tag `<id>` interpretiert
+(Warnung) -- durch `&lt;id&gt;` ersetzt.
+
+`src/models/` zeigt danach 0 Doxygen-Warnungen (Gesamtzahl 1826 -> 1639).
+`pio test -e native-spoolman-tests` weiterhin 60/60 gruen.
+
+## 15.3 rtos/
+
+* [x] Alle 5 Dateien dokumentiert
+
+**Umgesetzt (2026-08-27):** `@file`/`@brief`-Bloecke fuer alle 5 Dateien
+(`Events.h`, `Commands.h`, `Messages.h`, `RtosContext.h`, `RtosContext.cpp`).
+
+`Events.h`: `@brief` auf `AppEventType` (selbsterklaerende Werte bleiben
+ohne Einzelkommentar, die vier Werte mit bestehendem deutschem
+Begruendungskommentar behalten diesen unveraendert), alle 9
+`EventBits_t`-Konstanten einzeln dokumentiert -- inkl. Praezisions-Fund:
+`EVENT_BAMBU_READY` wird zwar an einer Stelle gelesen
+(`AppTask.cpp:2114`), aber im gesamten Code nirgends per
+`xEventGroupSetBits` gesetzt; als "Reserved; not currently set by any
+task" dokumentiert statt eine nicht existierende Bedeutung zu erfinden.
+
+`Commands.h`: alle 15 Enums bekommen einen `@brief` auf Typebene, aber
+keine Einzelkommentare je Enum-Wert -- empirisch verifiziert, dass Doxygens
+`WARN_IF_UNDOCUMENTED` bei `enum class`-Werten (anders als bei
+Struct-/Klassenmembern) keine Warnung erzeugt, solange der Enum-Typ selbst
+einen `@brief` hat. Spart bei den grossen Nachrichtentyp-Enums erheblichen
+Aufwand ohne Warnungen zu riskieren. `isPublicTagAssignmentAction()`/
+`requiresOnlineSpoolman()` mit vollem `@brief`/`@param`/`@return`
+dokumentiert, alle 8 Member von `UiAction` einzeln kommentiert.
+
+`Messages.h`: groesste Datei der Phase (~30-Feld-`AppEvent`, ~20-Feld-
+`UiCommand`, plus 8 kleinere Command-Structs) -- jedes Struct-Feld einzeln
+mit `///<` dokumentiert, alle bestehenden deutschen Kommentare
+(K-Faktor-Semantik, Legacy-NFC-Migration, LoadFilament/AssignTray-Hinweise)
+unveraendert stehen gelassen.
+
+`RtosContext.h`/`.cpp`: `RtosContext`-Struct (alle Queues/Handles einzeln
+kommentiert), `createObjects()`/`createUiTask()`/`createServiceTasks()`/
+`createTasks()` als die in der Planung genannten zentralen Funktionen mit
+vollem `@brief`/`@return`, `context()`/`enqueueLogLine()`/
+`droppedLogLineCount()` sowie der interne `createTask()`-Helfer in der
+.cpp dokumentiert.
+
+`src/rtos/` zeigt danach 0 Doxygen-Warnungen (Gesamtzahl 1639 -> 1478).
+`pio test -e native-spoolman-tests` weiterhin 60/60 gruen.
+
+## 15.4 nfc/
+
+* [x] Alle 10 Dateien dokumentiert
+
+**Umgesetzt (2026-08-27):** `@file`/`@brief`-Bloecke fuer alle 10 Dateien
+(`ITagParser.h`, `TagParserRegistry.h/.cpp`, `TagParsers.h/.cpp`,
+`TagWritePolicy.h`, `OpenPrintTag.h/.cpp`, `OpenTag3D.h/.cpp`).
+`TagParseResult` und `TagAssignmentEffect` mit `@brief` je Wert
+dokumentiert (kleine Enums, klarer Mehrwert). Alle privaten
+Hilfsfunktionen in den anonymen Namespaces der beiden CBOR/Binaer-Decoder
+(`OpenPrintTag.cpp`: `readArgument`/`readHeader`/`skipValue`/
+`readUnsigned`/`readNumber`/`readText`/`readColor`/
+`materialAbbreviation`/`parseMapHeader`/`parseMeta`/`parseMain`/
+`findMimePayload`; `OpenTag3D.cpp`: `findMimePayload`/`readBigEndian16`/
+`copyFixedText`) einzeln mit `@brief`/`@param`/`@return` dokumentiert, da
+`EXTRACT_STATIC`/`EXTRACT_ANON_NSPACES` sie wie jede andere Funktion
+warnungspflichtig macht. Bestehende deutsche Kommentare (z. B. der
+Bambu-Block-9-Identity-Vorrang in `TagParserRegistry.cpp`, der
+Legacy-Rewrite-Hinweis in `TagParsers.cpp`) unveraendert stehen gelassen.
+
+**Stolperstein (wiederholt aus 15.2):** ein weiteres unescaped
+`spool:<id>` in einem `///<`-Kommentar (`TagParserRegistry.h:40`) erzeugte
+erneut die "Unsupported xml/html tag"-Warnung -- durch `&lt;id&gt;`
+ersetzt. In Markdown-Codespans (`` `spool:<id>` ``, `TagParsers.h`)
+ist die spitze Klammer dagegen unproblematisch, da Doxygens
+Markdown-Parser den Inhalt von Codespans nicht als HTML interpretiert --
+das wurde diesmal genutzt statt jede Erwaehnung zu escapen.
+
+`src/nfc/` zeigt danach 0 Doxygen-Warnungen (Gesamtzahl 1478 -> 1372).
+`pio test -e native-spoolman-tests` weiterhin 60/60 gruen.
+
+## 15.5 services/
+
+* [x] Alle 28 Dateien dokumentiert
+
+**Umgesetzt (2026-08-27):** Groesster Block der gesamten Phase 15
+(28 Dateien: `SemVer`, `ScaleMath`, `ScaleFilter`, `SpoolmanUrl`,
+`NfcPayload`, `Ntag21x`, `TagIdentity`, `LoggerFormat`, `PsramAlloc.h`,
+`TagAssignmentPolicy.h`, `Logger`, `SpoolmanCatalog`, `SpoolmanClient`,
+`BambuProtocol`, `JsonStorage` -- jeweils .h/.cpp). `@file`/`@brief` fuer
+alle Dateien, alle anonymen-Namespace-Hilfsfunktionen einzeln dokumentiert
+(EXTRACT_STATIC/EXTRACT_ANON_NSPACES machen sie warnungspflichtig wie jede
+andere Funktion), inkl. lokal in Funktionen definierter Structs
+(`SpoolmanCatalog.cpp::materialDensity()`'s `Entry`). `Logger.h`s
+FS_LOGE/W/I/D/T-Makros und FS_LOG_LEVEL mit `@def` dokumentiert. Bestehende
+englische *und* deutsche Erklaerkommentare (BambuProtocol.h/.cpp's
+ausfuehrliche Protokoll-Herleitungen, JsonStorage.cpp's
+Support-for-PLA-Fix-Historie) unveraendert stehen gelassen, groesstenteils
+in `@param`/`@note`-Bloecke ueberfuehrt statt dupliziert.
+
+**Stolperstein:** `#SymbolName`-Autolink-Syntax loeste bei Enum-Werten
+(`#NfcPayloadType::Spoolman`) und freien Funktionen/Templates
+(`#calculateScaleFactor()`, `#allocatePsramInstance()`,
+`#tagOperationsAvailable()`) "explicit link request ... could not be
+resolved"-Warnungen aus -- anders als bei Struct-/Klassenmitgliedern
+(dort funktioniert `#member` reibungslos, siehe `RtosContext.h` in 15.3).
+Durch einfachen Klartext ohne `#`-Praefix ersetzt.
+
+`src/services/` zeigt danach 0 Doxygen-Warnungen (Gesamtzahl 1372 -> 1125).
+`pio test -e native-spoolman-tests` weiterhin 60/60 gruen.
+
+## 15.6 drivers/
+
+* [x] Alle 4 Dateien dokumentiert
+
+**Umgesetzt (2026-08-27):** `@file`/`@brief`-Bloecke fuer alle 4 Dateien
+(`DisplayDriver.h/.cpp`, `TouchDriver.h/.cpp`). Die lokale
+`FilamentStationDisplay`-Klasse (anonymer Namespace in
+`DisplayDriver.cpp`, konkrete LovyanGFX-Bus-/Panel-/Backlight-/Touch-
+Verdrahtung fuer dieses Board) mit `@brief` auf Klassen- und
+Konstruktorebene sowie je privatem Member dokumentiert, die globale
+`display`-Instanz ebenfalls. Bestehender deutscher Kommentar zum
+GPIO4-Reset-Pin-Sharing unveraendert stehen gelassen.
+
+`src/drivers/` zeigt danach 0 Doxygen-Warnungen (Gesamtzahl 1125 -> 1118).
+`pio test -e native-spoolman-tests` weiterhin 60/60 gruen.
+
+## 15.7 tasks/
+
+* [x] Alle 11 Dateien dokumentiert
+
+**Umgesetzt (2026-08-27):** Zweitgroesster Block der Phase (11 Dateien,
+~11.900 Zeilen) -- inkl. `AppTask.cpp`, mit 6250 Zeilen die mit Abstand
+groesste Einzeldatei im gesamten Projekt (etwa die Haelfte aller
+Quellzeilen unter `src/`). `@file`/`@brief` fuer alle Dateien.
+
+Alle 5 in der Planung identifizierten Statemachines dieser Phase mit
+`@dot`-Diagramm dokumentiert: `PowerState` (`PowerTask.cpp`, bereits aus
+frueherer Arbeit an dieser Datei bekannt), sowie `TraySpoolDetailsStage`,
+`TagAssignmentStage`, `TagRemovalStage`, `SlotAssignmentStage` und
+`LegacyMigrationStage` (alle in `AppTask.cpp`, Modul-Header-Block).
+`AppTask.cpp` besteht aus einem ca. 340 Zeilen langen Block
+namespace-scope-State-Variablen (jede einzeln mit `///<` dokumentiert --
+Doxygen behandelt anonyme-Namespace-Variablen wie jedes andere
+warnungspflichtige Mitglied) gefolgt von ca. 80 Hilfsfunktionen und zwei
+Monolithen: `handleUiAction()` (~1880 Zeilen, ein einzelner
+`@brief`-Block reicht fuer die komplette Funktion unabhaengig von ihrer
+internen Laenge) und `appTask()` selbst (~2230 Zeilen, dessen Deklaration
+in `Tasks.h` bereits aus Phase 15.7's eigenem `Tasks.h`-Durchlauf
+dokumentiert ist und automatisch mit dieser Definition verschmilzt --
+0 zusaetzliche Handarbeit noetig).
+
+Vorwaertsdeklarierte Funktionen (z. B. `sendUiCommand`,
+`requestStagingSpool`, `reportAssignmentWriteFailure`) wurden nur an der
+Vorwaertsdeklaration dokumentiert, nicht zusaetzlich an ihrer spaeteren
+Definition -- Doxygen fuehrt beide Vorkommen automatisch zu einem Eintrag
+zusammen. Bestehende deutsche und englische Erklaerkommentare (z. B. die
+ausfuehrliche Begruendung der externen/manuellen Fach-Adressumrechnung in
+`sendPendingSlotAssignTray()`) unveraendert stehen gelassen.
+
+**Stolperstein:** `IRAM_ATTR` zwischen Rueckgabetyp und Funktionsname
+(`ScaleTask.cpp`'s ISR) verwirrte Doxygens Parser zu einer
+"return type is not documented"-Falschwarnung -- behoben durch
+`ENABLE_PREPROCESSING`/`MACRO_EXPANSION`/`PREDEFINED = IRAM_ATTR=` im
+Doxyfile, damit das Makro vor der Analyse entfernt wird. Zwei
+selbstverursachte doppelte Kommentarbloecke (Copy-Paste-Fehler bei
+`tagTechnologyName()`) beim naechsten Lauf gefunden und bereinigt.
+
+`src/tasks/` zeigt danach 0 Doxygen-Warnungen (Gesamtzahl 1118 -> 408).
+`pio test -e native-spoolman-tests` weiterhin 60/60 gruen.
+
+## 15.8 ui/
+
+* [x] Alle 4 Dateien dokumentiert
+
+**Umgesetzt (2026-08-27):** `@file`/`@brief` fuer alle 4 Dateien
+(`UiBridge.h`, `UiDesignSystem.h`, `models/UiModels.h`, `UiBridge.cpp`).
+`UiBridge.cpp` (3728 Zeilen, zweitgroesste Datei nach `AppTask.cpp`) ist
+UiTasks alleiniger LVGL-Zugriffspunkt ("Nur UiTask greift auf LVGL zu"):
+ein ca. 190 Zeilen langer Modul-State-Block (jede Variable/jedes Struct
+einzeln dokumentiert, analog zu `AppTask.cpp` in 15.7) gefolgt von rund 90
+Funktionen -- ueberwiegend kompakte, selbsterklaerende
+`lv_event_t*`-Klick-Handler fuer die generierten EEZ-Studio-Screens, dazu
+Renderer-Funktionen (`updateHomeContent()`, `updateTrayButton()`,
+`updateStagingContent()`, ...) fuer jeden UiCommand-Typ.
+
+**Stolperstein (schwerwiegend, zweimal aufgetreten):** bei zwei
+Bearbeitungen (`trayTargetClicked()`, `createTrayDetailsDecoration()`)
+wurde beim Ersetzen eines bestehenden Kommentarblocks durch einen
+`@brief`-Block versehentlich auch die Funktionssignatur samt
+oeffnender Klammer mit geloescht (`old_string`/`new_string` deckten die
+Signaturzeile nicht ab) -- der Fehler blieb zunaechst unbemerkt, da
+reine Doxygen-Aenderungen laut Standard-Workflow keinen Firmware-Build
+erfordern und `pio test` (native, ohne LVGL/UiBridge.cpp) ihn nicht
+erkennen kann. Durch einen zur Sicherheit zusaetzlich ausgefuehrten
+`pio run`-Build entdeckt und behoben. **Workflow-Lehre:** bei
+umfangreichen Kommentar-Bearbeitungen an Dateien mit LVGL-/Board-
+spezifischem Code (nicht durch `pio test` abgedeckt) zusaetzlich zur
+warnungsfreien Doxygen-Pruefung mindestens einen finalen
+`pio run -e wt32-s3-wrover-n16r2`-Build zur Absicherung durchfuehren,
+auch wenn die Aenderungen als "reine Kommentare" geplant waren.
+
+`src/ui/` zeigt danach 0 Doxygen-Warnungen. Firmware-Build
+(`pio run -e wt32-s3-wrover-n16r2`) erfolgreich, 0 Compilerwarnungen.
+`pio test -e native-spoolman-tests` weiterhin 60/60 gruen.
+
+Gesamtzahl projektweit: 408 -> 2 (die verbleibenden 2 Warnungen betreffen
+ausschliesslich `src/main.cpp`, Gegenstand von Phase 15.9).
+
+## 15.9 main.cpp + Abschluss
+
+* [x] `main.cpp` dokumentiert
+* [x] `@mainpage`-Block ergaenzt
+* [x] `src/app/ApplicationState.h`-Sonderfall dokumentiert
+* [x] Finaler Doxygen-Lauf: 0 Warnungen projektweit
+* [x] Firmware-Build und native Tests verifiziert
+
+**Umgesetzt (2026-08-27):** `@mainpage`-Block in `main.cpp` ergaenzt, mit
+Kurzbeschreibung des Projekts und Verweis auf `docs/architecture.md` als
+ergaenzende, narrative Referenz. `haltStartup()`, `setup()`, `loop()` und
+das `CONFIG_APP_ROLLBACK_ENABLE`-`verifyRollbackLater()`-Weak-Override
+vollstaendig dokumentiert (`@brief`/`@param`/`@return`/`@note`), bestehende
+ausfuehrliche Begruendungskommentare (OTA-Rollback-Timing,
+USB-CDC-Puffergroesse) unveraendert stehen gelassen.
+
+**Sonderfall `src/app/`:** wie in der Planungsphase bereits identifiziert,
+sind sowohl `ApplicationState.h` (nirgends referenziertes fruehes
+Scaffolding-Enum) als auch das bislang uebersehene, komplett leere
+`AppTask.h` (nur ein Verweiskommentar auf `tasks/Tasks.h`) toter Code ohne
+irgendeine Einbindung im Projekt -- beide mit `@file`/`@deprecated`-Hinweis
+dokumentiert statt geloescht (Loeschen ausserhalb des Auftrags dieser
+reinen Doku-Phase), analog zu den fuenf toten `models/`-Dateien aus 15.2.
+
+**Finale Verifikation (Verifikation-Abschnitt der Planung):**
+- `doxygen Doxyfile`: **0 Warnungen projektweit** (von 1831 Warnungen in
+  der 15.0-Baseline auf 0).
+- Stichprobe der generierten HTML-Ausgabe: `PowerState`s `@dot`-Diagramm
+  auf der `PowerTask.cpp`-Namespace-Seite als eigenstaendige, nicht-leere
+  SVG-Datei (7,3 KB) eingebettet und referenziert; `AppTask.cpp`s
+  Namespace-Seite enthaelt alle 5 erwarteten `@dot`-Diagramme
+  (`TraySpoolDetailsStage`, `TagAssignmentStage`, `TagRemovalStage`,
+  `SlotAssignmentStage`, `LegacyMigrationStage`). Insgesamt 154
+  Graphviz-SVG-Dateien im generierten `doxygen-output/html/` vorhanden --
+  der in 15.0 installierte Graphviz-Pfad funktioniert durchgaengig.
+- `pio run -e wt32-s3-wrover-n16r2`: erfolgreich, 0 Compilerwarnungen.
+- `pio test -e native-spoolman-tests`: 60/60 gruen.
+
+---
+
+**Phase 15 (Doxygen-Softwaredokumentation) vollstaendig abgeschlossen** --
+alle neun Unterphasen (15.0-15.9) umgesetzt: ~92 Quelldateien, ~22.000
+Zeilen unter `src/` vollstaendig mit Doxygen-Kommentaren versehen
+(`@file`/`@brief` je Datei, `@brief`/`@param`/`@return` je Funktion,
+`///<`-Kommentare je globaler/`constexpr`-Variable, `@brief` je
+Struct/Enum/Namespace-Mitglied), alle neun in der Planung identifizierten
+echten State-Machines (`PowerState`, `SpoolmanAppState`,
+`PrinterConnectionState`/`AmsConnectionState`, `TraySpoolDetailsStage`,
+`TagAssignmentStage`, `TagRemovalStage`, `SlotAssignmentStage`,
+`LegacyMigrationStage`) mit `@dot`-Statediagrammen dokumentiert, 6
+tote/unbenutzte Scaffolding-Dateien identifiziert und mit
+`@deprecated`-Hinweis versehen statt entfernt, `doxygen Doxyfile` liefert
+0 Warnungen ueber den gesamten Umfang, Firmware-Build und native Tests
+durchgaengig gruen gehalten.

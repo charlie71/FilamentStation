@@ -1,3 +1,7 @@
+/**
+ * @file
+ * @brief Implements services::ScaleFilter.
+ */
 #include "services/ScaleFilter.h"
 
 #include <algorithm>
@@ -9,12 +13,19 @@ constexpr std::size_t ScaleFilter::kMaximumMovingAverageWindow;
 
 namespace {
 
+/// @brief Absolute difference between two raw-counts values.
+/// @param left First value.
+/// @param right Second value.
+/// @return |left - right|, computed without overflow via 64-bit intermediates.
 std::int64_t absoluteDifference(std::int32_t left, std::int32_t right) {
   const std::int64_t difference =
       static_cast<std::int64_t>(left) - static_cast<std::int64_t>(right);
   return difference < 0 ? -difference : difference;
 }
 
+/// @brief Rounds a float to the nearest integer (away from zero on .5).
+/// @param value Value to round.
+/// @return Rounded integer value.
 std::int32_t roundToInt(float value) {
   return static_cast<std::int32_t>(value >= 0.0F ? value + 0.5F
                                                  : value - 0.5F);

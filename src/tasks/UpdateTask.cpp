@@ -1,3 +1,9 @@
+/**
+ * @file
+ * @brief Implements tasks::updateTask(): GitHub-releases firmware-update
+ *        check, download, SHA-256 verification, and flashing via the ESP32
+ *        OTA (Update) library.
+ */
 #include "tasks/Tasks.h"
 
 #include <Arduino.h>
@@ -23,6 +29,12 @@
 namespace filament_station::tasks {
 namespace {
 
+/// @brief Sends a simple numeric/text AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param type Event type.
+/// @param requestId Correlation id.
+/// @param value Numeric payload.
+/// @param text Text payload.
 void sendEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
               std::uint32_t requestId, std::int32_t value, const char* text) {
   // static, PSRAM-backed (services/PsramAlloc.h): siehe SpoolmanTask::
@@ -42,6 +54,10 @@ void sendEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
   }
 }
 
+/// @brief Extracts a lowercase 64-hex-digit SHA-256 from the start of a checksum-file body.
+/// @param text Checksum file content (may have " filename" trailing, like `sha256sum` output).
+/// @param out Destination buffer, at least 65 bytes (64 hex digits + NUL).
+/// @return false if `text` does not start with 64 hex digits.
 // Prueft, ob "text" mit genau 64 Hex-Ziffern beginnt (ein SHA-256-Hash in
 // Hex-Darstellung) und kopiert sie kleingeschrieben nach out (65 Byte,
 // inkl. Nullterminator). sha256sum-Ausgaben haben oft noch " filename"
@@ -57,6 +73,10 @@ bool extractHexSha256(const char* text, char* out) {
   return true;
 }
 
+/// @brief Fetches a plain-text checksum file and extracts its SHA-256 hex digest.
+/// @param url URL of the ".sha256" checksum file.
+/// @param outHex64 Destination buffer, at least 65 bytes.
+/// @return false on any request failure or invalid checksum content.
 // Kleine reine Textantwort (kein JSON) -- eigene, einfachere Anfrage statt
 // getJson()-artiger Hilfsfunktion, da hier nur eine Zeile erwartet wird.
 bool fetchChecksum(const char* url, char* outHex64) {
@@ -81,6 +101,10 @@ bool fetchChecksum(const char* url, char* outHex64) {
   return extractHexSha256(body.c_str(), outHex64);
 }
 
+/// @brief Handles UpdateCommandType::CheckForUpdate: queries the GitHub
+///        latest-release tag and compares it against the running firmware version.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
 void checkForUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
   char url[128];
   std::snprintf(url, sizeof(url), "https://%s/repos/%s/%s/releases/latest",
@@ -164,6 +188,11 @@ void checkForUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
   }
 }
 
+/// @brief Handles UpdateCommandType::DownloadUpdate: fetches the latest
+///        release's firmware asset and checksum, downloads and flashes it
+///        via the OTA Update library, verifying the SHA-256 before committing.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
 // Loest eine eigene, frische Abfrage der Update-Quelle aus (kein Zustand
 // aus einer vorherigen checkForUpdate()-Anfrage wird wiederverwendet --
 // vermeidet eine veraltete Download-URL, siehe UpdateCommandType).

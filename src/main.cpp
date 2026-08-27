@@ -1,3 +1,15 @@
+/**
+ * @mainpage FilamentStation Firmware
+ *
+ * ESP32-S3 firmware for an NFC/scale-based Spoolman filament-spool station
+ * with Bambu Lab printer integration. This reference documents every
+ * file, function, global variable, and definition under `src/`, plus
+ * state diagrams for the firmware's actual state machines.
+ *
+ * See docs/architecture.md for the narrative architecture overview
+ * (task/queue layout, boot sequence, persisted documents) that
+ * complements this generated reference.
+ */
 #include <Arduino.h>
 #include <esp_chip_info.h>
 #include <esp_heap_caps.h>
@@ -29,10 +41,19 @@
 // Rueckfall auf die vorherige Partition aus -- kein eigener Rollback-Code
 // noetig, nur das verfrühte automatische Bestaetigen verhindern.
 #ifdef CONFIG_APP_ROLLBACK_ENABLE
+/// @brief Overrides Arduino-ESP32's weak OTA-rollback verifier to defer
+///        confirmation past setup(), see the file-level comment above.
+/// @return Always true; the real confirmation happens later via
+///         esp_ota_mark_app_valid_cancel_rollback() in
+///         AppTask::showHomeWhenStartupReady().
 extern "C" bool verifyRollbackLater() { return true; }
 #endif
 
 namespace {
+/// @brief Logs a fatal reason, sets EVENT_FATAL_ERROR, and blocks the
+///        calling task forever.
+/// @param reason Log-only failure description.
+/// @note Never returns.
 void haltStartup(const char* reason) {
   auto& ctx = filament_station::rtos::context();
   FS_LOGE(filament_station::services::LogComponent::Rtos,
@@ -44,6 +65,10 @@ void haltStartup(const char* reason) {
 }
 }  // namespace
 
+/// @brief Arduino entry point: brings up serial logging, the RTOS object
+///        registry, UiTask (so the boot screen appears early), and every
+///        remaining service task.
+/// @note Halts (via haltStartup()) on any unrecoverable RTOS setup failure.
 void setup() {
   using namespace filament_station;
   // Buffer complete log bursts in USB-CDC. This must be configured before
@@ -76,5 +101,6 @@ void setup() {
   FS_LOGI(services::LogComponent::Rtos, "Infrastructure started");
 }
 
+/// @brief Arduino main loop; unused, since all real work happens in FreeRTOS tasks.
 void loop() { vTaskDelay(portMAX_DELAY); }
 #endif

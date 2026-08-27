@@ -1,3 +1,7 @@
+/**
+ * @file
+ * @brief Implements services::parseType2Ndef()/buildSpoolmanType2Ndef().
+ */
 #include "services/NfcPayload.h"
 
 #include <cctype>
@@ -8,6 +12,11 @@ namespace filament_station {
 namespace services {
 namespace {
 
+/// @brief Parses an unsigned decimal integer from a non-NUL-terminated range.
+/// @param begin First character to parse.
+/// @param end One past the last character to parse.
+/// @param value Out parameter receiving the parsed value.
+/// @return false if the range is empty, contains non-digits, or overflows uint32.
 bool parseUnsigned(const char* begin, const char* end, std::uint32_t& value) {
   if (begin == end) return false;
   std::uint64_t result = 0;
@@ -20,6 +29,11 @@ bool parseUnsigned(const char* begin, const char* end, std::uint32_t& value) {
   return true;
 }
 
+/// @brief Case-insensitive substring search over a non-NUL-terminated range.
+/// @param text Buffer to search.
+/// @param length Length of `text` in bytes.
+/// @param needle NUL-terminated substring to search for.
+/// @return true if `needle` occurs anywhere in `text`.
 bool containsIgnoreCase(const char* text, std::size_t length,
                         const char* needle) {
   const std::size_t needleLength = std::strlen(needle);
@@ -38,6 +52,10 @@ bool containsIgnoreCase(const char* text, std::size_t length,
   return false;
 }
 
+/// @brief Classifies a decoded NDEF text-record body by its prefix/content.
+/// @param text Text-record body (after the language-code bytes).
+/// @param length Length of `text` in bytes.
+/// @return Classified payload info; NfcPayloadType::Unknown if no known pattern matches.
 NfcPayloadInfo classifyText(const char* text, std::size_t length) {
   constexpr char kSpoolmanPrefix[] = "spoolman:";
   constexpr char kLegacyPrefix[] = "spool:";

@@ -1,3 +1,10 @@
+/**
+ * @file
+ * @brief Implements tasks::nfcTask(): raw PN532 HSU-UART transport
+ *        (frame build/parse), tag scan/presence tracking, MIFARE/NTAG
+ *        page read/write, Bambu-tag key derivation, and dispatch into
+ *        nfc::TagParserRegistry for format decoding.
+ */
 #include "tasks/Tasks.h"
 
 #include <Arduino.h>
@@ -27,49 +34,55 @@ namespace filament_station::tasks {
 namespace {
 
 constexpr uart_port_t kUart =
-    static_cast<uart_port_t>(config::kPn532UartNumber);
-constexpr std::uint8_t kPn532HostToDevice = 0xD4;
-constexpr std::uint8_t kPn532DeviceToHost = 0xD5;
-constexpr std::uint8_t kCommandGetFirmwareVersion = 0x02;
-constexpr std::uint8_t kCommandSamConfiguration = 0x14;
-constexpr std::uint8_t kCommandRfConfiguration = 0x32;
-constexpr std::uint8_t kCommandInDataExchange = 0x40;
-constexpr std::uint8_t kCommandInCommunicateThru = 0x42;
-constexpr std::uint8_t kCommandInListPassiveTarget = 0x4A;
-constexpr std::uint8_t kCommandInRelease = 0x52;
+    static_cast<uart_port_t>(config::kPn532UartNumber);  ///< UART port the PN532 is wired to.
+constexpr std::uint8_t kPn532HostToDevice = 0xD4;  ///< PN532 frame TFI byte for a host-to-device command.
+constexpr std::uint8_t kPn532DeviceToHost = 0xD5;  ///< PN532 frame TFI byte for a device-to-host response.
+constexpr std::uint8_t kCommandGetFirmwareVersion = 0x02;  ///< PN532 command code: GetFirmwareVersion.
+constexpr std::uint8_t kCommandSamConfiguration = 0x14;    ///< PN532 command code: SAMConfiguration.
+constexpr std::uint8_t kCommandRfConfiguration = 0x32;     ///< PN532 command code: RFConfiguration.
+constexpr std::uint8_t kCommandInDataExchange = 0x40;      ///< PN532 command code: InDataExchange.
+constexpr std::uint8_t kCommandInCommunicateThru = 0x42;   ///< PN532 command code: InCommunicateThru.
+constexpr std::uint8_t kCommandInListPassiveTarget = 0x4A; ///< PN532 command code: InListPassiveTarget.
+constexpr std::uint8_t kCommandInRelease = 0x52;           ///< PN532 command code: InRelease.
 // Energiesparen (TASKS.md Phase 11.4). WakeUpEnable-Bitmap laut PN532-
 // Datenblatt (UM0701-02, 7.2.11 PowerDown): je ein Bit pro Interface, Bit4 =
 // HSU -- exakt das hier verwendete Transportinterface. Wake erfolgt danach
 // wie gewohnt ueber die bereits vorhandene Wake-Praeambel in
 // initializePn532() (UART-RX-Aktivitaet weckt den Chip).
-constexpr std::uint8_t kCommandPowerDown = 0x16;
-constexpr std::uint8_t kPn532WakeUpEnableHsu = 0x10;
-constexpr std::uint8_t kMifareRead = 0x30;
-constexpr std::uint8_t kMifareAuthenticateKeyA = 0x60;
-constexpr std::uint8_t kMifareWrite = 0xA2;
-constexpr std::uint8_t kGetVersion = 0x60;
-std::size_t lastTransactionRxBytes = 0;
+constexpr std::uint8_t kCommandPowerDown = 0x16;        ///< PN532 command code: PowerDown.
+constexpr std::uint8_t kPn532WakeUpEnableHsu = 0x10;    ///< PowerDown WakeUpEnable bitmap value selecting the HSU interface.
+constexpr std::uint8_t kMifareRead = 0x30;              ///< MIFARE command code: READ.
+constexpr std::uint8_t kMifareAuthenticateKeyA = 0x60;  ///< MIFARE command code: AUTHENT with key A.
+constexpr std::uint8_t kMifareWrite = 0xA2;             ///< MIFARE Ultralight/NTAG command code: WRITE.
+constexpr std::uint8_t kGetVersion = 0x60;              ///< NTAG/Ultralight command code: GET_VERSION.
+std::size_t lastTransactionRxBytes = 0;  ///< Bytes received during the most recent transceive(), used to distinguish "no response" from "invalid response" at boot.
 
+/// @brief The currently-selected PN532 logical target (activated tag).
 struct TargetInfo {
-  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};
-  std::uint8_t uidLength = 0;
-  std::uint8_t targetNumber = 0;
-  std::uint8_t sak = 0;
+  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};  ///< Tag UID.
+  std::uint8_t uidLength = 0;      ///< Number of valid bytes in #uid.
+  std::uint8_t targetNumber = 0;   ///< PN532 logical target number, used in InDataExchange.
+  std::uint8_t sak = 0;            ///< ISO14443A SAK byte, used for a first technology guess.
 };
 
+/// @brief Outcome of scanTarget().
 enum class ScanResult : std::uint8_t {
-  Found,
-  NoTarget,
-  CommunicationError,
+  Found,               ///< A target was activated; `target` is filled in.
+  NoTarget,             ///< The PN532 responded, but no tag is present.
+  CommunicationError,   ///< The PN532 transport itself failed (not evidence a tag was removed).
 };
 
+/// @brief Outcome of initializePn532().
 enum class Pn532InitializationResult : std::uint8_t {
-  Ready,
-  FirmwareVersionFailed,
-  SamConfigurationFailed,
-  RfConfigurationFailed,
+  Ready,                       ///< PN532 is initialized and ready to scan.
+  FirmwareVersionFailed,       ///< GetFirmwareVersion did not respond as expected.
+  SamConfigurationFailed,      ///< SAMConfiguration failed.
+  RfConfigurationFailed,       ///< RFConfiguration failed.
 };
 
+/// @brief Text name for a Pn532InitializationResult, used in log lines.
+/// @param result Result to describe.
+/// @return Static, NUL-terminated name of the step that failed (or "ready").
 const char* initializationStep(Pn532InitializationResult result) {
   switch (result) {
     case Pn532InitializationResult::FirmwareVersionFailed:
@@ -84,6 +97,10 @@ const char* initializationStep(Pn532InitializationResult result) {
   return "unknown";
 }
 
+/// @brief Sends an AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param event Event to send.
+/// @return false if the app event queue was full.
 // Takes AppEvent by reference, not by value: AppEvent has grown considerably
 // across the Bambu phases (PrinterState, BambuConfigCollection, per-slot
 // material/color), and every by-value call site briefly doubled its stack
@@ -98,6 +115,8 @@ bool sendEvent(rtos::RtosContext& ctx, const rtos::AppEvent& event) {
   return false;
 }
 
+/// @brief Sends a PowerDownAcknowledged command to PowerTask.
+/// @param ctx Owning RTOS context.
 void sendPowerAck(rtos::RtosContext& ctx) {
   rtos::PowerCommand command{};
   command.type = rtos::PowerCommandType::PowerDownAcknowledged;
@@ -109,6 +128,10 @@ void sendPowerAck(rtos::RtosContext& ctx) {
   }
 }
 
+/// @brief Sends an NfcError AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param text Error text.
 void sendError(rtos::RtosContext& ctx, std::uint32_t requestId,
                const char* text) {
   // static, PSRAM-backed (services/PsramAlloc.h): see the AppEvent size
@@ -123,6 +146,8 @@ void sendError(rtos::RtosContext& ctx, std::uint32_t requestId,
   sendEvent(ctx, *event);
 }
 
+/// @brief Reports the PN532 as disconnected: clears the ready bit and sends an NfcError.
+/// @param ctx Owning RTOS context.
 // PN532 runtime disconnect/reconnect (Robustheit/Diagnose, TASKS.md 10.2):
 // unlike boot-time initializePn532() failures, a wire coming loose mid-
 // session previously went completely unnoticed -- scanTarget() communication
@@ -139,6 +164,8 @@ void reportPn532Disconnected(rtos::RtosContext& ctx) {
   sendError(ctx, 0, "PN532 not responding; check HSU wiring");
 }
 
+/// @brief Reports the PN532 as reconnected: sets the ready bit and sends NfcInitialized.
+/// @param ctx Owning RTOS context.
 void reportPn532Reconnected(rtos::RtosContext& ctx) {
   xEventGroupSetBits(ctx.systemEventGroup, rtos::EVENT_NFC_READY);
   FS_LOGI(services::LogComponent::Nfc, "PN532 responding again");
@@ -152,6 +179,10 @@ void reportPn532Reconnected(rtos::RtosContext& ctx) {
   sendEvent(ctx, *event);
 }
 
+/// @brief Records a successful PN532 response, clearing the error streak and reporting reconnection if needed.
+/// @param ctx Owning RTOS context.
+/// @param pn532Connected Connection-state flag to update.
+/// @param sustainedCommErrors Error streak counter to reset.
 void notePn532Responding(rtos::RtosContext& ctx, bool& pn532Connected,
                          std::uint16_t& sustainedCommErrors) {
   sustainedCommErrors = 0;
@@ -161,6 +192,10 @@ void notePn532Responding(rtos::RtosContext& ctx, bool& pn532Connected,
   }
 }
 
+/// @brief Records a PN532 communication error, reporting disconnection once the error streak is sustained.
+/// @param ctx Owning RTOS context.
+/// @param pn532Connected Connection-state flag to update.
+/// @param sustainedCommErrors Error streak counter to increment.
 void notePn532CommError(rtos::RtosContext& ctx, bool& pn532Connected,
                         std::uint16_t& sustainedCommErrors) {
   if (sustainedCommErrors < config::kPn532DisconnectConfirmationScans) {
@@ -173,6 +208,8 @@ void notePn532CommError(rtos::RtosContext& ctx, bool& pn532Connected,
   }
 }
 
+/// @brief Configures the PN532 HSU UART pins/baud rate and installs the driver.
+/// @return false if any UART configuration step failed.
 bool initializeUart() {
   constexpr gpio_num_t txPin =
       static_cast<gpio_num_t>(config::kPn532UartTxPin);
@@ -204,6 +241,11 @@ bool initializeUart() {
                              nullptr, 0) == ESP_OK;
 }
 
+/// @brief Reads exactly `length` bytes from the UART, or times out.
+/// @param output Destination buffer.
+/// @param length Number of bytes to read.
+/// @param timeoutMs Overall timeout in milliseconds.
+/// @return false if the deadline passed before `length` bytes arrived.
 bool readExact(std::uint8_t* output, std::size_t length,
                std::uint32_t timeoutMs) {
   const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeoutMs);
@@ -220,6 +262,9 @@ bool readExact(std::uint8_t* output, std::size_t length,
   return true;
 }
 
+/// @brief Scans the UART stream for the PN532 frame preamble (00 00 FF).
+/// @param timeoutMs Overall timeout in milliseconds.
+/// @return false if the preamble was not found before the deadline.
 bool findFrameStart(std::uint32_t timeoutMs) {
   const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeoutMs);
   std::uint8_t state = 0;
@@ -238,6 +283,11 @@ bool findFrameStart(std::uint32_t timeoutMs) {
   return false;
 }
 
+/// @brief Reads and validates one complete PN532 response frame (length, checksum, direction byte).
+/// @param output Destination buffer receiving the frame's data bytes.
+/// @param capacity Size of `output` in bytes.
+/// @param outputLength Out parameter receiving the number of data bytes written.
+/// @return false on timeout or a malformed/invalid frame.
 bool receiveFrame(std::uint8_t* output, std::size_t capacity,
                   std::size_t& outputLength) {
   outputLength = 0;
@@ -269,6 +319,14 @@ bool receiveFrame(std::uint8_t* output, std::size_t capacity,
   return true;
 }
 
+/// @brief Sends one PN532 command frame and receives its response, verifying the response echoes the command.
+/// @param command PN532 command code.
+/// @param data Command parameter bytes.
+/// @param dataLength Length of `data` in bytes; must be <= 252.
+/// @param response Destination buffer receiving the response data (after the echoed command byte).
+/// @param responseCapacity Size of `response` in bytes.
+/// @param responseLength Out parameter receiving the response data length.
+/// @return false on any transport error, or if the response does not echo `command + 1`.
 bool transceive(std::uint8_t command, const std::uint8_t* data,
                 std::size_t dataLength, std::uint8_t* response,
                 std::size_t responseCapacity, std::size_t& responseLength) {
@@ -301,6 +359,8 @@ bool transceive(std::uint8_t command, const std::uint8_t* data,
   return responseLength >= 1 && response[0] == command + 1U;
 }
 
+/// @brief Wakes and initializes the PN532: firmware version check, SAM configuration, RF configuration.
+/// @return Ready on success, or the first initialization step that failed.
 Pn532InitializationResult initializePn532() {
   const std::uint8_t wake[] = {0x55, 0x55, 0x00, 0x00, 0x00};
   uart_write_bytes(kUart, wake, sizeof(wake));
@@ -331,6 +391,9 @@ Pn532InitializationResult initializePn532() {
   return Pn532InitializationResult::Ready;
 }
 
+/// @brief Attempts to activate a single passive ISO14443A target.
+/// @param target Out parameter receiving the activated target's info on Found.
+/// @return Found, NoTarget, or CommunicationError.
 ScanResult scanTarget(TargetInfo& target) {
   // Activate at most one passive ISO14443A target at 106 kbit/s.
   const std::uint8_t params[] = {0x01, 0x00};
@@ -356,6 +419,9 @@ ScanResult scanTarget(TargetInfo& target) {
   return ScanResult::Found;
 }
 
+/// @brief Enables or disables the PN532's RF field via RFConfiguration.
+/// @param enabled Target field state.
+/// @return false on transport failure.
 bool setRfField(bool enabled) {
   const std::uint8_t params[] = {0x01,
                                  static_cast<std::uint8_t>(enabled ? 0x01 : 0x00)};
@@ -365,6 +431,8 @@ bool setRfField(bool enabled) {
                     sizeof(response), length);
 }
 
+/// @brief Sends the PN532 PowerDown command with the HSU wake-source enabled.
+/// @return false on transport failure.
 bool powerDown() {
   const std::uint8_t params[] = {kPn532WakeUpEnableHsu};
   std::uint8_t response[4]{};
@@ -373,6 +441,7 @@ bool powerDown() {
                     sizeof(response), length);
 }
 
+/// @brief Releases any selected target and power-cycles the RF field, to recover from a stale target handle.
 void resetRfField() {
   const std::uint8_t releaseAll[] = {0x00};
   std::uint8_t response[4]{};
@@ -385,6 +454,14 @@ void resetRfField() {
   vTaskDelay(pdMS_TO_TICKS(10));
 }
 
+/// @brief Sends a raw ISO14443A command to the selected target via InDataExchange.
+/// @param target Currently-selected target.
+/// @param command Command bytes to send.
+/// @param commandLength Length of `command` in bytes.
+/// @param response Destination buffer receiving the tag's response.
+/// @param capacity Size of `response` in bytes.
+/// @param length Out parameter receiving the response length.
+/// @return false on transport failure or a non-zero status byte.
 bool exchange(const TargetInfo& target, const std::uint8_t* command,
               std::size_t commandLength, std::uint8_t* response,
               std::size_t capacity, std::size_t& length) {
@@ -404,6 +481,13 @@ bool exchange(const TargetInfo& target, const std::uint8_t* command,
   return true;
 }
 
+/// @brief Sends a raw ISO14443A command directly to the RF field via InCommunicateThru, bypassing target selection.
+/// @param command Command bytes to send.
+/// @param commandLength Length of `command` in bytes.
+/// @param response Destination buffer receiving the tag's response.
+/// @param capacity Size of `response` in bytes.
+/// @param length Out parameter receiving the response length.
+/// @return false on transport failure or a non-zero status byte.
 bool communicateThru(const std::uint8_t* command, std::size_t commandLength,
                      std::uint8_t* response, std::size_t capacity,
                      std::size_t& length) {
@@ -420,6 +504,11 @@ bool communicateThru(const std::uint8_t* command, std::size_t commandLength,
   return true;
 }
 
+/// @brief Reads 4 pages (16 bytes) starting at `firstPage`, retrying up to 3 times.
+/// @param target Currently-selected target.
+/// @param firstPage First page number to read.
+/// @param output Destination buffer, 16 bytes.
+/// @return false if all attempts failed.
 bool readPages(const TargetInfo& target, std::uint8_t firstPage,
                std::uint8_t* output) {
   const std::uint8_t command[] = {kMifareRead, firstPage};
@@ -433,6 +522,11 @@ bool readPages(const TargetInfo& target, std::uint8_t firstPage,
   return false;
 }
 
+/// @brief Derives the 6 MIFARE Classic sector keys for a Bambu Lab tag from
+///        its UID via HKDF-SHA256 (RFC 5869).
+/// @param target Target whose UID (must be 4 bytes) is used as HKDF input.
+/// @param keys Out parameter receiving the 6 concatenated 16-byte sector keys.
+/// @return false if the UID length is wrong, or any HMAC step failed.
 bool deriveBambuKeys(const TargetInfo& target,
                      std::array<std::uint8_t, 16 * 6>& keys) {
   if (target.uidLength != 4) return false;
@@ -476,6 +570,11 @@ bool deriveBambuKeys(const TargetInfo& target,
   return true;
 }
 
+/// @brief Authenticates a MIFARE Classic sector for the given block, using key A.
+/// @param target Currently-selected target (UID must be 4 bytes).
+/// @param block Block number within the target sector.
+/// @param key 6-byte key A.
+/// @return false on authentication failure.
 bool authenticateMifareBlock(const TargetInfo& target, std::uint8_t block,
                              const std::uint8_t* key) {
   if (target.uidLength != 4) return false;
@@ -488,6 +587,11 @@ bool authenticateMifareBlock(const TargetInfo& target, std::uint8_t block,
                   sizeof(response), length);
 }
 
+/// @brief Reads one already-authenticated MIFARE Classic block.
+/// @param target Currently-selected target.
+/// @param block Block number to read.
+/// @param output Destination buffer, 16 bytes.
+/// @return false on read failure.
 bool readMifareBlock(const TargetInfo& target, std::uint8_t block,
                      std::uint8_t* output) {
   const std::uint8_t command[] = {kMifareRead, block};
@@ -496,6 +600,9 @@ bool readMifareBlock(const TargetInfo& target, std::uint8_t block,
          length >= 16;
 }
 
+/// @brief Derives keys and reads the public Bambu Lab MIFARE Classic blocks (1,2,4,5,6,9,16).
+/// @param target Currently-selected target.
+/// @param raw Out parameter receiving the read blocks in `mifareBlocks`/`mifareBlockMask`.
 void readBambuBlocks(const TargetInfo& target, models::RawTagData& raw) {
   if (raw.technology != models::TagTechnology::MifareClassic1K) return;
   std::array<std::uint8_t, 16 * 6> keys{};
@@ -514,6 +621,11 @@ void readBambuBlocks(const TargetInfo& target, models::RawTagData& raw) {
   }
 }
 
+/// @brief Writes one 4-byte NTAG page, retrying with target reacquisition on failure.
+/// @param target Currently-selected target; updated in place if reacquired.
+/// @param page Page number to write.
+/// @param bytes 4 bytes to write.
+/// @return false if all attempts failed, or the tag could not be reacquired.
 bool writePage(TargetInfo& target, std::uint8_t page,
                const std::uint8_t* bytes) {
   const std::uint8_t command[] = {kMifareWrite, page, bytes[0], bytes[1],
@@ -560,6 +672,12 @@ bool writePage(TargetInfo& target, std::uint8_t page,
   return false;
 }
 
+/// @brief Reads a Type-2 NDEF TLV area, stopping as soon as a complete TLV is found.
+/// @param target Currently-selected target.
+/// @param output Destination buffer receiving the raw TLV area bytes.
+/// @param capacity Size of `output` in bytes.
+/// @param length Out parameter receiving the number of bytes read.
+/// @return false if the capability container page could not be read or is not a valid Type-2 tag.
 bool readNdef(const TargetInfo& target, std::uint8_t* output,
               std::size_t capacity, std::size_t& length) {
   std::uint8_t first[16]{};
@@ -626,6 +744,13 @@ bool readNdef(const TargetInfo& target, std::uint8_t* output,
   return true;
 }
 
+/// @brief Writes a complete NDEF TLV area, formatting the tag's capability
+///        container first if it is currently unformatted.
+/// @param target Currently-selected target; updated in place across page writes.
+/// @param technology Tag technology, used to pick the correct capability size when formatting.
+/// @param bytes NDEF TLV bytes to write; length must be a multiple of 4.
+/// @param length Length of `bytes` in bytes.
+/// @return false on invalid input, an unrecognized technology, or any page-write failure.
 bool writeNdef(TargetInfo& target, models::TagTechnology technology,
                const std::uint8_t* bytes, std::size_t length) {
   if (length == 0 || (length % 4) != 0) return false;
@@ -654,12 +779,18 @@ bool writeNdef(TargetInfo& target, models::TagTechnology technology,
   return true;
 }
 
+/// @brief Classifies a target's technology from its SAK byte alone.
+/// @param target Target to classify.
+/// @return MifareClassic1K/4K if the SAK matches, otherwise OtherIso14443A.
 models::TagTechnology technologyFor(const TargetInfo& target) {
   if (target.sak == 0x08) return models::TagTechnology::MifareClassic1K;
   if (target.sak == 0x18) return models::TagTechnology::MifareClassic4K;
   return models::TagTechnology::OtherIso14443A;
 }
 
+/// @brief Classifies an NTAG variant from its formatted capability container bytes.
+/// @param capability 4-byte capability container from page 3.
+/// @return The identified NTAG21x variant, or OtherIso14443A if not recognized.
 models::TagTechnology technologyFromCapability(const std::uint8_t* capability) {
   if (capability[0] != 0xE1) return models::TagTechnology::OtherIso14443A;
   if (capability[2] == 0x12) return models::TagTechnology::Ntag213;
@@ -668,6 +799,11 @@ models::TagTechnology technologyFromCapability(const std::uint8_t* capability) {
   return models::TagTechnology::OtherIso14443A;
 }
 
+/// @brief Determines a tag's exact NTAG21x variant, falling back to a raw
+///        GET_VERSION command for an unformatted tag.
+/// @param target Currently-selected target; updated in place if reacquired after a raw command.
+/// @param diagnostics Whether to log detailed diagnostic lines for this detection.
+/// @return The identified technology, or OtherIso14443A if not an NTAG21x.
 models::TagTechnology detectNtagTechnology(TargetInfo& target,
                                            bool diagnostics = false) {
   std::uint8_t capability[16]{};
@@ -724,6 +860,9 @@ models::TagTechnology detectNtagTechnology(TargetInfo& target,
   return technology;
 }
 
+/// @brief The dynamic-lock-bytes page number for an NTAG21x variant.
+/// @param technology Tag technology to look up.
+/// @return Page number, or 0 if `technology` is not an NTAG21x.
 std::uint8_t dynamicLockPage(models::TagTechnology technology) {
   switch (technology) {
     case models::TagTechnology::Ntag213:
@@ -737,6 +876,14 @@ std::uint8_t dynamicLockPage(models::TagTechnology technology) {
   }
 }
 
+/// @brief Checks whether a page range on an NTAG21x is safe to write,
+///        reading its capability/lock metadata first.
+/// @param target Currently-selected target.
+/// @param technology Identified NTAG21x variant.
+/// @param lastPage Highest page index that will be written.
+/// @param diagnostics Whether to log detailed diagnostic lines.
+/// @param resultKnown Out parameter set to whether the metadata read succeeded (the writability check could actually run).
+/// @return true if the range is writable; false if unwritable or the metadata could not be read.
 bool ntagWritableForPages(const TargetInfo& target,
                           models::TagTechnology technology,
                           std::uint8_t lastPage, bool diagnostics = false,
@@ -775,6 +922,9 @@ bool ntagWritableForPages(const TargetInfo& target,
   return writable;
 }
 
+/// @brief Maps a decoded tag format to the legacy-migration rtos::NfcTagType classification.
+/// @param format Format to map.
+/// @return The corresponding NfcTagType, or Unknown if not applicable.
 rtos::NfcTagType legacyType(models::TagFormat format) {
   switch (format) {
     case models::TagFormat::FilamentStation:
@@ -788,6 +938,9 @@ rtos::NfcTagType legacyType(models::TagFormat format) {
   }
 }
 
+/// @brief German display name for a tag format, used in log lines and UI text.
+/// @param format Format to describe.
+/// @return Static, NUL-terminated name.
 const char* formatDescription(models::TagFormat format) {
   switch (format) {
     case models::TagFormat::EmptyNdef:
@@ -808,6 +961,9 @@ const char* formatDescription(models::TagFormat format) {
   }
 }
 
+/// @brief Display name for a tag technology, used in log lines.
+/// @param technology Technology to describe.
+/// @return Static, NUL-terminated name.
 const char* technologyDescription(models::TagTechnology technology) {
   switch (technology) {
     case models::TagTechnology::Ntag213:
@@ -828,11 +984,18 @@ const char* technologyDescription(models::TagTechnology technology) {
   }
 }
 
+/// @brief Copies a target's UID into an AppEvent's nfcUid/nfcUidLength fields.
+/// @param event Event to fill in.
+/// @param target Source target.
 void fillTarget(rtos::AppEvent& event, const TargetInfo& target) {
   event.nfcUidLength = target.uidLength;
   std::memcpy(event.nfcUid, target.uid.data(), target.uidLength);
 }
 
+/// @brief Formats a target's UID as colon-separated uppercase hex (e.g. "04:A1:B2:C3").
+/// @param target Target whose UID to format.
+/// @param output Destination buffer.
+/// @param capacity Size of `output` in bytes.
 void formatUid(const TargetInfo& target, char* output, std::size_t capacity) {
   if (capacity == 0) return;
   output[0] = '\0';
@@ -849,6 +1012,13 @@ void formatUid(const TargetInfo& target, char* output, std::size_t capacity) {
   }
 }
 
+/// @brief Full read/classify pipeline for a newly detected tag: technology
+///        detection, Bambu key derivation and block reads, NDEF read for
+///        native NTAGs, format parsing via nfc::TagParserRegistry, and
+///        NfcTagDetected/NfcTagRead event reporting.
+/// @param ctx Owning RTOS context.
+/// @param target Detected target; may be updated in place if reacquired during detection.
+/// @return The fully assembled tag read result.
 models::TagReadResult reportTag(rtos::RtosContext& ctx,
                                 TargetInfo& target) {
   char uid[config::kNfcMaxUidLength * 3]{};
@@ -963,11 +1133,21 @@ models::TagReadResult reportTag(rtos::RtosContext& ctx,
   return result;
 }
 
+/// @brief Compares two targets' UIDs for equality.
+/// @param left First target.
+/// @param right Second target.
+/// @return true if both UIDs match in length and content.
 bool sameUid(const TargetInfo& left, const TargetInfo& right) {
   return left.uidLength == right.uidLength &&
          std::memcmp(left.uid.data(), right.uid.data(), left.uidLength) == 0;
 }
 
+/// @brief Handles NfcCommandType::WriteSpoolTag: builds and writes the
+///        FilamentStation NDEF payload, then reads it back to verify.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
+/// @param target Currently-selected target; updated in place on success.
+/// @param activeResult Cached read result for the active tag; updated in place on success.
 void handleWrite(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
                  TargetInfo& target, models::TagReadResult& activeResult) {
   static std::array<std::uint8_t, config::kNfcMaxNdefBytes> bytes{};
@@ -1071,6 +1251,12 @@ void handleWrite(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
   sendEvent(ctx, *event);
 }
 
+/// @brief Handles NfcCommandType::EraseTag: writes an empty NDEF TLV and
+///        reads it back to verify.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
+/// @param target Currently-selected target; updated in place on success.
+/// @param activeResult Cached read result for the active tag; updated in place on success.
 void handleErase(rtos::RtosContext& ctx, const rtos::NfcCommand& command,
                  TargetInfo& target, models::TagReadResult& activeResult) {
   const std::uint8_t empty[] = {0x03, 0x00, 0xFE, 0x00};

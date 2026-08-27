@@ -1,3 +1,7 @@
+/**
+ * @file
+ * @brief Implements services::identifyNtag21x()/ntag21xRangeWritable().
+ */
 #include "services/Ntag21x.h"
 
 namespace filament_station {

@@ -1,3 +1,9 @@
+/**
+ * @file
+ * @brief Implements tasks::scaleTask(): bit-banged HX711 driver
+ *        (interrupt-driven sample ready detection), filtering, and
+ *        calibration command handling.
+ */
 #include "tasks/Tasks.h"
 
 #include <Arduino.h>
@@ -20,9 +26,10 @@ namespace filament_station::tasks {
 
 namespace {
 
-TaskHandle_t scaleTaskHandle = nullptr;
-portMUX_TYPE hx711ReadMux = portMUX_INITIALIZER_UNLOCKED;
+TaskHandle_t scaleTaskHandle = nullptr;  ///< Handle of this task, set at startup so the ISR can notify it.
+portMUX_TYPE hx711ReadMux = portMUX_INITIALIZER_UNLOCKED;  ///< Guards the bit-bang critical section in readHx711Sample() against the data-ready ISR.
 
+/// @brief GPIO ISR fired on the HX711 DOUT falling edge; wakes scaleTask().
 void IRAM_ATTR hx711DataReadyIsr(void*) {
   BaseType_t higherPriorityTaskWoken = pdFALSE;
   const TaskHandle_t task = scaleTaskHandle;
@@ -34,6 +41,8 @@ void IRAM_ATTR hx711DataReadyIsr(void*) {
   }
 }
 
+/// @brief Configures the HX711 clock/data GPIOs and installs the data-ready ISR.
+/// @return false if any GPIO/ISR configuration step failed.
 bool initializeHx711PinsAndInterrupt() {
   constexpr gpio_num_t dataPin =
       static_cast<gpio_num_t>(config::kHx711DataPin);
@@ -80,6 +89,9 @@ bool initializeHx711PinsAndInterrupt() {
   return true;
 }
 
+/// @brief Bit-bangs one 24-bit HX711 conversion result over the clock/data GPIOs.
+/// @param rawCounts Out parameter receiving the sign-extended raw reading.
+/// @return false if DOUT is not currently low (no sample ready).
 bool readHx711Sample(std::int32_t& rawCounts) {
   constexpr gpio_num_t dataPin =
       static_cast<gpio_num_t>(config::kHx711DataPin);
@@ -107,6 +119,8 @@ bool readHx711Sample(std::int32_t& rawCounts) {
   return true;
 }
 
+/// @brief Sends a PowerDownAcknowledged command to PowerTask.
+/// @param ctx Owning RTOS context.
 void sendPowerAck(rtos::RtosContext& ctx) {
   rtos::PowerCommand command{};
   command.type = rtos::PowerCommandType::PowerDownAcknowledged;
@@ -118,6 +132,13 @@ void sendPowerAck(rtos::RtosContext& ctx) {
   }
 }
 
+/// @brief Sends a simple numeric/text AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param type Event type.
+/// @param value Numeric payload.
+/// @param text Text payload.
+/// @param requestId Correlation id, defaults to 0 for unsolicited events.
+/// @return false if the app event queue was full.
 bool sendScaleEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
                     std::int32_t value, const char* text,
                     std::uint32_t requestId = 0) {
@@ -129,12 +150,20 @@ bool sendScaleEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
   return xQueueSend(ctx.appEventQueue, &event, 0) == pdPASS;
 }
 
+/// @brief In-task tare/calibration state, persisted by AppTask across restarts via ApplyCalibration.
 struct ScaleCalibrationState {
-  std::int32_t offsetCounts = 0;
-  float factorCountsPerGram = 1.0F;
-  bool calibrated = false;
+  std::int32_t offsetCounts = 0;      ///< Raw-counts tare offset.
+  float factorCountsPerGram = 1.0F;   ///< Calibration factor.
+  bool calibrated = false;            ///< Whether a real calibration has been performed/applied.
 };
 
+/// @brief Sends a calibration-state AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param type Event type.
+/// @param requestId Correlation id.
+/// @param calibration Current calibration state to report.
+/// @param text Text payload.
+/// @return false if the app event queue was full.
 bool sendCalibrationEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
                           std::uint32_t requestId,
                           const ScaleCalibrationState& calibration,
@@ -149,6 +178,13 @@ bool sendCalibrationEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
   return xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(100)) == pdPASS;
 }
 
+/// @brief Handles one ScaleCommand (tare/calibration/measurement-request), not power up/down.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
+/// @param hasMeasurement Whether a valid `latestCounts` reading is currently available.
+/// @param latestCounts Most recent filtered raw-counts reading.
+/// @param calibration Calibration state to read/update.
+/// @param filter Filter to reset on tare/calibration changes.
 void processScaleCommand(rtos::RtosContext& ctx,
                          const rtos::ScaleCommand& command,
                          bool hasMeasurement, std::int32_t latestCounts,

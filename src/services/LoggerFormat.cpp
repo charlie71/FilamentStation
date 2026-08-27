@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements services::formatLogRecord() and the
+ *        Logger::levelName()/componentName() text lookups.
+ */
 #include "services/LoggerFormat.h"
 
 #include <cstdio>
@@ -6,6 +11,9 @@ namespace filament_station {
 namespace services {
 namespace {
 
+/// @brief Short text tag for a log level (e.g. "E", "W").
+/// @param level Severity level.
+/// @return Single-character level tag, or "?" if unrecognized.
 const char* levelText(LogLevel level) {
   switch (level) {
     case LogLevel::Error: return "E";
@@ -17,6 +25,9 @@ const char* levelText(LogLevel level) {
   return "?";
 }
 
+/// @brief Short text tag for a log component (e.g. "APP", "NFC").
+/// @param component Originating subsystem.
+/// @return Component tag, or "UNKNOWN" if unrecognized.
 const char* componentText(LogComponent component) {
   switch (component) {
     case LogComponent::App: return "APP";

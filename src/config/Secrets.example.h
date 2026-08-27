@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Template for a future, local, untracked Secrets.h -- currently
+ *        empty; no runtime code includes this file yet.
+ */
 #pragma once
 
 // Vorlage fuer spaetere, lokale Geheimnisse. Keine Zugangsdaten eintragen und

@@ -1,3 +1,9 @@
+/**
+ * @file
+ * @brief The single message type carried on rtos::RtosContext::appEventQueue,
+ *        and the FreeRTOS event-group readiness/error bits shared across
+ *        all tasks. See docs/architecture.md, section "Events".
+ */
 #pragma once
 
 #include <cstdint>
@@ -6,6 +12,11 @@
 
 namespace filament_station::rtos {
 
+/// @brief Every event a service task can report to tasks::appTask() via
+///        rtos::AppEvent. Grouped by source; see docs/architecture.md for
+///        the full grouping table. Most variants are self-explanatory from
+///        their name; only variants with a non-obvious `value`/`text`
+///        payload carry their own comment below.
 enum class AppEventType : std::uint8_t {
   UiAction,
   UiCommunicationTest,
@@ -74,14 +85,14 @@ enum class AppEventType : std::uint8_t {
   UpdateDownloadResult
 };
 
-constexpr EventBits_t EVENT_UI_READY = BIT0;
-constexpr EventBits_t EVENT_SD_READY = BIT1;
-constexpr EventBits_t EVENT_SCALE_READY = BIT2;
-constexpr EventBits_t EVENT_NFC_READY = BIT3;
-constexpr EventBits_t EVENT_WIFI_CONNECTED = BIT4;
-constexpr EventBits_t EVENT_SPOOLMAN_READY = BIT5;
-constexpr EventBits_t EVENT_BAMBU_READY = BIT6;
-constexpr EventBits_t EVENT_FATAL_ERROR = BIT7;
-constexpr EventBits_t EVENT_SPOOLMAN_TAG_FIELD_READY = BIT8;
+constexpr EventBits_t EVENT_UI_READY = BIT0;                     ///< UiTask has completed LVGL/display initialization.
+constexpr EventBits_t EVENT_SD_READY = BIT1;                     ///< SD card is mounted and its directory structure is valid.
+constexpr EventBits_t EVENT_SCALE_READY = BIT2;                  ///< HX711 is producing valid samples.
+constexpr EventBits_t EVENT_NFC_READY = BIT3;                    ///< PN532 initialized successfully.
+constexpr EventBits_t EVENT_WIFI_CONNECTED = BIT4;                ///< WiFi station is connected with an IP address.
+constexpr EventBits_t EVENT_SPOOLMAN_READY = BIT5;                ///< Spoolman server responded to a health check.
+constexpr EventBits_t EVENT_BAMBU_READY = BIT6;                   ///< Reserved; not currently set by any task.
+constexpr EventBits_t EVENT_FATAL_ERROR = BIT7;                  ///< An unrecoverable startup error occurred; halts the affected task.
+constexpr EventBits_t EVENT_SPOOLMAN_TAG_FIELD_READY = BIT8;      ///< Spoolman's `extra.tag` field exists and is usable.
 
 }  // namespace filament_station::rtos

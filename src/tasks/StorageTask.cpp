@@ -1,3 +1,9 @@
+/**
+ * @file
+ * @brief Implements tasks::storageTask(): SD-card mount/health-check,
+ *        directory/initial-document bootstrap, and JSON load/save/delete
+ *        command processing.
+ */
 #include "tasks/Tasks.h"
 
 #include <Arduino.h>
@@ -20,13 +26,15 @@ namespace filament_station::tasks {
 namespace {
 
 constexpr const char* kRequiredDirectories[] = {
-    "/config", "/cache", "/queue", "/mappings", "/diagnostics", "/logs"};
+    "/config", "/cache", "/queue", "/mappings", "/diagnostics", "/logs"};  ///< Top-level directories created on the SD card at boot.
 
+/// @brief One config document created/recovered at boot if missing.
 struct InitialDocument {
-  const char* path;
-  rtos::StorageDocumentType type;
+  const char* path;                ///< Absolute "/....json" path.
+  rtos::StorageDocumentType type;  ///< Document type, for defaulting/validation.
 };
 
+/// @brief Every config document ensureInitialDocuments() creates/recovers at boot.
 constexpr InitialDocument kInitialDocuments[] = {
     {"/config/device.json", rtos::StorageDocumentType::Device},
     {"/config/network.json", rtos::StorageDocumentType::Network},
@@ -38,12 +46,19 @@ constexpr InitialDocument kInitialDocuments[] = {
     {"/mappings/printer-slots.json", rtos::StorageDocumentType::TraySpoolCache},
 };
 
+/// @brief Whether a path is one of the legacy NFC UID-mapping files.
+/// @param path Path to check.
+/// @return true for "/mappings/bambu-tags.json", "/mappings/nfc-spools.json", or "/mappings/open-tags.json".
 bool isMappingPath(const char* path) {
   return std::strcmp(path, "/mappings/bambu-tags.json") == 0 ||
          std::strcmp(path, "/mappings/nfc-spools.json") == 0 ||
          std::strcmp(path, "/mappings/open-tags.json") == 0;
 }
 
+/// @brief Parses a legacy mapping file's "format" text field.
+/// @param text Format string as stored in the mapping file.
+/// @param format Out parameter receiving the parsed format.
+/// @return false if `text` is not one of the recognized format names.
 bool parseMappingFormat(const char* text, models::TagFormat& format) {
   if (std::strcmp(text, "filamentStation") == 0)
     format = models::TagFormat::FilamentStation;
@@ -56,6 +71,10 @@ bool parseMappingFormat(const char* text, models::TagFormat& format) {
   return true;
 }
 
+/// @brief Whether a tag format is permitted in a given legacy mapping file.
+/// @param format Format to check.
+/// @param path Mapping file path.
+/// @return true if `format` belongs in `path`.
 bool formatAllowedForPath(models::TagFormat format, const char* path) {
   if (std::strcmp(path, "/mappings/bambu-tags.json") == 0)
     return format == models::TagFormat::BambuLab;
@@ -67,6 +86,12 @@ bool formatAllowedForPath(models::TagFormat format, const char* path) {
          format == models::TagFormat::Legacy;
 }
 
+/// @brief Sends a simple numeric/text AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param type Event type.
+/// @param text Text payload.
+/// @param requestId Correlation id.
+/// @param value Numeric payload.
 void sendStorageEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
                       const char* text, std::uint32_t requestId = 0,
                       std::int32_t value = 0) {
@@ -82,6 +107,9 @@ void sendStorageEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
   }
 }
 
+/// @brief Validates a JSON path: absolute, no "..", ".json" suffix, inside a known top-level directory.
+/// @param path Path to validate.
+/// @return true if allowed.
 bool isAllowedJsonPath(const char* path) {
   if (path == nullptr || path[0] != '/' || std::strstr(path, "..") != nullptr) {
     return false;
@@ -102,6 +130,12 @@ bool isAllowedJsonPath(const char* path) {
   return false;
 }
 
+/// @brief Sends the appropriate success/error AppEvent for a JsonStorage result.
+/// @param ctx Owning RTOS context.
+/// @param command Originating command, for its requestId.
+/// @param successType Event type to send on success.
+/// @param result Storage operation result.
+/// @param successText Text to send on success.
 void sendStorageResult(rtos::RtosContext& ctx,
                        const rtos::StorageCommand& command,
                        rtos::AppEventType successType,
@@ -119,6 +153,12 @@ void sendStorageResult(rtos::RtosContext& ctx,
                    command.requestId, static_cast<std::int32_t>(result.error));
 }
 
+/// @brief Handles a LoadJson command: opens, parses, validates, and reports
+///        the file, decoding it into the type-specific rtos::AppEvent
+///        fields for the document types AppTask needs structured (Network,
+///        Scale, Spoolman, Bambu, TraySpoolCache, legacy NFC mappings).
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
 void processLoadCommand(rtos::RtosContext& ctx,
                         const rtos::StorageCommand& command) {
   File file = SD.open(command.path, FILE_READ);
@@ -377,6 +417,10 @@ void processLoadCommand(rtos::RtosContext& ctx,
                     result, "JSON loaded and validated");
 }
 
+/// @brief Handles a SaveJson command: parses the inline payload, validates
+///        it, and atomically saves it to `command.path`.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
 void processSaveCommand(rtos::RtosContext& ctx,
                         const rtos::StorageCommand& command) {
   const std::size_t maximumSize =
@@ -411,6 +455,10 @@ void processSaveCommand(rtos::RtosContext& ctx,
                     result, "JSON saved atomically");
 }
 
+/// @brief Validates the path and dispatches to processLoadCommand()/
+///        processSaveCommand()/direct delete, based on `command.type`.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
 void processStorageCommand(rtos::RtosContext& ctx,
                            const rtos::StorageCommand& command) {
   if (std::memchr(command.path, '\0', sizeof(command.path)) == nullptr ||
@@ -438,6 +486,8 @@ void processStorageCommand(rtos::RtosContext& ctx,
   }
 }
 
+/// @brief Cheap SD-card presence/health check: card type plus a root-directory open.
+/// @return true if the card responds and its root directory can be opened.
 bool cardIsAccessible() {
   if (SD.cardType() == CARD_NONE) {
     return false;
@@ -451,6 +501,9 @@ bool cardIsAccessible() {
   return true;
 }
 
+/// @brief Ensures a directory exists, creating it if necessary.
+/// @param path Directory path.
+/// @return true if the path exists (or was created) and is a directory.
 bool ensureDirectory(const char* path) {
   File directory = SD.open(path);
   if (directory) {
@@ -472,6 +525,8 @@ bool ensureDirectory(const char* path) {
   return isDirectory;
 }
 
+/// @brief Ensures every directory in #kRequiredDirectories exists.
+/// @return true if all directories are ready.
 bool ensureDirectoryStructure() {
   for (const char* path : kRequiredDirectories) {
     if (!ensureDirectory(path)) {
@@ -483,6 +538,11 @@ bool ensureDirectoryStructure() {
   return true;
 }
 
+/// @brief Recovers/validates/creates one initial config document at boot.
+/// @param definition Document path and type to ensure.
+/// @return true if the document ends up present and valid (or, for a
+///         damaged legacy mapping file, is left untouched for diagnosis
+///         rather than failing the whole subsystem).
 bool ensureInitialDocument(const InitialDocument& definition) {
   const services::JsonStorageResult recovery =
       services::JsonStorage::recoverAtomicSave(SD, definition.path,
@@ -532,6 +592,8 @@ bool ensureInitialDocument(const InitialDocument& definition) {
   return true;
 }
 
+/// @brief Ensures every document in #kInitialDocuments is present and valid.
+/// @return true if all documents are ready.
 bool ensureInitialDocuments() {
   for (const InitialDocument& definition : kInitialDocuments) {
     if (!ensureInitialDocument(definition)) {
@@ -541,6 +603,9 @@ bool ensureInitialDocuments() {
   return true;
 }
 
+/// @brief Text name for an SD.cardType() value, used in log lines.
+/// @param cardType Card type constant (CARD_MMC/CARD_SD/CARD_SDHC/CARD_NONE).
+/// @return Static, NUL-terminated name.
 const char* cardTypeName(std::uint8_t cardType) {
   switch (cardType) {
     case CARD_MMC:
@@ -556,6 +621,7 @@ const char* cardTypeName(std::uint8_t cardType) {
   }
 }
 
+/// @brief Logs SD card type, capacity, and filesystem usage at startup.
 void logSdCardInfo() {
   const std::uint64_t cardSize = SD.cardSize();
   const std::uint64_t totalBytes = SD.totalBytes();

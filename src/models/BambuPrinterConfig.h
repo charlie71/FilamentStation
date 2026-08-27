@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Persisted Bambu Lab printer connection configuration
+ *        (/config/bambu.json).
+ */
 #pragma once
 
 #include <array>
@@ -9,27 +14,34 @@
 namespace filament_station {
 namespace models {
 
-// Persisted /config/bambu.json entry for a single Bambu printer.
-// Distinct from PrinterState, which holds runtime connection/AMS status
-// rather than configured connection data.
+/// @brief One persisted printer's connection configuration.
+///
+/// Persisted /config/bambu.json entry for a single Bambu printer.
+/// Distinct from PrinterState, which holds runtime connection/AMS status
+/// rather than configured connection data.
 struct BambuPrinterConfig {
-  PrinterId printerId = kInvalidPrinterId;
-  char name[32]{};
-  char host[40]{};
-  char serialNumber[24]{};
-  char accessCode[24]{};
-  bool enabled = false;
-  bool isDefault = false;
-  bool isSelected = false;
+  PrinterId printerId = kInvalidPrinterId;  ///< Locally assigned printer id.
+  char name[32]{};             ///< Display name.
+  char host[40]{};              ///< Hostname or IP address.
+  char serialNumber[24]{};      ///< Printer serial number (MQTT topic/client id).
+  char accessCode[24]{};        ///< LAN-mode MQTT access code (password).
+  bool enabled = false;         ///< Whether connection attempts are permitted.
+  bool isDefault = false;       ///< Whether this printer is selected on a fresh boot.
+  bool isSelected = false;      ///< Whether this printer was explicitly selected by the user.
 };
 
+/// @brief All persisted printer configurations plus selection/default state.
 struct BambuConfigCollection {
-  std::array<BambuPrinterConfig, kMaximumPrinters> printers{};
-  std::uint8_t printerCount = 0;
-  PrinterId selectedPrinterId = kInvalidPrinterId;
-  PrinterId defaultPrinterId = kInvalidPrinterId;
+  std::array<BambuPrinterConfig, kMaximumPrinters> printers{};  ///< Configured printers.
+  std::uint8_t printerCount = 0;  ///< Number of valid entries in #printers.
+  PrinterId selectedPrinterId = kInvalidPrinterId;  ///< Explicitly user-selected printer, or kInvalidPrinterId.
+  PrinterId defaultPrinterId = kInvalidPrinterId;   ///< Printer selected on a fresh boot.
 };
 
+/// @brief Finds a printer configuration by id.
+/// @param collection Collection to search.
+/// @param printerId Id to look up.
+/// @return Pointer to the matching entry, or nullptr if not found/invalid id.
 inline BambuPrinterConfig* findPrinterConfig(BambuConfigCollection& collection,
                                              PrinterId printerId) {
   if (!isValidPrinterId(printerId)) return nullptr;
@@ -43,6 +55,10 @@ inline BambuPrinterConfig* findPrinterConfig(BambuConfigCollection& collection,
   return nullptr;
 }
 
+/// @brief Const overload of findPrinterConfig().
+/// @param collection Collection to search.
+/// @param printerId Id to look up.
+/// @return Pointer to the matching entry, or nullptr if not found/invalid id.
 inline const BambuPrinterConfig* findPrinterConfig(
     const BambuConfigCollection& collection, PrinterId printerId) {
   if (!isValidPrinterId(printerId)) return nullptr;
@@ -56,6 +72,9 @@ inline const BambuPrinterConfig* findPrinterConfig(
   return nullptr;
 }
 
+/// @brief Validates that every printer in a collection has a distinct id.
+/// @param collection Collection to check.
+/// @return True if printerCount is within bounds and every id is unique and valid.
 inline bool hasUniqueBambuPrinterIds(const BambuConfigCollection& collection) {
   if (collection.printerCount > kMaximumPrinters) return false;
   for (std::size_t left = 0; left < collection.printerCount; ++left) {
@@ -69,6 +88,10 @@ inline bool hasUniqueBambuPrinterIds(const BambuConfigCollection& collection) {
   return true;
 }
 
+/// @brief Validates internal consistency of a whole BambuConfigCollection
+///        (unique ids, exactly one default printer, at most one selected).
+/// @param collection Collection to check.
+/// @return True if the collection is internally consistent.
 // A configured default printer is mandatory once printers exist; an
 // explicit selection is optional (runtime may fall back to the default
 // printer until the user picks one).

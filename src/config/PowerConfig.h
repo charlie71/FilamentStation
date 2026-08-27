@@ -1,3 +1,9 @@
+/**
+ * @file
+ * @brief Timing and brightness constants for the Active/Dimmed/Sleep
+ *        power-saving state machine (see tasks::powerTask(),
+ *        tasks::PowerState).
+ */
 #pragma once
 
 #include <cstdint>
@@ -17,19 +23,19 @@ namespace filament_station::config {
 // ohne Auswirkung auf den echten Light-Sleep-Stromverbrauch (der laeuft
 // weiterhin ueber den separaten GPIO-Wake in PowerTask::
 // sleepUntilTouchWake(), nicht ueber dieses Intervall).
-constexpr std::uint32_t kPowerActivityReportIntervalMs = 150;
-constexpr std::uint32_t kPowerDimTimeoutMs = 30000;
-constexpr std::uint32_t kPowerSleepTimeoutMs = 180000;
+constexpr std::uint32_t kPowerActivityReportIntervalMs = 150;  ///< How often UiTask reports input inactivity to PowerTask; also bounds UiTask's own queue-wait latency.
+constexpr std::uint32_t kPowerDimTimeoutMs = 30000;    ///< Inactivity duration after which PowerState transitions Active -> Dimmed.
+constexpr std::uint32_t kPowerSleepTimeoutMs = 180000;  ///< Inactivity duration after which PowerState transitions Dimmed -> Sleep.
 // Zielhelligkeit im Zustand "Gedimmt" (0-255, wie
 // Light_PWM::setBrightness()). Wird ab Phase 11.2 tatsaechlich gesetzt.
-constexpr std::uint8_t kPowerDimmedBrightness = 28;
+constexpr std::uint8_t kPowerDimmedBrightness = 28;  ///< Backlight duty cycle (0-255) while PowerState is Dimmed.
 
 // Maximale Wartezeit auf alle drei PowerDownAcknowledged-Bestaetigungen
 // (Scale/Nfc/Network), bevor PowerTask trotzdem in den Light-Sleep geht --
 // verhindert, dass ein haengender/verlorener Ack den Sleep fuer immer
 // blockiert. Deutlich ueber dem PN532-Antwort-Timeout (kPn532ResponseTimeoutMs
 // = 500ms, bis zu zwei Transceives in NfcTask::PowerDown).
-constexpr std::uint32_t kPowerSleepAckTimeoutMs = 3000;
+constexpr std::uint32_t kPowerSleepAckTimeoutMs = 3000;  ///< Maximum time PowerTask waits for all three PowerDownAcknowledged replies before entering light sleep anyway.
 // Periodischer Sicherheitsnetz-Wake im Light-Sleep (TASKS.md 11.6): das
 // FT6336-INT-Verhalten (Pegel vs. Puls, Polaritaet) ist am realen Board noch
 // nicht verifiziert -- ohne dieses Sicherheitsnetz koennte ein falsch
@@ -37,6 +43,6 @@ constexpr std::uint32_t kPowerSleepAckTimeoutMs = 3000;
 // einem manuellen Stromzyklus. Kurz gewaehlt, um das waehrend der ersten
 // Hardware-Tests schnell sichtbar zu machen; kann spaeter vergroessert
 // werden, sobald Touch-Wake verifiziert ist.
-constexpr std::uint32_t kPowerSleepSafetyNetTimerMs = 30000;
+constexpr std::uint32_t kPowerSleepSafetyNetTimerMs = 30000;  ///< Periodic timer wake used as a safety net in case the GPIO touch-wake assumption is wrong.
 
 }  // namespace filament_station::config

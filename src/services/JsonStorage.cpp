@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements services::JsonStorage: per-document-type size limits,
+ *        field validation, defaulting, and the atomic-save/recovery scheme.
+ */
 #include "services/JsonStorage.h"
 
 #include <cctype>
@@ -9,17 +14,23 @@
 namespace filament_station::services {
 namespace {
 
-constexpr std::size_t kSmallConfigMaxSize = 4U * 1024U;
-constexpr std::size_t kConfigMaxSize = 8U * 1024U;
-constexpr std::size_t kLargeConfigMaxSize = 16U * 1024U;
-constexpr std::size_t kDiagnosticsMaxSize = 32U * 1024U;
-constexpr std::size_t kAtomicPathCapacity = 112U;
+constexpr std::size_t kSmallConfigMaxSize = 4U * 1024U;    ///< Max size for JsonStorage::maxSizeFor(StorageDocumentType::Scale).
+constexpr std::size_t kConfigMaxSize = 8U * 1024U;          ///< Max size for the typical config document types (Device/Network/Spoolman/Bambu/TraySpoolCache).
+constexpr std::size_t kLargeConfigMaxSize = 16U * 1024U;    ///< Max size for the larger document types (Ui/Nfc).
+constexpr std::size_t kDiagnosticsMaxSize = 32U * 1024U;    ///< Max size for StorageDocumentType::Diagnostics.
+constexpr std::size_t kAtomicPathCapacity = 112U;           ///< Buffer size for AtomicPaths::temporary/backup.
 
+/// @brief The derived ".tmp.json"/".bak.json" sibling paths for a target
+///        document path, used by atomicSave()/recoverAtomicSave().
 struct AtomicPaths {
-  char temporary[kAtomicPathCapacity]{};
-  char backup[kAtomicPathCapacity]{};
+  char temporary[kAtomicPathCapacity]{};  ///< Path with the target's ".json" suffix replaced by ".tmp.json".
+  char backup[kAtomicPathCapacity]{};     ///< Path with the target's ".json" suffix replaced by ".bak.json".
 };
 
+/// @brief Derives the temp/backup sibling paths for a target document path.
+/// @param targetPath Absolute "/....json" path.
+/// @param paths Out parameter receiving the derived paths.
+/// @return false if `targetPath` is null, not absolute, does not end in ".json", or the derived paths would not fit.
 bool makeAtomicPaths(const char* targetPath, AtomicPaths& paths) {
   if (targetPath == nullptr || targetPath[0] != '/') {
     return false;
@@ -51,10 +62,17 @@ bool makeAtomicPaths(const char* targetPath, AtomicPaths& paths) {
   return true;
 }
 
+/// @brief Removes a file if it exists; a no-op if it does not.
+/// @param filesystem Filesystem to operate on.
+/// @param path Path to remove.
+/// @return false only if the file exists and removal failed.
 bool removeIfPresent(fs::FS& filesystem, const char* path) {
   return !filesystem.exists(path) || filesystem.remove(path);
 }
 
+/// @brief Whether a legacy NFC-mapping "format" string is one of the recognized values.
+/// @param format Format string to check (may be null).
+/// @return true if recognized.
 bool validMappingFormat(const char* format) {
   return format != nullptr &&
          (std::strcmp(format, "filamentStation") == 0 ||
@@ -65,6 +83,9 @@ bool validMappingFormat(const char* format) {
           std::strcmp(format, "unknown") == 0);
 }
 
+/// @brief Whether a UID string is a valid canonical normalized hex UID (see services::normalizeTagIdentity()).
+/// @param uid UID string to validate.
+/// @return true if valid.
 bool validNormalizedUid(const char* uid) {
   if (uid == nullptr) return false;
   const std::size_t length = std::strlen(uid);
@@ -77,6 +98,11 @@ bool validNormalizedUid(const char* uid) {
   return true;
 }
 
+/// @brief Whether a file at `path` parses and validates as `documentType`.
+/// @param filesystem Filesystem to operate on.
+/// @param path Path to check.
+/// @param documentType Expected document type.
+/// @return true if the file opens and JsonStorage::load() succeeds on it.
 bool isValidDocumentFile(fs::FS& filesystem, const char* path,
                          rtos::StorageDocumentType documentType) {
   File file = filesystem.open(path, FILE_READ);
@@ -90,16 +116,28 @@ bool isValidDocumentFile(fs::FS& filesystem, const char* path,
   return result.ok();
 }
 
+/// @brief Removes `destination` if present, then renames `source` onto it.
+/// @param filesystem Filesystem to operate on.
+/// @param source Existing file to rename.
+/// @param destination Target path; overwritten if it already exists.
+/// @return true if both steps succeeded.
 bool replaceWith(fs::FS& filesystem, const char* source,
                  const char* destination) {
   return removeIfPresent(filesystem, destination) &&
          filesystem.rename(source, destination);
 }
 
+/// @brief Whether a character is an ASCII decimal digit.
+/// @param value Character to check.
+/// @return true if '0'-'9'.
 bool isDigit(char value) {
   return std::isdigit(static_cast<unsigned char>(value)) != 0;
 }
 
+/// @brief Whether a string is a valid "YYYY-MM-DDTHH:MM:SSZ" UTC timestamp
+///        (digit positions and separators only; no calendar validity check).
+/// @param value String to validate.
+/// @return true if it matches the expected 20-character pattern.
 bool isUtcTimestamp(const char* value) {
   if (value == nullptr || std::strlen(value) != 20U) {
     return false;
@@ -117,14 +155,24 @@ bool isUtcTimestamp(const char* value) {
          value[13] == ':' && value[16] == ':' && value[19] == 'Z';
 }
 
+/// @brief Whether a JSON field is a string and non-empty.
+/// @param value Field value to check.
+/// @return true if a non-empty string.
 bool isNonEmptyString(const JsonVariantConst value) {
   return value.is<const char*>() && value.as<const char*>()[0] != '\0';
 }
 
+/// @brief Whether a JSON field is a string (possibly empty).
+/// @param value Field value to check.
+/// @return true if a string.
 bool isOptionalString(const JsonVariantConst value) {
   return value.is<const char*>();
 }
 
+/// @brief Validates a dotted-decimal IPv4 address string.
+/// @param value String to validate.
+/// @param allowEmpty Whether an empty string is accepted as valid.
+/// @return true if `value` is a valid IPv4 address, or empty and `allowEmpty` is true.
 bool isValidIpv4(const char* value, bool allowEmpty) {
   if (value == nullptr || value[0] == '\0') return allowEmpty;
   std::uint8_t octets = 0;
@@ -147,6 +195,10 @@ bool isValidIpv4(const char* value, bool allowEmpty) {
   return octets == 4;
 }
 
+/// @brief Validates a device hostname: 1-32 chars, alphanumeric/hyphen
+///        only, not starting/ending with a hyphen.
+/// @param value String to validate.
+/// @return true if valid.
 bool isValidHostname(const char* value) {
   if (value == nullptr) return false;
   const std::size_t length = std::strlen(value);
@@ -160,6 +212,8 @@ bool isValidHostname(const char* value) {
   return true;
 }
 
+/// @brief Fills in missing fields of a Network document with their default values.
+/// @param document Document to update in place.
 void applyNetworkDefaults(JsonDocument& document) {
   if (document["hostname"].isNull()) document["hostname"] = "filamentstation";
   if (document["dhcp"].isNull()) document["dhcp"] = true;
@@ -175,6 +229,8 @@ void applyNetworkDefaults(JsonDocument& document) {
     document["connectTimeoutSeconds"] = 20;
 }
 
+/// @brief Fills in missing fields of a Spoolman document with their default values.
+/// @param document Document to update in place.
 void applySpoolmanDefaults(JsonDocument& document) {
   if (document["enabled"].isNull()) document["enabled"] = false;
   if (document["name"].isNull()) document["name"] = "Spoolman";
@@ -182,6 +238,8 @@ void applySpoolmanDefaults(JsonDocument& document) {
   if (document["timeoutMs"].isNull()) document["timeoutMs"] = 5000;
 }
 
+/// @brief Fills in missing fields of a Bambu document with their default values.
+/// @param document Document to update in place.
 void applyBambuDefaults(JsonDocument& document) {
   if (document["selectedPrinterId"].isNull())
     document["selectedPrinterId"] = 0;
@@ -190,18 +248,27 @@ void applyBambuDefaults(JsonDocument& document) {
     document["printers"].to<JsonArray>();
 }
 
+/// @brief Fills in missing fields of a TraySpoolCache document with their default values.
+/// @param document Document to update in place.
 void applyTraySpoolCacheDefaults(JsonDocument& document) {
   if (!document["entries"].is<JsonArrayConst>())
     document["entries"].to<JsonArray>();
 }
 
+/// @brief Validates a Bambu printer host: a valid hostname or a valid IPv4 address.
+/// @param value Host string to validate.
+/// @return true if valid.
 bool isValidBambuHost(const char* value) {
   return isValidHostname(value) || isValidIpv4(value, false);
 }
 
-// Serial numbers and LAN access codes are opaque Bambu-assigned strings;
-// only bounded, non-empty, printable content is enforced here, not an
-// invented length or character pattern for the external protocol.
+/// @brief Validates an opaque Bambu-assigned identifier field (serial
+///        number, LAN access code): only bounded, non-empty, printable
+///        content is enforced, not an invented length or character
+///        pattern for the external protocol.
+/// @param value JSON field to validate.
+/// @param maxLength Exclusive upper bound on the string length.
+/// @return true if valid.
 bool isValidBambuIdentifier(const JsonVariantConst value,
                             std::size_t maxLength) {
   if (!isNonEmptyString(value)) return false;
@@ -214,6 +281,11 @@ bool isValidBambuIdentifier(const JsonVariantConst value,
   return true;
 }
 
+/// @brief Validates a Bambu document's "printers" array and the
+///        selected/default printer id invariants (exactly one default,
+///        at most one selected, unique printer ids).
+/// @param document Document to validate.
+/// @return JsonStorageError::Ok if valid, otherwise JsonStorageError::InvalidDocumentField.
 JsonStorageError validateBambuPrinters(const JsonDocument& document) {
   if (!document["selectedPrinterId"].is<std::uint16_t>() ||
       !document["defaultPrinterId"].is<std::uint16_t>() ||
@@ -281,6 +353,10 @@ JsonStorageError validateBambuPrinters(const JsonDocument& document) {
   return JsonStorageError::Ok;
 }
 
+/// @brief Validates a (amsId, trayId) slot address.
+/// @param amsId AMS unit index, or models::kExternalTraySentinel for the external/manual holder.
+/// @param trayId Tray index within `amsId`, or models::kExternalTraySentinel.
+/// @return true if valid.
 // A slot address is either the external/manual holder (both amsId and
 // trayId == kExternalTraySentinel) or a real AMS slot (both in their
 // respective valid ranges) -- amsId valid but trayId the sentinel (or vice
@@ -295,6 +371,11 @@ bool isValidTraySlotAddress(std::uint8_t amsId, std::uint8_t trayId) {
          trayId < models::kSlotsPerAms;
 }
 
+/// @brief Validates a TraySpoolCache document's "entries" array: field
+///        types/ranges, valid slot addresses, and no duplicate
+///        (printerId, amsId, trayId) addresses.
+/// @param document Document to validate.
+/// @return JsonStorageError::Ok if valid, otherwise JsonStorageError::InvalidDocumentField.
 JsonStorageError validateTraySpoolCacheEntries(const JsonDocument& document) {
   if (!document["entries"].is<JsonArrayConst>()) {
     return JsonStorageError::InvalidDocumentField;

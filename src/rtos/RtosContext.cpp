@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements rtos::RtosContext: object/task creation and the
+ *        log-queue transport.
+ */
 #include "rtos/RtosContext.h"
 
 #include <cstdio>
@@ -10,10 +15,16 @@
 
 namespace filament_station::rtos {
 namespace {
-RtosContext instance;
+RtosContext instance;  ///< Backing storage for context().
 static_assert(sizeof(LogMessage::text) == config::kLogMessageCapacity);
-std::atomic<std::uint32_t> droppedLogLines{0};
+std::atomic<std::uint32_t> droppedLogLines{0};  ///< Backing storage for droppedLogLineCount().
 
+/// @brief Creates and pins one FreeRTOS task from a config::TaskSettings.
+/// @param function Task entry point.
+/// @param settings Name, stack size, priority and core affinity to apply.
+/// @param taskContext RtosContext pointer passed to `function` as its parameter.
+/// @param handle Out parameter receiving the created task handle.
+/// @return true if the task was created successfully.
 bool createTask(TaskFunction_t function, const config::TaskSettings& settings,
                 RtosContext* taskContext, TaskHandle_t* handle) {
   return xTaskCreatePinnedToCore(function, settings.name, settings.stackSize,

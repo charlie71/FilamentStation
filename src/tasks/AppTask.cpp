@@ -1,3 +1,14 @@
+/**
+ * @file
+ * @brief Implements tasks::appTask(): the central application-control task.
+ *        Owns every persistent app-facing state (module-scope variables in
+ *        the anonymous namespace below), orchestrates every other task via
+ *        their command queues, and drives the multi-step "pending
+ *        operation" state machines for tag assignment/removal, AMS slot
+ *        assignment, tray-detail loading, and the one-time legacy-mapping
+ *        migration. handleUiAction() processes every UI-originated action;
+ *        appTask() is the main event loop dispatching every rtos::AppEvent.
+ */
 #include "tasks/Tasks.h"
 
 #include <cstdio>
@@ -27,40 +38,40 @@
 namespace filament_station::tasks {
 namespace {
 
-rtos::UiScreenId currentScreen = rtos::UiScreenId::Boot;
-rtos::UiScreenId previousScreen = rtos::UiScreenId::Home;
-rtos::UiScreenId printerSettingsReturnScreen = rtos::UiScreenId::SettingsHome;
-bool uiStartupReady = false;
-bool storageStartupReady = false;
-bool startupNavigationSent = false;
+rtos::UiScreenId currentScreen = rtos::UiScreenId::Boot;  ///< Screen currently shown on the display.
+rtos::UiScreenId previousScreen = rtos::UiScreenId::Home;  ///< Screen to return to from a transient screen (e.g. after closing a detail view).
+rtos::UiScreenId printerSettingsReturnScreen = rtos::UiScreenId::SettingsHome;  ///< Screen to return to when leaving the printer settings flow.
+bool uiStartupReady = false;       ///< Whether UiTask has signaled readiness.
+bool storageStartupReady = false;  ///< Whether the initial storage load sequence has completed.
+bool startupNavigationSent = false;  ///< Whether the initial ShowScreen(Home) navigation has been sent.
 // Boot progress (real subsystem status, not just the single static
 // "SD-Karte und Konfiguration werden geprueft" message the overlay used to
 // show for its entire visible lifetime): each slot is filled in as its
 // event actually arrives and refreshBootProgress() re-sends the combined
 // text, so the boot overlay grows to reflect whichever early subsystems
 // (SD, NFC, Waage) finish before Home is shown.
-char bootSdStatus[32]{};
-char bootNfcStatus[32]{};
-char bootScaleStatus[32]{};
-rtos::UiOverlayKind pendingOverlay = rtos::UiOverlayKind::None;
-bool wifiPortalRequested = false;
-bool wifiPortalActive = false;
-std::uint32_t wifiPortalRequestId = 0;
+char bootSdStatus[32]{};     ///< Boot-overlay status line for the SD/storage subsystem.
+char bootNfcStatus[32]{};    ///< Boot-overlay status line for the NFC subsystem.
+char bootScaleStatus[32]{};  ///< Boot-overlay status line for the scale subsystem.
+rtos::UiOverlayKind pendingOverlay = rtos::UiOverlayKind::None;  ///< Currently shown overlay kind, if any.
+bool wifiPortalRequested = false;  ///< Whether the user explicitly requested the WiFi config portal.
+bool wifiPortalActive = false;     ///< Whether the config portal is currently active.
+std::uint32_t wifiPortalRequestId = 0;  ///< Correlation id for the active portal request.
 models::SpoolmanAppState currentSpoolmanAppState =
-    models::SpoolmanAppState::SpoolmanUnavailable;
-char currentSpoolmanServerVersion[32] = "-";
+    models::SpoolmanAppState::SpoolmanUnavailable;  ///< Current Spoolman connection/readiness state shown in the UI.
+char currentSpoolmanServerVersion[32] = "-";  ///< Spoolman server version string from the last successful health check.
 // Runtime Bambu printer state (Phase 8.4). Keyed by printerId; entries are
 // never discarded on a printer switch (Zustand sichern), so background
 // printers keep their last-known data. `activePrinterId` is the printer
 // currently shown on Home/Header/AMS ("wechseln"); PrinterState::isActive is
 // kept in sync with it. Auto-connecting on switch/boot is not part of Phase
 // 8.4/8.6 and remains open.
-models::PrinterStateCollection printerCollection{};
+models::PrinterStateCollection printerCollection{};  ///< Runtime connection/AMS state for every known printer.
 // Persisted printer configuration (Phase 8.2 schema, Phase 8.6 CRUD).
 // Distinct from printerCollection above: this is what /config/bambu.json
 // holds (name/host/serialNumber/accessCode/enabled/default/selected), not
 // live connection/AMS status.
-models::BambuConfigCollection printerConfigs{};
+models::BambuConfigCollection printerConfigs{};  ///< Persisted printer connection configuration.
 // Persisted printer->AMS/tray->Spoolman-spool association (Nutzerwunsch
 // 2026-08-24, /mappings/printer-slots.json). Replaces an earlier attempt to
 // round-trip this through the printer itself via a custom MQTT field, which
@@ -68,7 +79,7 @@ models::BambuConfigCollection printerConfigs{};
 // docs/bambu-protocol.md). Kept locally instead; validated against live
 // material/colorHex on every sync (see resolveTraySpoolCacheSpoolId()) so a
 // spool physically swapped outside this app is detected as stale.
-models::TraySpoolCache traySpoolCache{};
+models::TraySpoolCache traySpoolCache{};  ///< Persisted printer/tray -> Spoolman-spool identity association.
 
 // Once a tray's Spoolman spool is identified (traySpoolCache above), the
 // remaining weight and K-factor are fetched from Spoolman and shown on the
@@ -78,52 +89,65 @@ models::TraySpoolCache traySpoolCache{};
 // association -- re-fetched fresh every boot. Sized for a handful of
 // simultaneously displayed trays, not persisted associations; on overflow
 // the first slot is evicted rather than growing unbounded.
-constexpr std::size_t kMaximumTraySpoolDetailsEntries = 8;
-constexpr std::uint32_t kTraySpoolDetailsRequestIdBase = 0x54534402U;
+constexpr std::size_t kMaximumTraySpoolDetailsEntries = 8;  ///< Capacity of #traySpoolDetails.
+constexpr std::uint32_t kTraySpoolDetailsRequestIdBase = 0x54534402U;  ///< Base request id for tray-spool-details fetches; combined with a slot index.
 // Two sequential fetches per entry: LoadSpool first (for remainingWeightGrams
 // and to learn filamentId), then LoadFilament (for K-factor -- a Spoolman
 // *filament* property, not a spool property, see docs/bambu-protocol.md).
 // Both requests reuse the same slot's requestId since they never overlap in
 // time for a given entry.
+/**
+ * @brief Async load state machine for one tray's live Spoolman weight/K-factor.
+ *
+ * @dot
+ * digraph TraySpoolDetailsStage {
+ *   rankdir=LR;
+ *   Idle -> LoadingSpool      [label="tray's spool id resolved"];
+ *   LoadingSpool -> LoadingFilament [label="LoadSpool response"];
+ *   LoadingFilament -> Loaded [label="LoadFilament response (or failure)"];
+ * }
+ * @enddot
+ */
 enum class TraySpoolDetailsStage : std::uint8_t {
   Idle,
   LoadingSpool,
   LoadingFilament,
   Loaded,
 };
+/// @brief One tray's cached live Spoolman weight/K-factor, keyed by spool id.
 struct TraySpoolDetailsEntry {
-  rtos::SpoolId spoolId = 0;
-  TraySpoolDetailsStage stage = TraySpoolDetailsStage::Idle;
-  float remainingWeightGrams = 0.0F;
-  bool kFactorValid = false;
-  float kFactor = 0.0F;
+  rtos::SpoolId spoolId = 0;   ///< Spool this entry's data belongs to.
+  TraySpoolDetailsStage stage = TraySpoolDetailsStage::Idle;  ///< Current fetch stage.
+  float remainingWeightGrams = 0.0F;  ///< Fetched remaining weight, valid once stage reaches Loaded.
+  bool kFactorValid = false;   ///< Whether #kFactor was successfully resolved.
+  float kFactor = 0.0F;        ///< Fetched flow-dynamics K-factor, only valid if #kFactorValid.
 };
 std::array<TraySpoolDetailsEntry, kMaximumTraySpoolDetailsEntries>
-    traySpoolDetails{};
+    traySpoolDetails{};  ///< Fixed-size, spoolId-keyed cache of #TraySpoolDetailsEntry, oldest entry evicted on overflow.
 
-std::uint32_t pendingBambuSaveRequestId = 0;
-bool pendingBambuSaveShowsResult = false;
-rtos::PrinterId pendingBambuSaveNotifyPrinterId = models::kInvalidPrinterId;
-std::uint32_t pendingPrinterTestRequestId = 0;
-std::uint32_t pendingUpdateCheckRequestId = 0;
-std::uint32_t pendingUpdateDownloadRequestId = 0;
+std::uint32_t pendingBambuSaveRequestId = 0;  ///< Correlation id for an in-flight printer-configuration save.
+bool pendingBambuSaveShowsResult = false;     ///< Whether the pending save should show a result dialog when it completes.
+rtos::PrinterId pendingBambuSaveNotifyPrinterId = models::kInvalidPrinterId;  ///< Printer id to reconnect once the pending save completes.
+std::uint32_t pendingPrinterTestRequestId = 0;  ///< Correlation id for an in-flight printer connection test.
+std::uint32_t pendingUpdateCheckRequestId = 0;  ///< Correlation id for an in-flight firmware update check.
+std::uint32_t pendingUpdateDownloadRequestId = 0;  ///< Correlation id for an in-flight firmware download.
 // Gesetzt sobald ein Versions-Check ein neueres Release meldet; ein
 // erneutes Antippen von "Pr\xC3\xBCfen" bietet dann Installieren statt
 // erneut Pr\xC3\xBCfen an (TASKS.md Phase 13.3). Wird beim Start eines
 // Downloads verworfen -- der Download loest ohnehin eine eigene, frische
 // Abfrage aus (siehe UpdateCommandType::DownloadUpdate).
-bool updateAvailable = false;
-constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;
-constexpr std::uint32_t kBambuLoadRequestId = 0x42414D01U;
-constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;
-constexpr std::uint32_t kNfcMappingLoadRequestId = 0x4E464302U;
-constexpr std::uint32_t kOpenMappingLoadRequestId = 0x4E464303U;
-constexpr std::uint32_t kLegacyMigrationLookupRequestId = 0x4D470101U;
-constexpr std::uint32_t kLegacyMigrationLoadSpoolRequestId = 0x4D470102U;
-constexpr std::uint32_t kLegacyMigrationSetTagRequestId = 0x4D470103U;
-constexpr std::uint32_t kLegacyMigrationDeleteRequestBase = 0x4D470110U;
-constexpr std::uint32_t kNetworkLoadRequestId = 0x4E455401U;
-constexpr std::uint32_t kSpoolmanLoadRequestId = 0x53504D01U;
+bool updateAvailable = false;  ///< Whether the last update check found a newer release.
+constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;  ///< Fixed correlation id for the scale-config storage load.
+constexpr std::uint32_t kBambuLoadRequestId = 0x42414D01U;  ///< Fixed correlation id for the Bambu-config storage load.
+constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;  ///< Fixed correlation id for the legacy bambu-tags.json load.
+constexpr std::uint32_t kNfcMappingLoadRequestId = 0x4E464302U;    ///< Fixed correlation id for the legacy nfc-spools.json load.
+constexpr std::uint32_t kOpenMappingLoadRequestId = 0x4E464303U;   ///< Fixed correlation id for the legacy open-tags.json load.
+constexpr std::uint32_t kLegacyMigrationLookupRequestId = 0x4D470101U;    ///< Fixed correlation id for a legacy-migration Spoolman tag lookup.
+constexpr std::uint32_t kLegacyMigrationLoadSpoolRequestId = 0x4D470102U;  ///< Fixed correlation id for a legacy-migration spool load.
+constexpr std::uint32_t kLegacyMigrationSetTagRequestId = 0x4D470103U;    ///< Fixed correlation id for a legacy-migration tag-set operation.
+constexpr std::uint32_t kLegacyMigrationDeleteRequestBase = 0x4D470110U;  ///< Base correlation id for a legacy mapping-file delete; combined with a file index.
+constexpr std::uint32_t kNetworkLoadRequestId = 0x4E455401U;   ///< Fixed correlation id for the network-config storage load.
+constexpr std::uint32_t kSpoolmanLoadRequestId = 0x53504D01U;  ///< Fixed correlation id for the Spoolman-config storage load.
 // EVENT_SPOOLMAN_READY is only ever cleared on a WiFi loss (see the
 // WifiDisconnected/WifiLostIp handling below) -- if Spoolman itself becomes
 // unreachable while WiFi stays up (server restart, network hiccup on its
@@ -133,56 +157,59 @@ constexpr std::uint32_t kSpoolmanLoadRequestId = 0x53504D01U;
 // portMAX_DELAY, calling the same retrySpoolmanHealthCheckIfNeeded() the
 // boot-race fix already uses (naturally idempotent, silent on failure --
 // see its own request id suppressing the offline-startup error dialog).
-constexpr std::uint32_t kAppTaskIdleTickMs = 5000;
-constexpr std::uint32_t kSpoolmanHealthCheckRetryIntervalMs = 30000;
-constexpr std::uint32_t kTraySpoolCacheLoadRequestId = 0x54534301U;
-constexpr std::uint32_t kObsoletePendingWeightDeleteRequestId = 0x57475401U;
+constexpr std::uint32_t kAppTaskIdleTickMs = 5000;  ///< Maximum wait on the main event queue, bounding how often idle-time checks (e.g. Spoolman health retry) run.
+constexpr std::uint32_t kSpoolmanHealthCheckRetryIntervalMs = 30000;  ///< Minimum interval between automatic Spoolman health-check retries.
+constexpr std::uint32_t kTraySpoolCacheLoadRequestId = 0x54534301U;  ///< Fixed correlation id for the tray-spool-cache storage load.
+constexpr std::uint32_t kObsoletePendingWeightDeleteRequestId = 0x57475401U;  ///< Fixed correlation id for deleting an obsolete pending-weight file.
 constexpr std::uint32_t kObsoletePendingMeasurementsDeleteRequestId =
-    0x57475402U;
-constexpr std::uint32_t kObsoleteSpoolCacheDeleteRequestId = 0x43414301U;
-constexpr std::uint32_t kObsoleteFilamentCacheDeleteRequestId = 0x43414302U;
-constexpr std::uint32_t kObsoleteVendorCacheDeleteRequestId = 0x43414303U;
-std::uint32_t pendingSpoolmanSaveRequestId = 0;
-std::int32_t scaleCounts = 0;
-std::int32_t scaleOffsetCounts = 0;
-float scaleFactorCountsPerGram = 1.0F;
-bool scaleCalibrated = false;
-bool scaleStable = false;
-bool scaleError = true;
+    0x57475402U;  ///< Fixed correlation id for deleting an obsolete pending-measurements file.
+constexpr std::uint32_t kObsoleteSpoolCacheDeleteRequestId = 0x43414301U;     ///< Fixed correlation id for deleting an obsolete spool-cache file.
+constexpr std::uint32_t kObsoleteFilamentCacheDeleteRequestId = 0x43414302U;  ///< Fixed correlation id for deleting an obsolete filament-cache file.
+constexpr std::uint32_t kObsoleteVendorCacheDeleteRequestId = 0x43414303U;    ///< Fixed correlation id for deleting an obsolete vendor-cache file.
+std::uint32_t pendingSpoolmanSaveRequestId = 0;  ///< Correlation id for an in-flight Spoolman-configuration save.
+std::int32_t scaleCounts = 0;              ///< Most recent raw HX711 reading reported by ScaleTask.
+std::int32_t scaleOffsetCounts = 0;        ///< Current tare offset.
+float scaleFactorCountsPerGram = 1.0F;     ///< Current calibration factor.
+bool scaleCalibrated = false;              ///< Whether the scale is currently calibrated.
+bool scaleStable = false;                  ///< Whether the current reading is stable.
+bool scaleError = true;                    ///< Whether the scale is currently reporting an error/unavailable state.
+/// @brief State for the "quick" weigh-in-place-on-a-spool workflow.
 struct QuickWeightState {
-  bool pending = false;
-  bool hasLastMeasurement = false;
-  std::uint32_t requestId = 0;
-  rtos::SpoolId spoolId = 0;
-  rtos::SpoolId lastMeasurementSpoolId = 0;
-  float emptyWeightGrams = 0.0F;
-  float pendingGrossWeightGrams = 0.0F;
-  float pendingRemainingWeightGrams = 0.0F;
-  float lastMeasurementGrams = 0.0F;
-  char spoolName[32]{};
+  bool pending = false;                    ///< Whether a quick-weight measurement is currently being awaited.
+  bool hasLastMeasurement = false;         ///< Whether #lastMeasurementGrams holds a real value.
+  std::uint32_t requestId = 0;             ///< Correlation id for the in-flight weight update, if any.
+  rtos::SpoolId spoolId = 0;               ///< Spool being weighed.
+  rtos::SpoolId lastMeasurementSpoolId = 0;  ///< Spool the last measurement was taken for.
+  float emptyWeightGrams = 0.0F;           ///< Known empty-spool weight, subtracted from gross weight.
+  float pendingGrossWeightGrams = 0.0F;    ///< Gross (spool + filament) weight of the in-flight measurement.
+  float pendingRemainingWeightGrams = 0.0F;  ///< Computed remaining filament weight of the in-flight measurement.
+  float lastMeasurementGrams = 0.0F;       ///< Last completed measurement's gross weight.
+  char spoolName[32]{};                    ///< Display name of the spool being weighed.
 };
-QuickWeightState quickWeight{};
+QuickWeightState quickWeight{};  ///< Active quick-weight workflow state.
+/// @brief State for the "advanced" multi-mode weigh-in workflow (spool only, spool+filament, etc.).
 struct AdvancedWeightState {
-  bool pending = false;
-  bool committed = false;
-  std::int32_t mode = 0;
-  rtos::SpoolId spoolId = 0;
-  float grossWeightGrams = 0.0F;
-  float emptyWeightGrams = 0.0F;
-  float initialWeightGrams = 0.0F;
-  float remainingWeightGrams = 0.0F;
-  char spoolName[32]{};
+  bool pending = false;              ///< Whether a measurement is currently being awaited.
+  bool committed = false;            ///< Whether the resulting weight update has been sent.
+  std::int32_t mode = 0;             ///< Selected weighing mode (UI-defined enumeration).
+  rtos::SpoolId spoolId = 0;         ///< Spool being weighed.
+  float grossWeightGrams = 0.0F;     ///< Measured gross weight.
+  float emptyWeightGrams = 0.0F;     ///< Known empty-spool weight.
+  float initialWeightGrams = 0.0F;   ///< Computed/entered initial filament weight.
+  float remainingWeightGrams = 0.0F;  ///< Computed remaining filament weight.
+  char spoolName[32]{};              ///< Display name of the spool being weighed.
 };
-AdvancedWeightState advancedWeight{};
+AdvancedWeightState advancedWeight{};  ///< Active advanced-weight workflow state.
+/// @brief State for an in-flight Spoolman weight-update request, shared by the quick/advanced workflows.
 struct WeightUpdateState {
-  bool active = false;
-  bool advanced = false;
-  std::uint32_t requestId = 0;
-  models::SpoolmanWeightUpdate update{};
+  bool active = false;         ///< Whether an update is currently in flight.
+  bool advanced = false;       ///< Whether it originated from the advanced (vs. quick) workflow.
+  std::uint32_t requestId = 0;  ///< Correlation id for the in-flight update.
+  models::SpoolmanWeightUpdate update{};  ///< Payload being sent/echoed back.
 };
-WeightUpdateState weightUpdate{};
-bool pendingStagingSpoolSelection = false;
-std::uint32_t pendingStagingSpoolRequestId = 0;
+WeightUpdateState weightUpdate{};  ///< Active weight-update request state.
+bool pendingStagingSpoolSelection = false;  ///< Whether a staging-spool selection request is in flight.
+std::uint32_t pendingStagingSpoolRequestId = 0;  ///< Correlation id for the in-flight staging-spool load.
 // After a staging LoadSpool response arrives, a follow-up LoadFilament
 // fetch is needed for emptySpoolWeightGrams/K-Faktor (Spoolman *filament*
 // properties, see docs/bambu-protocol.md und Nutzerhinweis 2026-08-24) --
@@ -190,24 +217,46 @@ std::uint32_t pendingStagingSpoolRequestId = 0;
 // these fields (same issue as bambu_temp_min/bambu_temp_max). The resolved
 // spool is cached here across that second request the same way
 // pendingSlotAssignment caches trayType/trayColorHex.
+/// @brief Tracks the follow-up LoadFilament fetch after a staging spool is loaded.
 struct PendingStagingFilamentLoad {
-  bool active = false;
-  std::uint32_t requestId = 0;
-  models::SpoolmanSpool spool{};
+  bool active = false;             ///< Whether a filament fetch is currently in flight.
+  std::uint32_t requestId = 0;      ///< Correlation id for the in-flight fetch.
+  models::SpoolmanSpool spool{};    ///< Spool resolved by the preceding LoadSpool, carried across the fetch.
 };
-PendingStagingFilamentLoad pendingStagingFilamentLoad{};
+PendingStagingFilamentLoad pendingStagingFilamentLoad{};  ///< Active staging-filament-load state.
 // AppTask's own authoritative mirror of "is a spool currently staged",
 // kept in sync at every point staging content changes (see the three
 // UpdateStaging call sites). Lets navigation decisions (SelectStaging,
 // Back from StagingActions) skip the empty-staging status screen without
 // round-tripping through UiTask's stagingState first.
-rtos::SpoolId stagingSpoolId = 0;
+rtos::SpoolId stagingSpoolId = 0;  ///< Currently staged spool id, or 0 if none.
+/// @brief Which NFC tag write operation is currently pending.
 enum class PendingTagOperation : std::uint8_t { None, Write, Erase };
-PendingTagOperation pendingTagOperation = PendingTagOperation::None;
-models::TagReadResult currentTag{};
-bool tagPresent = false;
-rtos::SpoolId pendingTagSpoolId = 0;
-rtos::SpoolId lastUsedTagSpoolId = 0;
+PendingTagOperation pendingTagOperation = PendingTagOperation::None;  ///< Currently pending tag write/erase operation.
+models::TagReadResult currentTag{};    ///< Last read result for the currently present tag.
+bool tagPresent = false;               ///< Whether a tag is currently present on the reader.
+rtos::SpoolId pendingTagSpoolId = 0;   ///< Spool id associated with the pending tag operation.
+rtos::SpoolId lastUsedTagSpoolId = 0;  ///< Spool id last resolved from a scanned tag, for UI convenience.
+/**
+ * @brief State machine for "assign the currently present tag to a spool"
+ *        (AssignTag), and shared by the legacy import/removal code paths.
+ *
+ * @dot
+ * digraph TagAssignmentStage {
+ *   rankdir=LR;
+ *   None -> SelectingSpool;
+ *   SelectingSpool -> LookingUp;
+ *   LookingUp -> AwaitingReassignmentConfirmation [label="tag already assigned elsewhere"];
+ *   LookingUp -> SettingTarget [label="not assigned / idempotent"];
+ *   AwaitingReassignmentConfirmation -> ClearingPrevious [label="user confirms"];
+ *   ClearingPrevious -> SettingTarget;
+ *   SettingTarget -> WritingPayload [label="tag payload is writable"];
+ *   SettingTarget -> RollingBackPrevious [label="server update failed"];
+ *   WritingPayload -> None [label="done"];
+ *   SettingTarget -> None [label="done, mapping-only"];
+ * }
+ * @enddot
+ */
 enum class TagAssignmentStage : std::uint8_t {
   None,
   SelectingSpool,
@@ -220,23 +269,40 @@ enum class TagAssignmentStage : std::uint8_t {
   // Transitional states used only by legacy import/removal code paths. The
   // semantic AssignTag path never persists a local UID mapping.
 };
+/// @brief In-flight tag-to-spool assignment being tracked through TagAssignmentStage.
 struct PendingTagAssignment {
-  TagAssignmentStage stage = TagAssignmentStage::None;
-  std::uint32_t requestId = 0;
-  rtos::SpoolId spoolId = 0;
-  models::TagIdentity identity{};
-  rtos::SpoolId previousSpoolId = 0;
-  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};
-  std::uint8_t uidLength = 0;
-  bool writePayload = false;
-  bool tagRemoved = false;
+  TagAssignmentStage stage = TagAssignmentStage::None;  ///< Current stage.
+  std::uint32_t requestId = 0;         ///< Correlation id for the in-flight assignment.
+  rtos::SpoolId spoolId = 0;           ///< Target spool being assigned.
+  models::TagIdentity identity{};      ///< Canonical identity of the tag being assigned.
+  rtos::SpoolId previousSpoolId = 0;   ///< Spool the tag was previously assigned to, if reassigning.
+  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};  ///< Raw UID of the physical tag, for payload writes.
+  std::uint8_t uidLength = 0;          ///< Number of valid bytes in #uid.
+  bool writePayload = false;           ///< Whether the tag's physical payload also needs writing.
+  bool tagRemoved = false;             ///< Whether the tag was removed from the reader mid-operation.
 };
-PendingTagAssignment pendingTagAssignment{};
-bool pendingServerReassignmentConfirmation = false;
-models::TagIdentity resolvedTagIdentity{};
-rtos::SpoolId resolvedTagSpoolId = 0;
-bool pendingUnlinkConfirmation = false;
-bool pendingClearStagingConfirmation = false;
+PendingTagAssignment pendingTagAssignment{};  ///< Active tag-assignment state.
+bool pendingServerReassignmentConfirmation = false;  ///< Whether a reassignment confirmation dialog is currently shown.
+models::TagIdentity resolvedTagIdentity{};  ///< Canonical identity resolved for the currently present tag.
+rtos::SpoolId resolvedTagSpoolId = 0;       ///< Spool id resolved for the currently present tag.
+bool pendingUnlinkConfirmation = false;     ///< Whether an unlink-confirmation dialog is currently shown.
+bool pendingClearStagingConfirmation = false;  ///< Whether a clear-staging-confirmation dialog is currently shown.
+/**
+ * @brief State machine for "remove the currently present tag's spool
+ *        assignment" (RemoveTagAssignment), and shared by legacy code paths.
+ *
+ * @dot
+ * digraph TagRemovalStage {
+ *   rankdir=LR;
+ *   None -> LookingUp;
+ *   LookingUp -> AwaitingConfirmation [label="assignment found"];
+ *   AwaitingConfirmation -> ClearingServerAssignment [label="user confirms"];
+ *   ClearingServerAssignment -> ClearingPayload [label="tag payload is erasable"];
+ *   ClearingServerAssignment -> None [label="done, mapping-only"];
+ *   ClearingPayload -> None [label="done"];
+ * }
+ * @enddot
+ */
 enum class TagRemovalStage : std::uint8_t {
   None,
   LookingUp,
@@ -246,34 +312,37 @@ enum class TagRemovalStage : std::uint8_t {
   // RemoveTagAssignment workflow.
   ClearingPayload,
 };
+/// @brief In-flight tag-assignment removal being tracked through TagRemovalStage.
 struct PendingTagRemoval {
-  TagRemovalStage stage = TagRemovalStage::None;
-  std::uint32_t requestId = 0;
-  rtos::SpoolId spoolId = 0;
-  models::TagIdentity identity{};
-  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};
-  std::uint8_t uidLength = 0;
-  bool clearPayload = false;
-  bool tagRemoved = false;
+  TagRemovalStage stage = TagRemovalStage::None;  ///< Current stage.
+  std::uint32_t requestId = 0;      ///< Correlation id for the in-flight removal.
+  rtos::SpoolId spoolId = 0;        ///< Spool the tag was assigned to.
+  models::TagIdentity identity{};   ///< Canonical identity of the tag being unassigned.
+  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};  ///< Raw UID of the physical tag, for payload erasure.
+  std::uint8_t uidLength = 0;       ///< Number of valid bytes in #uid.
+  bool clearPayload = false;        ///< Whether the tag's physical payload also needs erasing.
+  bool tagRemoved = false;          ///< Whether the tag was removed from the reader mid-operation.
 };
-PendingTagRemoval pendingTagRemoval{};
+PendingTagRemoval pendingTagRemoval{};  ///< Active tag-removal state.
+/// @brief Tracks an in-flight check of whether a tag's own payload agrees with the server assignment.
 struct PendingNativeConsistencyCheck {
-  bool active = false;
-  std::uint32_t requestId = 0;
-  rtos::SpoolId payloadSpoolId = 0;
-  models::TagIdentity identity{};
-  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};
-  std::uint8_t uidLength = 0;
+  bool active = false;             ///< Whether a check is currently in flight.
+  std::uint32_t requestId = 0;      ///< Correlation id for the in-flight lookup.
+  rtos::SpoolId payloadSpoolId = 0;  ///< Spool id encoded on the tag's own payload.
+  models::TagIdentity identity{};   ///< Canonical identity of the tag being checked.
+  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};  ///< Raw UID of the physical tag.
+  std::uint8_t uidLength = 0;       ///< Number of valid bytes in #uid.
 };
-PendingNativeConsistencyCheck pendingNativeConsistency{};
+PendingNativeConsistencyCheck pendingNativeConsistency{};  ///< Active native-consistency-check state.
+/// @brief Tracks an in-flight generic tag-identity server lookup.
 struct PendingTagResolution {
-  bool active = false;
-  std::uint32_t requestId = 0;
-  models::TagIdentity identity{};
-  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};
-  std::uint8_t uidLength = 0;
+  bool active = false;             ///< Whether a lookup is currently in flight.
+  std::uint32_t requestId = 0;      ///< Correlation id for the in-flight lookup.
+  models::TagIdentity identity{};   ///< Canonical identity being looked up.
+  std::array<std::uint8_t, config::kNfcMaxUidLength> uid{};  ///< Raw UID of the physical tag.
+  std::uint8_t uidLength = 0;       ///< Number of valid bytes in #uid.
 };
-PendingTagResolution pendingTagResolution{};
+PendingTagResolution pendingTagResolution{};  ///< Active tag-resolution state.
 
 // Phase 8.5 AMS-Zuordnung: assigns the staged Spoolman spule to a printer's
 // AMS slot. AppTask does not retain resolved spool data after staging (see
@@ -285,6 +354,21 @@ PendingTagResolution pendingTagResolution{};
 // from the spool response's embedded filament object -- material/colorHex
 // are captured in PendingSlotAssignment across that step since they're
 // still needed once it completes.
+/**
+ * @brief State machine for assigning the staged Spoolman spool to a
+ *        printer's AMS slot.
+ *
+ * @dot
+ * digraph SlotAssignmentStage {
+ *   rankdir=LR;
+ *   None -> SelectingSpool;
+ *   SelectingSpool -> LoadingSpool;
+ *   LoadingSpool -> LoadingFilament [label="LoadSpool response"];
+ *   LoadingFilament -> WritingSlot [label="LoadFilament response (or failure)"];
+ *   WritingSlot -> None [label="printer confirms (BambuTask) or fails"];
+ * }
+ * @enddot
+ */
 enum class SlotAssignmentStage : std::uint8_t {
   None,
   SelectingSpool,
@@ -292,37 +376,56 @@ enum class SlotAssignmentStage : std::uint8_t {
   LoadingFilament,
   WritingSlot,
 };
+/// @brief In-flight AMS slot assignment being tracked through SlotAssignmentStage.
 struct PendingSlotAssignment {
-  SlotAssignmentStage stage = SlotAssignmentStage::None;
-  std::uint32_t requestId = 0;
-  rtos::PrinterId printerId = 0;
-  std::uint8_t amsId = 0;
-  std::uint8_t trayId = 0;
-  rtos::SpoolId spoolId = 0;
+  SlotAssignmentStage stage = SlotAssignmentStage::None;  ///< Current stage.
+  std::uint32_t requestId = 0;   ///< Correlation id for the in-flight assignment.
+  rtos::PrinterId printerId = 0;  ///< Target printer.
+  std::uint8_t amsId = 0;        ///< Target AMS index.
+  std::uint8_t trayId = 0;       ///< Target tray index.
+  rtos::SpoolId spoolId = 0;     ///< Spool being assigned.
   // Captured from the LoadingSpool response, needed again once
   // LoadingFilament completes.
-  char trayType[16]{};
-  char trayColorHex[9]{};
+  char trayType[16]{};       ///< Material resolved from the spool, sent to the printer.
+  char trayColorHex[9]{};    ///< Color resolved from the spool, sent to the printer.
   // Set when the resolved filament has no usable bambu_temp_min/
   // bambu_temp_max extra fields (or the LoadFilament fetch itself failed),
   // so the completion dialog can tell the user the printer only received
   // material/color, not a temperature range.
-  bool tempFieldsMissing = false;
+  bool tempFieldsMissing = false;  ///< Whether the temperature range could not be resolved.
 };
-PendingSlotAssignment pendingSlotAssignment{};
+PendingSlotAssignment pendingSlotAssignment{};  ///< Active AMS slot-assignment state.
 
+/// @brief One legacy NFC UID-mapping file's load progress and content, during the one-time migration import.
 struct LegacyMappingFile {
-  const char* path = nullptr;
-  std::uint32_t loadRequestId = 0;
-  bool loadFinished = false;
-  bool exists = false;
-  bool loadFailed = false;
-  bool migrationFailed = false;
+  const char* path = nullptr;       ///< Absolute path of the mapping file.
+  std::uint32_t loadRequestId = 0;   ///< Fixed correlation id for this file's storage load.
+  bool loadFinished = false;         ///< Whether the load request has completed (success or failure).
+  bool exists = false;               ///< Whether the file exists on the SD card.
+  bool loadFailed = false;           ///< Whether loading/parsing the file failed.
+  bool migrationFailed = false;      ///< Whether migrating any entry from this file failed.
   std::array<rtos::LegacyNfcMappingEntry,
-             rtos::kMaximumLegacyNfcMappings> mappings{};
-  std::uint8_t count = 0;
+             rtos::kMaximumLegacyNfcMappings> mappings{};  ///< Loaded UID-to-spool entries.
+  std::uint8_t count = 0;            ///< Number of valid entries in #mappings.
 };
 
+/**
+ * @brief One-time state machine migrating legacy NFC UID-mapping files
+ *        into Spoolman tag-identity fields, run once at boot.
+ *
+ * @dot
+ * digraph LegacyMigrationStage {
+ *   rankdir=LR;
+ *   Waiting -> LookingUp     [label="Spoolman ready, files loaded"];
+ *   LookingUp -> LoadingTarget [label="entry maps to a known spool"];
+ *   LoadingTarget -> SettingTarget;
+ *   SettingTarget -> LookingUp [label="next entry"];
+ *   LookingUp -> DeletingFile [label="all entries in this file processed"];
+ *   DeletingFile -> LookingUp [label="next file"];
+ *   DeletingFile -> Complete  [label="last file processed"];
+ * }
+ * @enddot
+ */
 enum class LegacyMigrationStage : std::uint8_t {
   Waiting,
   LookingUp,
@@ -336,14 +439,17 @@ std::array<LegacyMappingFile, 3> legacyMappingFiles{{
     {"/mappings/bambu-tags.json", kBambuMappingLoadRequestId},
     {"/mappings/nfc-spools.json", kNfcMappingLoadRequestId},
     {"/mappings/open-tags.json", kOpenMappingLoadRequestId},
-}};
-LegacyMigrationStage legacyMigrationStage = LegacyMigrationStage::Waiting;
-std::uint8_t legacyMigrationFileIndex = 0;
-std::uint8_t legacyMigrationEntryIndex = 0;
-models::TagIdentity legacyMigrationIdentity{};
-std::uint16_t legacyMigrationMigrated = 0;
-std::uint16_t legacyMigrationConflicts = 0;
+}};  ///< The 3 legacy mapping files migrated at boot.
+LegacyMigrationStage legacyMigrationStage = LegacyMigrationStage::Waiting;  ///< Current migration stage.
+std::uint8_t legacyMigrationFileIndex = 0;    ///< Index into #legacyMappingFiles currently being processed.
+std::uint8_t legacyMigrationEntryIndex = 0;   ///< Index into the current file's entries currently being processed.
+models::TagIdentity legacyMigrationIdentity{};  ///< Canonical identity of the entry currently being migrated.
+std::uint16_t legacyMigrationMigrated = 0;    ///< Count of successfully migrated entries, for the completion summary.
+std::uint16_t legacyMigrationConflicts = 0;   ///< Count of entries that conflicted with an existing assignment, for the completion summary.
 
+/// @brief Display name for a tag technology, used in tag-detail UI text.
+/// @param technology Technology to describe.
+/// @return Static, NUL-terminated name.
 const char* tagTechnologyName(models::TagTechnology technology) {
   switch (technology) {
     case models::TagTechnology::Ntag213: return "NTAG213";
@@ -356,6 +462,10 @@ const char* tagTechnologyName(models::TagTechnology technology) {
   }
 }
 
+/// @brief Formats a tag's UID as colon-separated uppercase hex.
+/// @param tag Tag whose UID to format.
+/// @param output Destination buffer.
+/// @param capacity Size of `output` in bytes.
 void formatTagUid(const models::TagReadResult& tag, char* output,
                   std::size_t capacity) {
   if (capacity == 0) return;
@@ -371,6 +481,9 @@ void formatTagUid(const models::TagReadResult& tag, char* output,
   }
 }
 
+/// @brief The spool id resolved for a tag, if it matches the last online resolution.
+/// @param tag Tag to check.
+/// @return Resolved spool id, or 0 if `tag`'s identity doesn't match #resolvedTagIdentity.
 rtos::SpoolId mappedNfcSpool(const models::TagReadResult& tag) {
   if (resolvedTagSpoolId != 0 &&
       tag.identity.source == resolvedTagIdentity.source &&
@@ -379,6 +492,9 @@ rtos::SpoolId mappedNfcSpool(const models::TagReadResult& tag) {
   return 0;
 }
 
+/// @brief Whether a tag's UID matches the one being tracked by #pendingTagAssignment.
+/// @param tag Tag to check.
+/// @return true if the UIDs match.
 bool assignmentTagMatches(const models::TagReadResult& tag) {
   return pendingTagAssignment.uidLength > 0 &&
          tag.uidLength == pendingTagAssignment.uidLength &&
@@ -386,6 +502,9 @@ bool assignmentTagMatches(const models::TagReadResult& tag) {
                      pendingTagAssignment.uidLength) == 0;
 }
 
+/// @brief Whether a tag's UID matches the one being tracked by #pendingTagRemoval.
+/// @param tag Tag to check.
+/// @return true if the UIDs match.
 bool removalTagMatches(const models::TagReadResult& tag) {
   return pendingTagRemoval.uidLength > 0 &&
          tag.uidLength == pendingTagRemoval.uidLength &&
@@ -393,6 +512,8 @@ bool removalTagMatches(const models::TagReadResult& tag) {
                      pendingTagRemoval.uidLength) == 0;
 }
 
+/// @brief UI capability bitmask (UI_TAG_CAP_*) for the currently present tag.
+/// @return 0 if no tag is present or it cannot be associated by UID; otherwise LINK|UNLINK.
 std::int32_t stagingTagCapabilities() {
   if (!tagPresent || !currentTag.capabilities.canAssociateByUid) return 0;
   // The authoritative assignment state is resolved online by Spoolman when
@@ -400,33 +521,74 @@ std::int32_t stagingTagCapabilities() {
   return rtos::UI_TAG_CAP_LINK | rtos::UI_TAG_CAP_UNLINK;
 }
 
+/// @brief Fills in a UiCommand's tag-capability/spool fields for the currently present tag.
+/// @param command Command to update in place.
 void applyTagUiState(rtos::UiCommand& command) {
   command.value = stagingTagCapabilities();
   command.spoolId = tagPresent ? mappedNfcSpool(currentTag) : 0;
 }
 
+/// @brief Sends a UiCommand to UiTask.
+/// @param ctx Owning RTOS context.
+/// @param command Command to send.
+/// @param failureMessage Log message to emit if the queue is full.
+/// @return false if the UI command queue was full.
 bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
                    const char* failureMessage);
+/// @brief Requests loading a spool into the staging area via SpoolmanTask.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param spoolId Spool to load.
+/// @return false if the Spoolman command queue was full.
 bool requestStagingSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
                          rtos::SpoolId spoolId);
+/// @brief Requests loading a filament's details via SpoolmanTask.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param filamentId Filament to load.
+/// @return false if the Spoolman command queue was full.
 bool requestFilamentDetails(rtos::RtosContext& ctx, std::uint32_t requestId,
                             std::uint32_t filamentId);
+/// @brief Sends the pending AMS slot assignment's AssignTray command to BambuTask.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param nozzleTempMinC Minimum nozzle temperature to send.
+/// @param nozzleTempMaxC Maximum nozzle temperature to send.
+/// @return false if the Bambu command queue was full.
 bool sendPendingSlotAssignTray(rtos::RtosContext& ctx, std::uint32_t requestId,
                                std::uint16_t nozzleTempMinC,
                                std::uint16_t nozzleTempMaxC);
+/// @brief Sends an UpdateStaging UiCommand reflecting a resolved staged spool.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param spool Resolved spool to display.
+/// @param emptyWeightGrams Resolved empty-spool weight.
+/// @param kFactorValid Whether `kFactor` is valid.
+/// @param kFactor Resolved flow-dynamics K-factor.
 void sendStagingUpdate(rtos::RtosContext& ctx, std::uint32_t requestId,
                        const models::SpoolmanSpool& spool,
                        float emptyWeightGrams, bool kFactorValid,
                        float kFactor);
+/// @brief Result of resolveTraySpoolDetails(): a tray's cached live weight/K-factor, if loaded.
 struct TraySpoolDetailsSnapshot {
-  bool loaded = false;
-  float remainingWeightGrams = 0.0F;
-  bool kFactorValid = false;
-  float kFactor = 0.0F;
+  bool loaded = false;                ///< Whether the entry has finished loading.
+  float remainingWeightGrams = 0.0F;  ///< Resolved remaining weight, valid if #loaded.
+  bool kFactorValid = false;          ///< Whether #kFactor is valid.
+  float kFactor = 0.0F;               ///< Resolved flow-dynamics K-factor, only valid if #kFactorValid.
 };
+/// @brief Looks up (or starts loading) a tray's cached live Spoolman weight/K-factor.
+/// @param ctx Owning RTOS context.
+/// @param spoolId Spool to resolve.
+/// @return The current snapshot; `loaded` is false while the fetch is still in progress.
 TraySpoolDetailsSnapshot resolveTraySpoolDetails(rtos::RtosContext& ctx,
                                                  rtos::SpoolId spoolId);
 
+/// @brief Shows the TagActionSelect screen for a native (non-legacy) tag, and
+///        opportunistically loads it into staging if it resolves to a known spool.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param authoritativeSpoolId Spool id resolved for the tag, or 0 if unassigned.
+/// @param assignmentText Status text describing the current assignment.
 void showNativeTagAction(rtos::RtosContext& ctx, std::uint32_t requestId,
                          rtos::SpoolId authoritativeSpoolId,
                          const char* assignmentText) {
@@ -468,18 +630,29 @@ void showNativeTagAction(rtos::RtosContext& ctx, std::uint32_t requestId,
   }
 }
 
+/// @brief Finds the legacy mapping file whose load request matches a requestId.
+/// @param requestId Correlation id to match.
+/// @return Pointer to the matching file, or nullptr.
 LegacyMappingFile* legacyFileForLoadRequest(std::uint32_t requestId) {
   for (auto& file : legacyMappingFiles)
     if (file.loadRequestId == requestId) return &file;
   return nullptr;
 }
 
+/// @brief Whether every legacy mapping file's load request has completed.
+/// @return true if all finished.
 bool allLegacyMappingLoadsFinished() {
   for (const auto& file : legacyMappingFiles)
     if (!file.loadFinished) return false;
   return true;
 }
 
+/// @brief Sends a SpoolmanCommand for the legacy-migration flow, using #legacyMigrationIdentity.
+/// @param ctx Owning RTOS context.
+/// @param type Command type.
+/// @param requestId Correlation id.
+/// @param spoolId Target spool, if applicable.
+/// @return false if the Spoolman command queue was full.
 bool sendLegacySpoolmanCommand(rtos::RtosContext& ctx,
                                rtos::SpoolmanCommandType type,
                                std::uint32_t requestId,
@@ -493,8 +666,14 @@ bool sendLegacySpoolmanCommand(rtos::RtosContext& ctx,
                     pdMS_TO_TICKS(1000)) == pdPASS;
 }
 
+/// @brief Advances the legacy-migration state machine to its next step.
+/// @param ctx Owning RTOS context.
 void advanceLegacyMigration(rtos::RtosContext& ctx);
 
+/// @brief Records the outcome of migrating one legacy mapping entry and advances to the next.
+/// @param ctx Owning RTOS context.
+/// @param migrated Whether the entry was successfully migrated.
+/// @param reason Log-only reason text if not migrated, or null.
 void finishLegacyMigrationEntry(rtos::RtosContext& ctx, bool migrated,
                                 const char* reason) {
   auto& file = legacyMappingFiles[legacyMigrationFileIndex];
@@ -573,6 +752,9 @@ void advanceLegacyMigration(rtos::RtosContext& ctx) {
           static_cast<unsigned>(legacyMigrationConflicts));
 }
 
+/// @brief Starts the one-time legacy-migration state machine once its
+///        preconditions (files loaded, Spoolman ready) are met.
+/// @param ctx Owning RTOS context.
 void tryStartLegacyMigration(rtos::RtosContext& ctx) {
   if (legacyMigrationStage != LegacyMigrationStage::Waiting ||
       !allLegacyMappingLoadsFinished())
@@ -591,31 +773,37 @@ void tryStartLegacyMigration(rtos::RtosContext& ctx) {
   advanceLegacyMigration(ctx);
 }
 
+/// @brief Converts the current raw scale reading to grams using the active calibration.
+/// @return Weight in grams, or 0.0F if uncalibrated.
 float scaleWeightGrams() {
   if (!scaleCalibrated || scaleFactorCountsPerGram == 0.0F) return 0.0F;
   return static_cast<float>(scaleCounts - scaleOffsetCounts) /
          scaleFactorCountsPerGram;
 }
 
+/// @brief Editable text-field draft backing the Spoolman settings screen.
 struct SpoolmanDraft {
-  char name[32] = "Werkstatt";
-  char protocol[8] = "http";
-  char host[64] = "spoolman.local";
-  char port[8] = "7912";
-  char basePath[32] = "/api/v1";
-  char timeoutMs[8] = "5000";
+  char name[32] = "Werkstatt";           ///< Display name field.
+  char protocol[8] = "http";             ///< "http" or "https" field.
+  char host[64] = "spoolman.local";      ///< Hostname/IP field.
+  char port[8] = "7912";                 ///< Port field, as text.
+  char basePath[32] = "/api/v1";         ///< API base path field.
+  char timeoutMs[8] = "5000";            ///< Request timeout field, as text.
 };
 
-SpoolmanDraft spoolmanDraft{};
+SpoolmanDraft spoolmanDraft{};  ///< Active Spoolman-settings edit draft.
+/// @brief Editable text-field draft backing the printer add/edit screen.
 struct PrinterDraft {
-  rtos::PrinterId id = 1;
-  char name[32] = "P1S Werkstatt";
-  char host[64] = "192.168.1.50";
-  char serial[32] = "01P123456789";
-  char accessCode[16] = "12345678";
+  rtos::PrinterId id = 1;                ///< Printer id (0 for a new, not-yet-persisted printer).
+  char name[32] = "P1S Werkstatt";       ///< Display name field.
+  char host[64] = "192.168.1.50";        ///< Host/IP field.
+  char serial[32] = "01P123456789";      ///< Serial number field.
+  char accessCode[16] = "12345678";      ///< LAN access code field.
 };
-PrinterDraft printerDraft{};
+PrinterDraft printerDraft{};  ///< Active printer-settings edit draft.
 
+/// @brief Copies the printer draft's text fields into a BambuPrinterConfig.
+/// @param configOut Destination config to fill in.
 void printerConfigFromDraft(models::BambuPrinterConfig& configOut) {
   configOut.printerId = printerDraft.id;
   std::snprintf(configOut.name, sizeof(configOut.name), "%s", printerDraft.name);
@@ -626,6 +814,8 @@ void printerConfigFromDraft(models::BambuPrinterConfig& configOut) {
                 printerDraft.accessCode);
 }
 
+/// @brief Copies a BambuPrinterConfig's fields into the printer draft's text fields.
+/// @param config Source config.
 void applyPrinterConfigToDraft(const models::BambuPrinterConfig& config) {
   printerDraft.id = config.printerId;
   std::snprintf(printerDraft.name, sizeof(printerDraft.name), "%s", config.name);
@@ -636,8 +826,10 @@ void applyPrinterConfigToDraft(const models::BambuPrinterConfig& config) {
                 config.accessCode);
 }
 
-// Loads an existing printer's persisted configuration into the edit draft,
-// or resets the draft to a blank template for a not-yet-persisted id (Add).
+/// @brief Loads an existing printer's persisted configuration into the edit
+///        draft, or resets the draft to a blank template for a
+///        not-yet-persisted id (Add).
+/// @param id Printer id to load.
 void loadPrinterDraft(rtos::PrinterId id) {
   const models::BambuPrinterConfig* existing =
       models::findPrinterConfig(printerConfigs, id);
@@ -652,8 +844,8 @@ void loadPrinterDraft(rtos::PrinterId id) {
   printerDraft.accessCode[0] = '\0';
 }
 
-// Smallest printerId (1..kMaximumPrinters) not already in printerConfigs, or
-// kInvalidPrinterId if the roster is full.
+/// @brief Smallest printerId (1..kMaximumPrinters) not already in #printerConfigs.
+/// @return The allocated id, or models::kInvalidPrinterId if the roster is full.
 rtos::PrinterId allocatePrinterId() {
   for (rtos::PrinterId candidate = 1; candidate <= models::kMaximumPrinters;
        ++candidate) {
@@ -663,6 +855,8 @@ rtos::PrinterId allocatePrinterId() {
   return models::kInvalidPrinterId;
 }
 
+/// @brief Marks one printer as the default in #printerConfigs, clearing the flag on all others.
+/// @param id Printer to mark as default.
 void setDefaultPrinterConfig(rtos::PrinterId id) {
   const std::size_t count = printerConfigs.printerCount < models::kMaximumPrinters
                                 ? printerConfigs.printerCount
@@ -673,6 +867,8 @@ void setDefaultPrinterConfig(rtos::PrinterId id) {
   printerConfigs.defaultPrinterId = id;
 }
 
+/// @brief Marks one printer as selected in #printerConfigs, clearing the flag on all others.
+/// @param id Printer to mark as selected.
 void setSelectedPrinterConfig(rtos::PrinterId id) {
   const std::size_t count = printerConfigs.printerCount < models::kMaximumPrinters
                                 ? printerConfigs.printerCount
@@ -683,11 +879,12 @@ void setSelectedPrinterConfig(rtos::PrinterId id) {
   printerConfigs.selectedPrinterId = id;
 }
 
-// Finds or inserts a printerConfigs entry. A freshly inserted entry is
-// enabled by default and becomes the default printer if it is the first one
-// (Spoolman-config validity requires exactly one default once printers
-// exist, see models::isValidBambuConfigCollection). Returns nullptr if the
-// roster is already at models::kMaximumPrinters.
+/// @brief Finds or inserts a #printerConfigs entry. A freshly inserted entry
+///        is enabled by default and becomes the default printer if it is
+///        the first one (Spoolman-config validity requires exactly one
+///        default once printers exist, see models::isValidBambuConfigCollection).
+/// @param id Printer id to find or insert.
+/// @return Pointer to the entry, or nullptr if the roster is already at models::kMaximumPrinters.
 models::BambuPrinterConfig* upsertPrinterConfig(rtos::PrinterId id) {
   models::BambuPrinterConfig* existing =
       models::findPrinterConfig(printerConfigs, id);
@@ -704,10 +901,12 @@ models::BambuPrinterConfig* upsertPrinterConfig(rtos::PrinterId id) {
   return &entry;
 }
 
-// Removes a printer from printerConfigs, keeping the array compact and the
-// default-printer invariant intact (promotes the first remaining printer if
-// the removed one was the default). A cleared selection is not replaced --
-// Phase 8.2 treats "selected" as optional.
+/// @brief Removes a printer from #printerConfigs, keeping the array compact
+///        and the default-printer invariant intact (promotes the first
+///        remaining printer if the removed one was the default). A cleared
+///        selection is not replaced -- Phase 8.2 treats "selected" as optional.
+/// @param id Printer to remove.
+/// @return false if `id` was not found.
 bool removePrinterConfig(rtos::PrinterId id) {
   const std::size_t count = printerConfigs.printerCount < models::kMaximumPrinters
                                 ? printerConfigs.printerCount
@@ -735,10 +934,15 @@ bool removePrinterConfig(rtos::PrinterId id) {
   return true;
 }
 
-// Serializes printerConfigs to /config/bambu.json and sends it to
-// StorageTask. `showResult` controls whether the eventual write completion
-// shows a Success dialog (deliberate edit-save) or stays silent unless it
-// fails (quick list toggles: enable/default/active/delete).
+/// @brief Serializes #printerConfigs to /config/bambu.json and sends it to StorageTask.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param showResult Whether the eventual write completion should show a
+///        Success dialog (deliberate edit-save) or stay silent unless it
+///        fails (quick list toggles: enable/default/active/delete).
+/// @param errorOut Destination buffer for an error message on failure.
+/// @param errorCapacity Size of `errorOut` in bytes.
+/// @return false if serialization failed or the storage queue was full.
 bool persistPrinterConfigs(rtos::RtosContext& ctx, std::uint32_t requestId,
                            bool showResult, char* errorOut,
                            std::size_t errorCapacity) {
@@ -787,6 +991,8 @@ bool persistPrinterConfigs(rtos::RtosContext& ctx, std::uint32_t requestId,
   return true;
 }
 
+/// @brief Requests loading /config/bambu.json from StorageTask.
+/// @param ctx Owning RTOS context.
 void requestBambuConfiguration(rtos::RtosContext& ctx) {
   rtos::StorageCommand command{};
   command.type = rtos::StorageCommandType::LoadJson;
@@ -799,6 +1005,8 @@ void requestBambuConfiguration(rtos::RtosContext& ctx) {
             "Command enqueue failed queue=storage op=load_bambu_config");
 }
 
+/// @brief Requests loading /mappings/printer-slots.json from StorageTask.
+/// @param ctx Owning RTOS context.
 void requestTraySpoolCache(rtos::RtosContext& ctx) {
   rtos::StorageCommand command{};
   command.type = rtos::StorageCommandType::LoadJson;
@@ -812,6 +1020,8 @@ void requestTraySpoolCache(rtos::RtosContext& ctx) {
             "Command enqueue failed queue=storage op=load_tray_spool_cache");
 }
 
+/// @brief Serializes #traySpoolCache to /mappings/printer-slots.json and sends it to StorageTask.
+/// @param ctx Owning RTOS context.
 // Fire-and-forget: no dialog, no pending-requestId tracking -- a failed save
 // just means the association isn't durable yet, retried on the next
 // successful assignment. requestId 0 is safe here (nothing in the event
@@ -877,11 +1087,16 @@ void persistTraySpoolCache(rtos::RtosContext& ctx) {
             "Command enqueue failed queue=storage op=save_tray_spool_cache");
 }
 
-// Returns the cached Spoolman spool id for (printerId, amsId, trayId) only
-// if the printer's *current* material/colorHex still match what was true at
-// assignment time -- otherwise the tray was physically changed outside this
-// app since, and the association can no longer be trusted (0 = unknown,
-// shown as "?" by the UI).
+/// @brief Looks up the cached Spoolman spool id for a slot, only if the
+///        printer's *current* material/colorHex still match what was true
+///        at assignment time -- otherwise the tray was physically changed
+///        outside this app since, and the association can no longer be trusted.
+/// @param printerId Printer to look up.
+/// @param amsId AMS index.
+/// @param trayId Tray index within `amsId`.
+/// @param material Printer's current reported material for this slot.
+/// @param colorHex Printer's current reported color for this slot.
+/// @return The cached spool id, or 0 if unknown/stale.
 rtos::SpoolId resolveTraySpoolCacheSpoolId(rtos::PrinterId printerId,
                                            std::uint8_t amsId,
                                            std::uint8_t trayId,
@@ -897,8 +1112,10 @@ rtos::SpoolId resolveTraySpoolCacheSpoolId(rtos::PrinterId printerId,
   return entry->spoolId;
 }
 
-// Pushes one printerConfigs entry to the UI's printer list/header rendering
-// (UiBridge.cpp printerEntries), which used to be a separate, unfed mock.
+/// @brief Pushes one #printerConfigs entry (plus its runtime connection
+///        state) to the UI's printer list/header rendering via UpdatePrinterList.
+/// @param ctx Owning RTOS context.
+/// @param printerId Printer to sync; a no-op if not found in #printerConfigs.
 // value = 120 + bitmask(enabled=1, isDefault=2, isActive=4); see the
 // matching UpdatePrinterList handler in UiBridge.cpp.
 void syncPrinterEntryToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
@@ -926,14 +1143,14 @@ void syncPrinterEntryToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
   sendUiCommand(ctx, command, "AppTask: printer list sync overflow");
 }
 
-// Pushes real AMS/tray occupancy (from printerCollection, populated by
-// BambuTask's parsed MQTT reports) to the UI's AMS overview/tray rendering,
-// which used to read an unfed static mock (2 fake AMS units always shown,
-// fabricated per-tray material/color/weight). One UpdateAmsOverview command
-// per present AMS unit (trayId=0xFF marks it as a data sync, not a
-// navigation trigger; value = 200 + present(bit0) + occupiedTrayCount<<1),
-// plus one UpdateTrayDetails command per tray (value = 300 + occupied,
-// title = material, text = colorHex).
+/// @brief Pushes real AMS/tray occupancy (from #printerCollection, populated
+///        by BambuTask's parsed MQTT reports) to the UI's AMS overview/tray rendering.
+/// @param ctx Owning RTOS context.
+/// @param printerId Printer to sync; a no-op if not found in #printerCollection.
+// One UpdateAmsOverview command per present AMS unit (trayId=0xFF marks it
+// as a data sync, not a navigation trigger; value = 200 +
+// present(bit0) + occupiedTrayCount<<1), plus one UpdateTrayDetails command
+// per tray (value = 300 + occupied, title = material, text = colorHex).
 void syncAmsToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
   const models::PrinterState* printer =
       models::findPrinter(printerCollection, printerId);
@@ -1030,6 +1247,8 @@ void syncAmsToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
   sendUiCommand(ctx, external, "AppTask: external tray sync overflow");
 }
 
+/// @brief Calls syncPrinterEntryToUi() for every printer in #printerConfigs.
+/// @param ctx Owning RTOS context.
 void syncAllPrinterEntriesToUi(rtos::RtosContext& ctx) {
   const std::size_t count = printerConfigs.printerCount < models::kMaximumPrinters
                                 ? printerConfigs.printerCount
@@ -1038,6 +1257,9 @@ void syncAllPrinterEntriesToUi(rtos::RtosContext& ctx) {
     syncPrinterEntryToUi(ctx, printerConfigs.printers[index].printerId);
 }
 
+/// @brief Maps a UI field index to its #printerDraft text buffer.
+/// @param field UI-defined field index (1-4).
+/// @return Pointer to the corresponding buffer, or nullptr if unrecognized.
 char* printerField(std::int32_t field) {
   switch (field) {
     case 1: return printerDraft.name;
@@ -1048,6 +1270,9 @@ char* printerField(std::int32_t field) {
   }
 }
 
+/// @brief Buffer capacity for a #printerDraft field, matching printerField().
+/// @param field UI-defined field index (1-4).
+/// @return Buffer size in bytes, or 0 if unrecognized.
 std::size_t printerFieldCapacity(std::int32_t field) {
   switch (field) {
     case 1: return sizeof(printerDraft.name);
@@ -1058,6 +1283,8 @@ std::size_t printerFieldCapacity(std::int32_t field) {
   }
 }
 
+/// @brief Validates #printerDraft's fields.
+/// @return nullptr if valid, otherwise a user-facing German error message.
 const char* validatePrinterDraft() {
   if (printerDraft.name[0] == '\0') return "Fehler: Anzeigename fehlt";
   if (printerDraft.host[0] == '\0' || std::strchr(printerDraft.host, ' ') != nullptr)
@@ -1068,6 +1295,9 @@ const char* validatePrinterDraft() {
   return nullptr;
 }
 
+/// @brief Maps a UI field index to its #spoolmanDraft text buffer.
+/// @param field UI-defined field index (1-6).
+/// @return Pointer to the corresponding buffer, or nullptr if unrecognized.
 char* spoolmanField(std::int32_t field) {
   switch (field) {
     case 1:
@@ -1087,6 +1317,9 @@ char* spoolmanField(std::int32_t field) {
   }
 }
 
+/// @brief Buffer capacity for a #spoolmanDraft field, matching spoolmanField().
+/// @param field UI-defined field index (1-6).
+/// @return Buffer size in bytes, or 0 if unrecognized.
 std::size_t spoolmanFieldCapacity(std::int32_t field) {
   switch (field) {
     case 1:
@@ -1106,6 +1339,11 @@ std::size_t spoolmanFieldCapacity(std::int32_t field) {
   }
 }
 
+/// @brief Whether a text field parses as an integer within a range.
+/// @param text Text to parse.
+/// @param minimum Inclusive lower bound.
+/// @param maximum Inclusive upper bound.
+/// @return true if `text` is a valid integer within [minimum, maximum].
 bool validNumber(const char* text, long minimum, long maximum) {
   char* end = nullptr;
   const long value = std::strtol(text, &end, 10);
@@ -1113,6 +1351,8 @@ bool validNumber(const char* text, long minimum, long maximum) {
          value >= minimum && value <= maximum;
 }
 
+/// @brief Validates #spoolmanDraft's fields.
+/// @return nullptr if valid, otherwise a user-facing German error message.
 const char* validateSpoolmanDraft() {
   if (spoolmanDraft.name[0] == '\0') {
     return "Fehler: Verbindungsname fehlt";
@@ -1140,6 +1380,9 @@ const char* validateSpoolmanDraft() {
 bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
                    const char* failureMessage);
 
+/// @brief Builds a validated SpoolmanSettings from #spoolmanDraft.
+/// @param settings Out parameter receiving the built settings.
+/// @return false if the draft's URL parts fail to normalize.
 bool spoolmanSettingsFromDraft(models::SpoolmanSettings& settings) {
   services::SpoolmanUrlParts parts{};
   std::snprintf(parts.protocol, sizeof(parts.protocol), "%s", spoolmanDraft.protocol);
@@ -1153,6 +1396,8 @@ bool spoolmanSettingsFromDraft(models::SpoolmanSettings& settings) {
                                                sizeof(settings.serverUrl));
 }
 
+/// @brief Copies a SpoolmanSettings into #spoolmanDraft's text fields.
+/// @param settings Source settings.
 void applySpoolmanSettingsToDraft(const models::SpoolmanSettings& settings) {
   services::SpoolmanUrlParts parts{};
   if (settings.serverUrl[0] != '\0' &&
@@ -1167,13 +1412,10 @@ void applySpoolmanSettingsToDraft(const models::SpoolmanSettings& settings) {
                 static_cast<unsigned long>(settings.timeoutMs));
 }
 
-// Pushes the current printerDraft field values to the editor UI. Without
-// this, the LVGL editor keeps showing whatever placeholder text it last had
-// (its own local mock draft) instead of the real, just-loaded config, even
-// though AppTask's own printerDraft (and therefore Save/Test) already has
-// the correct values -- confusing and untestable against real hardware.
-// Mirrors EditPrinterField's existing "value = 20 + field" convention, so
-// this reuses the already-working live-edit echo path for the initial load.
+/// @brief Pushes the current #printerDraft field values to the editor UI
+///        (so it reflects the real, just-loaded config instead of a stale
+///        local mock), reusing the EditPrinterField live-edit echo convention.
+/// @param ctx Owning RTOS context.
 void sendPrinterDraftToUi(rtos::RtosContext& ctx) {
   for (std::int32_t field = 1; field <= 4; ++field) {
     rtos::UiCommand command{};
@@ -1185,6 +1427,8 @@ void sendPrinterDraftToUi(rtos::RtosContext& ctx) {
   }
 }
 
+/// @brief Pushes the current #spoolmanDraft field values to the editor UI.
+/// @param ctx Owning RTOS context.
 void sendSpoolmanDraftToUi(rtos::RtosContext& ctx) {
   for (std::int32_t field = 1; field <= 6; ++field) {
     rtos::UiCommand command{};
@@ -1195,6 +1439,8 @@ void sendSpoolmanDraftToUi(rtos::RtosContext& ctx) {
   }
 }
 
+/// @brief Requests loading /config/spoolman.json from StorageTask.
+/// @param ctx Owning RTOS context.
 void requestSpoolmanConfiguration(rtos::RtosContext& ctx) {
   rtos::StorageCommand command{};
   command.type = rtos::StorageCommandType::LoadJson;
@@ -1206,6 +1452,13 @@ void requestSpoolmanConfiguration(rtos::RtosContext& ctx) {
             "Command enqueue failed queue=storage op=load_spoolman_config");
 }
 
+/// @brief Resets the spool picker and starts a Spoolman spool search/load
+///        (LoadSpool if filtering by Id, otherwise SearchSpools).
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param searchText Free-text search query, or a numeric spool id if `filter` is Id.
+/// @param filter Which field to search by.
+/// @return false if Spoolman isn't configured, or (for an Id search) the id is invalid, or the command queue was full.
 bool requestSpoolSearch(rtos::RtosContext& ctx, std::uint32_t requestId,
                         const char* searchText = "",
                         rtos::SpoolmanSearchFilter filter =
@@ -1270,6 +1523,9 @@ bool requestFilamentDetails(rtos::RtosContext& ctx, std::uint32_t requestId,
                     pdMS_TO_TICKS(1000)) == pdPASS;
 }
 
+/// @brief Finds or allocates a #traySpoolDetails cache slot for a spool.
+/// @param spoolId Spool to find/allocate a slot for.
+/// @return Pointer to the entry; evicts slot 0 if the cache is full.
 TraySpoolDetailsEntry* findOrCreateTraySpoolDetails(rtos::SpoolId spoolId) {
   for (auto& entry : traySpoolDetails) {
     if (entry.spoolId == spoolId) return &entry;
@@ -1330,6 +1586,10 @@ bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
   return false;
 }
 
+/// @brief Sends a ScaleCommand to ScaleTask.
+/// @param ctx Owning RTOS context.
+/// @param command Command to send.
+/// @return false if the scale command queue was full.
 bool sendScaleCommand(rtos::RtosContext& ctx,
                       const rtos::ScaleCommand& command) {
   if (xQueueSend(ctx.scaleCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
@@ -1354,6 +1614,10 @@ bool sendScaleCommand(rtos::RtosContext& ctx,
   return true;
 }
 
+/// @brief Sends a NetworkCommand to NetworkTask.
+/// @param ctx Owning RTOS context.
+/// @param command Command to send.
+/// @return false if the network command queue was full.
 bool sendNetworkCommand(rtos::RtosContext& ctx,
                         const rtos::NetworkCommand& command) {
   if (xQueueSend(ctx.networkCommandQueue, &command, pdMS_TO_TICKS(1000)) ==
@@ -1366,6 +1630,10 @@ bool sendNetworkCommand(rtos::RtosContext& ctx,
   return false;
 }
 
+/// @brief Sends a BambuCommand to BambuTask.
+/// @param ctx Owning RTOS context.
+/// @param command Command to send.
+/// @return false if the Bambu command queue was full.
 bool sendBambuCommand(rtos::RtosContext& ctx,
                       const rtos::BambuCommand& command) {
   if (xQueueSend(ctx.bambuCommandQueue, &command, pdMS_TO_TICKS(1000)) ==
@@ -1378,6 +1646,10 @@ bool sendBambuCommand(rtos::RtosContext& ctx,
   return false;
 }
 
+/// @brief Sends an UpdateCommand to UpdateTask.
+/// @param ctx Owning RTOS context.
+/// @param command Command to send.
+/// @return false if the update command queue was full.
 bool sendUpdateCommand(rtos::RtosContext& ctx,
                        const rtos::UpdateCommand& command) {
   if (xQueueSend(ctx.updateCommandQueue, &command, pdMS_TO_TICKS(1000)) ==
@@ -1471,9 +1743,10 @@ void sendStagingUpdate(rtos::RtosContext& ctx, std::uint32_t requestId,
   sendUiCommand(ctx, toast, "AppTask: staging toast overflow");
 }
 
-// Auto-connect every enabled printer so real status/AMS data is available
-// without requiring an explicit user action first (was an open gap through
-// Phase 8.6: bambu.json was loaded but never actually handed to BambuTask).
+/// @brief Sends a Connect command for every enabled printer, so real
+///        status/AMS data is available without requiring an explicit user
+///        action first.
+/// @param ctx Owning RTOS context.
 // Called once bambu.json finishes loading and again once WiFi comes up,
 // since either can happen first at boot; BambuCommand::Connect is
 // idempotent (BambuTask::handleConnect), so calling it twice for the same
@@ -1505,18 +1778,20 @@ void connectAllEnabledPrinters(rtos::RtosContext& ctx) {
   }
 }
 
-// Spoolman auto-connect fix: SpoolmanTask::healthCheck() bails out
-// immediately with "Keine WLAN-Verbindung" if it runs before
-// EVENT_WIFI_CONNECTED is set -- a real, observed race at boot (Storage
-// can finish loading Spoolman settings, triggering the initial
-// ApplyConfiguration-driven health check, before WiFi finishes
-// connecting). Without a retry here that first failed attempt would be
-// the only one ever made, leaving every tag-assignment action disabled
-// for the rest of the session even though Spoolman is genuinely
-// reachable. HealthCheck is naturally idempotent (same as
-// connectAllEnabledPrinters above), so retrying on every later
-// WifiGotIp is safe; the EVENT_SPOOLMAN_READY guard stops retrying once
-// a check has actually succeeded.
+/// @brief Retries a Spoolman health check if none has succeeded yet, working
+///        around a boot-time race where the first attempt can fire before WiFi is up.
+/// @param ctx Owning RTOS context.
+// SpoolmanTask::healthCheck() bails out immediately with "Keine WLAN-
+// Verbindung" if it runs before EVENT_WIFI_CONNECTED is set -- a real,
+// observed race at boot (Storage can finish loading Spoolman settings,
+// triggering the initial ApplyConfiguration-driven health check, before
+// WiFi finishes connecting). Without a retry here that first failed
+// attempt would be the only one ever made, leaving every tag-assignment
+// action disabled for the rest of the session even though Spoolman is
+// genuinely reachable. HealthCheck is naturally idempotent (same as
+// connectAllEnabledPrinters above), so retrying on every later WifiGotIp
+// is safe; the EVENT_SPOOLMAN_READY guard stops retrying once a check has
+// actually succeeded.
 void retrySpoolmanHealthCheckIfNeeded(rtos::RtosContext& ctx) {
   if ((xEventGroupGetBits(ctx.systemEventGroup) & rtos::EVENT_SPOOLMAN_READY) !=
       0) {
@@ -1532,9 +1807,12 @@ void retrySpoolmanHealthCheckIfNeeded(rtos::RtosContext& ctx) {
   xQueueSend(ctx.spoolmanCommandQueue, &spoolman, pdMS_TO_TICKS(1000));
 }
 
-// Looks up printerId in printerCollection, inserting a fresh entry if this
-// is the first time this printer has been seen. Never removes entries, so
-// callers rely on this to keep background printers' state across a switch.
+/// @brief Looks up printerId in #printerCollection, inserting a fresh entry
+///        if this is the first time this printer has been seen. Never
+///        removes entries, so callers rely on this to keep background
+///        printers' state across a switch.
+/// @param printerId Printer to look up.
+/// @return Reference to the (possibly newly created) entry.
 models::PrinterState& printerEntry(rtos::PrinterId printerId) {
   models::PrinterState* existing =
       models::findPrinter(printerCollection, printerId);
@@ -1561,6 +1839,10 @@ models::PrinterState& printerEntry(rtos::PrinterId printerId) {
   return entry;
 }
 
+/// @brief Sends an UpdateWeight UiCommand reflecting the current scale
+///        state, throttled unless the state changed or `requestId` is explicit.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id; 0 for an unsolicited, throttled update.
 void sendScaleUiState(rtos::RtosContext& ctx, std::uint32_t requestId = 0) {
   static TickType_t lastUpdateTick = 0;
   static std::int32_t lastFlags = -1;
@@ -1591,6 +1873,9 @@ void sendScaleUiState(rtos::RtosContext& ctx, std::uint32_t requestId = 0) {
   }
 }
 
+/// @brief Requests loading /config/scale.json from StorageTask.
+/// @param ctx Owning RTOS context.
+/// @return false if the storage command queue was full.
 bool requestScaleConfiguration(rtos::RtosContext& ctx) {
   rtos::StorageCommand command{};
   command.type = rtos::StorageCommandType::LoadJson;
@@ -1606,6 +1891,11 @@ bool requestScaleConfiguration(rtos::RtosContext& ctx) {
   return true;
 }
 
+/// @brief Sends a Spoolman UpdateWeight command.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param update Weight fields to send.
+/// @return false if Spoolman isn't configured, or the command queue was full.
 bool sendWeightUpdate(rtos::RtosContext& ctx, std::uint32_t requestId,
                       const models::SpoolmanWeightUpdate& update) {
   rtos::SpoolmanCommand command{};
@@ -1621,6 +1911,10 @@ bool sendWeightUpdate(rtos::RtosContext& ctx, std::uint32_t requestId,
                     pdMS_TO_TICKS(1000)) == pdPASS;
 }
 
+/// @brief Sends a DeleteJson command for a file left over from an earlier schema version.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param path File to delete.
 void deleteObsoleteStorageFile(rtos::RtosContext& ctx,
                                std::uint32_t requestId,
                                const char* path) {
@@ -1636,6 +1930,9 @@ void deleteObsoleteStorageFile(rtos::RtosContext& ctx,
             path);
 }
 
+/// @brief Requests loading /config/network.json from StorageTask.
+/// @param ctx Owning RTOS context.
+/// @return false if the storage command queue was full.
 bool requestNetworkConfiguration(rtos::RtosContext& ctx) {
   rtos::StorageCommand command{};
   command.type = rtos::StorageCommandType::LoadJson;
@@ -1651,6 +1948,10 @@ bool requestNetworkConfiguration(rtos::RtosContext& ctx) {
   return true;
 }
 
+/// @brief Serializes and sends the scale calibration from an event to StorageTask.
+/// @param ctx Owning RTOS context.
+/// @param event Event carrying the calibration fields to persist.
+/// @return false on serialization failure or if the storage command queue was full.
 bool persistScaleConfiguration(rtos::RtosContext& ctx,
                                const rtos::AppEvent& event) {
   rtos::StorageCommand command{};
@@ -1681,6 +1982,14 @@ bool persistScaleConfiguration(rtos::RtosContext& ctx,
   return true;
 }
 
+/// @brief Sends a dialog/progress overlay UiCommand, tracking the shown overlay kind.
+/// @param ctx Owning RTOS context.
+/// @param type Command type (e.g. ShowDialog/ShowProgress).
+/// @param kind Overlay kind to show.
+/// @param requestId Correlation id.
+/// @param title Overlay title.
+/// @param text Overlay body text.
+/// @param value Generic numeric payload.
 void sendOverlay(rtos::RtosContext& ctx, rtos::UiCommandType type,
                  rtos::UiOverlayKind kind, std::uint32_t requestId,
                  const char* title, const char* text,
@@ -1697,16 +2006,24 @@ void sendOverlay(rtos::RtosContext& ctx, rtos::UiCommandType type,
   }
 }
 
-constexpr const char* kSpoolmanRequiredTitle = "Spoolman nicht verbunden";
+constexpr const char* kSpoolmanRequiredTitle = "Spoolman nicht verbunden";  ///< Dialog title shown by requireSpoolman() when Spoolman is unavailable.
 constexpr const char* kSpoolmanRequiredMessage =
     "Spoolman ist nicht verbunden.\n"
-    "Diese Funktion ben\xC3\xB6tigt eine aktive Spoolman-Verbindung.";
+    "Diese Funktion ben\xC3\xB6tigt eine aktive Spoolman-Verbindung.";  ///< Dialog body shown by requireSpoolman() when Spoolman is unavailable.
 
+/// @brief Whether Spoolman-dependent operations are currently allowed.
+/// @param ctx Owning RTOS context (unused; kept for call-site symmetry).
+/// @return true if #currentSpoolmanAppState allows online operations.
 bool spoolmanReady(const rtos::RtosContext& ctx) {
   (void)ctx;
   return models::spoolmanOperationsAvailable(currentSpoolmanAppState);
 }
 
+/// @brief Recomputes #currentSpoolmanAppState from the ready/tag-field event
+///        bits and pushes it (and the server version) to the UI.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param version Server version string to record, or null to keep the current one.
 void publishSpoolmanAppState(rtos::RtosContext& ctx,
                              std::uint32_t requestId,
                              const char* version = nullptr) {
@@ -1746,6 +2063,11 @@ void publishSpoolmanAppState(rtos::RtosContext& ctx,
   sendUiCommand(ctx, command, "AppTask: Spoolman AppState queue overflow");
 }
 
+/// @brief Checks Spoolman readiness, showing an error dialog if unavailable.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id for the error dialog.
+/// @param operation Log-only name of the operation being gated.
+/// @return true if Spoolman is ready.
 bool requireSpoolman(rtos::RtosContext& ctx, std::uint32_t requestId,
                      const char* operation) {
   if (spoolmanReady(ctx)) return true;
@@ -1758,11 +2080,21 @@ bool requireSpoolman(rtos::RtosContext& ctx, std::uint32_t requestId,
   return false;
 }
 
+/// @brief Logs an assignment/removal write failure and shows an error dialog, clearing all pending tag state.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id for the error dialog.
+/// @param diagnostic Log-only diagnostic detail.
+/// @param userMessage User-facing message, or null for a generic one.
 void reportAssignmentWriteFailure(rtos::RtosContext& ctx,
                                   std::uint32_t requestId,
                                   const char* diagnostic,
                                   const char* userMessage = nullptr);
 
+/// @brief Sends a SpoolmanCommand for the in-flight tag assignment, using #pendingTagAssignment's identity/requestId.
+/// @param ctx Owning RTOS context.
+/// @param type Command type.
+/// @param spoolId Target spool, if applicable.
+/// @return false if the Spoolman command queue was full.
 bool sendTagAssignmentCommand(rtos::RtosContext& ctx,
                               rtos::SpoolmanCommandType type,
                               rtos::SpoolId spoolId = 0) {
@@ -1775,6 +2107,11 @@ bool sendTagAssignmentCommand(rtos::RtosContext& ctx,
                     pdMS_TO_TICKS(1000)) == pdPASS;
 }
 
+/// @brief Sends a SpoolmanCommand for the in-flight tag removal, using #pendingTagRemoval's identity/requestId.
+/// @param ctx Owning RTOS context.
+/// @param type Command type.
+/// @param spoolId Target spool, if applicable.
+/// @return false if the Spoolman command queue was full.
 bool sendTagRemovalCommand(rtos::RtosContext& ctx,
                            rtos::SpoolmanCommandType type,
                            rtos::SpoolId spoolId = 0) {
@@ -1787,6 +2124,8 @@ bool sendTagRemovalCommand(rtos::RtosContext& ctx,
                     pdMS_TO_TICKS(1000)) == pdPASS;
 }
 
+/// @brief Completes a tag removal that only needed the server-side mapping cleared (no tag payload erase).
+/// @param ctx Owning RTOS context.
 void finishServerOnlyRemoval(rtos::RtosContext& ctx) {
   const auto requestId = pendingTagRemoval.requestId;
   pendingTagRemoval = {};
@@ -1806,6 +2145,9 @@ void finishServerOnlyRemoval(rtos::RtosContext& ctx) {
   sendUiCommand(ctx, result, "AppTask: server-only removal result overflow");
 }
 
+/// @brief Continues TagRemovalStage after the server-side assignment was
+///        cleared: erases the tag payload if needed, or finishes.
+/// @param ctx Owning RTOS context.
 void continueRemovalAfterSpoolmanUpdate(rtos::RtosContext& ctx) {
   resolvedTagIdentity = {};
   resolvedTagSpoolId = 0;
@@ -1845,6 +2187,9 @@ void continueRemovalAfterSpoolmanUpdate(rtos::RtosContext& ctx) {
               "Spoolman-Zuordnung entfernt. FilamentStation-Daten werden vom Tag entfernt und verifiziert.");
 }
 
+/// @brief Completes a tag assignment that only needed the server-side mapping stored (no tag payload write).
+/// @param ctx Owning RTOS context.
+/// @param text Result-screen text to show.
 void finishMappingOnlyAssignment(rtos::RtosContext& ctx, const char* text) {
   const auto requestId = pendingTagAssignment.requestId;
   const auto spoolId = pendingTagAssignment.spoolId;
@@ -1864,6 +2209,9 @@ void finishMappingOnlyAssignment(rtos::RtosContext& ctx, const char* text) {
   sendUiCommand(ctx, result, "AppTask: assignment result overflow");
 }
 
+/// @brief Continues TagAssignmentStage after the server-side mapping was
+///        stored: writes the tag payload if needed and possible, or finishes.
+/// @param ctx Owning RTOS context.
 void continueAssignmentAfterSpoolmanUpdate(rtos::RtosContext& ctx) {
   resolvedTagIdentity = pendingTagAssignment.identity;
   resolvedTagSpoolId = pendingTagAssignment.spoolId;
@@ -1939,9 +2287,11 @@ void reportAssignmentWriteFailure(rtos::RtosContext& ctx,
           : "Tag wurde zugeordnet.\nDie Zuordnung konnte jedoch nicht auf dem Tag gespeichert werden.\nEin erneuter Versuch ist m\xC3\xB6glich.");
 }
 
-// Re-sends the BootProgress overlay with whichever of bootSdStatus/
-// bootNfcStatus/bootScaleStatus have actually been filled in so far. A
-// no-op once Home has already been shown (startupNavigationSent) --
+/// @brief Re-sends the BootProgress overlay with whichever of #bootSdStatus/
+///        #bootNfcStatus/#bootScaleStatus have actually been filled in so far.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+// A no-op once Home has already been shown (startupNavigationSent) --
 // updating the overlay after HideProgress fired would never be seen.
 void refreshBootProgress(rtos::RtosContext& ctx, std::uint32_t requestId) {
   if (startupNavigationSent) return;
@@ -1961,6 +2311,9 @@ void refreshBootProgress(rtos::RtosContext& ctx, std::uint32_t requestId) {
               "FilamentStation startet", text);
 }
 
+/// @brief Shows the Home screen once both UI and storage startup are ready,
+///        and (on OTA) confirms the running partition as valid.
+/// @param ctx Owning RTOS context.
 void showHomeWhenStartupReady(rtos::RtosContext& ctx) {
   if (startupNavigationSent || !uiStartupReady || !storageStartupReady) return;
   rtos::UiCommand command{};
@@ -1993,6 +2346,9 @@ void showHomeWhenStartupReady(rtos::RtosContext& ctx) {
   }
 }
 
+/// @brief Text name for a FreeRTOS task state, used in diagnostics logging.
+/// @param state State to describe.
+/// @return Static, NUL-terminated name.
 const char* taskDiagnosticStateName(eTaskState state) {
   switch (state) {
     case eRunning: return "running";
@@ -2004,15 +2360,20 @@ const char* taskDiagnosticStateName(eTaskState state) {
   }
 }
 
+/// @brief Screen-relevant subset of a full task/queue diagnostics pass: the single worst task/queue.
 struct DiagnosticsSummary {
-  std::uint32_t worstStackFreeBytes = UINT32_MAX;
-  char worstStackTaskName[16]{};
-  UBaseType_t worstQueueWaiting = 0;
-  UBaseType_t worstQueueCapacity = 0;
-  char worstQueueName[16]{};
-  EventBits_t eventBits = 0;
+  std::uint32_t worstStackFreeBytes = UINT32_MAX;  ///< Smallest stack high-water mark seen, in bytes.
+  char worstStackTaskName[16]{};                    ///< Name of the task with #worstStackFreeBytes.
+  UBaseType_t worstQueueWaiting = 0;                ///< Highest queued-item count seen among all queues.
+  UBaseType_t worstQueueCapacity = 0;               ///< Capacity of the queue with #worstQueueWaiting.
+  char worstQueueName[16]{};                        ///< Name of the queue with #worstQueueWaiting.
+  EventBits_t eventBits = 0;                        ///< Current systemEventGroup bits.
 };
 
+/// @brief Logs a full per-task/per-queue/event-bits diagnostics report and
+///        returns the screen-relevant summary (worst task/queue).
+/// @param ctx Owning RTOS context.
+/// @return Summary for on-screen display.
 // Task-Diagnose (Phase 10.1): das EEZ-Layout hat nur ein einzelnes,
 // 464x40px kleines Label fuer diese Daten -- zu wenig fuer eine
 // detaillierte Aufschluesselung aller 9 Tasks/9 Queues. Der vollstaendige
@@ -2135,6 +2496,12 @@ DiagnosticsSummary logTaskDiagnostics(rtos::RtosContext& ctx) {
   return summary;
 }
 
+/// @brief Dispatches every UI-originated action (rtos::UiActionType):
+///        navigation, settings edits, staging/weighing, tag
+///        assignment/removal, AMS slot configuration, and diagnostics.
+///        The single entry point AppTask uses to react to user input.
+/// @param ctx Owning RTOS context.
+/// @param action Action to handle.
 void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
   rtos::UiCommand command{};
   command.requestId = action.requestId;

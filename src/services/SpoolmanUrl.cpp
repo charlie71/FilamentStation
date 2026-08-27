@@ -1,3 +1,7 @@
+/**
+ * @file
+ * @brief Implements services::buildNormalizedSpoolmanUrl()/parseNormalizedSpoolmanUrl().
+ */
 #include "services/SpoolmanUrl.h"
 
 #include <cctype>
@@ -7,12 +11,18 @@
 namespace filament_station {
 namespace services {
 namespace {
+/// @brief Validates a hostname/IP: non-empty, no spaces, no path or port separators.
+/// @param host NUL-terminated host string to validate.
+/// @return true if `host` is a plausible bare hostname.
 bool validHost(const char* host) {
   if (host == nullptr || host[0] == '\0' || std::strchr(host, ' ') != nullptr)
     return false;
   return std::strchr(host, '/') == nullptr && std::strchr(host, ':') == nullptr;
 }
 
+/// @brief Validates a port string: all digits, in range 1-65535.
+/// @param port NUL-terminated port string to validate.
+/// @return true if `port` is a valid port number.
 bool validPort(const char* port) {
   if (port == nullptr || port[0] == '\0') return false;
   unsigned value = 0;

@@ -1,3 +1,9 @@
+/**
+ * @file
+ * @brief Implements tasks::powerTask(): the Active/Dimmed/Sleep energy-saving
+ *        state machine, peripheral power-down coordination, and the
+ *        touch-wake light-sleep cycle.
+ */
 #include "tasks/Tasks.h"
 
 #include <Arduino.h>
@@ -16,10 +22,25 @@
 namespace filament_station::tasks {
 namespace {
 
-// Statemachine aus dem Energiesparkonzept (TASKS.md Phase 11): AKTIV ->
-// GEDIMMT -> LIGHT-SLEEP, jeweils nach laenger werdender Inaktivitaet.
+/**
+ * @brief Energy-saving state machine driven by measured input inactivity
+ *        (TASKS.md Phase 11).
+ *
+ * @dot
+ * digraph PowerState {
+ *   rankdir=LR;
+ *   Active -> Dimmed [label="inactive >= kPowerDimTimeoutMs"];
+ *   Dimmed -> Sleep  [label="inactive >= kPowerSleepTimeoutMs"];
+ *   Dimmed -> Active [label="inactive < kPowerDimTimeoutMs"];
+ *   Sleep  -> Active [label="touch wake (GPIO)"];
+ * }
+ * @enddot
+ */
 enum class PowerState : std::uint8_t { Active, Dimmed, Sleep };
 
+/// @brief Text name for a PowerState, used in log lines.
+/// @param state State to describe.
+/// @return Static, NUL-terminated lowercase name.
 const char* powerStateName(PowerState state) {
   switch (state) {
     case PowerState::Active: return "active";
@@ -29,12 +50,18 @@ const char* powerStateName(PowerState state) {
   return "unknown";
 }
 
+/// @brief Maps a measured inactivity duration to its target PowerState.
+/// @param inactiveMs Milliseconds since the last user input.
+/// @return The state that inactivity duration corresponds to.
 PowerState stateForInactivity(std::uint32_t inactiveMs) {
   if (inactiveMs >= config::kPowerSleepTimeoutMs) return PowerState::Sleep;
   if (inactiveMs >= config::kPowerDimTimeoutMs) return PowerState::Dimmed;
   return PowerState::Active;
 }
 
+/// @brief Target display brightness for a PowerState.
+/// @param state State to look up.
+/// @return Brightness value (0-255).
 std::uint8_t brightnessForState(PowerState state) {
   switch (state) {
     case PowerState::Active: return config::kDisplayDefaultBrightness;
@@ -44,6 +71,9 @@ std::uint8_t brightnessForState(PowerState state) {
   return config::kDisplayDefaultBrightness;
 }
 
+/// @brief Sends a SetBrightness command to UiTask.
+/// @param ctx Owning RTOS context.
+/// @param brightness Target brightness (0-255).
 void sendBrightness(rtos::RtosContext& ctx, std::uint8_t brightness) {
   rtos::UiCommand command{};
   command.type = rtos::UiCommandType::SetBrightness;
@@ -54,6 +84,8 @@ void sendBrightness(rtos::RtosContext& ctx, std::uint8_t brightness) {
   }
 }
 
+/// @brief Sends a "waking up" toast notification to UiTask after resuming from sleep.
+/// @param ctx Owning RTOS context.
 void sendWakeToast(rtos::RtosContext& ctx) {
   rtos::UiCommand command{};
   command.type = rtos::UiCommandType::ShowToast;
@@ -65,6 +97,9 @@ void sendWakeToast(rtos::RtosContext& ctx) {
   }
 }
 
+/// @brief Sends a power up/down command to ScaleTask.
+/// @param ctx Owning RTOS context.
+/// @param type PowerUp or PowerDown.
 void sendScalePower(rtos::RtosContext& ctx, rtos::ScaleCommandType type) {
   rtos::ScaleCommand command{};
   command.type = type;
@@ -75,6 +110,9 @@ void sendScalePower(rtos::RtosContext& ctx, rtos::ScaleCommandType type) {
   }
 }
 
+/// @brief Sends a power up/down command to NfcTask.
+/// @param ctx Owning RTOS context.
+/// @param type PowerUp or PowerDown.
 void sendNfcPower(rtos::RtosContext& ctx, rtos::NfcCommandType type) {
   rtos::NfcCommand command{};
   command.type = type;
@@ -85,6 +123,9 @@ void sendNfcPower(rtos::RtosContext& ctx, rtos::NfcCommandType type) {
   }
 }
 
+/// @brief Sends a power up/down command to NetworkTask.
+/// @param ctx Owning RTOS context.
+/// @param type PowerUp or PowerDown.
 void sendNetworkPower(rtos::RtosContext& ctx, rtos::NetworkCommandType type) {
   rtos::NetworkCommand command{};
   command.type = type;
@@ -95,6 +136,9 @@ void sendNetworkPower(rtos::RtosContext& ctx, rtos::NetworkCommandType type) {
   }
 }
 
+/// @brief Blocks until Scale-/Nfc-/NetworkTask have all acknowledged their
+///        PowerDown, or until a timeout elapses.
+/// @param ctx Owning RTOS context.
 // Wartet, bis Scale-/Nfc-/NetworkTask ihren PowerDown tatsaechlich
 // abgeschlossen haben (PowerDownAcknowledged je Task), bevor der echte
 // Light-Sleep beginnt -- ein waehrend einer laufenden PN532-UART-Transaktion
@@ -137,6 +181,8 @@ void waitForSleepQuiescence(rtos::RtosContext& ctx) {
   }
 }
 
+/// @brief Enters light sleep repeatedly until a real touch (GPIO) wake occurs.
+/// @param ctx Owning RTOS context (unused directly, kept for symmetry with the other helpers).
 // Blockiert bis zu einem echten Touch-Wake (GPIO-Ursache). Ein periodischer
 // Timer-Wake dient als Sicherheitsnetz: das FT6336-INT-Verhalten (Pegel vs.
 // Puls, Polaritaet) ist am realen Board noch nicht verifiziert -- ohne dieses

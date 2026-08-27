@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the OpenPrintTag decoder: NDEF/TLV/MIME-record lookup
+ *        plus a small hand-rolled CBOR reader for the tag's map payload.
+ */
 #include "nfc/OpenPrintTag.h"
 
 #include <cmath>
@@ -8,24 +13,33 @@ namespace filament_station {
 namespace nfc {
 namespace {
 
-constexpr char kMimeType[] = "application/vnd.openprinttag";
+constexpr char kMimeType[] = "application/vnd.openprinttag";  ///< NDEF MIME type identifying an OpenPrintTag record.
 
+/// @brief Non-owning view of a contiguous byte span.
 struct ByteRange {
-  const std::uint8_t* data = nullptr;
-  std::size_t size = 0;
+  const std::uint8_t* data = nullptr;  ///< Pointer to the first byte, or null if empty.
+  std::size_t size = 0;                ///< Number of bytes in the span.
 };
 
+/// @brief Forward-only read cursor over a byte span, used by the CBOR reader.
 struct Cursor {
-  const std::uint8_t* data;
-  std::size_t size;
-  std::size_t position = 0;
+  const std::uint8_t* data;   ///< Underlying buffer.
+  std::size_t size;           ///< Total buffer length in bytes.
+  std::size_t position = 0;   ///< Current read offset into #data.
 
+  /// @brief Advances the cursor and returns a pointer to the consumed bytes.
+  /// @param count Number of bytes to consume.
+  /// @param output Out parameter receiving a pointer to the first consumed byte.
+  /// @return false if fewer than `count` bytes remain.
   bool take(std::size_t count, const std::uint8_t*& output) {
     if (count > size - position) return false;
     output = data + position;
     position += count;
     return true;
   }
+  /// @brief Consumes and returns a single byte.
+  /// @param output Out parameter receiving the consumed byte.
+  /// @return false if the cursor is already at the end.
   bool byte(std::uint8_t& output) {
     const std::uint8_t* p = nullptr;
     if (!take(1, p)) return false;
@@ -34,6 +48,13 @@ struct Cursor {
   }
 };
 
+/// @brief Reads a CBOR major-type argument (the value encoded by the
+///        initial byte's low 5 bits, possibly followed by 1/2/4/8 bytes).
+/// @param cursor Cursor positioned right after the initial byte.
+/// @param additional The initial byte's low 5 bits ("additional information").
+/// @param value Out parameter receiving the decoded argument.
+/// @param indefinite Out parameter set if this is CBOR's indefinite-length marker (additional == 31).
+/// @return false on truncated/malformed input.
 bool readArgument(Cursor& cursor, std::uint8_t additional,
                   std::uint64_t& value, bool& indefinite) {
   indefinite = false;
@@ -56,6 +77,12 @@ bool readArgument(Cursor& cursor, std::uint8_t additional,
   return true;
 }
 
+/// @brief Reads one CBOR item header (major type + argument).
+/// @param cursor Cursor positioned at the item's initial byte.
+/// @param major Out parameter receiving the CBOR major type (0-7).
+/// @param argument Out parameter receiving the decoded argument.
+/// @param indefinite Out parameter set if the item uses indefinite-length encoding.
+/// @return false on truncated input.
 bool readHeader(Cursor& cursor, std::uint8_t& major, std::uint64_t& argument,
                 bool& indefinite) {
   std::uint8_t initial = 0;
@@ -64,6 +91,11 @@ bool readHeader(Cursor& cursor, std::uint8_t& major, std::uint64_t& argument,
   return readArgument(cursor, initial & 0x1FU, argument, indefinite);
 }
 
+/// @brief Recursively skips one CBOR item without decoding its value,
+///        used to walk past map/array entries this parser does not care about.
+/// @param cursor Cursor positioned at the item to skip.
+/// @param depth Current recursion depth; used to reject pathologically nested input.
+/// @return false on truncated/malformed input or excessive nesting (depth > 12).
 bool skipValue(Cursor& cursor, unsigned depth = 0) {
   if (depth > 12) return false;
   std::uint8_t major = 0;
@@ -98,6 +130,10 @@ bool skipValue(Cursor& cursor, unsigned depth = 0) {
   return major == 6 && !indefinite && skipValue(cursor, depth + 1);
 }
 
+/// @brief Reads a CBOR unsigned integer (major type 0).
+/// @param cursor Cursor positioned at the item to read.
+/// @param value Out parameter receiving the decoded value.
+/// @return false if the item is not an unsigned integer, or on truncated input.
 bool readUnsigned(Cursor& cursor, std::uint64_t& value) {
   std::uint8_t major = 0;
   bool indefinite = false;
@@ -105,6 +141,10 @@ bool readUnsigned(Cursor& cursor, std::uint64_t& value) {
          !indefinite;
 }
 
+/// @brief Reads a CBOR numeric item (unsigned, negative, half/single/double float).
+/// @param cursor Cursor positioned at the item to read.
+/// @param value Out parameter receiving the decoded value as a double.
+/// @return false if the item is not numeric, is non-finite, or on truncated input.
 bool readNumber(Cursor& cursor, double& value) {
   const std::size_t start = cursor.position;
   std::uint8_t major = 0;
@@ -150,6 +190,11 @@ bool readNumber(Cursor& cursor, double& value) {
   return false;
 }
 
+/// @brief Reads a CBOR text string (major type 3) into a fixed-size buffer.
+/// @param cursor Cursor positioned at the item to read.
+/// @param output Destination buffer; NUL-terminated on success.
+/// @param capacity Size of `output` in bytes.
+/// @return false if the item is not text, does not fit, or on truncated input.
 bool readText(Cursor& cursor, char* output, std::size_t capacity) {
   std::uint8_t major = 0;
   std::uint64_t length = 0;
@@ -163,6 +208,12 @@ bool readText(Cursor& cursor, char* output, std::size_t capacity) {
   return true;
 }
 
+/// @brief Reads a CBOR byte string (major type 2) of 3 or 4 RGB(A) bytes
+///        and formats it as a "#RRGGBB" string.
+/// @param cursor Cursor positioned at the item to read.
+/// @param output Destination buffer receiving the formatted color string.
+/// @param capacity Size of `output` in bytes.
+/// @return false if the item is not a 3- or 4-byte byte string, or on truncated input.
 bool readColor(Cursor& cursor, char* output, std::size_t capacity) {
   std::uint8_t major = 0;
   std::uint64_t length = 0;
@@ -175,6 +226,9 @@ bool readColor(Cursor& cursor, char* output, std::size_t capacity) {
   return true;
 }
 
+/// @brief Maps an OpenPrintTag material-key integer to its short material name.
+/// @param key Material class key as read from the tag's CBOR map (key 9).
+/// @return Abbreviation string (e.g. "PLA"), or null if `key` is not recognized.
 const char* materialAbbreviation(std::uint64_t key) {
   static const char* const values[] = {
       "PLA", "PETG", "TPU", "ABS", "ASA", "PC", "PCTG", "PP",
@@ -186,11 +240,22 @@ const char* materialAbbreviation(std::uint64_t key) {
   return nullptr;
 }
 
+/// @brief Reads a CBOR map header (major type 5) and its pair count.
+/// @param cursor Cursor positioned at the map item.
+/// @param pairs Out parameter receiving the declared key/value pair count (meaningless if `indefinite`).
+/// @param indefinite Out parameter set if the map uses indefinite-length encoding.
+/// @return false if the item is not a map, or on truncated input.
 bool parseMapHeader(Cursor& cursor, std::uint64_t& pairs, bool& indefinite) {
   std::uint8_t major = 0;
   return readHeader(cursor, major, pairs, indefinite) && major == 5;
 }
 
+/// @brief Parses the tag's outer "meta" CBOR map to locate the offset of
+///        the main data map (key 0), defaulting to right after the meta
+///        map if that key is absent.
+/// @param payload Full CBOR payload span.
+/// @param mainOffset Out parameter receiving the byte offset of the main map.
+/// @return false on malformed input or an out-of-range offset.
 bool parseMeta(const ByteRange& payload, std::size_t& mainOffset) {
   Cursor cursor{payload.data, payload.size};
   std::uint64_t pairs = 0;
@@ -221,6 +286,13 @@ bool parseMeta(const ByteRange& payload, std::size_t& mainOffset) {
   return mainOffset < payload.size;
 }
 
+/// @brief Parses the tag's main CBOR data map into a TagDefinition,
+///        recognizing the material class/name/vendor/color/weight/
+///        temperature keys and skipping everything else.
+/// @param payload Full CBOR payload span.
+/// @param offset Byte offset of the main map, as found by #parseMeta().
+/// @param definition Out parameter receiving the decoded fields.
+/// @return false on malformed input, or if the required material-class key (8) is missing.
 bool parseMain(const ByteRange& payload, std::size_t offset,
                models::TagDefinition& definition) {
   Cursor cursor{payload.data + offset, payload.size - offset};
@@ -290,6 +362,11 @@ bool parseMain(const ByteRange& payload, std::size_t offset,
   return materialClassPresent;
 }
 
+/// @brief Walks the NDEF TLV/record structure to find the OpenPrintTag MIME record.
+/// @param data Raw NDEF message bytes.
+/// @param size Length of `data` in bytes.
+/// @param payload Out parameter receiving the matching MIME record's payload span.
+/// @return true if a record with #kMimeType was found.
 bool findMimePayload(const std::uint8_t* data, std::size_t size,
                      ByteRange& payload) {
   if (data == nullptr || size < 3) return false;

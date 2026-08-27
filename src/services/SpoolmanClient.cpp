@@ -1,3 +1,7 @@
+/**
+ * @file
+ * @brief Implements services::SpoolmanClient.
+ */
 #include "services/SpoolmanClient.h"
 
 #include <cstdio>
@@ -6,8 +10,12 @@
 namespace filament_station {
 namespace services {
 namespace {
-constexpr char kFieldPath[] = "/field/spool";
+constexpr char kFieldPath[] = "/field/spool";  ///< API path listing spool custom fields.
 
+/// @brief Whether a custom-field JSON object is the "tag" field with a given type.
+/// @param field One entry from the `/field/spool` response array.
+/// @param type Expected `field_type` value (e.g. "text").
+/// @return true if `field`'s key is "tag" and its type matches.
 bool tagFieldHasType(JsonVariantConst field, const char* type) {
   return field["key"].is<const char*>() &&
          std::strcmp(field["key"].as<const char*>(), "tag") == 0 &&
@@ -15,6 +23,11 @@ bool tagFieldHasType(JsonVariantConst field, const char* type) {
          std::strcmp(field["field_type"].as<const char*>(), type) == 0;
 }
 
+/// @brief Scans a `/field/spool` response for the "tag" custom field.
+/// @param response Parsed JSON array response.
+/// @param found Out parameter set to whether a "tag" field exists.
+/// @param compatible Out parameter set to whether it has type "text" (only meaningful if `found`).
+/// @return false if `response` is not a JSON array (malformed response).
 bool inspectTagField(JsonVariantConst response, bool& found,
                      bool& compatible) {
   found = false;
@@ -31,6 +44,10 @@ bool inspectTagField(JsonVariantConst response, bool& found,
   return true;
 }
 
+/// @brief Whether a string is a plausible canonical tag identity (uppercase
+///        hex, non-empty, even length, below 40 characters).
+/// @param value Identity string to validate.
+/// @return true if valid.
 bool validIdentity(const char* value) {
   if (value == nullptr || value[0] == '\0') return false;
   const std::size_t length = std::strlen(value);
@@ -42,6 +59,11 @@ bool validIdentity(const char* value) {
   return true;
 }
 
+/// @brief Copies an error string into a fixed buffer, substituting a
+///        generic message if `source` is null/empty.
+/// @param destination Destination buffer.
+/// @param capacity Size of `destination` in bytes.
+/// @param source Error text to copy, or null/empty for the generic fallback.
 void copyError(char* destination, std::size_t capacity, const char* source) {
   if (destination == nullptr || capacity == 0) return;
   std::snprintf(destination, capacity, "%s",

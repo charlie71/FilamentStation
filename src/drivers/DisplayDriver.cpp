@@ -1,3 +1,9 @@
+/**
+ * @file
+ * @brief Implements drivers::initializeDisplay()/drawDisplayColorTest()/
+ *        displayDevice(): the concrete LovyanGFX bus/panel/backlight/touch
+ *        wiring for this board.
+ */
 #include "drivers/DisplayDriver.h"
 
 #include "config/BoardConfig.h"
@@ -5,8 +11,12 @@
 namespace filament_station::drivers {
 namespace {
 
+/// @brief Concrete LovyanGFX device: ST7796 panel over an 8-bit parallel
+///        bus, PWM backlight, and FT5x06 touch controller, wired up from
+///        config::BoardConfig.h pin/timing constants.
 class FilamentStationDisplay final : public lgfx::LGFX_Device {
  public:
+  /// @brief Configures the bus, panel, backlight, and touch controller.
   FilamentStationDisplay() {
     {
       auto cfg = bus_.config();
@@ -78,13 +88,13 @@ class FilamentStationDisplay final : public lgfx::LGFX_Device {
   }
 
  private:
-  lgfx::Panel_ST7796 panel_;
-  lgfx::Bus_Parallel8 bus_;
-  lgfx::Light_PWM light_;
-  lgfx::Touch_FT5x06 touch_;
+  lgfx::Panel_ST7796 panel_;    ///< ST7796 panel driver.
+  lgfx::Bus_Parallel8 bus_;     ///< 8-bit parallel bus connecting the panel.
+  lgfx::Light_PWM light_;       ///< PWM-controlled backlight.
+  lgfx::Touch_FT5x06 touch_;    ///< FT5x06 I2C touch controller.
 };
 
-FilamentStationDisplay display;
+FilamentStationDisplay display;  ///< The single global display device instance, returned by displayDevice().
 
 }  // namespace
 

@@ -1,3 +1,7 @@
+/**
+ * @file
+ * @brief Implements services::parseSemVer()/compareSemVer().
+ */
 #include "services/SemVer.h"
 
 #include <cstdlib>
@@ -6,6 +10,11 @@ namespace filament_station {
 namespace services {
 namespace {
 
+/// @brief Parses one dot-separated unsigned numeric component.
+/// @param text Start of the component to parse.
+/// @param end Out parameter receiving a pointer just past the parsed digits.
+/// @param out Out parameter receiving the parsed value.
+/// @return false if `text` does not start with a digit, or the value is negative.
 bool parseComponent(const char* text, char** end, std::uint32_t& out) {
   if (text == nullptr || *text < '0' || *text > '9') return false;
   const long value = std::strtol(text, end, 10);

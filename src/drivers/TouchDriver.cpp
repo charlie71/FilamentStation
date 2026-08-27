@@ -1,3 +1,7 @@
+/**
+ * @file
+ * @brief Implements drivers::readTouchCoordinates().
+ */
 #include "drivers/TouchDriver.h"
 
 #include "drivers/DisplayDriver.h"

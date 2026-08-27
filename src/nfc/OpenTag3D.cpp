@@ -1,3 +1,9 @@
+/**
+ * @file
+ * @brief Implements the OpenTag3D decoder: NDEF/TLV/MIME-record lookup plus
+ *        the fixed-offset binary payload reader for its two versioned
+ *        layouts (core and extended).
+ */
 #include "nfc/OpenTag3D.h"
 
 #include <cstdio>
@@ -7,15 +13,21 @@ namespace filament_station {
 namespace nfc {
 namespace {
 
-constexpr char kMimeType[] = "application/opentag3d";
-constexpr std::size_t kCoreMinimumSize = 0x66;
-constexpr std::size_t kExtendedSize = 0xBB;
+constexpr char kMimeType[] = "application/opentag3d";  ///< NDEF MIME type identifying an OpenTag3D record.
+constexpr std::size_t kCoreMinimumSize = 0x66;  ///< Minimum payload size for the base OpenTag3D layout.
+constexpr std::size_t kExtendedSize = 0xBB;     ///< Payload size at/above which the extended fields (empty-spool weight, temp range) are present.
 
+/// @brief Non-owning view of a contiguous byte span.
 struct ByteRange {
-  const std::uint8_t* data = nullptr;
-  std::size_t size = 0;
+  const std::uint8_t* data = nullptr;  ///< Pointer to the first byte, or null if empty.
+  std::size_t size = 0;                ///< Number of bytes in the span.
 };
 
+/// @brief Walks the NDEF TLV/record structure to find the OpenTag3D MIME record.
+/// @param data Raw NDEF message bytes.
+/// @param size Length of `data` in bytes.
+/// @param payload Out parameter receiving the matching MIME record's payload span.
+/// @return true if a record with #kMimeType was found.
 bool findMimePayload(const std::uint8_t* data, std::size_t size,
                      ByteRange& payload) {
   if (data == nullptr || size < 3) return false;
@@ -76,10 +88,21 @@ bool findMimePayload(const std::uint8_t* data, std::size_t size,
   return false;
 }
 
+/// @brief Reads a 16-bit big-endian value from a raw buffer.
+/// @param data Pointer to the first of 2 bytes to read.
+/// @return The decoded value.
 std::uint16_t readBigEndian16(const std::uint8_t* data) {
   return (static_cast<std::uint16_t>(data[0]) << 8U) | data[1];
 }
 
+/// @brief Copies a fixed-width, space-padded text field out of the payload,
+///        trimming trailing spaces/NULs.
+/// @param payload Full binary payload span.
+/// @param offset Byte offset of the field within `payload`.
+/// @param length Fixed on-tag width of the field.
+/// @param output Destination buffer; NUL-terminated on success.
+/// @param capacity Size of `output` in bytes.
+/// @return false if the field falls outside `payload`, or `capacity` is 0.
 bool copyFixedText(const ByteRange& payload, std::size_t offset,
                    std::size_t length, char* output, std::size_t capacity) {
   if (offset + length > payload.size || capacity == 0) return false;

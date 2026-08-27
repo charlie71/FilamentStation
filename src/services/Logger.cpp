@@ -1,3 +1,7 @@
+/**
+ * @file
+ * @brief Implements services::Logger::log()/task().
+ */
 #include "services/Logger.h"
 
 #include <Arduino.h>

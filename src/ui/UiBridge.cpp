@@ -1,3 +1,11 @@
+/**
+ * @file
+ * @brief Implements the ui::UiBridge.h entry points: LVGL initialization,
+ *        the generated-UI event callbacks, and every UiCommand renderer.
+ *        This file is UiTask's exclusive gateway to LVGL -- all module
+ *        state below is single-task-owned and never touched from any
+ *        other task.
+ */
 #include "ui/UiBridge.h"
 
 #include <Arduino.h>
@@ -23,7 +31,7 @@
 #include "ui/models/UiModels.h"
 
 extern "C" {
-extern const lv_font_t ui_font_ui_german16;
+extern const lv_font_t ui_font_ui_german16;  ///< EEZ-generated LVGL font covering the German character set, used across all hand-written UI text.
 }
 
 namespace filament_station::ui {
@@ -33,71 +41,74 @@ namespace {
 // Farbe als benannte, kommentierte Konstante statt als verstreutes
 // 0xRRGGBB-Literal. Werte unveraendert aus dem bisherigen Code uebernommen,
 // nur benannt/dokumentiert.
-constexpr std::uint32_t kColorPrimaryBlue = 0x1565C0;    // Primaerfarbe: aktive/verfuegbare Buttons, "Zurueck"-Aktionen, Standardfarbe
-constexpr std::uint32_t kColorNeutralGrey = 0x455A64;    // Sekundaerfarbe: Abbrechen/neutrale Buttons, leerer Slot/keine Daten
-constexpr std::uint32_t kColorDisabledGrey = 0x616161;   // Deaktiviert/nicht verfuegbar (AMS-Button, freier Druckerplatz, ...)
-constexpr std::uint32_t kColorDangerRed = 0xC62828;      // Destruktive Aktion (Loeschen/Entfernen/Leeren), Fehlerzustand
-constexpr std::uint32_t kColorSuccessGreen = 0x2E7D32;   // Erfolg: Drucker verbunden, Gewicht stabil
-constexpr std::uint32_t kColorWarningAmber = 0xF9A825;   // Warnung/Hervorhebung: ausgewaehltes AMS (Rand), Gewicht nicht stabil
-constexpr std::uint32_t kColorWarningAmberDark = 0xB26A00;  // Textvariante zu kColorWarningAmber auf hellem Grund
-constexpr std::uint32_t kColorManagedPrinterOrange = 0xEF6C00;  // Hervorhebung: der in den Druckereinstellungen aktuell bearbeitete Drucker
-constexpr std::uint32_t kColorTextWhite = 0xFFFFFF;      // Text/Rahmen auf dunklem Grund
-constexpr std::uint32_t kColorTextDark = 0x101820;       // Text/Rahmen auf hellem Grund
-constexpr std::uint32_t kColorTextDisabled = 0xD7DCE0;   // Beschriftung auf deaktivierten Buttons
-constexpr std::uint32_t kColorPanelLight = 0xECEFF1;     // Helle Panel-/Listenzeilen-Hintergruende
-constexpr std::uint32_t kColorPanelLightAlt = 0xB8BDC0;  // Abwechselnde (ungerade) Tabellenzeile
-constexpr std::uint32_t kColorPanelLightest = 0xF4F6F8;  // Overlay-Panel-Hintergrund
-constexpr std::uint32_t kColorOverlayBackdrop = 0x000000;   // Abgedunkelter Hintergrund hinter Overlays/Dialogen
-constexpr std::uint32_t kColorSpoolPickerRow = 0xB0BEC5;    // Default-Hintergrund einer Zeile im Spulen-Picker
-constexpr std::uint32_t kColorOverlayCancelButton = 0x607D8B;  // Neutrale Abbrechen-Schaltflaeche im Overlay
-constexpr std::uint32_t kColorInactivePrinterRow = 0x78909C;   // Deaktivierter/nicht existierender Drucker in Einstellungslisten
-constexpr std::uint32_t kColorAmsButtonBackground = 0x263238;  // Neutraler Hintergrund der Home-AMS-Buttons (Farbe kommt aus den Slot-Feldern)
+constexpr std::uint32_t kColorPrimaryBlue = 0x1565C0;    ///< Primaerfarbe: aktive/verfuegbare Buttons, "Zurueck"-Aktionen, Standardfarbe.
+constexpr std::uint32_t kColorNeutralGrey = 0x455A64;    ///< Sekundaerfarbe: Abbrechen/neutrale Buttons, leerer Slot/keine Daten.
+constexpr std::uint32_t kColorDisabledGrey = 0x616161;   ///< Deaktiviert/nicht verfuegbar (AMS-Button, freier Druckerplatz, ...).
+constexpr std::uint32_t kColorDangerRed = 0xC62828;      ///< Destruktive Aktion (Loeschen/Entfernen/Leeren), Fehlerzustand.
+constexpr std::uint32_t kColorSuccessGreen = 0x2E7D32;   ///< Erfolg: Drucker verbunden, Gewicht stabil.
+constexpr std::uint32_t kColorWarningAmber = 0xF9A825;   ///< Warnung/Hervorhebung: ausgewaehltes AMS (Rand), Gewicht nicht stabil.
+constexpr std::uint32_t kColorWarningAmberDark = 0xB26A00;  ///< Textvariante zu kColorWarningAmber auf hellem Grund.
+constexpr std::uint32_t kColorManagedPrinterOrange = 0xEF6C00;  ///< Hervorhebung: der in den Druckereinstellungen aktuell bearbeitete Drucker.
+constexpr std::uint32_t kColorTextWhite = 0xFFFFFF;      ///< Text/Rahmen auf dunklem Grund.
+constexpr std::uint32_t kColorTextDark = 0x101820;       ///< Text/Rahmen auf hellem Grund.
+constexpr std::uint32_t kColorTextDisabled = 0xD7DCE0;   ///< Beschriftung auf deaktivierten Buttons.
+constexpr std::uint32_t kColorPanelLight = 0xECEFF1;     ///< Helle Panel-/Listenzeilen-Hintergruende.
+constexpr std::uint32_t kColorPanelLightAlt = 0xB8BDC0;  ///< Abwechselnde (ungerade) Tabellenzeile.
+constexpr std::uint32_t kColorPanelLightest = 0xF4F6F8;  ///< Overlay-Panel-Hintergrund.
+constexpr std::uint32_t kColorOverlayBackdrop = 0x000000;   ///< Abgedunkelter Hintergrund hinter Overlays/Dialogen.
+constexpr std::uint32_t kColorSpoolPickerRow = 0xB0BEC5;    ///< Default-Hintergrund einer Zeile im Spulen-Picker.
+constexpr std::uint32_t kColorOverlayCancelButton = 0x607D8B;  ///< Neutrale Abbrechen-Schaltflaeche im Overlay.
+constexpr std::uint32_t kColorInactivePrinterRow = 0x78909C;   ///< Deaktivierter/nicht existierender Drucker in Einstellungslisten.
+constexpr std::uint32_t kColorAmsButtonBackground = 0x263238;  ///< Neutraler Hintergrund der Home-AMS-Buttons (Farbe kommt aus den Slot-Feldern).
 // Touch-Kalibrierungsmarker (Diagnose-Screen): 5 gut unterscheidbare Farben im Zyklus.
-constexpr std::uint32_t kColorTouchMarker1 = 0xFFEB3B;
-constexpr std::uint32_t kColorTouchMarker2 = 0x00E676;
-constexpr std::uint32_t kColorTouchMarker3 = 0x00BCD4;
-constexpr std::uint32_t kColorTouchMarker4 = 0xFF4081;
-constexpr std::uint32_t kColorTouchMarker5 = 0xFF9100;
+constexpr std::uint32_t kColorTouchMarker1 = 0xFFEB3B;  ///< Touch-Diagnosemarker Farbe 1.
+constexpr std::uint32_t kColorTouchMarker2 = 0x00E676;  ///< Touch-Diagnosemarker Farbe 2.
+constexpr std::uint32_t kColorTouchMarker3 = 0x00BCD4;  ///< Touch-Diagnosemarker Farbe 3.
+constexpr std::uint32_t kColorTouchMarker4 = 0xFF4081;  ///< Touch-Diagnosemarker Farbe 4.
+constexpr std::uint32_t kColorTouchMarker5 = 0xFF9100;  ///< Touch-Diagnosemarker Farbe 5.
 
-void* drawBuffer1 = nullptr;
-void* drawBuffer2 = nullptr;
-lv_display_t* lvglDisplay = nullptr;
-lv_indev_t* touchInput = nullptr;
-rtos::RtosContext* rtosContext = nullptr;
-rtos::PrinterId currentPrinterId = 1;
-std::uint8_t currentAmsId = 1;
-std::uint8_t selectedTrayAmsId = 1;
-std::uint8_t selectedTrayId = 0;
-rtos::SpoolId selectedTraySpoolId = 0;
-std::uint8_t selectedTrayTab = 0;
-bool trayTargetSelected = false;
+void* drawBuffer1 = nullptr;               ///< First PSRAM-backed LVGL draw buffer.
+void* drawBuffer2 = nullptr;               ///< Second PSRAM-backed LVGL draw buffer.
+lv_display_t* lvglDisplay = nullptr;       ///< The registered LVGL display object.
+lv_indev_t* touchInput = nullptr;          ///< The registered LVGL touch input device.
+rtos::RtosContext* rtosContext = nullptr;  ///< Owning RTOS context, set once by initializeLvgl().
+rtos::PrinterId currentPrinterId = 1;      ///< Printer currently shown on Home/Header/AMS.
+std::uint8_t currentAmsId = 1;             ///< AMS unit currently shown/selected.
+std::uint8_t selectedTrayAmsId = 1;        ///< AMS unit of the currently selected tray.
+std::uint8_t selectedTrayId = 0;           ///< Currently selected tray index.
+rtos::SpoolId selectedTraySpoolId = 0;     ///< Spool id resolved for the currently selected tray.
+std::uint8_t selectedTrayTab = 0;          ///< Currently selected tray-detail tab index.
+bool trayTargetSelected = false;           ///< Whether a tray target has been selected for a pending slot assignment.
+/// @brief Editable text-field draft backing the Spoolman settings editor widget.
 struct SpoolmanUiDraft {
-  char name[32] = "Werkstatt";
-  char protocol[8] = "http";
-  char host[64] = "spoolman.local";
-  char port[8] = "7912";
-  char basePath[32] = "/api/v1";
-  char timeoutMs[8] = "5000";
+  char name[32] = "Werkstatt";           ///< Display name field.
+  char protocol[8] = "http";             ///< "http" or "https" field.
+  char host[64] = "spoolman.local";      ///< Hostname/IP field.
+  char port[8] = "7912";                 ///< Port field, as text.
+  char basePath[32] = "/api/v1";         ///< API base path field.
+  char timeoutMs[8] = "5000";            ///< Request timeout field, as text.
 };
-SpoolmanUiDraft spoolmanDraft{};
-lv_obj_t* spoolmanEditor = nullptr;
-lv_obj_t* spoolmanKeyboard = nullptr;
-std::int32_t activeSpoolmanField = 0;
+SpoolmanUiDraft spoolmanDraft{};  ///< Active Spoolman-settings editor draft (mirrors AppTask's own draft for local editing).
+lv_obj_t* spoolmanEditor = nullptr;    ///< Spoolman settings editor widget/screen root.
+lv_obj_t* spoolmanKeyboard = nullptr;  ///< On-screen keyboard bound to the Spoolman editor.
+std::int32_t activeSpoolmanField = 0;  ///< Field index currently being edited in #spoolmanEditor.
+/// @brief Which text editor (if any) is currently open, disambiguating the shared keyboard widget's target.
 enum class EditorContext : std::uint8_t { None, Spoolman, Printer };
-EditorContext editorContext = EditorContext::None;
-std::int32_t activePrinterField = 0;
-rtos::PrinterId managedPrinterId = 1;
-rtos::PrinterId editingPrinterId = 1;
-bool showPrinterAccessCode = false;
+EditorContext editorContext = EditorContext::None;  ///< Currently open editor context.
+std::int32_t activePrinterField = 0;    ///< Field index currently being edited in the printer editor.
+rtos::PrinterId managedPrinterId = 1;   ///< Printer currently selected in the printer-management list.
+rtos::PrinterId editingPrinterId = 1;   ///< Printer currently open in the printer editor.
+bool showPrinterAccessCode = false;     ///< Whether the printer editor currently reveals the LAN access code.
+/// @brief One printer's display-list entry (name, flags, connection state), local UI copy of AppTask's roster.
 struct PrinterUiEntry {
-  rtos::PrinterId id;
-  char name[32];
-  bool enabled;
-  bool isDefault;
-  bool isActive;
-  bool exists;
-  models::UiConnectionState connectionState = models::UiConnectionState::Offline;
-  std::uint8_t amsCount = 0;
+  rtos::PrinterId id;      ///< Printer id.
+  char name[32];           ///< Display name.
+  bool enabled;             ///< Whether the printer is enabled.
+  bool isDefault;           ///< Whether this is the default printer.
+  bool isActive;            ///< Whether this printer is currently active/selected.
+  bool exists;               ///< Whether this slot corresponds to a real, configured printer.
+  models::UiConnectionState connectionState = models::UiConnectionState::Offline;  ///< Current connection state.
+  std::uint8_t amsCount = 0;  ///< Number of present AMS units.
 };
 // Empty by default (matches the empty bambu.json roster, Phase 8.2); real
 // entries arrive from AppTask via UpdatePrinterList (value >= 100, see
@@ -108,136 +119,158 @@ std::array<PrinterUiEntry, 4> printerEntries{{
     {2, "", true, false, false, false},
     {3, "", true, false, false, false},
     {4, "", true, false, false, false},
-}};
+}};  ///< Fixed-size printer display-list, kept in sync with AppTask's own roster.
+/// @brief One AMS unit's display-list summary.
 struct AmsUiEntry {
-  bool present = false;
-  std::uint8_t occupiedTrayCount = 0;
+  bool present = false;               ///< Whether this unit is currently present.
+  std::uint8_t occupiedTrayCount = 0;  ///< Number of occupied trays.
 };
 // Real AMS/tray data synced from AppTask (see AppTask::syncAmsToUi), fed via
 // UpdateAmsOverview/UpdateTrayDetails; empty by default (no AMS present)
 // instead of the former static MockUiDataProvider data.
-std::array<AmsUiEntry, 4> amsEntries{};
+std::array<AmsUiEntry, 4> amsEntries{};  ///< Display-list of AMS units for #currentPrinterId.
+/// @brief One tray's display state (material/color/spool/weight), local UI copy synced from AppTask.
 struct TrayUiEntry {
-  bool occupied = false;
+  bool occupied = false;   ///< Whether the tray currently holds filament.
   // 16 bytes to match models::PrinterSlotStateData::material -- this is
   // filled via snprintf from command.title (UpdateTrayDetails), which
   // itself is the full, untruncated slot.material (AppTask::syncAmsToUi).
   // A smaller buffer here truncated long tray_type values (e.g. "Support
   // for PLA" -> "Support for") on the tray-card display even after the
   // backend confirmation-matching fix for the same class of bug.
-  char material[16]{};
-  char colorHex[9]{};
-  rtos::SpoolId spoolId = 0;
+  char material[16]{};      ///< Material name reported by the printer.
+  char colorHex[9]{};       ///< Color reported by the printer.
+  rtos::SpoolId spoolId = 0;  ///< Resolved Spoolman spool id, or 0 if unknown.
   // Restgewicht/K-Faktor aus Spoolman -- nur aussagekraeftig, wenn
   // detailsLoaded true ist (AppTask::resolveTraySpoolDetails() hat den
   // asynchronen Spoolman-Abruf abgeschlossen); vorher/bei unbekannter
   // Zuordnung bleiben sie auf 0/false und duerfen nicht angezeigt werden
   // (0.0F waere sonst nicht von einem echten Restgewicht 0 unterscheidbar),
   // siehe UiBridge.cpp::updateTrayButton().
-  bool detailsLoaded = false;
-  float remainingWeightGrams = 0.0F;
-  bool kFactorValid = false;
-  float kFactor = 0.0F;
+  bool detailsLoaded = false;         ///< Whether #remainingWeightGrams/#kFactor are valid yet.
+  float remainingWeightGrams = 0.0F;  ///< Resolved remaining weight, only valid if #detailsLoaded.
+  bool kFactorValid = false;          ///< Whether #kFactor is valid.
+  float kFactor = 0.0F;               ///< Resolved flow-dynamics K-factor, only valid if #kFactorValid.
   // Ob dieses Fach laut Drucker gerade in der Duese aktiv ist ("tray_now",
   // Nutzerwunsch 2026-08-24) -- siehe AppTask::syncAmsToUi()'s
   // UpdateTrayDetails-value-Kodierung fuer die Gegenseite.
-  bool isActiveNozzle = false;
+  bool isActiveNozzle = false;  ///< Whether this tray is currently loaded into the nozzle.
 };
-std::array<std::array<TrayUiEntry, 4>, 4> trayEntries{};
-TrayUiEntry externalTrayEntry{};
+std::array<std::array<TrayUiEntry, 4>, 4> trayEntries{};  ///< Display-list of trays, indexed [amsId][trayId], for #currentPrinterId.
+TrayUiEntry externalTrayEntry{};  ///< Display state of the external/manual spool holder.
+/// @brief Editable text-field draft backing the printer add/edit screen widget.
 struct PrinterUiDraft {
-  char name[32];
-  char host[64];
-  char serial[32];
-  char accessCode[16];
+  char name[32];        ///< Display name field.
+  char host[64];        ///< Host/IP field.
+  char serial[32];      ///< Serial number field.
+  char accessCode[16];  ///< LAN access code field.
 };
-PrinterUiDraft printerUiDraft{};
+PrinterUiDraft printerUiDraft{};  ///< Active printer-settings editor draft.
 constexpr const char* kKeyboardLowerMap[] = {
     "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "Entf.", "\n",
     "a", "s", "d", "f", "g", "h", "j", "k", "l", "OK", "\n",
     "_", "-", "z", "x", "c", "v", "b", "n", "m", ".", ",", ":", "\n",
-    "ABC", "123", "<", "Leer", ">", "Abbr.", ""};
+    "ABC", "123", "<", "Leer", ">", "Abbr.", ""};  ///< Lowercase on-screen keyboard layout.
 constexpr const char* kKeyboardUpperMap[] = {
     "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "Entf.", "\n",
     "A", "S", "D", "F", "G", "H", "J", "K", "L", "OK", "\n",
     "_", "-", "Z", "X", "C", "V", "B", "N", "M", ".", ",", ":", "\n",
-    "abc", "123", "<", "Leer", ">", "Abbr.", ""};
+    "abc", "123", "<", "Leer", ">", "Abbr.", ""};  ///< Uppercase on-screen keyboard layout.
 constexpr const char* kKeyboardNumberMap[] = {
     "1", "2", "3", "Entf.", "\n", "4", "5", "6", "Abbr.", "\n",
-    "7", "8", "9", "OK", "\n", "ABC", "0", ".", "<", ">", ""};
-std::uint32_t nextRequestId = 100;
+    "7", "8", "9", "OK", "\n", "ABC", "0", ".", "<", ">", ""};  ///< Numeric on-screen keyboard layout.
+std::uint32_t nextRequestId = 100;  ///< Next locally-generated UiAction correlation id.
 models::UiWeightState liveWeight{0.0F, 0.0F, false, false, true,
-                                 "wartet auf Messwert"};
-models::UiStagingSummary stagingState{};
-models::UiSpoolSummary stagingSpoolState{};
-lv_obj_t* calibrationEditor = nullptr;
-lv_obj_t* calibrationKeyboard = nullptr;
-std::array<lv_obj_t*, 9> stagingTableRows{};
-bool touchWasPressed = false;
-std::size_t touchMarkerColorIndex = 0;
-lv_obj_t* overlayBackdrop = nullptr;
-lv_obj_t* overlayPanel = nullptr;
-lv_obj_t* overlayTitle = nullptr;
-lv_obj_t* overlayText = nullptr;
-lv_obj_t* overlayProgress = nullptr;
-lv_obj_t* overlayCancel = nullptr;
-lv_obj_t* overlayConfirm = nullptr;
-std::array<lv_obj_t*, 4> advancedModeButtons{};
-constexpr std::size_t kMaximumSpoolPickerResults = 20;
-constexpr std::int32_t kSpoolPickerRowWidth = 444;
-constexpr std::int32_t kSpoolPickerRowHeight = 46;
-constexpr std::int32_t kSpoolPickerRowPitch = 48;
-std::array<lv_obj_t*, kMaximumSpoolPickerResults> spoolPickerButtons{};
+                                 "wartet auf Messwert"};  ///< Current scale display state.
+models::UiStagingSummary stagingState{};      ///< Current staged-spool display state.
+models::UiSpoolSummary stagingSpoolState{};   ///< Full spool data for the currently staged spool.
+lv_obj_t* calibrationEditor = nullptr;   ///< Scale calibration editor widget/screen root.
+lv_obj_t* calibrationKeyboard = nullptr;  ///< On-screen keyboard bound to the calibration editor.
+std::array<lv_obj_t*, 9> stagingTableRows{};  ///< Row widgets of the staging detail table.
+bool touchWasPressed = false;            ///< Previous-frame touch press state, for edge detection.
+std::size_t touchMarkerColorIndex = 0;   ///< Index into the touch-marker color cycle.
+lv_obj_t* overlayBackdrop = nullptr;  ///< Dimmed backdrop behind the active overlay.
+lv_obj_t* overlayPanel = nullptr;     ///< Active overlay's panel container.
+lv_obj_t* overlayTitle = nullptr;     ///< Active overlay's title label.
+lv_obj_t* overlayText = nullptr;      ///< Active overlay's body text label.
+lv_obj_t* overlayProgress = nullptr;  ///< Active overlay's progress indicator, if any.
+lv_obj_t* overlayCancel = nullptr;    ///< Active overlay's cancel button, if any.
+lv_obj_t* overlayConfirm = nullptr;   ///< Active overlay's confirm button, if any.
+std::array<lv_obj_t*, 4> advancedModeButtons{};  ///< Mode-select buttons on the advanced weighing screen.
+constexpr std::size_t kMaximumSpoolPickerResults = 20;  ///< Maximum spool-picker rows rendered.
+constexpr std::int32_t kSpoolPickerRowWidth = 444;   ///< Spool-picker row width in pixels.
+constexpr std::int32_t kSpoolPickerRowHeight = 46;   ///< Spool-picker row height in pixels.
+constexpr std::int32_t kSpoolPickerRowPitch = 48;    ///< Spool-picker row vertical pitch in pixels.
+std::array<lv_obj_t*, kMaximumSpoolPickerResults> spoolPickerButtons{};  ///< Spool-picker row button widgets.
 std::array<std::array<lv_obj_t*,
                       filament_station::models::SpoolmanSpool::kMaximumColors>,
            kMaximumSpoolPickerResults>
-    spoolPickerColorPanels{};
-std::array<lv_obj_t*, kMaximumSpoolPickerResults> spoolPickerLabels{};
-std::array<rtos::SpoolId, kMaximumSpoolPickerResults> spoolPickerIds{};
-lv_obj_t* spoolPickerSearch = nullptr;
-lv_obj_t* spoolPickerFilterButton = nullptr;
-lv_obj_t* spoolPickerList = nullptr;
-lv_obj_t* spoolPickerScrollUp = nullptr;
-lv_obj_t* spoolPickerScrollDown = nullptr;
-lv_obj_t* spoolPickerKeyboard = nullptr;
-std::uint8_t spoolPickerFilter = 0;
-bool spoolPickerInputActive = false;
-lv_obj_t* advancedInput = nullptr;
-lv_obj_t* advancedKeyboard = nullptr;
-std::int32_t advancedInputMode = 0;
-rtos::UiOverlayKind activeOverlayKind = rtos::UiOverlayKind::None;
-std::uint32_t activeOverlayRequestId = 0;
+    spoolPickerColorPanels{};  ///< Per-row, per-color swatch widgets in the spool picker.
+std::array<lv_obj_t*, kMaximumSpoolPickerResults> spoolPickerLabels{};  ///< Spool-picker row label widgets.
+std::array<rtos::SpoolId, kMaximumSpoolPickerResults> spoolPickerIds{};  ///< Spool id shown on each spool-picker row.
+lv_obj_t* spoolPickerSearch = nullptr;        ///< Spool-picker search text field.
+lv_obj_t* spoolPickerFilterButton = nullptr;  ///< Spool-picker search-filter toggle button.
+lv_obj_t* spoolPickerList = nullptr;          ///< Spool-picker scrollable list container.
+lv_obj_t* spoolPickerScrollUp = nullptr;      ///< Spool-picker scroll-up button.
+lv_obj_t* spoolPickerScrollDown = nullptr;    ///< Spool-picker scroll-down button.
+lv_obj_t* spoolPickerKeyboard = nullptr;      ///< On-screen keyboard bound to the spool-picker search field.
+std::uint8_t spoolPickerFilter = 0;      ///< Currently selected search filter (rtos::SpoolmanSearchFilter).
+bool spoolPickerInputActive = false;     ///< Whether the spool-picker search field currently has input focus.
+lv_obj_t* advancedInput = nullptr;       ///< Active numeric input field on the advanced weighing screen.
+lv_obj_t* advancedKeyboard = nullptr;    ///< On-screen keyboard bound to #advancedInput.
+std::int32_t advancedInputMode = 0;      ///< Which value #advancedInput currently edits.
+rtos::UiOverlayKind activeOverlayKind = rtos::UiOverlayKind::None;  ///< Currently shown overlay kind.
+std::uint32_t activeOverlayRequestId = 0;  ///< Correlation id of the currently shown overlay.
 filament_station::models::SpoolmanAppState spoolmanAppState =
-    filament_station::models::SpoolmanAppState::SpoolmanUnavailable;
-bool currentTagCanAssign = false;
-bool currentTagCanRemove = false;
-bool diagnosticsRefreshedThisSession = false;
+    filament_station::models::SpoolmanAppState::SpoolmanUnavailable;  ///< Current Spoolman connection/readiness state.
+bool currentTagCanAssign = false;   ///< Whether the currently present tag can be assigned to a spool.
+bool currentTagCanRemove = false;   ///< Whether the currently present tag's assignment can be removed.
+bool diagnosticsRefreshedThisSession = false;  ///< Whether the diagnostics screen has been refreshed at least once this session.
 // Real WLAN/NFC connection status for the Home status summary -- previously
 // this read from models::mock::settings() (always hardcoded "Connected")
 // for WLAN/Spoolman, and stagingState.nfcStatus (never written anywhere)
 // for NFC, so the whole summary was either fake or blank regardless of
 // actual state.
-rtos::UiNetworkState currentNetworkState = rtos::UiNetworkState::Offline;
-char currentNfcStatusText[48] = "wird initialisiert";
+rtos::UiNetworkState currentNetworkState = rtos::UiNetworkState::Offline;  ///< Current WiFi connection state, for the Home status summary.
+char currentNfcStatusText[48] = "wird initialisiert";  ///< Current NFC status text, for the Home status summary.
 
+/// @brief Sends a UiAction to AppTask.
+/// @param type Action type.
+/// @param printerId Target printer, if applicable.
+/// @param amsId Target AMS index, if applicable.
+/// @param trayId Target tray index, if applicable.
+/// @param value Generic numeric payload.
+/// @param spoolId Target spool, if applicable.
+/// @param text Text payload, or null.
+/// @return false if the app event queue was full.
 bool sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
                 std::uint8_t amsId = 0, std::uint8_t trayId = 0,
                 std::int32_t value = 0, rtos::SpoolId spoolId = 0,
                 const char* text = nullptr);
+/// @brief Re-renders the weight card from #liveWeight.
 void updateWeightDisplays();
+/// @brief Updates a tray button's selected-highlight state.
+/// @param printerId Owning printer.
+/// @param amsId AMS index.
+/// @param trayId Tray index.
+/// @param selected Whether the tray should be shown as selected.
 void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
                          std::uint8_t trayId, bool selected);
 
 constexpr const char* kAdvancedNumberMap[] = {
     "1", "2", "3", "Entf.", "\n", "4", "5", "6", "Abbr.", "\n",
-    "7", "8", "9", "OK", "\n", "0", ".", ""};
+    "7", "8", "9", "OK", "\n", "0", ".", ""};  ///< Numeric on-screen keyboard layout for the advanced weighing input.
 
+/// @brief LVGL click handler: selects a weighing mode on the advanced weighing screen.
+/// @param event LVGL click event.
 void advancedModeClicked(lv_event_t* event) {
   const auto mode = static_cast<std::int32_t>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   sendAction(rtos::UiActionType::AdvancedWeight, currentPrinterId, 0, 0, mode);
 }
 
+/// @brief LVGL click handler: selects a spool row in the spool picker.
+/// @param event LVGL click event.
 void spoolPickerItemClicked(lv_event_t* event) {
   const auto index = static_cast<std::size_t>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
@@ -247,6 +280,10 @@ void spoolPickerItemClicked(lv_event_t* event) {
              spoolId);
 }
 
+/// @brief Parses a "#RRGGBB"/"RRGGBB" color string into a packed RGB888 value.
+/// @param hex Color string to parse.
+/// @param rgb Out parameter receiving the packed value.
+/// @return false if `hex` is not a valid 6-digit hex color.
 bool parseSpoolPickerColor(const char* hex, std::uint32_t& rgb) {
   if (hex == nullptr) return false;
   while (*hex == '#') ++hex;
@@ -260,6 +297,9 @@ bool parseSpoolPickerColor(const char* hex, std::uint32_t& rgb) {
   return true;
 }
 
+/// @brief Renders a spool picker row's color swatch panel(s) from a command's spool colors.
+/// @param index Row index into #spoolPickerButtons/#spoolPickerColorPanels.
+/// @param command Command carrying the spool's color(s).
 void applySpoolPickerColors(std::size_t index,
                             const rtos::UiCommand& command) {
   if (index >= spoolPickerButtons.size()) return;
@@ -291,6 +331,11 @@ void applySpoolPickerColors(std::size_t index,
   lv_obj_move_foreground(spoolPickerLabels[index]);
 }
 
+/// @brief Creates one spool-picker row button with its color-swatch panels and label.
+/// @param text Initial row label text.
+/// @param y Row's vertical position within the picker list.
+/// @param index Row index, used as the button's click-event user data.
+/// @return The created button widget.
 lv_obj_t* createSpoolPickerButton(const char* text, std::int32_t y,
                                   std::size_t index) {
   lv_obj_t* button = lv_button_create(spoolPickerList);
@@ -338,6 +383,7 @@ lv_obj_t* createSpoolPickerButton(const char* text, std::int32_t y,
   return button;
 }
 
+/// @brief Sends a SearchSpool action with the spool-picker's current search text/filter.
 void submitSpoolPickerSearch() {
   if (spoolPickerSearch == nullptr ||
       lv_textarea_get_text(spoolPickerSearch)[0] == '\0')
@@ -347,6 +393,8 @@ void submitSpoolPickerSearch() {
              lv_textarea_get_text(spoolPickerSearch));
 }
 
+/// @brief LVGL click handler: scrolls the spool-picker list up/down.
+/// @param event LVGL click event; its user data encodes the scroll direction.
 void spoolPickerScrollClicked(lv_event_t* event) {
   if (spoolPickerList == nullptr) return;
   const auto direction = static_cast<std::int32_t>(
@@ -355,12 +403,15 @@ void spoolPickerScrollClicked(lv_event_t* event) {
                    LV_ANIM_ON);
 }
 
+/// @brief LVGL change handler: updates #spoolPickerFilter from the filter dropdown.
 void spoolPickerFilterChanged(lv_event_t*) {
   if (spoolPickerFilterButton != nullptr)
     spoolPickerFilter = static_cast<std::uint8_t>(
         lv_dropdown_get_selected(spoolPickerFilterButton));
 }
 
+/// @brief Toggles the spool picker between list-browsing and search-text-input mode.
+/// @param active true to show the on-screen keyboard and hide the list, false for the reverse.
 void setSpoolPickerInputMode(bool active) {
   spoolPickerInputActive = active;
   if (active) {
@@ -381,6 +432,8 @@ void setSpoolPickerInputMode(bool active) {
   }
 }
 
+/// @brief LVGL keyboard handler: applies one keypress to the spool-picker search field.
+/// @param event LVGL value-changed event from the on-screen keyboard.
 void spoolPickerKeyboardEvent(lv_event_t* event) {
   if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED ||
       spoolPickerKeyboard == nullptr || spoolPickerSearch == nullptr)
@@ -415,6 +468,7 @@ void spoolPickerKeyboardEvent(lv_event_t* event) {
   }
 }
 
+/// @brief LVGL click handler: opens the on-screen keyboard for the spool-picker search field.
 void spoolPickerTextareaClicked(lv_event_t*) {
   if (spoolPickerKeyboard == nullptr || spoolPickerSearch == nullptr) return;
   lv_buttonmatrix_set_map(spoolPickerKeyboard,
@@ -423,6 +477,8 @@ void spoolPickerTextareaClicked(lv_event_t*) {
   setSpoolPickerInputMode(true);
 }
 
+/// @brief LVGL keyboard handler: applies one keypress to the advanced-weighing numeric input.
+/// @param event LVGL value-changed event from the on-screen keyboard.
 void advancedKeyboardEvent(lv_event_t* event) {
   if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED ||
       advancedInput == nullptr || advancedKeyboard == nullptr) return;
@@ -443,6 +499,12 @@ void advancedKeyboardEvent(lv_event_t* event) {
   }
 }
 
+/// @brief Creates one weighing-mode select button on the advanced weighing overlay.
+/// @param text Button label.
+/// @param x Button x position.
+/// @param y Button y position.
+/// @param mode Mode value, used as the button's click-event user data.
+/// @return The created button widget.
 lv_obj_t* createAdvancedModeButton(const char* text, std::int32_t x,
                                    std::int32_t y, std::int32_t mode) {
   lv_obj_t* button = lv_button_create(overlayPanel);
@@ -461,6 +523,8 @@ lv_obj_t* createAdvancedModeButton(const char* text, std::int32_t x,
   return button;
 }
 
+/// @brief LVGL click handler: sends the action bound to a generic overlay button.
+/// @param event LVGL click event; its user data encodes the rtos::UiActionType.
 void overlayActionClicked(lv_event_t* event) {
   const auto action = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
@@ -468,6 +532,13 @@ void overlayActionClicked(lv_event_t* event) {
              static_cast<std::int32_t>(activeOverlayKind), 0, nullptr);
 }
 
+/// @brief Creates one generic action button on the overlay panel.
+/// @param parent Parent widget (the overlay panel).
+/// @param text Button label.
+/// @param x Button x position.
+/// @param color Button background color.
+/// @param action Action to send when clicked.
+/// @return The created button widget.
 lv_obj_t* createOverlayButton(lv_obj_t* parent, const char* text,
                               std::int32_t x, std::uint32_t color,
                               rtos::UiActionType action) {
@@ -487,6 +558,7 @@ lv_obj_t* createOverlayButton(lv_obj_t* parent, const char* text,
   return button;
 }
 
+/// @brief Lazily creates the shared overlay widget tree (backdrop, panel, title/text/progress/buttons) on first use.
 void ensureOverlay() {
   if (overlayBackdrop != nullptr) return;
   overlayBackdrop = lv_obj_create(lv_layer_top());
@@ -629,6 +701,7 @@ void ensureOverlay() {
   lv_obj_add_flag(advancedKeyboard, LV_OBJ_FLAG_HIDDEN);
 }
 
+/// @brief Hides the active overlay/keyboard and clears the tracked overlay kind/requestId.
 void hideOverlay() {
   if (overlayBackdrop != nullptr) lv_obj_add_flag(overlayBackdrop, LV_OBJ_FLAG_HIDDEN);
   if (spoolPickerKeyboard != nullptr)
@@ -637,6 +710,8 @@ void hideOverlay() {
   activeOverlayRequestId = 0;
 }
 
+/// @brief Recolors the overlay's cancel button.
+/// @param color Background color to apply.
 void styleOverlayNavigation(std::uint32_t color) {
   if (overlayCancel == nullptr) return;
   lv_obj_set_style_bg_color(overlayCancel, lv_color_hex(color), LV_PART_MAIN);
@@ -645,6 +720,9 @@ void styleOverlayNavigation(std::uint32_t color) {
     lv_obj_set_style_text_color(label, lv_color_hex(kColorTextWhite), LV_PART_MAIN);
 }
 
+/// @brief Configures and shows the shared overlay for a ShowDialog/ShowProgress command.
+/// @param command Command carrying the overlay kind, title, text, and buttons to show.
+/// @param progress Whether to show the progress-style layout instead of the dialog-style layout.
 void showOverlay(const rtos::UiCommand& command, bool progress) {
   ensureOverlay();
   // Restore the standard geometry first because the same overlay objects are
@@ -805,6 +883,8 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
   lv_obj_move_foreground(overlayBackdrop);
 }
 
+/// @brief LVGL timer callback: deletes a touch-diagnostic marker after its display timeout.
+/// @param timer LVGL timer whose user data is the marker widget to delete.
 void deleteTouchMarker(lv_timer_t* timer) {
   auto* marker = static_cast<lv_obj_t*>(lv_timer_get_user_data(timer));
   if (marker != nullptr) {
@@ -812,6 +892,9 @@ void deleteTouchMarker(lv_timer_t* timer) {
   }
 }
 
+/// @brief Shows a brief, color-cycling dot at a touch point, for touch-calibration diagnostics.
+/// @param x Touch X coordinate.
+/// @param y Touch Y coordinate.
 void showTouchMarker(std::int32_t x, std::int32_t y) {
   constexpr std::array<std::uint32_t, 5> kMarkerColors{{
       kColorTouchMarker1, kColorTouchMarker2, kColorTouchMarker3, kColorTouchMarker4, kColorTouchMarker5,
@@ -845,8 +928,14 @@ void showTouchMarker(std::int32_t x, std::int32_t y) {
   lv_timer_set_repeat_count(timer, 1);
 }
 
+/// @brief LVGL tick source callback.
+/// @return Milliseconds since boot.
 std::uint32_t tickMilliseconds() { return millis(); }
 
+/// @brief LVGL display flush callback: pushes one dirty area to the physical display.
+/// @param display Display being flushed.
+/// @param area Dirty pixel area.
+/// @param pixelMap RGB565 pixel data for `area`.
 void flushDisplay(lv_display_t* display, const lv_area_t* area,
                   std::uint8_t* pixelMap) {
   const std::int32_t width = area->x2 - area->x1 + 1;
@@ -857,6 +946,8 @@ void flushDisplay(lv_display_t* display, const lv_area_t* area,
   lv_display_flush_ready(display);
 }
 
+/// @brief LVGL touch input-device read callback.
+/// @param data Out parameter receiving the current touch point/state.
 void readTouch(lv_indev_t*, lv_indev_data_t* data) {
   std::int32_t x = 0;
   std::int32_t y = 0;
@@ -874,6 +965,9 @@ void readTouch(lv_indev_t*, lv_indev_data_t* data) {
   }
 }
 
+/// @brief German display text for a connection state.
+/// @param state State to describe.
+/// @return Static, NUL-terminated German text.
 const char* connectionText(models::UiConnectionState state) {
   switch (state) {
     case models::UiConnectionState::Disabled:
@@ -890,6 +984,9 @@ const char* connectionText(models::UiConnectionState state) {
   return "unbekannt";
 }
 
+/// @brief Recursively finds the first lv_label descendant of a widget.
+/// @param object Widget to search.
+/// @return The first label found, or nullptr.
 lv_obj_t* firstLabelDescendant(lv_obj_t* object) {
   if (object == nullptr) return nullptr;
   const std::uint32_t childCount = lv_obj_get_child_count(object);
@@ -902,10 +999,16 @@ lv_obj_t* firstLabelDescendant(lv_obj_t* object) {
   return nullptr;
 }
 
+/// @brief Finds a button's caption label.
+/// @param button Button widget.
+/// @return The button's label descendant, or nullptr.
 lv_obj_t* buttonLabel(lv_obj_t* button) {
   return firstLabelDescendant(button);
 }
 
+/// @brief Sets a button's caption text.
+/// @param button Button widget.
+/// @param text Text to set.
 void setButtonText(lv_obj_t* button, const char* text) {
   lv_obj_t* label = buttonLabel(button);
   if (label != nullptr) {
@@ -924,6 +1027,9 @@ void setButtonText(lv_obj_t* button, const char* text) {
 // (Spoolman-/Drucker-Einstellungen). buttonLabel() already
 // falls back to `object` itself when it has no label descendant (a plain
 // status label, not a button), so one code path covers both cases.
+/// @brief Sets a widget's text: its label descendant if it's a button, or itself if it's a plain label.
+/// @param object Widget to update.
+/// @param text Text to set.
 void setControlText(lv_obj_t* object, const char* text) {
   if (object == nullptr) return;
   lv_obj_t* label = buttonLabel(object);
@@ -932,6 +1038,9 @@ void setControlText(lv_obj_t* object, const char* text) {
 
 // Standard-Luma-Gewichtung (Rec. 601), Schwelle 150000 entspricht ~59%
 // Helligkeit -- ab da gilt ein Hintergrund als hell genug fuer dunklen Text.
+/// @brief Whether a background color is light enough to need dark text (Rec. 601 luma).
+/// @param backgroundRgb Packed RGB888 background color.
+/// @return true if the background is light.
 bool isLightBackground(std::uint32_t backgroundRgb) {
   const std::uint32_t red = (backgroundRgb >> 16U) & 0xFFU;
   const std::uint32_t green = (backgroundRgb >> 8U) & 0xFFU;
@@ -939,6 +1048,9 @@ bool isLightBackground(std::uint32_t backgroundRgb) {
   return (red * 299U + green * 587U + blue * 114U) > 150000U;
 }
 
+/// @brief Sets a button's background color and picks a matching light/dark caption color.
+/// @param button Button widget.
+/// @param backgroundRgb Background color to apply.
 void setButtonColors(lv_obj_t* button, std::uint32_t backgroundRgb) {
   lv_obj_set_style_bg_color(button, lv_color_hex(backgroundRgb), LV_PART_MAIN);
   const bool useDarkText = isLightBackground(backgroundRgb);
@@ -981,18 +1093,22 @@ bool sendAction(rtos::UiActionType type, rtos::PrinterId printerId,
   return true;
 }
 
+/// @brief LVGL click handler: opens the printer switcher from the header.
 void headerClicked(lv_event_t*) {
   sendAction(rtos::UiActionType::SelectPrinter, currentPrinterId, 0, 0, 1);
 }
 
+/// @brief LVGL click handler: opens the settings screen.
 void settingsClicked(lv_event_t*) {
   sendAction(rtos::UiActionType::OpenSettings, currentPrinterId);
 }
 
+/// @brief LVGL click handler: navigates back to the previous screen.
 void backClicked(lv_event_t*) {
   sendAction(rtos::UiActionType::Back, currentPrinterId);
 }
 
+/// @brief LVGL click handler: opens the staging detail screen.
 void stagingClicked(lv_event_t*) {
   // Staging ist druckerunabhaengig -- siehe die gleiche Korrektur in
   // updateHomeContent(); stagingState.printerId wird nirgends gesetzt und
@@ -1002,12 +1118,16 @@ void stagingClicked(lv_event_t*) {
              stagingState.spoolId);
 }
 
+/// @brief LVGL click handler: selects an AMS unit on Home.
+/// @param event LVGL click event; its user data encodes the AMS index.
 void amsClicked(lv_event_t* event) {
   const auto amsId = static_cast<std::uint8_t>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   sendAction(rtos::UiActionType::SelectAms, currentPrinterId, amsId);
 }
 
+/// @brief LVGL click handler: selects a tray.
+/// @param event LVGL click event; its user data encodes the tray index.
 void trayClicked(lv_event_t* event) {
   const auto trayId = static_cast<std::uint8_t>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
@@ -1019,18 +1139,25 @@ void trayClicked(lv_event_t* event) {
   sendAction(rtos::UiActionType::SelectTray, currentPrinterId, amsId, trayId);
 }
 
+/// @brief LVGL click handler: selects a printer from the switcher.
+/// @param event LVGL click event; its user data encodes the printer id.
 void printerClicked(lv_event_t* event) {
   const auto printerId = static_cast<rtos::PrinterId>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   sendAction(rtos::UiActionType::SelectPrinter, printerId);
 }
 
+/// @brief LVGL click handler: navigates to a settings category screen.
+/// @param event LVGL click event; its user data encodes the target rtos::UiActionType.
 void settingsCategoryClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   sendAction(type, currentPrinterId);
 }
 
+/// @brief Maps a UI field index to its #spoolmanDraft text value.
+/// @param field UI-defined field index (1-6).
+/// @return The corresponding value, or "" if unrecognized.
 const char* spoolmanFieldValue(std::int32_t field) {
   switch (field) {
     case 1:
@@ -1050,10 +1177,16 @@ const char* spoolmanFieldValue(std::int32_t field) {
   }
 }
 
+/// @brief Mutable-pointer variant of spoolmanFieldValue(), for direct in-place editing.
+/// @param field UI-defined field index (1-6).
+/// @return Writable pointer to the corresponding buffer.
 char* spoolmanFieldDestination(std::int32_t field) {
   return const_cast<char*>(spoolmanFieldValue(field));
 }
 
+/// @brief Buffer capacity for a #spoolmanDraft field, matching spoolmanFieldValue().
+/// @param field UI-defined field index (1-6).
+/// @return Buffer size in bytes, or 0 if unrecognized.
 std::size_t spoolmanFieldCapacity(std::int32_t field) {
   switch (field) {
     case 1:
@@ -1073,6 +1206,7 @@ std::size_t spoolmanFieldCapacity(std::int32_t field) {
   }
 }
 
+/// @brief Re-renders the Spoolman settings screen's labels from #spoolmanDraft.
 void updateSpoolmanSettingsContent() {
   char text[96];
   std::snprintf(text, sizeof(text), "Name: %s", spoolmanDraft.name);
@@ -1090,6 +1224,7 @@ void updateSpoolmanSettingsContent() {
   setControlText(objects.spoolman_setting_timeout, text);
 }
 
+/// @brief Closes and destroys the Spoolman field editor/keyboard widgets, if open.
 void closeSpoolmanEditor() {
   if (spoolmanKeyboard != nullptr) {
     lv_obj_delete_async(spoolmanKeyboard);
@@ -1104,9 +1239,10 @@ void closeSpoolmanEditor() {
   editorContext = EditorContext::None;
 }
 
-// Commits whatever text currently sits in the open Spoolman field editor
-// into spoolmanDraft, exactly as pressing "OK" on the on-screen keyboard
-// would. Test/Speichern/Abbrechen sit lower on the same screen (y=264)
+/// @brief Commits whatever text currently sits in the open Spoolman field
+///        editor into #spoolmanDraft, exactly as pressing "OK" on the
+///        on-screen keyboard would.
+// Test/Speichern/Abbrechen sit lower on the same screen (y=264)
 // than the editor+keyboard overlay (y=0-220, no backdrop blocking touches
 // to the rest of the screen) -- without this, tapping Test/Speichern while
 // a field was still mid-edit (keyboard still open, "OK" never pressed)
@@ -1132,6 +1268,8 @@ void commitSpoolmanEditorIfOpen() {
   closeSpoolmanEditor();
 }
 
+/// @brief LVGL keyboard handler: applies one keypress to the open Spoolman/printer field editor.
+/// @param event LVGL value-changed event from the on-screen keyboard.
 void spoolmanKeyboardEvent(lv_event_t* event) {
   if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED ||
       spoolmanEditor == nullptr || spoolmanKeyboard == nullptr) {
@@ -1177,6 +1315,9 @@ void spoolmanKeyboardEvent(lv_event_t* event) {
   }
 }
 
+/// @brief LVGL click handler: opens the text editor for one Spoolman
+///        settings field (or directly toggles the protocol for field 2).
+/// @param event LVGL click event; its user data encodes the field index.
 void spoolmanFieldClicked(lv_event_t* event) {
   const auto field = static_cast<std::int32_t>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
@@ -1219,6 +1360,9 @@ void spoolmanFieldClicked(lv_event_t* event) {
   lv_obj_move_foreground(spoolmanKeyboard);
 }
 
+/// @brief LVGL click handler: commits any open field edit, then sends the
+///        Spoolman settings action (Test/Save/Cancel) bound to the button.
+/// @param event LVGL click event; its user data encodes the rtos::UiActionType.
 void spoolmanActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
@@ -1229,6 +1373,7 @@ void spoolmanActionClicked(lv_event_t* event) {
   sendAction(type, currentPrinterId);
 }
 
+/// @brief Closes and destroys the calibration weight editor/keyboard widgets, if open.
 void closeCalibrationEditor() {
   if (calibrationKeyboard != nullptr) {
     lv_obj_delete_async(calibrationKeyboard);
@@ -1240,6 +1385,8 @@ void closeCalibrationEditor() {
   }
 }
 
+/// @brief LVGL keyboard handler: applies one keypress to the calibration reference-weight editor.
+/// @param event LVGL value-changed event from the on-screen keyboard.
 void calibrationKeyboardEvent(lv_event_t* event) {
   if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED ||
       calibrationEditor == nullptr || calibrationKeyboard == nullptr) return;
@@ -1269,6 +1416,7 @@ void calibrationKeyboardEvent(lv_event_t* event) {
   }
 }
 
+/// @brief LVGL click handler: opens the reference-weight editor for scale calibration.
 void calibrationClicked(lv_event_t*) {
   closeCalibrationEditor();
   calibrationEditor = lv_textarea_create(objects.scr_settings_scale);
@@ -1292,6 +1440,9 @@ void calibrationClicked(lv_event_t*) {
   lv_obj_move_foreground(calibrationKeyboard);
 }
 
+/// @brief Finds a printer's display-list entry by id.
+/// @param id Printer id to find.
+/// @return Pointer to the entry, or nullptr if not found.
 PrinterUiEntry* printerEntry(rtos::PrinterId id) {
   for (auto& entry : printerEntries) {
     if (entry.id == id) return &entry;
@@ -1299,15 +1450,20 @@ PrinterUiEntry* printerEntry(rtos::PrinterId id) {
   return nullptr;
 }
 
+/// @brief Finds a tray's display-list entry by (amsId, trayId), including the external slot (0xFF, 0xFF).
+/// @param amsId AMS index, or 0xFF for the external slot.
+/// @param trayId Tray index, or 0xFF for the external slot.
+/// @return Pointer to the entry, or nullptr if out of range.
 TrayUiEntry* trayUiEntry(std::uint8_t amsId, std::uint8_t trayId) {
   if (amsId == 0xFF && trayId == 0xFF) return &externalTrayEntry;
   if (amsId < 1 || amsId > trayEntries.size() || trayId >= 4) return nullptr;
   return &trayEntries[amsId - 1][trayId];
 }
 
-// Parses the leading 6 hex digits of a Bambu tray_color (RRGGBB or
-// RRGGBBAA) into an 0xRRGGBB value; falls back to a neutral grey for
-// missing/malformed input.
+/// @brief Parses the leading 6 hex digits of a Bambu tray_color (RRGGBB or
+///        RRGGBBAA) into an 0xRRGGBB value.
+/// @param colorHex Color string to parse.
+/// @return The parsed value, or #kColorNeutralGrey for missing/malformed input.
 std::uint32_t parseTrayColorHex(const char* colorHex) {
   if (colorHex == nullptr || std::strlen(colorHex) < 6) return kColorNeutralGrey;
   char buffer[7];
@@ -1318,6 +1474,9 @@ std::uint32_t parseTrayColorHex(const char* colorHex) {
                                           : kColorNeutralGrey;
 }
 
+/// @brief Maps a UI field index to its #printerUiDraft text value.
+/// @param field UI-defined field index (1-4).
+/// @return The corresponding value, or "" if unrecognized.
 const char* printerDraftValue(std::int32_t field) {
   switch (field) {
     case 1: return printerUiDraft.name;
@@ -1328,10 +1487,16 @@ const char* printerDraftValue(std::int32_t field) {
   }
 }
 
+/// @brief Mutable-pointer variant of printerDraftValue(), for direct in-place editing.
+/// @param field UI-defined field index (1-4).
+/// @return Writable pointer to the corresponding buffer.
 char* printerDraftDestination(std::int32_t field) {
   return const_cast<char*>(printerDraftValue(field));
 }
 
+/// @brief Buffer capacity for a #printerUiDraft field, matching printerDraftValue().
+/// @param field UI-defined field index (1-4).
+/// @return Buffer size in bytes, or 0 if unrecognized.
 std::size_t printerDraftCapacity(std::int32_t field) {
   switch (field) {
     case 1: return sizeof(printerUiDraft.name);
@@ -1342,6 +1507,9 @@ std::size_t printerDraftCapacity(std::int32_t field) {
   }
 }
 
+/// @brief Resets #printerUiDraft to blank placeholders for a printer id,
+///        pending the real values arriving via sendPrinterDraftToUi().
+/// @param id Printer being edited.
 void loadPrinterUiDraft(rtos::PrinterId id) {
   editingPrinterId = id;
   showPrinterAccessCode = false;
@@ -1355,6 +1523,7 @@ void loadPrinterUiDraft(rtos::PrinterId id) {
   printerUiDraft.accessCode[0] = '\0';
 }
 
+/// @brief Re-renders the printer editor screen's labels from #printerUiDraft.
 void updatePrinterEditorContent() {
   char text[96];
   std::snprintf(text, sizeof(text), "Anzeigename: %s", printerUiDraft.name);
@@ -1370,6 +1539,7 @@ void updatePrinterEditorContent() {
                  showPrinterAccessCode ? "Verbergen" : "Anzeigen");
 }
 
+/// @brief Re-renders the printer management list's 4 rows from #printerEntries.
 void updatePrinterSettingsList() {
   const std::array<lv_obj_t*, 4> rows{{objects.printer_settings_row_1,
                                       objects.printer_settings_row_2,
@@ -1397,12 +1567,16 @@ void updatePrinterSettingsList() {
   }
 }
 
+/// @brief LVGL click handler: selects a printer row in the management list.
+/// @param event LVGL click event; its user data encodes the printer id.
 void printerRowClicked(lv_event_t* event) {
   const auto id = static_cast<rtos::PrinterId>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   sendAction(rtos::UiActionType::SelectManagedPrinter, id);
 }
 
+/// @brief LVGL click handler: sends an add/edit/delete action for the managed printer list.
+/// @param event LVGL click event; its user data encodes the rtos::UiActionType.
 void printerListActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
@@ -1410,6 +1584,8 @@ void printerListActionClicked(lv_event_t* event) {
   sendAction(type, id);
 }
 
+/// @brief LVGL click handler: opens the text editor for one printer settings field.
+/// @param event LVGL click event; its user data encodes the field index.
 void printerFieldClicked(lv_event_t* event) {
   const auto field = static_cast<std::int32_t>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
@@ -1437,27 +1613,34 @@ void printerFieldClicked(lv_event_t* event) {
   lv_obj_move_foreground(spoolmanKeyboard);
 }
 
+/// @brief LVGL click handler: toggles whether the LAN access code is shown in plain text.
 void printerMaskClicked(lv_event_t*) {
   showPrinterAccessCode = !showPrinterAccessCode;
   updatePrinterEditorContent();
 }
 
+/// @brief LVGL click handler: sends the printer editor's action (Save/Test/Cancel/Delete).
+/// @param event LVGL click event; its user data encodes the rtos::UiActionType.
 void printerEditActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
   sendAction(type, editingPrinterId);
 }
 
+/// @brief LVGL click handler: opens the printer management screen.
 void managePrintersClicked(lv_event_t*) {
   sendAction(rtos::UiActionType::OpenPrinterSettings, currentPrinterId);
 }
 
+/// @brief LVGL click handler: opens the full staging detail screen.
 void stagingMoreClicked(lv_event_t*) {
   const auto& staging = stagingState;
   sendAction(rtos::UiActionType::SelectStaging, currentPrinterId, 0, 0, 1,
              staging.spoolId);
 }
 
+/// @brief LVGL click handler: sends a staging action (weigh/assign/clear), carrying the staged spool's identity.
+/// @param event LVGL click event; its user data encodes the rtos::UiActionType.
 void stagingActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
@@ -1480,6 +1663,8 @@ void stagingActionClicked(lv_event_t* event) {
              actionText);
 }
 
+/// @brief LVGL click handler: selects a tab on the tray detail screen.
+/// @param event LVGL click event; its user data encodes the tab value.
 void trayDetailsClicked(lv_event_t* event) {
   const auto value = static_cast<std::int32_t>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
@@ -1487,6 +1672,8 @@ void trayDetailsClicked(lv_event_t* event) {
              selectedTrayAmsId, selectedTrayId, value, selectedTraySpoolId);
 }
 
+/// @brief LVGL click handler: sends a tray slot action (assign/reapply/reset/untag/refresh).
+/// @param event LVGL click event; its user data encodes the rtos::UiActionType.
 void trayActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
@@ -1502,6 +1689,9 @@ void trayActionClicked(lv_event_t* event) {
              spoolId);
 }
 
+/// @brief LVGL click handler: selects and immediately commits a tray as the
+///        target for the staged spool (no separate confirm step in this screen).
+/// @param event LVGL click event; its user data encodes the tray index.
 void trayTargetClicked(lv_event_t* event) {
   // TraySelect has no separate confirm control in the EEZ design (only
   // Cancel) -- tapping a slot both highlights it (optimistic, local) and
@@ -1515,6 +1705,8 @@ void trayTargetClicked(lv_event_t* event) {
              amsId, trayId, 0, stagingState.spoolId);
 }
 
+/// @brief LVGL click handler: sends a tag action (select spool/assign/remove) for the currently present tag.
+/// @param event LVGL click event; its user data encodes the rtos::UiActionType.
 void tagActionClicked(lv_event_t* event) {
   const auto type = static_cast<rtos::UiActionType>(
       reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event)));
@@ -1526,14 +1718,18 @@ void tagActionClicked(lv_event_t* event) {
   sendAction(type, currentPrinterId, 0, 0, 0, spoolId);
 }
 
+/// @brief LVGL click handler: assigns the last-used tag spool to the currently present tag.
 void lastTagSpoolClicked(lv_event_t*) {
   sendAction(rtos::UiActionType::AssignTag, currentPrinterId, 0, 0, 1);
 }
 
+/// @brief LVGL click handler: opens the spool picker to assign a tag.
 void assignTagWithPickerClicked(lv_event_t*) {
   sendAction(rtos::UiActionType::AssignTag, currentPrinterId);
 }
 
+/// @brief Recursively disables click/scroll on every descendant, so clicks pass through to the parent widget.
+/// @param object Widget whose descendants to make touch-transparent.
 void makeDescendantsTouchTransparent(lv_obj_t* object) {
   const std::uint32_t childCount = lv_obj_get_child_count(object);
   for (std::uint32_t index = 0; index < childCount; ++index) {
@@ -1544,6 +1740,10 @@ void makeDescendantsTouchTransparent(lv_obj_t* object) {
   }
 }
 
+/// @brief Registers a click callback on a widget, making its descendants touch-transparent first.
+/// @param object Widget to bind.
+/// @param callback Click callback.
+/// @param userData User data passed to `callback`.
 void bindClick(lv_obj_t* object, lv_event_cb_t callback,
                std::uintptr_t userData = 0) {
   lv_obj_remove_flag(object, LV_OBJ_FLAG_SCROLLABLE);
@@ -1552,6 +1752,8 @@ void bindClick(lv_obj_t* object, lv_event_cb_t callback,
                       reinterpret_cast<void*>(userData));
 }
 
+/// @brief Applies the base clickable/centered/rounded styling shared by every EEZ label-button.
+/// @param object Widget to style.
 void styleLabelButton(lv_obj_t* object) {
   if (object == nullptr) return;
   // Every former "label pretending to be a button" is now a real
@@ -1570,6 +1772,9 @@ void styleLabelButton(lv_obj_t* object) {
   lv_obj_set_style_radius(object, 8, LV_PART_MAIN);
 }
 
+/// @brief Enables/disables a label-button's clickability and disabled visual state.
+/// @param object Widget to update.
+/// @param available Whether the button should be clickable/enabled.
 void setLabelButtonAvailable(lv_obj_t* object, bool available) {
   if (object == nullptr) return;
   lv_obj_set_flag(object, LV_OBJ_FLAG_CLICKABLE, available);
@@ -1580,6 +1785,8 @@ void setLabelButtonAvailable(lv_obj_t* object, bool available) {
   }
 }
 
+/// @brief Enables/disables every Spoolman-dependent control based on #spoolmanAppState, and re-renders the status text.
+/// @param command Optional command carrying an updated Spoolman state/version to apply first.
 void applySpoolmanAppState(const rtos::UiCommand* command = nullptr) {
   const bool online =
       filament_station::models::spoolmanOperationsAvailable(spoolmanAppState);
@@ -1637,6 +1844,13 @@ void applySpoolmanAppState(const rtos::UiCommand* command = nullptr) {
   }
 }
 
+/// @brief Colors a button's two secondary color-swatch containers for a
+///        multi-color filament (the first color already colors the button
+///        itself at the call site).
+/// @param swatch1 Second color's swatch widget.
+/// @param swatch2 Third color's swatch widget.
+/// @param colors Full color array; index 0 colors the button itself, not used here.
+/// @param colorCount Number of valid entries in `colors`.
 // Multicolor-Filament-Anzeige (Nutzerwunsch 2026-08-23): Farbe 1 faerbt den
 // Button selbst (siehe setButtonColors()-Aufrufe an den Call-Sites), Farbe 2
 // und 3 faerben je einen vom Nutzer im EEZ-Projekt angelegten
@@ -1660,6 +1874,7 @@ void updateHomeColorSwatches(
   }
 }
 
+/// @brief Creates the staging detail screen's striped table rows (one time), styling the title bar.
 void createStagingTableDecoration() {
   lv_obj_set_style_bg_opa(objects.staging_details_title, LV_OPA_COVER,
                           LV_PART_MAIN);
@@ -1693,6 +1908,7 @@ void createStagingTableDecoration() {
   }
 }
 
+/// @brief Styles the tray detail screen's content panel, reusing the EEZ-owned label to conserve LVGL heap.
 void createTrayDetailsDecoration() {
   // Reuse the EEZ-owned label. Creating six additional labels here exhausted
   // the remaining internal LVGL heap after the printer-management screens
@@ -1707,6 +1923,7 @@ void createTrayDetailsDecoration() {
   lv_obj_set_style_pad_all(objects.tray_details_content, 6, LV_PART_MAIN);
 }
 
+/// @brief Applies the German-character-set font to every generated screen.
 void applyApplicationFont() {
   const std::array<lv_obj_t*, 25> screens{{
       objects.scr_boot, objects.scr_home, objects.scr_printer_select,
@@ -1728,6 +1945,10 @@ void applyApplicationFont() {
   }
 }
 
+/// @brief One-time setup of the whole generated UI: binds every click
+///        handler, applies dynamic layout/positioning EEZ Studio can't
+///        express, and creates the shared overlay/decoration widgets.
+///        Called once from initializeLvgl().
 void bindGeneratedWidgets() {
   // EEZ identifiers remain stable; only the user-facing wording is localized.
   // Ausnahme (Nutzerwunsch 2026-08-25): auf SCR_SETTINGS_HOME,
@@ -2214,6 +2435,7 @@ void bindGeneratedWidgets() {
   createTrayDetailsDecoration();
 }
 
+/// @brief Re-renders the printer switcher's entries from #printerEntries.
 void updatePrinterList() {
   // select_printer_1/2/3/4 are bound to fixed printerIds 1/2/3/4 (see
   // bindClick calls above), so printerEntries[index] must line up
@@ -2263,6 +2485,10 @@ void updatePrinterList() {
 // (STAGING_LABEL). Beide Varianten immer zuerst entfernt, dann die
 // passende hinzugefuegt, damit beim Umschalten kein alter Style haengen
 // bleibt (LVGL haengt Styles sonst an, statt sie zu ersetzen).
+/// @brief Colors a label's text for readability against its background, optionally applying header emphasis.
+/// @param label Label widget to style.
+/// @param lightBackground Whether the label sits on a light background.
+/// @param headerStyle Whether to apply the header-emphasis variant.
 void applyBackgroundAwareLabelStyle(lv_obj_t* label, bool lightBackground,
                                     bool headerStyle) {
   if (headerStyle) {
@@ -2284,6 +2510,21 @@ void applyBackgroundAwareLabelStyle(lv_obj_t* label, bool lightBackground,
   }
 }
 
+/// @brief Re-renders one tray card's material/weight/K-factor labels,
+///        color swatches, spool id badge, and nozzle-active icon.
+/// @param button The tray's clickable EEZ sub-widget (not the transparent card wrapper).
+/// @param materialLabel Material text label.
+/// @param weightLabel Remaining-weight text label.
+/// @param kFactorLabel K-factor text label.
+/// @param swatch1 Second color's swatch widget.
+/// @param swatch2 Third color's swatch widget.
+/// @param spoolIdContainer Spool id badge container, shown/hidden based on resolution.
+/// @param spoolIdLabel Spool id badge text label.
+/// @param nozzleIcon "Currently in nozzle" indicator icon.
+/// @param printerId Owning printer (currently unused; real data is only ever synced for the focused printer).
+/// @param amsId AMS index, or 0xFF for the external slot.
+/// @param trayId Tray index, or 0xFF for the external slot.
+/// @param title Unused; no per-slot title is shown (Nutzerwunsch 2026-08-22).
 // Zielobjekte entsprechen den Sub-Widgets der CMP_TRAY_CARD-Komponente
 // (ui-project, Nutzerwunsch 2026-08-23; auf drei eigene Labels
 // material/weight/k_factor umgebaut, Nutzerwunsch 2026-08-24 -- vorher ein
@@ -2383,6 +2624,7 @@ void updateTrayButton(lv_obj_t* button, lv_obj_t* materialLabel,
   }
 }
 
+/// @brief Re-renders the entire Home screen (printer header, AMS buttons, tray cards, staging card, status).
 void updateHomeContent() {
   const PrinterUiEntry* printer = printerEntry(currentPrinterId);
   if (printer == nullptr || !printer->exists) {
@@ -2584,6 +2826,7 @@ void updateWeightDisplays() {
   lv_label_set_text(objects.scale_settings_calibration, text);
 }
 
+/// @brief Re-renders the staging card/detail screen from #stagingState/#stagingSpoolState.
 void updateStagingContent() {
   const auto& staging = stagingState;
   const auto& spool = stagingSpoolState;
@@ -2677,6 +2920,7 @@ void updateStagingContent() {
   }
 }
 
+/// @brief Re-renders the tray detail screen's table rows for the currently selected tray.
 void updateTrayDetails() {
   // "Slot"-Tab: Belegung/Material/Farbe direkt aus dem MQTT-Report des
   // Druckers (AppTask::syncAmsToUi). "Spule"-Tab: die Spoolman-ID, die
@@ -2829,6 +3073,8 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
   lv_label_set_text(objects.tray_select_summary, summary);
 }
 
+/// @brief Sets the printer-name header text on every screen that shows one.
+/// @param text Header text to set.
 void setAllHeaderTexts(const char* text) {
   const std::array<lv_obj_t*, 23> headers{{
       objects.home_header,
@@ -2864,6 +3110,7 @@ void setAllHeaderTexts(const char* text) {
 // -- die Bildquelle wird hier zur Laufzeit auf die passende
 // verbunden/getrennt-Grafik umgeschaltet, EEZ Studio besitzt weiterhin
 // Position/Größe.
+/// @brief Re-renders the header's WiFi/Spoolman/NFC status icons from #currentNetworkState/#spoolmanAppState/#currentNfcStatusText.
 void updateHeaderStatusIcons() {
   const std::array<lv_obj_t*, 23> printerIcons{{
       objects.home_header_printer,
@@ -2958,6 +3205,8 @@ void updateHeaderStatusIcons() {
                                              : &img_spoolman_disconneced);
 }
 
+/// @brief Updates the header for a printer id change: name text and status icons.
+/// @param printerId Printer now shown in the header.
 void updateHeaders(rtos::PrinterId printerId) {
   // Printer identity comes from printerEntries, AMS presence/occupancy from
   // amsEntries/trayEntries -- both real, AppTask-synced data (see
@@ -2987,6 +3236,9 @@ void updateHeaders(rtos::PrinterId printerId) {
   updatePrinterSettingsList();
 }
 
+/// @brief Re-renders the AMS overview if the update concerns the currently focused printer.
+/// @param printerId Printer the AMS update concerns.
+/// @param amsId AMS unit updated (currently unused; the whole overview is re-rendered).
 void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
   const PrinterUiEntry* printer = printerEntry(printerId);
   if (printerId != currentPrinterId || printer == nullptr || !printer->exists ||
@@ -3001,6 +3253,8 @@ void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
   updateTraySelection(currentPrinterId, currentAmsId, 0, false);
 }
 
+/// @brief Navigates to a screen, refreshing its content and closing any open editors/overlays first.
+/// @param screenId Screen to show.
 void showScreen(rtos::UiScreenId screenId) {
   switch (screenId) {
     case rtos::UiScreenId::Boot:
@@ -3132,6 +3386,7 @@ void showScreen(rtos::UiScreenId screenId) {
   }
 }
 
+/// @brief Frees the PSRAM-allocated LVGL draw buffers.
 void releaseDrawBuffers() {
   if (drawBuffer1 != nullptr) {
     heap_caps_free(drawBuffer1);

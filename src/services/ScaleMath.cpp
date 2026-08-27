@@ -1,3 +1,7 @@
+/**
+ * @file
+ * @brief Implements services::calculateScaleFactor()/countsToGrams().
+ */
 #include "services/ScaleMath.h"
 
 #include <cmath>
