@@ -1,10 +1,12 @@
 #include "tasks/Tasks.h"
 
+#include <Arduino.h>
 #include <driver/gpio.h>
 #include <esp_sleep.h>
 
 #include <cstdio>
 
+#include "config/AppConfig.h"
 #include "config/BoardConfig.h"
 #include "config/PowerConfig.h"
 #include "rtos/Messages.h"
@@ -210,6 +212,40 @@ void powerTask(void* parameter) {
     waitForSleepQuiescence(ctx);
 
     sleepUntilTouchWake(ctx);
+
+    // Nutzerbericht 2026-08-27: nach einem Aufwachen aus dem Light-Sleep
+    // funktioniert das serielle Logging nicht mehr. Bereits in TASKS.md
+    // Phase 11.6 als Risiko vermerkt und mit einem passenden Datenpunkt
+    // beobachtet (esptool meldete nach einem Light-Sleep-Zyklus wiederholt
+    // "Could not open COM5", bis das Kabel physisch neu gesteckt wurde) --
+    // die native USB-CDC-Verbindung dieses Chips uebersteht einen
+    // Light-Sleep-Zyklus offenbar nicht zuverlaessig und muss vom Host neu
+    // erkannt werden. Ein erneuter Serial.begin() nach dem Aufwachen ist
+    // der naheliegende, risikoarme Firmware-seitige Versuch (kein
+    // Serial.end() davor -- LoggingTask koennte zum exakt selben Zeitpunkt
+    // ebenfalls aus dem Sleep aufwachen und noch vor dem Sleep geloggte,
+    // nicht mehr geleerte Zeilen nachtraeglich schreiben wollen; ein
+    // zerstoerendes end() waere damit riskanter als ein reines
+    // Neu-Initialisieren). Kein bekannter Weg, dies ohne echte Hardware zu
+    // verifizieren -- falls das Problem bestehen bleibt, ist es
+    // wahrscheinlich eine tiefere USB-PHY-/Host-Erkennungsgrenze, die eine
+    // Firmware-seitige Behebung allein nicht loesen kann.
+    Serial.begin(config::kSerialBaudRate);
+
+    // UiTask keeps reporting inactivity every kPowerActivityReportIntervalMs
+    // right up until the CPU actually halts in esp_light_sleep_start(), so at
+    // least the most recent ReportInactivity (with a stale, large inactiveMs
+    // from just before sleep) is typically still sitting unconsumed in the
+    // queue -- it would otherwise be the very next message read below and
+    // immediately re-trigger Sleep, undoing the wake before the screen was
+    // even visible for a full second (observed on hardware: a touch
+    // occasionally only flashes the display briefly before it goes dark
+    // again, with the next touch then waking it properly). Drain everything
+    // queued during the sleep-entry window so only fresh, post-wake reports
+    // decide the next state.
+    rtos::PowerCommand stale{};
+    while (xQueueReceive(ctx.powerCommandQueue, &stale, 0) == pdTRUE) {
+    }
 
     FS_LOGI(services::LogComponent::Power, "Woken by touch, resuming");
     inactiveMs = 0;

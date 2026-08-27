@@ -119,7 +119,13 @@ struct AmsUiEntry {
 std::array<AmsUiEntry, 4> amsEntries{};
 struct TrayUiEntry {
   bool occupied = false;
-  char material[12]{};
+  // 16 bytes to match models::PrinterSlotStateData::material -- this is
+  // filled via snprintf from command.title (UpdateTrayDetails), which
+  // itself is the full, untruncated slot.material (AppTask::syncAmsToUi).
+  // A smaller buffer here truncated long tray_type values (e.g. "Support
+  // for PLA" -> "Support for") on the tray-card display even after the
+  // backend confirmation-matching fix for the same class of bug.
+  char material[16]{};
   char colorHex[9]{};
   rtos::SpoolId spoolId = 0;
   // Restgewicht/K-Faktor aus Spoolman -- nur aussagekraeftig, wenn
@@ -651,6 +657,7 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
   lv_obj_set_size(overlayTitle, 388, 32);
   lv_obj_set_pos(overlayText, 16, 52);
   lv_obj_set_size(overlayText, 388, 100);
+  lv_obj_set_pos(overlayProgress, 16, 126);
   lv_obj_set_pos(overlayCancel, 16, 158);
   lv_obj_set_size(overlayCancel, 170, 50);
   lv_obj_set_pos(overlayConfirm, 218, 158);
@@ -666,6 +673,22 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
     lv_obj_set_size(overlayText, 388, 166);
     lv_obj_set_y(overlayCancel, 220);
     lv_obj_set_y(overlayConfirm, 220);
+  }
+  if (command.overlayKind == rtos::UiOverlayKind::BootProgress) {
+    // Up to four status lines ("Display bereit." plus SD/NFC/Waage, see
+    // AppTask::refreshBootProgress()) need more room than the 100 px
+    // default text box -- at the default size overlayText's bottom 26 px
+    // sat behind overlayProgress (drawn afterwards, so on top), visibly
+    // cutting off the fourth line (Nutzerbericht 2026-08-26). Unlike
+    // AdvancedWeight above, the progress bar itself must stay visible here,
+    // so it is pushed down together with the buttons instead of hidden.
+    lv_obj_set_size(overlayPanel, 420, 300);
+    lv_obj_center(overlayPanel);
+    lv_obj_set_pos(overlayText, 16, 46);
+    lv_obj_set_size(overlayText, 388, 150);
+    lv_obj_set_pos(overlayProgress, 16, 204);
+    lv_obj_set_y(overlayCancel, 228);
+    lv_obj_set_y(overlayConfirm, 228);
   }
   activeOverlayKind = command.overlayKind;
   activeOverlayRequestId = command.requestId;

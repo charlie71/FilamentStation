@@ -55,8 +55,8 @@ void create_screen_scr_boot() {
             // boot_status
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.boot_status = obj;
-            lv_obj_set_pos(obj, 145, 126);
-            lv_obj_set_size(obj, 230, 150);
+            lv_obj_set_pos(obj, 145, 122);
+            lv_obj_set_size(obj, 230, 198);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
             add_style_label_standart(obj);
@@ -6356,16 +6356,17 @@ void create_user_widget_cmp_tray_card(lv_obj_t *parent_obj, int startWidgetIndex
             lv_obj_t *obj = lv_label_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 6] = obj;
             lv_obj_set_pos(obj, 6, 29);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_size(obj, LV_PCT(90), LV_SIZE_CONTENT);
+            lv_label_set_long_mode(obj, LV_LABEL_LONG_SCROLL_CIRCULAR);
             add_style_label_standart_w(obj);
-            lv_label_set_text_static(obj, "ABS");
+            lv_label_set_text_static(obj, "Support for PLA");
         }
         {
             // weight
             lv_obj_t *obj = lv_label_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 7] = obj;
             lv_obj_set_pos(obj, 6, 49);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_size(obj, LV_PCT(90), LV_SIZE_CONTENT);
             add_style_label_standart_w(obj);
             lv_label_set_text_static(obj, "500g");
         }
@@ -6374,7 +6375,7 @@ void create_user_widget_cmp_tray_card(lv_obj_t *parent_obj, int startWidgetIndex
             lv_obj_t *obj = lv_label_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 8] = obj;
             lv_obj_set_pos(obj, 6, 68);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_size(obj, LV_PCT(90), LV_SIZE_CONTENT);
             add_style_label_standart_w(obj);
             lv_label_set_text_static(obj, "K (0.020)");
         }
@@ -6489,9 +6490,10 @@ void create_user_widget_cmp_staging_card(lv_obj_t *parent_obj, int startWidgetIn
             lv_obj_t *obj = lv_label_create(parent_obj);
             ((lv_obj_t **)&objects)[startWidgetIndex + 6] = obj;
             lv_obj_set_pos(obj, 32, 30);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_size(obj, LV_PCT(70), LV_SIZE_CONTENT);
+            lv_label_set_long_mode(obj, LV_LABEL_LONG_SCROLL_CIRCULAR);
             add_style_label_standart_w(obj);
-            lv_label_set_text_static(obj, "ABS");
+            lv_label_set_text_static(obj, "Support for PLA");
         }
         {
             // weight

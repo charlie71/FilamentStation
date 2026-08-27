@@ -835,6 +835,27 @@ void persistTraySpoolCache(rtos::RtosContext& ctx) {
     entry["spoolId"] = source.spoolId;
     entry["material"] = source.material;
     entry["colorHex"] = source.colorHex;
+    // Nutzerbericht 2026-08-27: ein Speichern eines einzelnen, dem Anschein
+    // nach gueltigen Eintrags ("ABS", printer_id=1, ams_id=0, tray_id=0)
+    // scheiterte an validateTraySpoolCacheEntries() mit
+    // "invalid_document_field", ohne dass der eigentlich verletzte Feldwert
+    // aus dieser generischen Fehlermeldung ablesbar war -- die Validierung
+    // bewertet stets das gesamte Dokument, ein anderer, hier nicht direkt
+    // sichtbarer Eintrag kann also ebenso gut die Ursache sein. Jeder
+    // Eintrag wird deshalb vor dem Schreiben einzeln geloggt, um die
+    // tatsaechlich betroffene (printerId, amsId, trayId) beim naechsten
+    // Fehlschlag direkt zu identifizieren, statt weiter zu raten.
+    FS_LOGD(services::LogComponent::App,
+            "Tray-Spoolman cache entry printer_id=%u ams_id=%u tray_id=%u "
+            "spool_id=%lu material=\"%s\" material_len=%u colorHex=\"%s\" "
+            "colorHex_len=%u",
+            static_cast<unsigned>(source.printerId),
+            static_cast<unsigned>(source.amsId),
+            static_cast<unsigned>(source.trayId),
+            static_cast<unsigned long>(source.spoolId), source.material,
+            static_cast<unsigned>(std::strlen(source.material)),
+            source.colorHex,
+            static_cast<unsigned>(std::strlen(source.colorHex)));
   }
   rtos::StorageCommand storage{};
   storage.type = rtos::StorageCommandType::SaveJson;
@@ -1384,9 +1405,20 @@ bool sendPendingSlotAssignTray(rtos::RtosContext& ctx, std::uint32_t requestId,
   // pendingSlotAssignment.amsId is the UI-side 1-based AMS number
   // (validated as 1..kMaximumAmsPerPrinter at the ConfigureSlotFromStaging/
   // ReapplySlot entry point); the wire protocol counts AMS units 0-based
-  // (see the matching conversion/comment at ResetSlot/UntagSlot).
-  assignTray.amsId = static_cast<std::uint8_t>(pendingSlotAssignment.amsId - 1U);
-  assignTray.trayId = pendingSlotAssignment.trayId;
+  // (see the matching conversion/comment at ResetSlot/UntagSlot). The
+  // external/manual spool holder uses kExternalTraySentinel (0xFF) on the
+  // UI side but a fixed, different pair of wire values (Nutzerbericht
+  // 2026-08-27: "Extern" konfigurieren scheiterte bisher schon an der
+  // Validierung, siehe die entsprechenden Nachtraege unten -- die -1U-
+  // Umrechnung haette ausserdem 0xFF auf 0xFE verfaelscht statt den echten
+  // externen Adresswert zu senden).
+  if (pendingSlotAssignment.amsId == models::kExternalTraySentinel) {
+    assignTray.amsId = models::kBambuExternalAmsId;
+    assignTray.trayId = models::kBambuExternalTrayId;
+  } else {
+    assignTray.amsId = static_cast<std::uint8_t>(pendingSlotAssignment.amsId - 1U);
+    assignTray.trayId = pendingSlotAssignment.trayId;
+  }
   assignTray.spoolId = pendingSlotAssignment.spoolId;
   std::snprintf(assignTray.trayType, sizeof(assignTray.trayType), "%s",
                pendingSlotAssignment.trayType);
@@ -3348,9 +3380,19 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Slot konfigurieren", "Kein Drucker ausgew\xC3\xA4hlt.");
         return;
       }
-      if (action.amsId == 0 ||
-          action.amsId > models::kMaximumAmsPerPrinter ||
-          action.trayId >= models::kSlotsPerAms) {
+      // "Extern" (kein AMS, manueller Spulenhalter) sendet amsId/trayId
+      // beide als kExternalTraySentinel (0xFF, siehe UiBridge.cpp
+      // trayTargetClicked()) und muss den regulaeren 1..4/0..3-AMS-Bereich
+      // umgehen -- fehlte bisher, wodurch "Extern konfigurieren" immer
+      // sofort mit "Ungueltiger AMS-Slot" abgelehnt wurde (Nutzerbericht
+      // 2026-08-27).
+      const bool isExternalTarget =
+          action.amsId == models::kExternalTraySentinel &&
+          action.trayId == models::kExternalTraySentinel;
+      if (!isExternalTarget &&
+          (action.amsId == 0 ||
+           action.amsId > models::kMaximumAmsPerPrinter ||
+           action.trayId >= models::kSlotsPerAms)) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, action.requestId,
                     "Slot konfigurieren", "Ung\xC3\xBCltiger AMS-Slot.");
@@ -3405,9 +3447,19 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Slot konfigurieren", "Kein Drucker ausgew\xC3\xA4hlt.");
         return;
       }
-      if (action.amsId == 0 ||
-          action.amsId > models::kMaximumAmsPerPrinter ||
-          action.trayId >= models::kSlotsPerAms) {
+      // "Extern" (kein AMS, manueller Spulenhalter) sendet amsId/trayId
+      // beide als kExternalTraySentinel (0xFF, siehe UiBridge.cpp
+      // trayTargetClicked()) und muss den regulaeren 1..4/0..3-AMS-Bereich
+      // umgehen -- fehlte bisher, wodurch "Extern konfigurieren" immer
+      // sofort mit "Ungueltiger AMS-Slot" abgelehnt wurde (Nutzerbericht
+      // 2026-08-27).
+      const bool isExternalTarget =
+          action.amsId == models::kExternalTraySentinel &&
+          action.trayId == models::kExternalTraySentinel;
+      if (!isExternalTarget &&
+          (action.amsId == 0 ||
+           action.amsId > models::kMaximumAmsPerPrinter ||
+           action.trayId >= models::kSlotsPerAms)) {
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, action.requestId,
                     "Slot konfigurieren", "Ung\xC3\xBCltiger AMS-Slot.");
@@ -3424,19 +3476,31 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       // "AMS 4"); das Bambu-Protokoll zaehlt AMS-Einheiten dagegen 0-basiert
       // (siehe docs/bambu-protocol.md und PrinterState::amsUnits) -- ohne
       // diese Umrechnung zielte AssignTray auf eine am Drucker nicht
-      // existierende AMS-Einheit und wurde stillschweigend ignoriert.
+      // existierende AMS-Einheit und wurde stillschweigend ignoriert. Das
+      // externe/manuelle Fach (kExternalTraySentinel, kein AMS) braucht
+      // stattdessen die feste Bambu-Adresse ams_id=255/tray_id=254
+      // (Nutzerbericht 2026-08-27, dieselbe Umrechnung wie in
+      // sendPendingSlotAssignTray()).
+      const bool isExternalSlot =
+          action.amsId == models::kExternalTraySentinel;
       const std::uint8_t amsIndex =
-          static_cast<std::uint8_t>(action.amsId - 1U);
+          isExternalSlot ? models::kBambuExternalAmsId
+                        : static_cast<std::uint8_t>(action.amsId - 1U);
+      const std::uint8_t wireTrayId =
+          isExternalSlot ? models::kBambuExternalTrayId : action.trayId;
       rtos::BambuCommand clearTray{};
       clearTray.type = rtos::BambuCommandType::AssignTray;
       clearTray.requestId = action.requestId;
       clearTray.printerId = action.printerId;
       clearTray.amsId = amsIndex;
-      clearTray.trayId = action.trayId;
+      clearTray.trayId = wireTrayId;
       clearTray.spoolId = 0;
       if (action.type == rtos::UiActionType::UntagSlot) {
-        const models::PrinterSlotStateData* slot = models::findSlot(
-            printerEntry(action.printerId), amsIndex, action.trayId);
+        const models::PrinterSlotStateData* slot =
+            isExternalSlot
+                ? &printerEntry(action.printerId).externalSlot
+                : models::findSlot(printerEntry(action.printerId), amsIndex,
+                                   action.trayId);
         if (slot != nullptr) {
           std::snprintf(clearTray.trayType, sizeof(clearTray.trayType), "%s",
                         slot->material);
@@ -3592,9 +3656,20 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                       "Slot konfigurieren", "Kein Drucker ausgew\xC3\xA4hlt.");
           return;
         }
-        if (action.amsId == 0 ||
-            action.amsId > models::kMaximumAmsPerPrinter ||
-            action.trayId >= models::kSlotsPerAms) {
+        // "Extern" (kein AMS, manueller Spulenhalter) sendet amsId/trayId
+        // beide als kExternalTraySentinel (0xFF) -- selbe Luecke wie bei
+        // ConfigureSlotFromStaging/ResetSlot/UntagSlot oben, hier aber
+        // unter abweichender Einrueckung nicht vom selben replace_all
+        // erfasst und deshalb uebersehen worden (Nutzerbericht 2026-08-27:
+        // "Extern konfigurieren" ueber "Manuell" auf TrayActions scheiterte
+        // nach dem ersten Fix weiterhin).
+        const bool isExternalTarget =
+            action.amsId == models::kExternalTraySentinel &&
+            action.trayId == models::kExternalTraySentinel;
+        if (!isExternalTarget &&
+            (action.amsId == 0 ||
+             action.amsId > models::kMaximumAmsPerPrinter ||
+             action.trayId >= models::kSlotsPerAms)) {
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::Error, action.requestId,
                       "Slot konfigurieren", "Ung\xC3\xBCltiger AMS-Slot.");
@@ -5686,31 +5761,53 @@ void appTask(void* parameter) {
         // command above); the material/colorHex captured at this moment
         // become the baseline a later mismatch is checked against.
         if (success) {
-          const std::uint8_t amsIndex =
-              static_cast<std::uint8_t>(pendingSlotAssignment.amsId - 1U);
+          // Das externe/manuelle Fach wird im Cache unter dem UI-seitigen
+          // Sentinel (kExternalTraySentinel/kExternalTraySentinel) statt
+          // einem regulaeren AMS-Index gefuehrt (siehe die Lesevorseite,
+          // resolveTraySpoolCacheSpoolId() in syncAmsToUi()) -- und liest
+          // sein Material/Farbe aus printer->externalSlot statt
+          // amsUnits[]. Nutzerbericht 2026-08-27: fehlte hier bisher
+          // komplett, "Extern" waere nach dem Bestaetigungs-Fix zwar
+          // konfigurierbar geworden, aber nie in den Cache uebernommen
+          // worden (derselbe dauerhafte "?"-Effekt wie beim urspruenglichen
+          // Restart-Bug).
+          const bool isExternalSlot =
+              pendingSlotAssignment.amsId == models::kExternalTraySentinel;
+          const std::uint8_t cacheAmsId =
+              isExternalSlot
+                  ? models::kExternalTraySentinel
+                  : static_cast<std::uint8_t>(pendingSlotAssignment.amsId -
+                                              1U);
+          const std::uint8_t cacheTrayId =
+              isExternalSlot ? models::kExternalTraySentinel
+                            : pendingSlotAssignment.trayId;
           if (wasClearing) {
             models::removeTraySpoolCacheEntry(traySpoolCache,
                                               pendingSlotAssignment.printerId,
-                                              amsIndex,
-                                              pendingSlotAssignment.trayId);
+                                              cacheAmsId, cacheTrayId);
             persistTraySpoolCache(ctx);
           } else {
             const models::PrinterState* printer = models::findPrinter(
                 printerCollection, pendingSlotAssignment.printerId);
-            if (printer != nullptr && amsIndex < models::kMaximumAmsPerPrinter &&
-                pendingSlotAssignment.trayId < models::kSlotsPerAms) {
-              const models::PrinterSlotStateData& slot =
-                  printer->amsUnits[amsIndex]
-                      .slots[pendingSlotAssignment.trayId];
+            const models::PrinterSlotStateData* slot = nullptr;
+            if (printer != nullptr) {
+              if (isExternalSlot) {
+                slot = &printer->externalSlot;
+              } else if (cacheAmsId < models::kMaximumAmsPerPrinter &&
+                        cacheTrayId < models::kSlotsPerAms) {
+                slot = &printer->amsUnits[cacheAmsId].slots[cacheTrayId];
+              }
+            }
+            if (slot != nullptr) {
               models::TraySpoolCacheEntry cacheEntry{};
               cacheEntry.printerId = pendingSlotAssignment.printerId;
-              cacheEntry.amsId = amsIndex;
-              cacheEntry.trayId = pendingSlotAssignment.trayId;
+              cacheEntry.amsId = cacheAmsId;
+              cacheEntry.trayId = cacheTrayId;
               cacheEntry.spoolId = pendingSlotAssignment.spoolId;
               std::snprintf(cacheEntry.material, sizeof(cacheEntry.material),
-                            "%s", slot.material);
+                            "%s", slot->material);
               std::snprintf(cacheEntry.colorHex, sizeof(cacheEntry.colorHex),
-                            "%s", slot.colorHex);
+                            "%s", slot->colorHex);
               if (models::upsertTraySpoolCacheEntry(traySpoolCache,
                                                     cacheEntry)) {
                 persistTraySpoolCache(ctx);
@@ -6020,6 +6117,35 @@ void appTask(void* parameter) {
       } else if (event->type == rtos::AppEventType::StorageReadCompleted &&
                  event->requestId == kTraySpoolCacheLoadRequestId) {
         traySpoolCache = event->traySpoolCache;
+        // Boot-Reihenfolge: requestTraySpoolCache() steht (kInitialDocuments,
+        // StorageTask.cpp) hinter allen anderen /config-Dateien in der FIFO-
+        // storageCommandQueue; ein bereits verbundener Drucker kann seinen
+        // ersten Statusbericht (BambuUpdate -> syncAmsToUi(), siehe unten)
+        // schon vorher liefern. Ohne diesen Re-Sync bliebe ein zu diesem
+        // fruehen Zeitpunkt mangels Cache als "?" angezeigtes Tray dauerhaft
+        // so stehen (Nutzerbericht 2026-08-26, Restart-Fall) -- der lokale
+        // Zustand war korrekt, nur nie erneut an die UI gesendet worden.
+        if (models::isValidPrinterId(printerCollection.activePrinterId))
+          syncAmsToUi(ctx, printerCollection.activePrinterId);
+      } else if (event->type == rtos::AppEventType::StorageRequestError &&
+                 event->requestId == kTraySpoolCacheLoadRequestId) {
+        // Bisher komplett stillschweigend uebergangen -- eine fehlgeschlagene
+        // Validierung von /mappings/printer-slots.json (z. B. durch eine
+        // veraltete Laengengrenze wie den 2026-08-27-Fund in
+        // JsonStorage.cpp) liess traySpoolCache auf ihrem Default (leer)
+        // stehen, ohne dass das je sichtbar geworden waere.
+        FS_LOGW(services::LogComponent::App,
+                "Tray-Spoolman cache load failed, staying empty: %s",
+                event->text);
+      } else if (event->type == rtos::AppEventType::StorageRequestError &&
+                 event->requestId == 0) {
+        // persistTraySpoolCache() ist bewusst fire-and-forget (kein Dialog,
+        // keine eigene requestId, siehe dortiger Kommentar) -- requestId 0
+        // wird sonst nirgends verwendet, daher ist dieser Vergleich
+        // eindeutig. Nur ein Log, damit ein fehlgeschlagenes Speichern der
+        // Drucker/Fach-Zuordnung ueberhaupt sichtbar wird (bislang spurlos).
+        FS_LOGW(services::LogComponent::App,
+                "Tray-Spoolman cache save failed: %s", event->text);
       } else if (pendingBambuSaveRequestId != 0 &&
                  event->requestId == pendingBambuSaveRequestId &&
                  event->type == rtos::AppEventType::StorageWriteCompleted) {

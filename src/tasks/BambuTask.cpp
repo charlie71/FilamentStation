@@ -151,8 +151,15 @@ PrinterConnection* connectionFor(PrinterConnections& connections,
 void checkPendingTrayAssignment(rtos::RtosContext& ctx,
                                 PrinterConnection& conn) {
   if (!conn.pending.active) return;
+  // Das externe/manuelle Fach (kein AMS) hat keinen Eintrag in
+  // conn.state.amsUnits[] -- findSlot() findet es grundsaetzlich nie
+  // (Nutzerbericht 2026-08-27: "Extern konfigurieren" bestaetigte deshalb
+  // nie, auch nachdem der Drucker die Zuordnung laengst angenommen hatte).
   const models::PrinterSlotStateData* slot =
-      models::findSlot(conn.state, conn.pending.amsId, conn.pending.trayId);
+      conn.pending.amsId == models::kBambuExternalAmsId
+          ? &conn.state.externalSlot
+          : models::findSlot(conn.state, conn.pending.amsId,
+                             conn.pending.trayId);
   if (slot == nullptr) return;
   const bool clearing = conn.pending.expectedTrayType[0] == '\0';
   const bool matches =
@@ -442,8 +449,18 @@ void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
                       "Drucker ist nicht verbunden");
     return;
   }
-  if (command.amsId >= models::kMaximumAmsPerPrinter ||
-      command.trayId >= models::kSlotsPerAms) {
+  // Das externe/manuelle Fach kommt hier bereits wire-kodiert an
+  // (models::kBambuExternalAmsId/kBambuExternalTrayId = 255/254, siehe
+  // AppTask.cpp::sendPendingSlotAssignTray()) -- eine vierte, unabhaengige
+  // Validierungsstelle, die bei der Fehlersuche zum externen Fach zuvor
+  // uebersehen wurde (Nutzerbericht 2026-08-27: "Ungueltiger AMS-Slot"
+  // bestand trotz dreier bereits behobener Stellen in AppTask.cpp weiter).
+  const bool isExternalWireAddress =
+      command.amsId == models::kBambuExternalAmsId &&
+      command.trayId == models::kBambuExternalTrayId;
+  if (!isExternalWireAddress &&
+      (command.amsId >= models::kMaximumAmsPerPrinter ||
+       command.trayId >= models::kSlotsPerAms)) {
     publishBambuError(ctx, command.requestId, command.printerId,
                       "Ung\xC3\xBCltiger AMS-Slot");
     return;

@@ -13,7 +13,7 @@ constexpr std::uint8_t kDisplayRotation = 3;
 constexpr std::uint32_t kDisplayWriteFrequencyHz = 20000000;
 constexpr std::uint32_t kDisplayBacklightPwmFrequencyHz = 44100;
 constexpr std::uint8_t kDisplayBacklightPwmChannel = 7;
-constexpr std::uint8_t kDisplayDefaultBrightness = 192;
+constexpr std::uint8_t kDisplayDefaultBrightness = 255;
 
 // WT32-SC01-Plus LCD: ST7796UI, 8-bit MCU8080 parallel interface.
 constexpr std::int8_t kDisplayBacklightPin = 45;

@@ -37,7 +37,11 @@ struct TraySpoolCacheEntry {
   std::uint8_t amsId = 0;
   std::uint8_t trayId = 0;
   std::uint32_t spoolId = 0;
-  char material[12]{};
+  // 16 bytes to match models::PrinterSlotStateData::material -- this is
+  // filled straight from that field (AppTask.cpp), a smaller buffer here
+  // would truncate it again independently and could falsely flag a valid
+  // entry as stale in resolveTraySpoolCacheSpoolId()'s material comparison.
+  char material[16]{};
   char colorHex[9]{};
 };
 

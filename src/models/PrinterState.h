@@ -22,6 +22,14 @@ constexpr std::size_t kSlotsPerAms = 4;
 constexpr std::uint8_t kActiveTrayNowExternal = 254;
 constexpr std::uint8_t kActiveTrayNowNone = 255;
 
+// Bambu "ams_filament_setting"/"extrusion_cali_sel" wire addressing for the
+// external/manual spool holder (no AMS involved) -- a different pair of
+// fields than tray_now above, coincidentally sharing 254 for the tray part.
+// See docs/bambu-protocol.md ("Vergleich mit FilaMan-System": "Default fuer
+// den externen Slot: ams_id=255, tray_id=254").
+constexpr std::uint8_t kBambuExternalAmsId = 255;
+constexpr std::uint8_t kBambuExternalTrayId = 254;
+
 enum class PrinterConnectionState : std::uint8_t {
   Disabled,
   Offline,
@@ -59,8 +67,15 @@ struct PrinterSlotStateData {
   PrinterSlotState state = PrinterSlotState::Unknown;
   // Printer-reported material/color for this tray (Bambu tray_type/
   // tray_color) -- these two fields are a real Bambu identity, unrelated to
-  // Spoolman, see docs/bambu-protocol.md.
-  char material[12]{};
+  // Spoolman, see docs/bambu-protocol.md. 16 bytes to match the outgoing
+  // BambuTrayFilament::trayType/BambuTask::PendingTrayAssignment::
+  // expectedTrayType capacity (services/BambuProtocol.h, tasks/
+  // BambuTask.cpp) -- a smaller buffer here silently truncated long
+  // tray_type values (e.g. "Support for PLA"), which then never matched
+  // the untruncated expected value and made AssignTray's confirmation
+  // (BambuTask.cpp::checkPendingTrayAssignment()) time out forever, even
+  // though the printer applied the assignment correctly.
+  char material[16]{};
   char colorHex[9]{};
 };
 

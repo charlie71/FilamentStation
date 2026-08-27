@@ -1,7 +1,7 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/3",
-    "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/7",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/0",
+    "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/0",
     "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/4",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
     "selectedThemeColorObject": "[FilamentStation.eez-project]:/colors/6",
@@ -125,7 +125,7 @@
             {
               "type": "row",
               "id": "#bcb8346a-a1d4-458f-ad8d-c7a84e05f3a1",
-              "weight": 12.112923169375822,
+              "weight": 14.28494745102764,
               "children": [
                 {
                   "type": "tabset",
@@ -196,17 +196,17 @@
             {
               "type": "tabset",
               "id": "EDITORS",
-              "weight": 49.8967350839487,
+              "weight": 47.72471080229689,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
                 {
                   "type": "tab",
                   "id": "#e368c9bf-289f-49c9-9192-04b65e68fad0",
-                  "name": "SCR_SETTINGS_HOME",
+                  "name": "SCR_BOOT",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/3",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/0",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -214,10 +214,10 @@
                 {
                   "type": "tab",
                   "id": "#8cca91c9-4476-4a6c-bd1a-9eefd8064973",
-                  "name": "CMP_STAGING_CARD",
+                  "name": "CMP_SPOOL_PICKER",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userWidgets/7",
+                    "objectPath": "[FilamentStation.eez-project]:/userWidgets/0",
                     "permanent": false
                   },
                   "icon": "svg:user_widget"
@@ -1089,7 +1089,9 @@
       "selectionBack": {
         "0": {
           "0": {},
-          "2": {}
+          "2": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -1097,7 +1099,7 @@
           "x": -235.1139787293043,
           "y": -147.0404261088999
         },
-        "scale": 1.1
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1137,7 +1139,7 @@
           "x": -116.46628563886668,
           "y": -124.96069464239568
         },
-        "scale": 0.9
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1228,7 +1230,8 @@
             "1": {}
           },
           "1": {},
-          "2": {
+          "2": {},
+          "3": {
             "$selected": true
           },
           "7": {},
@@ -1266,7 +1269,7 @@
           "x": -258,
           "y": -38
         },
-        "scale": 0.8
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1405,14 +1408,16 @@
         "1": {},
         "4": {},
         "6": {},
-        "7": {},
+        "7": {
+          "$selected": true
+        },
         "8": {},
         "9": {}
       },
       "transform": {
         "translate": {
           "x": -125.82143839518227,
-          "y": -98.907834370931
+          "y": -98.90783437093097
         },
         "scale": 1.25
       },
@@ -1572,16 +1577,18 @@
             "0": {}
           },
           "3": {
-            "0": {},
-            "$selected": true
+            "0": {}
           },
           "5": {},
           "7": {},
+          "8": {},
           "9": {},
           "10": {},
           "11": {},
           "12": {},
-          "15": {}
+          "15": {
+            "$selected": true
+          }
         }
       },
       "transform": {

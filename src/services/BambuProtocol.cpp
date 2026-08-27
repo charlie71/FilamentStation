@@ -212,9 +212,17 @@ std::size_t bambuBuildExtrusionCaliSel(std::uint32_t sequenceId,
   // (get_quad_for_set_filament_from_tray_id() passes "original_tray_id",
   // the un-split global index, as this command's tray_id, while slot_id
   // stays local). Doesn't affect a single-AMS printer (global == local for
-  // ams_id 0), see docs/bambu-protocol.md.
-  const std::uint8_t globalTrayId = static_cast<std::uint8_t>(
-      amsId * models::kSlotsPerAms + trayId);
+  // ams_id 0), see docs/bambu-protocol.md. The external/manual slot
+  // (amsId=kBambuExternalAmsId=255, trayId=kBambuExternalTrayId=254, see
+  // PrinterState.h) is not part of any AMS unit's numbering at all -- the
+  // multiplication below would wrap a std::uint8_t (255*4+254 = 1274 -> 250)
+  // into a meaningless value. Nutzerbericht 2026-08-27: send the same fixed
+  // sentinel (254) ams_filament_setting already uses for tray_id/slot_id in
+  // this case instead of computing a global index.
+  const std::uint8_t globalTrayId =
+      amsId == models::kBambuExternalAmsId
+          ? trayId
+          : static_cast<std::uint8_t>(amsId * models::kSlotsPerAms + trayId);
 
   JsonDocument document;
   JsonObject print = document["print"].to<JsonObject>();

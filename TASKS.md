@@ -242,6 +242,62 @@ Sequenz erfolgreich -- kein Code-Zusammenhang).
 * [x] Home
 * [x] Druckerauswahl
 
+**Nachtrag (2026-08-26):** Nutzer meldete, der Startbildschirm
+("Fortschrittsanzeige") zeige nur 3 von 6 Statuszeilen an, der Rest werde
+abgeschnitten. Ursache im `.eez-project`: das `boot_status`-Label
+(`ui-project/FilamentStation.eez-project`, Identifier `boot_status`) hatte
+nur 150 px Hoehe bei `top=126` auf dem 320 px hohen Screen. Fix im
+`.eez-project`: `top` auf 122, `height` auf 190 vergroessert (nutzt den
+verbleibenden Platz bis nahe an den Bildschirmrand, deutlich mehr Reserve
+als fuer 6 Zeilen bei 20 px Zeilenh\xC3\xB6he (`ui_font_ui_german16`,
+`line_height = 20`) rechnerisch noetig w\xC3\xA4re).
+
+Nebenbefund, nicht Teil dieses Fixes: `objects.boot_status` wird
+tats\xC3\xA4chlich nirgends im Anwendungscode angefasst
+(`UiCommandType::UpdateBootStatus` existiert im Enum, wird aber nie
+gesendet/verarbeitet) -- der Screen zeigt durchgehend den statischen
+EEZ-Platzhaltertext ("SD-Karte: bereit\\nDisplay: bereit\\n..."), keine
+echten Bereitschaftsdaten. War beim Mock-Daten-Audit in Phase 12 nicht
+aufgefallen; hier bewusst nur die Darstellung repariert, nicht die fehlende
+echte Anbindung nachgezogen (ausserhalb der gemeldeten Aufgabe).
+
+**Korrektur (2026-08-26):** Der obige `.eez-project`-Fix (Nutzer hat
+inzwischen re-exportiert, `screens.c` zeigt `boot_status` jetzt bei
+`top=122, height=198`) war **das falsche Widget**. Nutzer meldete danach
+weiterhin abgeschnittenen Text auf dem Bildschirm "FilamentStation startet"
+(4. Zeile fehlt). Recherche ergab: dieser Screen ist gar kein eigener
+EEZ-Screen, sondern der generische `UiOverlayKind::BootProgress`-Dialog --
+derselbe wiederverwendete Overlay (`overlayBackdrop`/`overlayPanel`/
+`overlayText`/`overlayProgress`), den auch WLAN-/Spoolman-/NFC-
+Fortschrittsdialoge nutzen, komplett in C++ gebaut
+(`UiBridge.cpp::ensureOverlay()`/`showOverlay()`), **nicht** im
+`.eez-project`. Er wird als Vollbild-Overlay ueber `scr_boot` gelegt,
+solange `AppTask::refreshBootProgress()` bis zu vier Statuszeilen sendet --
+`objects.boot_status` auf `scr_boot` selbst ist dabei durchgehend verdeckt
+und daher praktisch nie sichtbar; der obige Resize war folgenlos richtig,
+aber wirkungslos fuer das gemeldete Problem.
+
+**Tatsaechliche Ursache:** `overlayText` (Standardgroesse 388x100 px,
+`LV_LABEL_LONG_WRAP`) reicht bis y=152 innerhalb des Panels, `overlayProgress`
+beginnt aber bereits bei y=126 und wird danach erzeugt -- ueberlagert damit
+im Z-Order die unteren rund 26 px des Textfelds (etwas mehr als eine
+Zeile), was die vierte von vier Zeilen sichtbar abschnitt.
+
+**Fix:** in `UiBridge.cpp::showOverlay()` einen neuen Sonderfall fuer
+`UiOverlayKind::BootProgress` ergaenzt (gleiches Muster wie der bereits
+bestehende Sonderfall fuer `AdvancedWeightConfirmation`/`-Result`, der aus
+demselben Grund existiert): Panel 420x300 (statt 420x238), Textfeld
+388x150 bei y=46, Fortschrittsbalken auf y=204 und Buttons auf y=228
+verschoben -- ohne Ueberlappung, mit Kapazitaet fuer bis zu sieben Zeilen.
+Zusaetzlich `overlayProgress`s Position in den allgemeinen Reset-Block am
+Anfang von `showOverlay()` aufgenommen (fehlte dort bisher komplett --
+seine y-Position wurde nirgends zurueckgesetzt, haette also nach diesem
+Fix ohne diese Ergaenzung bei jedem folgenden Fortschrittsdialog faelschlich
+bei y=204 stehen bleiben koennen).
+
+Reiner C++-Fix, kein `.eez-project`-Eingriff -- kein erneuter EEZ-Export
+noetig. Build (0 Warnungen), 60 native Tests gruen, geflasht.
+
 ## 3.10 Staging
 
 * [x] StagingDetails
@@ -2455,6 +2511,312 @@ Build (`pio run`, 0 Warnings) und native Tests (`pio test -e
 native-spoolman-tests`, 44/44) erfolgreich, Firmware auf das Gerät
 geflasht.
 
+**Nachtrag (2026-08-26), Bug bei echtem Hardwaretest gefunden und
+behoben:** Nutzer meldete: Zuordnung von "Support for PLA" (Spoolman-
+Material) zu einem Tray wird auf dem Drucker korrekt ausgefuehrt, aber die
+App meldet einen Best\xC3\xA4tigungs-Timeout und die Spule bleibt
+anschliessend nicht der Spoolman-ID zugeordnet -- bei "PLA"/"ABS"
+funktioniert derselbe Ablauf einwandfrei. Log zeigte den korrekt gesendeten
+`ams_filament_setting`-Payload mit `"tray_type":"Support for PLA"`, dann
+nur noch die "awaiting confirmation"-Zeile, nie ein "AssignTray confirmed".
+
+**Ursache:** `models::PrinterSlotStateData::material` (`PrinterState.h`)
+war nur `char[12]` gross. `BambuProtocol.cpp::applyTrayOccupancy()`
+schreibt den vom Drucker gemeldeten `tray_type` per `snprintf` in dieses
+Feld -- bei "Support for PLA" (15 Zeichen) wurde das dabei stillschweigend
+auf "Support for" (11 Zeichen) abgeschnitten. `BambuTask.cpp::
+checkPendingTrayAssignment()` vergleicht diesen Wert anschliessend per
+`strcmp` gegen `conn.pending.expectedTrayType` (`char[16]`, unangeschnitten
+"Support for PLA") -- der Vergleich schlug dadurch permanent fehl, die
+Best\xC3\xA4tigung kam nie, `kBambuAssignConfirmTimeoutMs` lief ab. Bei
+"PLA"/"ABS" (je 3 Zeichen) griff dieselbe Kuerzung nie, deshalb liefen
+diese Materialien unauff\xC3\xA4llig durch. Derselbe zu kleine Puffer
+existierte identisch in `models::TraySpoolCacheEntry::material`
+(`TraySpoolCache.h`) -- h\xC3\xA4tte bei einem laengeren Material zusaetzlich
+`resolveTraySpoolCacheSpoolId()`s Material-Abgleich (Erkennung einer
+ausserhalb der App gewechselten Spule) falsch negativ werden lassen.
+
+**Fix:** beide Puffer von `[12]` auf `[16]` vergroessert -- passend zur
+bereits an anderer Stelle verwendeten Kapazit\xC3\xA4t
+(`BambuTrayFilament::trayType[16]`, `PendingTrayAssignment::
+expectedTrayType[16]`, `UiModels.h`s `kMaterialNameCapacity = 16`), damit
+kein Feld im Rundlauf enger ist als die tats\xC3\xA4chliche Bambu-
+`tray_type`-Nutzlast.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht (nach COM5-Reconnect,
+Upload beim zweiten Versuch erfolgreich). Noch nicht am Geraet mit "Support
+for PLA" erneut getestet -- sollte vom Nutzer verifiziert werden.
+
+**Nachtrag (2026-08-26):** Backend-Fix behoben den Best\xC3\xA4tigungs-
+Timeout, aber der Nutzer meldete danach: auf der Tray-Karte (Home/AMS-
+Uebersicht) wird "Support for PLA" weiterhin nur als "Support for"
+angezeigt, obwohl das EEZ-Label bereits auf `LV_LABEL_LONG_SCROLL_CIRCULAR`
+umgestellt war. Ursache: ein drittes, bisher uebersehenes `char[12]`-Feld
+-- `TrayUiEntry::material` (`UiBridge.cpp`, lokale UI-Zustandsstruktur pro
+Tray-Karte). `UiBridge.cpp::processUiCommand()`s `UpdateTrayDetails`-Zweig
+kopiert `command.title` (voller, unabgeschnittener Text aus `slot.material`)
+per `snprintf` in dieses Feld -- bei 12 Byte erneut auf "Support for"
+gekuerzt, unabhaengig vom Backend-Fix oben, da `updateTrayButton()` seine
+Anzeige aus genau diesem Feld liest. War beim urspruenglichen Fix als
+vermeintlich unbenutztes Feld eingestuft (falsche Grep-Suche nach `.material
+=` statt `->material`) -- tatsaechlich live und der eigentliche verbleibende
+Kuerzungspunkt. Fix: `TrayUiEntry::material` ebenfalls auf `[16]`
+vergroessert (`UiBridge.cpp`), passend zu allen anderen Material-Feldern in
+diesem Rundlauf. Nebenbei `TraySpoolCacheEntry::material` (extern auf `[17]`
+abgeaendert vorgefunden) wieder auf `[16]` vereinheitlicht.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht (Upload diesmal beim
+ersten Versuch erfolgreich). Noch nicht am Geraet erneut mit "Support for
+PLA" verifiziert.
+
+**Nachtrag (2026-08-26):** Nutzer bestaetigte: "Support for PLA" wird jetzt
+korrekt angezeigt, direkt nach dem Zuordnen auch SpoolmanID/Material/
+Gewicht/K-Faktor korrekt. Nach einem Neustart jedoch: Material weiterhin
+korrekt, aber SpoolmanID zeigt "?" und Gewicht/K-Faktor fehlen.
+
+**Ursache:** reiner Timing-/Fehlender-Refresh-Bug, keine Datenkorruption.
+`requestTraySpoolCache()` liegt in der FIFO-`storageCommandQueue` hinter
+allen anderen `/config`-Dateien (`kInitialDocuments`, `StorageTask.cpp`);
+ein bereits verbundener Drucker kann seinen ersten Statusbericht
+(`BambuUpdate` -> `syncAmsToUi()`) schneller liefern als dieser SD-Ladevorgang
+zurueckkommt. Trifft das ein, findet `resolveTraySpoolCacheSpoolId()` beim
+allerersten Sync-Aufruf einen noch leeren `traySpoolCache` (`entryCount ==
+0`) und zeigt "?". Der `StorageReadCompleted`-Handler fuer den
+Cache-Ladevorgang (`AppTask.cpp`) hat den geladenen Cache bisher nur in die
+lokale Variable uebernommen (`traySpoolCache = event->traySpoolCache;`),
+aber nie einen erneuten UI-Sync ausgeloest -- ein einmal als "?" gezeigtes
+Tray blieb dadurch dauerhaft so stehen, auch nachdem der Cache laengst
+korrekt geladen war.
+
+**Fix:** derselbe Handler ruft jetzt zusaetzlich `syncAmsToUi()` fuer den
+aktuell aktiven Drucker auf, sobald der Cache geladen ist (nur falls eine
+gueltige `activePrinterId` bereits bekannt ist) -- ein zu frueh als "?"
+anzeigtes Tray wird dadurch sofort nachkorrigiert, sobald die eigentlich
+schon korrekten lokalen Daten verfuegbar sind.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht. Noch nicht am Geraet
+mit einem echten Neustart erneut verifiziert.
+
+**Korrektur (2026-08-27):** Der obige Re-Sync-Fix war eine echte
+Verbesserung, aber **nicht die eigentliche Ursache** -- Nutzer meldete nach
+dem naechsten Test: die Zuordnung ueber Material/Farbe-Fingerprinting
+funktioniert nach einem Neustart fuer **kein** Fach mehr, nicht nur fuer
+"Support for PLA".
+
+**Tatsaechliche Ursache gefunden:** `JsonStorage.cpp::
+validateTraySpoolCacheEntries()` enthielt eine eigene, unabhaengige
+Laengenpruefung `std::strlen(entry["material"]...) >= 12U` -- ein
+Ueberbleibsel aus der Zeit vor dem `[16]`-Puffer-Fix
+(`models::TraySpoolCacheEntry::material`, siehe oben), das beim damaligen
+Fix nicht mitgezogen wurde. Diese Validierung laeuft **sowohl beim Laden
+als auch beim Speichern** (`JsonStorage::serialize()` ruft dieselbe
+`validate()` vor jedem Schreiben auf) und bewertet das **gesamte Dokument
+als Einheit** -- ein einziger Eintrag mit 12+ Zeichen langem Material (z. B.
+"Support for PLA", 15 Zeichen) liess `/mappings/printer-slots.json`
+insgesamt als ungueltig gelten, **auch fuer alle anderen, laengst
+korrekten Eintraege in derselben Datei**. Konkret bedeutete das: sobald
+irgendein Fach mit einem 12+ Zeichen langen Material belegt wurde, schlug
+sowohl das anschliessende Speichern (`persistTraySpoolCache()`, still
+scheiternd, kein Fehlerdialog -- bewusst "fire-and-forget") als auch jeder
+spaetere Ladeversuch fehl. Der Zwischenzustand direkt nach dem Zuordnen war
+trotzdem korrekt sichtbar, weil `traySpoolCache` im RAM bereits vor dem
+(fehlschlagenden) Speichern aktualisiert wird -- erst ein Neustart, der
+zwingend neu aus der (nie erfolgreich schreibenden) Datei laden muss,
+deckte den Fehler auf.
+
+**Fix:** Grenze in `validateTraySpoolCacheEntries()` von `12U` auf `16U`
+angehoben, passend zum tatsaechlichen Puffer. Keine weiteren Stellen mit
+derselben veralteten Grenze gefunden (gezielt nachgeprueft).
+
+**Testluecke festgestellt, nicht behoben:** `test/test_json_storage/`
+(laeuft auf echter Hardware, `pio test -e wt32-s3-wrover-n16r2`, siehe
+`docs/developer-guide.md`) deckt `TraySpoolCache` ueberhaupt nicht ab --
+ein Rundlauftest mit einem 12+ Zeichen langen Material haette diesen Bug
+sofort gefunden. Nicht in dieser Session ergaenzt, da der Hardware-Testlauf
+die laufende manuelle Nutzertestung unterbrochen haette; sollte nachgeholt
+werden.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht. Noch nicht am Geraet
+mit einem echten Neustart erneut verifiziert.
+
+**Nachtrag (2026-08-27):** Nutzer meldete nach diesem Fix: das
+Material/Farbe-Fingerprinting funktioniert nach einem Neustart weiterhin
+nicht -- jetzt auch fuer "PLA", nicht mehr nur fuer lange Materialnamen.
+Codepruefung findet keinen weiteren offensichtlichen Logikfehler in
+`resolveTraySpoolCacheSpoolId()`/`isValidTraySlotAddress()`/dem Lade-Pfad;
+die naheliegendste Erklaerung ist eine noch nachwirkende Folge des
+2026-08-27-Fundes oben: `persistTraySpoolCache()`s Speichern serialisiert
+**alle** Eintraege gemeinsam, und `JsonStorage::serialize()` validiert das
+gesamte Dokument vor dem Schreiben -- ein einzelner ungueltiger Altvorgang
+(vor dem `[16]`-Fix) haette jedes seither versuchte Speichern insgesamt
+verworfen und die Datei dauerhaft auf einem alten/leeren Stand
+eingefroren, unabhaengig vom Material der aktuellen Zuordnung.
+
+**Bisher komplett unsichtbar dafuer:** weder ein fehlgeschlagenes Speichern
+(`persistTraySpoolCache()`, requestId bewusst 0, "fire-and-forget") noch ein
+fehlgeschlagenes Laden (`kTraySpoolCacheLoadRequestId` als
+`StorageRequestError` statt `StorageReadCompleted`) erzeugten bisher
+irgendeine Log-Zeile -- `sendStorageEvent()` selbst loggt nur einen
+Enqueue-Fehler der Queue, nie den eigentlichen Fehlerinhalt. Zwei neue
+`FS_LOGW`-Zweige in `AppTask.cpp` ergaenzt, die genau diese beiden bisher
+stillen Fehlerpfade jetzt sichtbar machen ("Tray-Spoolman cache load
+failed"/"... save failed", jeweils mit dem konkreten `JsonStorageError`-Text).
+
+Kein weiterer Fix in diesem Schritt -- die tatsaechliche Ursache soll anhand
+eines frischen Logs mit dieser neuen Sichtbarkeit bestaetigt werden, statt
+weiter zu raten. Falls die Vermutung oben zutrifft, sollte einmal ein
+komplett neuer Zuordnungsversuch (der jetzt mit der `[16]`-Grenze sauber
+speichert) das Problem von selbst beheben; falls die neuen Log-Zeilen
+weiterhin nichts zeigen, liegt die Ursache woanders und muss anhand des
+neuen Logs neu eingegrenzt werden.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht.
+
+**Nachtrag (2026-08-27):** Neues Log erhalten -- zeigt den Fehler direkt:
+
+```
+W [APP] Tray-Spoolman cache save failed: Storage request failed: invalid_document_field
+```
+
+fuer eine Zuordnung von "ABS" (3 Zeichen, laengst innerhalb aller Grenzen)
+auf ams_id=0/tray_id=0. Die 2026-08-27-Laengenvermutung ist damit
+widerlegt -- die Ursache liegt woanders. Da `validateTraySpoolCacheEntries()`
+stets das **gesamte** Dokument bewertet, ist ein anderer, im Log nicht
+direkt sichtbarer Eintrag im selben Speichervorgang der wahrscheinlichere
+Kandidat (z. B. aus einer frueheren Zuordnung in derselben laufenden
+Sitzung). Der generische Fehlertext (nur der `JsonStorageError`-Codename)
+reicht dafuer nicht aus.
+
+**Weitere Diagnose ergaenzt, noch kein Fix:** `persistTraySpoolCache()`
+(`AppTask.cpp`) loggt jetzt jeden einzelnen Eintrag (`printerId`/`amsId`/
+`trayId`/`spoolId`/`material`+Laenge/`colorHex`+Laenge) direkt vor dem
+Schreiben. Damit sollte der naechste Fehlschlag den genauen betroffenen
+Eintrag zeigen, statt weiter richten zu muessen.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht. Wartet auf ein
+frisches Log mit dieser Detailanzeige.
+
+**Nachtrag (2026-08-27), Ursache endgueltig gefunden:** die neue
+Detail-Log-Zeile zeigte alle drei aktuellen Eintraege vor dem
+fehlschlagenden Speichern:
+
+```
+ams_id=0 tray_id=0 spool_id=1 material="PLA" colorHex="" colorHex_len=0
+ams_id=0 tray_id=1 spool_id=4 material="ABS" colorHex="080808FF" colorHex_len=8
+ams_id=0 tray_id=2 spool_id=1 material="PLA" colorHex="" colorHex_len=0
+```
+
+Zwei Eintraege (Spoolman-Spule #1, "PLA") haben ein **leeres** `colorHex`
+-- diese Spule hat in Spoolman schlicht keine Farbe hinterlegt, was ein
+voellig legitimer Zustand ist (kein Datenfehler). `ams_id=0/tray_id=1`
+("ABS") ist dagegen unauffaellig; die falschen Eintraege sind also nicht
+die zuletzt zugeordnete Spule selbst, sondern **andere, laengst bestehende**
+Eintraege im selben Dokument -- exakt das in der vorherigen Notiz vermutete
+Szenario.
+
+`validateTraySpoolCacheEntries()` verlangte bisher zwingend ein
+nicht-leeres `colorHex` (`isNonEmptyString()`) -- das war zu strikt. Fix:
+nur noch Typ (String) und Laenge werden geprueft, ein leerer String ist
+jetzt ausdruecklich erlaubt (`isOptionalString()`, bereits fuer andere
+Felder in dieser Datei vorhanden). `resolveTraySpoolCacheSpoolId()`s
+`strcmp`-Vergleich behandelt zwei leere Strings bereits korrekt als
+Uebereinstimmung, keine Aenderung dort noetig.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht. Noch nicht am Geraet
+verifiziert.
+
+**Nachtrag (2026-08-27):** Nutzer meldete: "Extern" (der manuelle
+Spulenhalter ohne AMS) als Zielslot ausgewaehlt fuehrt sofort zu "Ungueltiger
+AMS-Slot", ohne dass ueberhaupt etwas gesendet wird. Ursache: "Extern"
+sendet `amsId`/`trayId` beide als `kExternalTraySentinel` (0xFF, siehe
+`UiBridge.cpp::trayTargetClicked()`), aber **vier** unabhaengige Stellen in
+`AppTask.cpp`/`BambuTask.cpp` waren ausschliesslich auf den regulaeren
+AMS-Bereich (1..4/0..3) ausgelegt und haetten den externen Fall auch nach
+einer blossen Validierungs-Lockerung falsch oder gar nicht verarbeitet:
+
+1. Die Eingangsvalidierung in `ConfigureSlotFromStaging`/`ReapplySlot`,
+   `ResetSlot`/`UntagSlot` und der "Manuell"-Spulenauswahl (drei identische
+   Codestellen) lehnte `amsId=0xFF` als aussehalb des Bereichs 1..4 ab --
+   der unmittelbar gemeldete Fehler.
+2. `sendPendingSlotAssignTray()` haette `amsId=0xFF` blind per `-1U` in
+   `0xFE` umgerechnet, statt der vom Drucker erwarteten festen Adresse
+   `ams_id=255/tray_id=254` (docs/bambu-protocol.md, FilaMan-Vergleich) --
+   neue Konstanten `models::kBambuExternalAmsId`/`kBambuExternalTrayId`
+   ergaenzt und in `PrinterState.h` dokumentiert (bewusst getrennt von
+   `kActiveTrayNowExternal=254`, einem anderen Feld mit zufaellig
+   gleichem Tray-Wert).
+3. Derselbe blinde `-1U`-Fehler existierte unabhaengig nochmal in
+   `ResetSlot`/`UntagSlot`s eigenem, direkten `AssignTray`-Aufbau (nicht
+   ueber `sendPendingSlotAssignTray()`).
+4. `BambuTask::checkPendingTrayAssignment()` haette die Bestaetigung nie
+   erkannt: `findSlot()` durchsucht ausschliesslich `amsUnits[]`, das
+   externe Fach lebt aber in einem eigenen `externalSlot`-Feld
+   (`PrinterState.h`) -- ohne diesen Fix waere "Extern konfigurieren" trotz
+   korrekt gesendetem Kommando in denselben Best\xC3\xA4tigungs-Timeout
+   gelaufen wie die frueheren AMS-Bugs dieser Phase.
+5. Die Cache-Persistierung nach erfolgreicher Best\xC3\xA4tigung
+   (dieselbe Stelle wie die vorherigen "?"-Nachtraege) kannte den externen
+   Fall ebenfalls nicht -- ohne Fix waere "Extern" zwar konfigurierbar und
+   bestaetigbar geworden, aber nie in `/mappings/printer-slots.json`
+   uebernommen worden (derselbe dauerhafte "?"-Effekt nach einem Neustart).
+
+Alle fuenf Stellen behoben; die Lesevorseite (`syncAmsToUi()`s
+`external`-Block, `AppTask.cpp:999-1019`) war bereits vorher korrekt und
+diente als Vorlage fuer die Sentinel-Konvention.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht (nach einem
+fehlgeschlagenen ersten Upload-Versuch mit knapp 22 Minuten erfolglosem
+COM5-Retry, danach nach USB-Reconnect beim naechsten Versuch erfolgreich).
+Noch nicht am Geraet verifiziert.
+
+**Nachtrag (2026-08-27):** Nutzer testete erneut -- "Extern konfigurieren"
+scheiterte weiterhin mit "Ungueltiger AMS-Slot". Ursache: der obige Fix
+deckte drei der vier `action.amsId == 0 || ...`-Validierungsstellen ab; die
+vierte (SelectSpool/"Manuell" auf `TrayActions`, erreichbar wenn zuvor das
+externe Fach selbst ausgewaehlt wurde) hat eine Einrueckungsebene tiefer
+gelegen (verschachtelt in einem eigenen `if`, nicht direkt in einem
+`case`-Block) und wurde vom `replace_all` der vorherigen Aenderung deshalb
+nicht erfasst -- textuell nicht identisch trotz gleicher Logik. Dieselbe
+`isExternalTarget`-Pruefung dort ergaenzt.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht (nach COM5-Reconnect,
+Upload beim zweiten Versuch erfolgreich). Noch nicht am Geraet verifiziert.
+
+**Nachtrag (2026-08-27), fuenfte und sechste Stelle gefunden:** Nutzer
+meldete denselben Fehler ein drittes Mal. Diesmal die tatsaechliche
+Ursache: `BambuTask.cpp::handleAssignTray()` hat eine **eigene, vierte**
+Validierung (`command.amsId >= kMaximumAmsPerPrinter || command.trayId >=
+kSlotsPerAms`), die bei der bisherigen Fehlersuche komplett uebersehen
+wurde, weil sie in einer anderen Datei liegt als die drei bereits
+gefundenen `AppTask.cpp`-Stellen -- der wire-kodierte externe Wert
+(`ams_id=255`) verletzt diesen Bereich ebenfalls (255 >= 4). Ergaenzt um
+dieselbe Sentinel-Ausnahme (`isExternalWireAddress`, hier gegen die
+Bambu-Wire-Konstanten `kBambuExternalAmsId`/`kBambuExternalTrayId`
+geprueft, nicht gegen `kExternalTraySentinel` -- an dieser Stelle liegt der
+Wert bereits umgerechnet vor).
+
+**Sechste, tiefer liegende Stelle dabei zusaetzlich gefunden (noch nicht
+gemeldet, aber denselben Fehler verursacht haette):**
+`BambuProtocol.cpp::bambuBuildExtrusionCaliSel()` berechnet fuer
+`tray_id` einen globalen Index als `ams_id * kSlotsPerAms + trayId` --
+fuer den externen Fall (`255 * 4 + 254`) ergibt das in `std::uint8_t`
+umlaufend `250`, einen bedeutungslosen Wert, der mit keiner realen
+Adressierungskonvention uebereinstimmt. Fix: fuer `ams_id ==
+kBambuExternalAmsId` wird stattdessen direkt der feste Sentinel-Wert
+(`254`) verwendet, wie ihn `ams_filament_setting` fuer `tray_id`/`slot_id`
+in diesem Fall bereits einsetzt -- keine globale Indexrechnung.
+
+Insgesamt jetzt neun unabhaengige Stellen fuer den externen Slot behoben
+(drei Validierungen und die Wire-Kodierung in zwei getrennten Codepfaden in
+`AppTask.cpp`, deren Cache-Persistierung, die Bambu-Bestaetigungspruefung,
+die eigene Validierung in `handleAssignTray()` sowie die
+`extrusion_cali_sel`-Adressberechnung -- alle drei in `BambuTask.cpp`/
+`BambuProtocol.cpp`).
+
+Build (0 Warnungen), 60 native Tests gruen (inkl. `test_bambu_protocol`),
+geflasht (erster Upload-Versuch diesmal erfolgreich). Noch nicht am Geraet
+verifiziert.
+
 ## 9.10 Zustandsautomat
 
 * [x] Spoolman Required
@@ -3329,6 +3691,13 @@ zurueck auf volle Helligkeit) sollte vom Nutzer noch bestaetigt werden.
 
 Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
+**Nachtrag (2026-08-27), Nutzervorgabe:** Zielwerte korrigiert --
+`kDisplayDefaultBrightness` (`BoardConfig.h`) von 192 auf 255 (volle
+Helligkeit im Normalbetrieb), `kPowerDimmedBrightness` (`PowerConfig.h`)
+von 38 auf 28. Reine Konstantenaenderung, keine Logikaenderung.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht.
+
 ## 11.3 Waage Power-Down
 
 * [x] HX711 Power-Down vor Sleep (SCK-Pin dauerhaft HIGH)
@@ -3582,12 +3951,88 @@ pruefen:**
 
 Build (0 Warnungen), 54 native Tests gruen, geflasht.
 
+**Nachtrag (2026-08-27):** genau das oben als "erster Hinweis" vermerkte
+Risiko hat sich jetzt als eigener Nutzerbericht bestaetigt: nach einem
+Aufwachen aus dem Light-Sleep funktioniert das serielle Logging nicht mehr.
+Firmware-seitiger Behebungsversuch: `PowerTask::powerTask()` ruft direkt
+nach dem Ruecksprung aus `sleepUntilTouchWake()` erneut `Serial.begin
+(config::kSerialBaudRate)` auf (kein `Serial.end()` davor -- `LoggingTask`
+koennte zum selben Zeitpunkt ebenfalls aufwachen und noch unverarbeitete,
+vor dem Sleep geloggte Zeilen nachschreiben wollen; ein zerstoerendes
+`end()` waere damit riskanter als ein reines Neu-Initialisieren).
+
+**Ausdruecklich unsicher, ob das ausreicht:** wie oben bereits vermerkt,
+deutet der wiederholt beobachtete "Could not open COM5"-Fehler beim
+naechsten Flash-Versuch nach einem Sleep-Zyklus (durchgaengig in dieser
+Session, nicht nur einmalig) auf eine tiefere USB-PHY-/Host-
+Erkennungsgrenze hin, die eine reine `Serial.begin()`-Wiederholung
+moeglicherweise nicht loest -- das kann nur der Nutzer am echten Geraet
+verifizieren.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht.
+
 ## 11.7 Validierung
 
 * [ ] reale Strommessung je Stufe (Aktiv/Gedimmt/Sleep)
 * [ ] Wake-Zuverlaessigkeit (mehrere Touch-Positionen, Dauerbetrieb)
 * [ ] Verhalten bei aktivem Druck dokumentieren (kein Print-Aktiv-Signal
   vorhanden, daher rein Timer-basiert in V1 -- bewusste Einschraenkung)
+
+**Nachtrag (2026-08-26), konkreter Wake-Bug gefunden und behoben:** Nutzer
+meldete genau das hier als offen gefuehrte Risiko real beobachtet: nach dem
+Sleep zeigt ein Touch gelegentlich das Display <1s lang, bevor es sofort
+wieder schwarz wird -- erst der naechste Touch weckt zuverlaessig auf.
+
+**Ursache:** `UiTask` meldet `ReportInactivity` alle
+`kPowerActivityReportIntervalMs` (~1 s) an `powerCommandQueue`, auch noch
+unmittelbar bevor `PowerTask` per `esp_light_sleep_start()` den Prozessor
+anhaelt (`PowerTask.cpp::sleepUntilTouchWake()`). Mindestens diese letzte,
+veraltete Meldung (mit einem `inactiveMs`-Wert nahe/ueber dem
+Sleep-Schwellwert) blieb bislang unkonsumiert in der Queue stehen, waehrend
+das Geraet schlief. Nach dem Aufwachen setzt `powerTask()` `inactiveMs`
+zwar lokal auf 0 zurueck, liest aber im naechsten Schleifendurchlauf sofort
+diese veraltete Nachricht -- `stateForInactivity()` liefert dafuer erneut
+`Sleep`, wodurch der gerade erst beendete Sleep-Ablauf (Peripherie
+abschalten, auf Best\xC3\xA4tigung warten, echter Light-Sleep) unmittelbar
+erneut anl\xC3\xA4uft, bevor der Nutzer das kurz aufgeleuchtete Display
+ueberhaupt wahrnehmen kann.
+
+**Fix:** `PowerTask.cpp::powerTask()` leert `powerCommandQueue` direkt nach
+`sleepUntilTouchWake()` vollstaendig (nicht-blockierendes `xQueueReceive`
+mit Timeout 0 in einer Schleife), bevor die Statemachine weiterlaeuft --
+nur noch echte, nach dem Aufwachen frisch eintreffende Meldungen
+entscheiden ueber den naechsten Zustand.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht. Checkbox bleibt
+bewusst offen: dieser eine Mechanismus ist behoben, die breitere Validierung
+(mehrere Touch-Positionen, Dauerbetrieb) steht weiterhin aus und sollte vom
+Nutzer nach diesem Fix erneut beobachtet werden.
+
+**Nachtrag (2026-08-27):** Nutzer meldete ein zweites, unabhaengiges
+Timing-Problem im Zustand "Gedimmt" (nicht Sleep): das Aufhellen auf einen
+Tastendruck/Touch reagiert unterschiedlich schnell, manchmal zuegig,
+manchmal mit ca. 1,5 s Verzoegerung.
+
+**Ursache:** `UiTask` meldet Inaktivitaet nur alle
+`kPowerActivityReportIntervalMs` (bisher 1000 ms) an `PowerTask`; dasselbe
+Intervall begrenzt zugleich `UiTask`s maximale Wartezeit auf der
+`uiCommandQueue` (`boundedSleepMs`). Ohne eigenen Touch-Interrupt (siehe
+`docs/rtos.md`, Touch wird ausschliesslich per I2C-Polling innerhalb von
+`lv_timer_handler()` erkannt) wird ein Touch bei einem vollstaendig ruhigen,
+gedimmten Bildschirm erst beim naechsten Schleifendurchlauf ueberhaupt
+bemerkt -- je nachdem, wann innerhalb des laufenden 1-Sekunden-Wartezyklus
+der Touch erfolgt, ergibt sich eine Verzoegerung von nahe 0 bis knapp
+ueber 1 s, zzgl. Verarbeitung/Queue-Laufzeit bis zur tatsaechlichen
+Helligkeitsaenderung -- daher die beobachteten bis zu ca. 1,5 s.
+
+**Fix:** `kPowerActivityReportIntervalMs` (`config/PowerConfig.h`) von 1000
+auf 150 ms gesenkt. Betrifft nur die Reaktionsgeschwindigkeit in Aktiv/
+Gedimmt -- keine Auswirkung auf den tatsaechlichen Light-Sleep-
+Stromverbrauch, der weiterhin ausschliesslich ueber den separaten
+GPIO-Wake in `PowerTask::sleepUntilTouchWake()` laeuft (kein Polling, kein
+Busy Waiting) und durch dieses Intervall nicht beruehrt wird.
+
+Build (0 Warnungen), 60 native Tests gruen, geflasht.
 
 ---
 

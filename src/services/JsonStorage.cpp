@@ -314,8 +314,24 @@ JsonStorageError validateTraySpoolCacheEntries(const JsonDocument& document) {
         !entry["spoolId"].is<std::uint32_t>() ||
         entry["spoolId"].as<std::uint32_t>() == 0 ||
         !isNonEmptyString(entry["material"]) ||
-        std::strlen(entry["material"].as<const char*>()) >= 12U ||
-        !isNonEmptyString(entry["colorHex"]) ||
+        // Muss zu models::TraySpoolCacheEntry::material[16] passen -- diese
+        // Grenze blieb bei 12 stehen, als der Puffer selbst schon auf 16
+        // vergroessert war (TASKS.md 2026-08-26, Support-for-PLA-Fix), und
+        // verwarf dadurch die gesamte Datei als "ungueltig", sobald
+        // irgendein Eintrag ein 12+ Zeichen langes Material enthielt (z. B.
+        // "Support for PLA", 15 Zeichen) -- nicht nur diesen einen Eintrag,
+        // wegen der einmaligen Validierung des kompletten Dokuments.
+        std::strlen(entry["material"].as<const char*>()) >= 16U ||
+        // Nutzerbericht 2026-08-27: eine Spoolman-Spule ohne konfigurierte
+        // Farbe fuehrt zu einem leeren tray_color im gesendeten
+        // AssignTray-Kommando und damit auch im persistierten
+        // Cache-Eintrag -- das ist ein legitimer, kein ungueltiger
+        // Zustand. `isNonEmptyString()` verwarf solche Eintraege (und damit
+        // wegen der Ganzdokument-Validierung das gesamte Dokument, siehe
+        // die zwei vorherigen Nachtraege) faelschlich als ungueltig; nur
+        // noch der Typ (String) und die Laenge werden geprueft, leer ist
+        // ausdruecklich erlaubt.
+        !isOptionalString(entry["colorHex"]) ||
         std::strlen(entry["colorHex"].as<const char*>()) >= 9U) {
       return JsonStorageError::InvalidDocumentField;
     }
