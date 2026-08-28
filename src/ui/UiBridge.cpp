@@ -3975,6 +3975,37 @@ void processUiCommand(const rtos::UiCommand& command) {
       const std::int32_t clamped =
           command.value < 0 ? 0 : (command.value > 255 ? 255 : command.value);
       drivers::displayDevice().setBrightness(static_cast<std::uint8_t>(clamped));
+      // Nutzerbericht 2026-08-28: nach einem Touch-Wake aus dem Sleep blieb
+      // das Display nur ca. eine Sekunde hell und wurde dann sofort wieder
+      // dunkel. Ursache: PowerTask::inactiveMs = 0 setzt nur die eigene,
+      // lokale Kopie zurueck -- LVGL fuehrt seinen Inaktivitaets-Zeitstempel
+      // (lv_display_get_inactive_time(), von UiTask jede
+      // kPowerActivityReportIntervalMs als ReportInactivity gemeldet)
+      // vollkommen unabhaengig davon selbst weiter und aktualisiert ihn nur,
+      // wenn readTouch() den Touch tatsaechlich noch als gedrueckt liest --
+      // war der Finger zum Zeitpunkt des naechsten LVGL-Polls schon wieder
+      // angehoben (bei einem kurzen Tipp durchaus wahrscheinlich, siehe
+      // TASKS.md), blieb der uralte, sehr hohe Wert stehen und die naechste
+      // ReportInactivity-Meldung schickte PowerTask direkt zurueck in
+      // Sleep.
+      //
+      // Nachtrag (2026-08-28, Nutzerbericht: Dimmed<->Active-Endlosschleife):
+      // ein erster Versuch loeste dies fuer jede Helligkeit > 0 aus --
+      // das feuerte auch beim Uebergang Active->Dimmed (Helligkeit 28), der
+      // ja gerade *wegen* Inaktivitaet passiert. Das setzte den Zeitstempel
+      // sofort wieder auf "jetzt", die naechste ReportInactivity zeigte
+      // praktisch 0 ms und PowerTask sprang sofort zurueck nach Active --
+      // alle 30s erneut. Nur ein Uebergang **zur vollen Aktiv-Helligkeit**
+      // ist tatsaechlich immer die Folge bereits vorhandener echter
+      // Aktivitaet (Touch-Wake aus Sleep, oder Dimmed->Active durch eine
+      // schon frische ReportInactivity) -- ausschliesslich dieser Fall
+      // darf den Zeitstempel zuruecksetzen.
+      if (clamped == config::kDisplayDefaultBrightness) {
+        lv_display_trigger_activity(lvglDisplay);
+        FS_LOGD(services::LogComponent::Power,
+                "Display activity timer reset brightness=%ld",
+                static_cast<long>(clamped));
+      }
       break;
     }
     default:

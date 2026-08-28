@@ -179,6 +179,9 @@ void waitForSleepQuiescence(rtos::RtosContext& ctx) {
           received | (1U << static_cast<std::uint8_t>(ack.source)));
     }
   }
+  FS_LOGD(services::LogComponent::Power,
+          "Sleep quiescence complete mask=0x%02X",
+          static_cast<unsigned>(received));
 }
 
 /// @brief Enters light sleep repeatedly until a real touch (GPIO) wake occurs.
@@ -219,6 +222,13 @@ void powerTask(void* parameter) {
   PowerState state = PowerState::Active;
   std::uint32_t inactiveMs = 0;
   rtos::PowerCommand command{};
+  // Set right after a touch wake so the very next ReportInactivity's value
+  // gets one diagnostic log line (see below) -- confirms whether
+  // lv_display_trigger_activity() (UiBridge.cpp's SetBrightness handler)
+  // actually produced a fresh, low inactivity value instead of the stale
+  // pre-sleep one that previously sent the device straight back to sleep
+  // (Nutzerbericht 2026-08-28).
+  bool logNextInactivityReport = false;
 
   for (;;) {
     if (xQueueReceive(ctx.powerCommandQueue, &command,
@@ -227,6 +237,12 @@ void powerTask(void* parameter) {
       switch (command.type) {
         case rtos::PowerCommandType::ReportInactivity:
           inactiveMs = command.inactiveMs;
+          if (logNextInactivityReport) {
+            logNextInactivityReport = false;
+            FS_LOGI(services::LogComponent::Power,
+                    "First post-wake inactivity report inactive_ms=%lu",
+                    static_cast<unsigned long>(inactiveMs));
+          }
           break;
         case rtos::PowerCommandType::PowerDownAcknowledged:
           FS_LOGD(services::LogComponent::Power,
@@ -257,7 +273,11 @@ void powerTask(void* parameter) {
     sendNetworkPower(ctx, rtos::NetworkCommandType::PowerDown);
     waitForSleepQuiescence(ctx);
 
+    const std::uint32_t sleepEnteredMs = millis();
     sleepUntilTouchWake(ctx);
+    FS_LOGD(services::LogComponent::Power,
+            "Touch wake detected, resuming after %lu ms asleep",
+            static_cast<unsigned long>(millis() - sleepEnteredMs));
 
     // Nutzerbericht 2026-08-27: nach einem Aufwachen aus dem Light-Sleep
     // funktioniert das serielle Logging nicht mehr. Bereits in TASKS.md
@@ -290,10 +310,14 @@ void powerTask(void* parameter) {
     // queued during the sleep-entry window so only fresh, post-wake reports
     // decide the next state.
     rtos::PowerCommand stale{};
+    std::uint32_t drainedCount = 0;
     while (xQueueReceive(ctx.powerCommandQueue, &stale, 0) == pdTRUE) {
+      ++drainedCount;
     }
 
-    FS_LOGI(services::LogComponent::Power, "Woken by touch, resuming");
+    FS_LOGI(services::LogComponent::Power,
+            "Woken by touch, resuming drained=%lu",
+            static_cast<unsigned long>(drainedCount));
     inactiveMs = 0;
     state = PowerState::Active;
     sendBrightness(ctx, brightnessForState(state));
@@ -301,6 +325,14 @@ void powerTask(void* parameter) {
     sendNfcPower(ctx, rtos::NfcCommandType::PowerUp);
     sendNetworkPower(ctx, rtos::NetworkCommandType::PowerUp);
     sendWakeToast(ctx);
+    // Nutzerbericht 2026-08-28: bestaetigt, dass die naechste
+    // ReportInactivity-Meldung nach einem Wake tatsaechlich einen frischen,
+    // niedrigen Wert traegt (siehe UiBridge.cpp's SetBrightness-Handler,
+    // lv_display_trigger_activity()) statt eines uralten Werts von vor dem
+    // Sleep, der PowerTask sofort wieder in Sleep schicken wuerde -- eine
+    // einzelne Logzeile statt dauerhaftem Mitloggen jeder ReportInactivity,
+    // um das Log im Normalbetrieb nicht zu fluten.
+    logNextInactivityReport = true;
   }
 }
 

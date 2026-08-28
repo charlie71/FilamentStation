@@ -5871,3 +5871,66 @@ PLA/PETG" wieder abgeschnitten werden koennen -- derselbe Fehlerklasse,
 die dort schon einmal behoben wurde, nur mit der neuen, laengeren
 Quelle). Build 0 Warnungen, 98/98 native Tests gruen. Noch nicht auf
 echter Hardware verifiziert.
+
+---
+
+**Nachtrag (2026-08-28, Nutzerbericht: Display nach Touch-Wake nur ca. 1 s
+hell, dann wieder dunkel):** Ursache bereits als Symptom in einem
+Kommentar von TASKS.md/PowerTask.cpp vom 2026-08-27 dokumentiert, aber
+nur teilweise behoben: der bestehende Fix leert nur `powerCommandQueue`-
+Nachrichten, die **vor** dem Sleep-Eintritt liegen geblieben sind. Die
+eigentliche Ursache liegt tiefer: `PowerTask`s `inactiveMs = 0` nach dem
+Aufwachen setzt nur die eigene lokale Kopie zurueck -- LVGLs eigener
+Inaktivitaets-Zeitstempel (`lv_display_get_inactive_time()`, Basis fuer
+UiTasks periodische `ReportInactivity`-Meldungen) wird davon nicht
+beruehrt. LVGL aktualisiert diesen Zeitstempel ausschliesslich, wenn
+`readTouch()` den Touch beim naechsten Polling noch als gedrueckt
+liest -- ist der Finger bis dahin (Light-Sleep-Aufwachen +
+`Serial.begin()` + Queue-Leerung + Kommandoverarbeitung) schon wieder
+angehoben, bleibt der uralte, hohe Vor-Sleep-Wert stehen. Die naechste
+`ReportInactivity`-Meldung traegt dann genau diesen Wert, `PowerTask`
+springt direkt zurueck in `Sleep` (der Sleep-Schwellwert wird zuerst
+geprueft, `Dimmed` wird uebersprungen) -- exakt das beobachtete "kurz
+hell, dann wieder dunkel".
+
+Fix: `UiBridge.cpp`s `SetBrightness`-Handler ruft jetzt bei jeder
+Helligkeit > 0 explizit `lv_display_trigger_activity(lvglDisplay)` auf
+(LVGL-9-API, setzt den internen Aktivitaets-Zeitstempel direkt auf
+"jetzt") -- Helligkeit steigt ausschliesslich als Folge einer bereits
+durch echte Aktivitaet ausgeloesten `PowerTask`-Zustandsaenderung
+(Touch-Wake oder eine bereits frische `ReportInactivity`), der Aufruf ist
+deshalb in jedem Fall korrekt, nicht nur im Wake-Sonderfall.
+
+Logging erweitert (Nutzerwunsch, fuer den Fall dass die Ursache doch
+komplexer ist als hier analysiert): `sleepUntilTouchWake()`-Dauer
+(`FS_LOGD`, "Touch wake detected, resuming after %lu ms asleep"),
+Anzahl der beim Aufwachen verworfenen Alt-Nachrichten (`drained=` im
+bestehenden "Woken by touch, resuming"-Log statt stillschweigend), ein
+neuer Erfolgs-Log fuer `waitForSleepQuiescence()` (bisher nur der
+Timeout-Fall geloggt), und eine einzelne diagnostische Logzeile fuer die
+**erste** `ReportInactivity`-Meldung nach jedem Wake ("First post-wake
+inactivity report inactive_ms=..." -- zeigt direkt, ob der Fix
+tatsaechlich einen frischen niedrigen Wert liefert oder weiterhin den
+alten hohen; bewusst nur einmal pro Wake statt dauerhaftem Mitloggen
+jeder Meldung, um das Log im Normalbetrieb nicht zu fluten) sowie ein
+`FS_LOGD` im `SetBrightness`-Handler selbst, wenn der Aktivitaets-Timer
+zurueckgesetzt wird. Build 0 Warnungen, 98/98 native Tests gruen. Noch
+nicht auf echter Hardware verifiziert.
+
+**Bugfix (2026-08-28, Hardwaretest, Nutzerbericht: Dimmed<->Active-
+Endlosschleife alle 30s):** der obige Fix loeste `lv_display_trigger_
+activity()` fuer **jede** Helligkeit > 0 aus -- das feuerte auch beim
+Uebergang Active->Dimmed (Helligkeit 28), der ja gerade *wegen*
+Inaktivitaet passiert. Log zeigte das Muster exakt: "Active to dimmed
+inactive_ms=30072" -> "Display activity timer reset brightness=28" ->
+nur ~150 ms spaeter "dimmed to=active inactive_ms=151" -- der Reset
+setzte den LVGL-Zeitstempel sofort auf "jetzt", die naechste
+`ReportInactivity` zeigte praktisch 0 ms, `PowerTask` sprang sofort
+zurueck nach Active, alle 30 Sekunden erneut. Fix: Bedingung von
+`clamped > 0` auf `clamped == config::kDisplayDefaultBrightness`
+verschaerft -- nur ein Uebergang zur vollen Aktiv-Helligkeit (255) ist
+tatsaechlich immer Folge bereits vorhandener echter Aktivitaet
+(Touch-Wake aus Sleep, oder Dimmed->Active durch eine schon frische
+`ReportInactivity`); der Uebergang nach Dimmed selbst loest den Reset
+jetzt nicht mehr aus. Build 0 Warnungen, 98/98 native Tests gruen.
+Erneuter Hardwaretest steht noch aus.
