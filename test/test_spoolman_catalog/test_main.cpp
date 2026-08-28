@@ -115,6 +115,65 @@ void testTagDefinitionValidationAndFormats() {
       filament_station::services::mapTagDefinition(missing, mapped));
 }
 
+void testTagDefinitionRejectsUnsupportedMaterial() {
+  // Nutzerbericht 2026-08-28: a real Bambu "Support for PLA" spool's NFC tag
+  // was rejected outright because materialDensity() only knew base polymer
+  // families -- reproduced here with a still-genuinely-unknown material
+  // ("Wood") to lock in the fail-closed behavior for anything not
+  // explicitly covered, and with "Support for PLA" itself below to confirm
+  // the fix.
+  filament_station::models::TagDefinition definition{};
+  definition.format = filament_station::models::TagFormat::BambuLab;
+  std::snprintf(definition.vendor, sizeof(definition.vendor), "Bambu Lab");
+  std::snprintf(definition.filamentName, sizeof(definition.filamentName),
+                "Wood PLA");
+  std::snprintf(definition.material, sizeof(definition.material), "Wood");
+  std::snprintf(definition.colorCode, sizeof(definition.colorCode), "AABBCC");
+  definition.nominalFilamentWeightG = 1000.0F;
+  filament_station::models::SpoolmanImportDefinition mapped{};
+  TEST_ASSERT_EQUAL(
+      filament_station::services::TagImportValidationError::UnsupportedMaterial,
+      filament_station::services::mapTagDefinition(definition, mapped));
+}
+
+void testTagDefinitionAcceptsBambuSupportAndCompositeMaterials() {
+  // Densities sourced from Donkie/SpoolmanDB's Bambu Lab product data (see
+  // SpoolmanCatalog.cpp's materialDensity() doc comment) -- notably NOT the
+  // same as their named base material's density (e.g. "Support for PLA" is
+  // denser than plain PLA), so each needs its own explicit table entry.
+  struct Case {
+    const char* material;
+    float expectedDensity;
+  };
+  const Case cases[] = {
+      {"Support for PLA", 1.33F},
+      {"Support For PLA", 1.33F},  // case-insensitive match
+      {"Support for PLA/PETG", 1.28F},
+      {"Support for ABS", 1.16F},
+      {"Support for PA/PET", 1.17F},
+      {"PLA-CF", 1.22F},
+      {"PETG-CF", 1.25F},
+  };
+  for (const Case& testCase : cases) {
+    filament_station::models::TagDefinition definition{};
+    definition.format = filament_station::models::TagFormat::BambuLab;
+    std::snprintf(definition.vendor, sizeof(definition.vendor), "Bambu Lab");
+    std::snprintf(definition.filamentName, sizeof(definition.filamentName),
+                  "Test Filament");
+    std::snprintf(definition.material, sizeof(definition.material), "%s",
+                  testCase.material);
+    std::snprintf(definition.colorCode, sizeof(definition.colorCode),
+                  "AABBCC");
+    definition.nominalFilamentWeightG = 1000.0F;
+    filament_station::models::SpoolmanImportDefinition mapped{};
+    TEST_ASSERT_EQUAL(filament_station::services::TagImportValidationError::None,
+                      filament_station::services::mapTagDefinition(definition,
+                                                                    mapped));
+    TEST_ASSERT_FLOAT_WITHIN(0.001F, testCase.expectedDensity,
+                             mapped.filament.densityGramsPerCm3);
+  }
+}
+
 void testWeightUpdateValidation() {
   filament_station::models::SpoolmanWeightUpdate update{};
   TEST_ASSERT_EQUAL(WeightUpdateValidationError::MissingSpool,
@@ -146,6 +205,8 @@ int main(int, char**) {
   RUN_TEST(testFilamentDuplicateKeyUsesVendorNameMaterialAndColor);
   RUN_TEST(testTagDefinitionMapping);
   RUN_TEST(testTagDefinitionValidationAndFormats);
+  RUN_TEST(testTagDefinitionRejectsUnsupportedMaterial);
+  RUN_TEST(testTagDefinitionAcceptsBambuSupportAndCompositeMaterials);
   RUN_TEST(testWeightUpdateValidation);
   return UNITY_END();
 }

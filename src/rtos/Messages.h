@@ -103,10 +103,10 @@ struct UiCommand {
   models::SpoolmanAppState spoolmanAppState =
       models::SpoolmanAppState::SpoolmanUnavailable;  ///< Spoolman readiness, for UpdateSpoolmanState.
   float weightGrams;           ///< Current weight, for UpdateWeight.
-  // K-Faktor fuer UpdateTrayDetails, sobald AppTask::resolveTraySpoolDetails()
+  // K-Faktor für UpdateTrayDetails, sobald AppTask::resolveTraySpoolDetails()
   // ihn (als Spoolman-*Filament*-Eigenschaft, siehe docs/bambu-protocol.md)
-  // geladen hat -- kFactorValid unterscheidet "noch nicht/nicht verfuegbar"
-  // von einem tatsaechlichen K-Faktor 0.
+  // geladen hat -- kFactorValid unterscheidet "noch nicht/nicht verfügbar"
+  // von einem tatsächlichen K-Faktor 0.
   bool kFactorValid = false;   ///< Whether #kFactor has been loaded yet.
   float kFactor = 0.0F;        ///< Loaded flow-dynamics K-factor, only valid if #kFactorValid.
   models::SpoolmanSpool spool{};              ///< Spool data, for the spool picker/detail screens.
@@ -139,7 +139,7 @@ struct NfcCommand {
 struct PowerCommand {
   PowerCommandType type;         ///< Which command/acknowledgement this is.
   std::uint32_t inactiveMs;      ///< Measured input-inactivity duration, for ReportInactivity.
-  // Nur fuer type == PowerDownAcknowledged relevant.
+  // Nur für type == PowerDownAcknowledged relevant.
   PowerPeripheral source = PowerPeripheral::Scale;  ///< Which peripheral task sent this, only meaningful for PowerDownAcknowledged.
 };
 

@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/0",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/17",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/6",
     "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/4",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
@@ -29,7 +29,6 @@
           },
           {
             "type": "border",
-            "selected": 2,
             "size": 216.44739532470703,
             "location": "right",
             "children": [
@@ -125,7 +124,7 @@
             {
               "type": "row",
               "id": "#bcb8346a-a1d4-458f-ad8d-c7a84e05f3a1",
-              "weight": 14.28494745102764,
+              "weight": 21.833243547309298,
               "children": [
                 {
                   "type": "tabset",
@@ -136,19 +135,19 @@
                   "children": [
                     {
                       "type": "tab",
-                      "id": "PAGES",
-                      "name": "Pages",
-                      "component": "pages",
-                      "enableClose": false,
-                      "icon": "svg:pages"
-                    },
-                    {
-                      "type": "tab",
                       "id": "WIDGETS",
                       "name": "User Widgets",
                       "component": "widgets",
                       "enableClose": false,
                       "icon": "svg:user_widgets"
+                    },
+                    {
+                      "type": "tab",
+                      "id": "PAGES",
+                      "name": "Pages",
+                      "component": "pages",
+                      "enableClose": false,
+                      "icon": "svg:pages"
                     },
                     {
                       "type": "tab",
@@ -197,18 +196,17 @@
             {
               "type": "tabset",
               "id": "EDITORS",
-              "weight": 47.72471080229689,
-              "selected": 1,
+              "weight": 49.58596004047339,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
                 {
                   "type": "tab",
                   "id": "#e368c9bf-289f-49c9-9192-04b65e68fad0",
-                  "name": "SCR_BOOT",
+                  "name": "SCR_TAG_ACTION_SELECT",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/0",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/17",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -241,7 +239,7 @@
             {
               "type": "row",
               "id": "#c9759a35-4104-4443-bbaa-5163c4e2a827",
-              "weight": 37.990341746675426,
+              "weight": 28.580796412217303,
               "children": [
                 {
                   "type": "tabset",
@@ -2018,10 +2016,12 @@
           "3": {},
           "4": {},
           "5": {},
+          "6": {},
           "7": {},
           "9": {},
           "11": {},
-          "12": {}
+          "12": {},
+          "16": {}
         }
       },
       "transform": {

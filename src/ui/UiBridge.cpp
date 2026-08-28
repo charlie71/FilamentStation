@@ -227,6 +227,12 @@ filament_station::models::SpoolmanAppState spoolmanAppState =
     filament_station::models::SpoolmanAppState::SpoolmanUnavailable;  ///< Current Spoolman connection/readiness state.
 bool currentTagCanAssign = false;   ///< Whether the currently present tag can be assigned to a spool.
 bool currentTagCanRemove = false;   ///< Whether the currently present tag's assignment can be removed.
+// TagActionSelect's "ins Staging laden" button (TASKS.md Nachtrag
+// 2026-08-29): unlike currentTagCanAssign/Remove (capability bits), this is
+// the tag's already-resolved spool id itself (AppTask's authoritativeSpoolId,
+// sent as ShowScreen's command.spoolId) -- 0 means the tag is not (yet)
+// assigned to any Spoolman spool.
+rtos::SpoolId currentTagSpoolId = 0;  ///< Spoolman spool the currently present tag already resolves to, or 0.
 bool diagnosticsRefreshedThisSession = false;  ///< Whether the diagnostics screen has been refreshed at least once this session.
 // Real WLAN/NFC connection status for the Home status summary -- previously
 // this read from models::mock::settings() (always hardcoded "Connected")
@@ -1725,6 +1731,14 @@ void lastTagSpoolClicked(lv_event_t*) {
   sendAction(rtos::UiActionType::AssignTag, currentPrinterId, 0, 0, 1);
 }
 
+/// @brief LVGL click handler: loads the currently present tag's
+///        already-resolved spool directly into staging (no tag-identity
+///        write involved, see rtos::UiActionType::LoadTagSpoolToStaging).
+void loadTagSpoolToStagingClicked(lv_event_t*) {
+  sendAction(rtos::UiActionType::LoadTagSpoolToStaging, currentPrinterId, 0,
+             0, 0, currentTagSpoolId);
+}
+
 /// @brief LVGL click handler: opens the spool picker to assign a tag.
 void assignTagWithPickerClicked(lv_event_t*) {
   sendAction(rtos::UiActionType::AssignTag, currentPrinterId);
@@ -1817,6 +1831,11 @@ void applySpoolmanAppState(const rtos::UiCommand* command = nullptr) {
                           tagReady && currentTagCanAssign);
   setLabelButtonAvailable(objects.tag_action_use_last_spool,
                           tagReady && currentTagCanAssign);
+  setLabelButtonAvailable(objects.tag_action_link_staging,
+                          tagReady && currentTagCanAssign &&
+                              stagingState.spoolId != 0);
+  setLabelButtonAvailable(objects.tag_action_load_to_staging,
+                          online && currentTagSpoolId != 0);
   setLabelButtonAvailable(objects.tag_action_erase,
                           tagReady && currentTagCanRemove);
   setLabelButtonAvailable(objects.tag_definition_import_select_spool,
@@ -2006,7 +2025,6 @@ void bindGeneratedWidgets() {
       objects.tag_legacy_settings, objects.tag_unknown_settings,
   }};
   //for (lv_obj_t* control : tagSettings) setControlText(control, "Einst.");
-  lv_obj_add_flag(objects.tag_action_write, LV_OBJ_FLAG_HIDDEN);
   setControlText(objects.tag_review_title, "Tag-Zuordnung pr\xC3\xBC" "fen");
   setControlText(objects.tag_review_back, "Zur\xC3\xBC" "ck");
   setControlText(objects.tag_review_cancel, "Abbrechen");
@@ -2046,6 +2064,9 @@ void bindGeneratedWidgets() {
   for (lv_obj_t* control : tagSettings) bindClick(control, settingsClicked);
   bindClick(objects.tag_action_select_spool, assignTagWithPickerClicked);
   bindClick(objects.tag_action_use_last_spool, lastTagSpoolClicked);
+  bindClick(objects.tag_action_link_staging, tagActionClicked,
+            static_cast<std::uintptr_t>(rtos::UiActionType::AssignTag));
+  bindClick(objects.tag_action_load_to_staging, loadTagSpoolToStagingClicked);
   bindClick(objects.tag_action_erase, tagActionClicked,
             static_cast<std::uintptr_t>(
                 rtos::UiActionType::RemoveTagAssignment));
@@ -2401,6 +2422,8 @@ void bindGeneratedWidgets() {
       objects.tag_result_close,
   }};
   for (lv_obj_t* button : tagButtons) styleLabelButton(button);
+  styleLabelButton(objects.tag_action_link_staging);
+  styleLabelButton(objects.tag_action_load_to_staging);
   styleLabelButton(objects.tag_action_erase);
   styleLabelButton(objects.tag_review_cancel);
   styleLabelButton(objects.tag_write_cancel);
@@ -3536,8 +3559,13 @@ void processUiCommand(const rtos::UiCommand& command) {
             (command.value & rtos::UI_TAG_CAP_UNLINK) != 0;
         currentTagCanAssign = canAssign;
         currentTagCanRemove = canRemove;
+        currentTagSpoolId = command.spoolId;
         setLabelButtonAvailable(objects.tag_action_select_spool, canAssign);
         setLabelButtonAvailable(objects.tag_action_use_last_spool, canAssign);
+        setLabelButtonAvailable(objects.tag_action_link_staging,
+                                canAssign && stagingState.spoolId != 0);
+        setLabelButtonAvailable(objects.tag_action_load_to_staging,
+                                currentTagSpoolId != 0);
         setLabelButtonAvailable(objects.tag_action_erase, canRemove);
       } else if (command.screenId == rtos::UiScreenId::TagReview &&
                  command.text[0] != '\0') {

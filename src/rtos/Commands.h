@@ -181,6 +181,13 @@ enum class UiActionType : std::uint8_t {
   // tasks::updateTask()'s UpdateCommandType::DownloadBambuMaterials, same
   // settings-screen placement as CheckFirmwareUpdate.
   UpdateBambuMaterials,
+  // "Tag Staging zuordnen"'s counterpart on TagActionSelect (TASKS.md
+  // Nachtrag 2026-08-29, Nutzerwunsch): loads the currently present tag's
+  // already-resolved spool (UiAction::spoolId) directly into staging --
+  // no tag-identity write involved, unlike AssignTag/SelectSpool on this
+  // same screen. UI-side gating disables the button unless the tag already
+  // resolves to a known spool (see UiBridge.cpp's currentTagSpoolId).
+  LoadTagSpoolToStaging,
 };
 
 /// @brief Whether a UiActionType is one of the two public tag-assignment

@@ -92,9 +92,28 @@ bewusst immer angelegt, da zwei identische Rollen keine Dubletten sind.
 Unterstuetzt werden Bambu Lab, OpenPrintTag, OpenTag3D und Legacy. Hersteller,
 Filamentname, Material, Farbe und Nenngewicht muessen in der normalisierten
 Tagdefinition vorhanden sein. Fuer bekannte Materialklassen nutzt die
-Importabbildung eine zentral getestete Dichtetabelle. Die unterstuetzten
+Importabbildung eine zentral getestete Dichtetabelle
+(`services::SpoolmanCatalog.cpp::materialDensity()`). Die unterstuetzten
 V1-Tagprofile werden als 1,75-mm-Filament abgebildet. Unbekannte Materialien
 oder fehlende Pflichtfelder werden mit einer klaren Fehlermeldung abgelehnt.
+
+**Nachtrag (2026-08-28, Nutzerbericht: Import einer echten Bambu "Support for
+PLA"-Spule scheiterte mit "Fuer dieses Material ist keine sichere Dichte
+hinterlegt"):** die Dichtetabelle vergleicht `material` **exakt** (nur
+Leerzeichen getrimmt, Gross-/Kleinschreibung ignoriert, keine Trennzeichen-
+Normalisierung) und kannte bis dahin nur einzelne Basis-Polymerfamilien
+(PLA/PETG/ABS/...), keine Bambu-Support-/Verbundmaterialien wie "Support for
+PLA" oder "PLA-CF". Ergaenzt um mit echten Herstellerdaten belegte Eintraege
+(Quelle: `Donkie/SpoolmanDB`, eine community-gepflegte, aus Bambus eigenen
+Datenblaettern abgeleitete Datenbank) -- u. a. "Support for PLA" (1,33 g/cm3,
+deutlich dichter als reines PLA mit 1,24 g/cm3, daher **kein** einfacher
+Fallback auf die Dichte des Basismaterials moeglich/gewaehlt). Bewusst
+weiterhin **keine Ratewerte**: mehrere von diesem Projekt bereits als
+Bambu-Material erkannte Namen (`data/bambu-materials/bambu_materials.json`,
+z. B. die meisten weiteren "Support For ..."-Varianten, PPA-CF/GF, PCTG,
+HIPS) haben noch keine verifizierte Dichtequelle und werden weiterhin
+abgelehnt statt geraten -- gleiche Fail-closed-Philosophie wie
+`resolveBambuMaterial()`.
 
 Die Spulenerzeugung entspricht dem Spoolman-Vertrag: `filament_id` ist
 erforderlich; `initial_weight` und `spool_weight` werden aus der Tagdefinition

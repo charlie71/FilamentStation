@@ -39,7 +39,7 @@ namespace {
 void sendEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
               std::uint32_t requestId, std::int32_t value, const char* text) {
   // static, PSRAM-backed (services/PsramAlloc.h): siehe SpoolmanTask::
-  // sendResult() fuer die Begruendung (AppEvent ist gross, dieser Task
+  // sendResult() für die Begründung (AppEvent ist gross, dieser Task
   // sendet immer nur ein Ergebnis/einen Fortschrittsschritt zur Zeit).
   static rtos::AppEvent* event = services::allocatePsramInstance<rtos::AppEvent>(
       "UpdateTask.sendEvent");
@@ -120,7 +120,7 @@ void checkForUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
                 config::kUpdateApiHost, config::kUpdateRepoOwner,
                 config::kUpdateRepoName);
 
-  // LAN-freie, oeffentliche API -- setInsecure() wie bereits bei BambuTasks
+  // LAN-freie, öffentliche API -- setInsecure() wie bereits bei BambuTasks
   // WiFiClientSecure etabliert (kein Security-Key/keine Zertifikatspflege
   // geplant, siehe TASKS.md Phase 13.1/14.8).
   WiFiClientSecure client;
@@ -214,7 +214,7 @@ void checkForUpdate(rtos::RtosContext& ctx, std::uint32_t requestId) {
 /// @return true if the firmware was downloaded, verified, and flashed successfully.
 // Eigene Funktion (statt weiterhin Teil von downloadUpdate()), damit ihre
 // WiFiClientSecure/HTTPClient-Objekte (dataClient/dataHttp) beim Verlassen
-// der Funktion vollstaendig zerstoert sind, bevor eine ggf. anschliessende
+// der Funktion vollständig zerstört sind, bevor eine ggf. anschliessende
 // Bambu-Material-Mapping-TLS-Verbindung aufgebaut wird -- siehe den
 // mbedTLS-RAM-Kommentar in downloadUpdate().
 bool downloadAndFlashFirmware(rtos::RtosContext& ctx, std::uint32_t requestId,
@@ -259,10 +259,10 @@ bool downloadAndFlashFirmware(rtos::RtosContext& ctx, std::uint32_t requestId,
     return false;
   }
 
-  // Manuelles Puffern statt der bequemen Update.write(stream)-Ueberladung
-  // (Phase 13.3), da die Rohbytes fuer die laufende SHA-256-Berechnung
-  // sichtbar sein muessen (Phase 13.4) -- Update.write(stream) liest intern
-  // direkt vom Stream, ohne die Bytes an den Aufrufer zurueckzugeben.
+  // Manuelles Puffern statt der bequemen Update.write(stream)-Überladung
+  // (Phase 13.3), da die Rohbytes für die laufende SHA-256-Berechnung
+  // sichtbar sein müssen (Phase 13.4) -- Update.write(stream) liest intern
+  // direkt vom Stream, ohne die Bytes an den Aufrufer zurückzugeben.
   mbedtls_sha256_context sha;
   mbedtls_sha256_init(&sha);
   mbedtls_sha256_starts_ret(&sha, 0);  // 0 = SHA-256 (nicht SHA-224)

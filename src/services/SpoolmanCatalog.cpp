@@ -115,14 +115,14 @@ const char* catalogValidationMessage(CatalogValidationError error) {
     case CatalogValidationError::MissingName: return "Name fehlt";
     case CatalogValidationError::MissingMaterial: return "Material fehlt";
     case CatalogValidationError::MissingVendor: return "Hersteller fehlt";
-    case CatalogValidationError::InvalidDensity: return "Dichte muss groesser als null sein";
-    case CatalogValidationError::InvalidDiameter: return "Durchmesser muss groesser als null sein";
-    case CatalogValidationError::InvalidWeight: return "Filamentgewicht ist ungueltig";
-    case CatalogValidationError::InvalidSpoolWeight: return "Leergewicht ist ungueltig";
-    case CatalogValidationError::InvalidColor: return "Farbcode ist ungueltig";
-    case CatalogValidationError::InvalidTemperature: return "Temperatur ist ungueltig";
+    case CatalogValidationError::InvalidDensity: return "Dichte muss gr\xC3\xB6\xC3\x9F" "er als null sein";
+    case CatalogValidationError::InvalidDiameter: return "Durchmesser muss gr\xC3\xB6\xC3\x9F" "er als null sein";
+    case CatalogValidationError::InvalidWeight: return "Filamentgewicht ist ung\xC3\xBCltig";
+    case CatalogValidationError::InvalidSpoolWeight: return "Leergewicht ist ung\xC3\xBCltig";
+    case CatalogValidationError::InvalidColor: return "Farbcode ist ung\xC3\xBCltig";
+    case CatalogValidationError::InvalidTemperature: return "Temperatur ist ung\xC3\xBCltig";
   }
-  return "Ungueltige Katalogdaten";
+  return "Ung\xC3\xBCltige Katalogdaten";
 }
 
 bool sameVendor(const models::SpoolmanVendor& left,
@@ -153,9 +153,30 @@ WeightUpdateValidationError validateWeightUpdate(
 
 namespace {
 /// @brief Looks up a hardcoded typical density for a known filament material.
-/// @param material Material name (case-insensitive, e.g. "PLA").
+/// @param material Material name (case-insensitive, e.g. "PLA"), matched
+///        verbatim (only leading/trailing whitespace is trimmed, no
+///        separator/prefix normalization) -- so compound names like a Bambu
+///        support-material tag's "Support for PLA" need their own explicit
+///        entry, matching neither "Support" nor "PLA" alone.
 /// @return Density in g/cm3, or 0.0F if the material is not recognized (used
 ///         to reject import of materials with no safe default density).
+// Deliberately partial coverage, not a guess-based fallback (e.g. no
+// "strip 'Support for '/'-CF' and reuse the base material's density"
+// shortcut): a support/composite variant's real density can differ
+// meaningfully from its base polymer (Nutzerbericht 2026-08-28, "Support
+// for PLA" -- 1.33 g/cm3, notably denser than plain PLA's 1.24), so an
+// unrecognized material is still rejected outright rather than approximated,
+// same fail-closed philosophy as resolveBambuMaterial() (never invent/guess
+// a value for something not explicitly verified). The composite/support
+// entries below are sourced from Donkie/SpoolmanDB's Bambu Lab product data
+// (github.com/Donkie/SpoolmanDB, community-maintained from Bambu's own
+// published spec sheets) -- covers what that database lists a real Bambu
+// product for; several material names this project's own
+// data/bambu-materials/bambu_materials.json already recognizes (e.g. most
+// other "Support For ..." variants, PPA-CF/GF, PCTG, PP-CF/GF, HIPS, PE,
+// PHA, BVOH, EVA) have no verified density source yet and are intentionally
+// left unrecognized here rather than guessed -- extend this table once a
+// real source is found, see docs/bambu-protocol.md.
 float materialDensity(const char* material) {
   /// @brief One (material name, density) lookup entry for materialDensity().
   struct Entry {
@@ -167,7 +188,19 @@ float materialDensity(const char* material) {
       {"ASA", 1.07F}, {"TPU", 1.21F}, {"PA", 1.14F},
       {"PA6", 1.14F}, {"PA11", 1.04F}, {"PA12", 1.01F},
       {"PC", 1.20F}, {"PVA", 1.23F}, {"HIPS", 1.04F},
-      {"PP", 0.90F}, {"PCTG", 1.23F}};
+      {"PP", 0.90F}, {"PCTG", 1.23F},
+      // Bambu composite/support materials (Donkie/SpoolmanDB, see the doc
+      // comment above) -- exact tag/catalog text, not the base material name.
+      {"PLA-CF", 1.22F}, {"PETG-CF", 1.25F}, {"ABS-GF", 1.08F},
+      {"ASA-CF", 1.02F}, {"ASA-AERO", 0.99F}, {"PA6-CF", 1.09F},
+      {"PA6-GF", 1.09F}, {"PAHT-CF", 1.06F}, {"PET-CF", 1.29F},
+      {"PPS-CF", 1.26F}, {"TPU 95A", 1.22F}, {"TPU-AMS", 1.26F},
+      // Support materials -- matched against the exact wording Bambu prints
+      // on the physical tag (also listed as aliases in
+      // data/bambu-materials/bambu_materials.json); notably NOT the same
+      // density as their named base material, see the doc comment above.
+      {"Support for PLA", 1.33F}, {"Support for PLA/PETG", 1.28F},
+      {"Support for ABS", 1.16F}, {"Support for PA/PET", 1.17F}};
   for (const Entry& entry : entries)
     if (equalNormalized(material, entry.name)) return entry.density;
   return 0.0F;
@@ -242,15 +275,15 @@ const char* tagImportValidationMessage(TagImportValidationError error) {
   switch (error) {
     case TagImportValidationError::None: return "";
     case TagImportValidationError::UnsupportedFormat: return "Dieses Tagformat kann nicht importiert werden";
-    case TagImportValidationError::MissingVendor: return "Der Tag enthaelt keinen Hersteller";
-    case TagImportValidationError::MissingMaterial: return "Der Tag enthaelt kein Material";
-    case TagImportValidationError::MissingFilament: return "Der Tag enthaelt keinen Filamentnamen";
-    case TagImportValidationError::MissingColor: return "Der Tag enthaelt keine gueltige Farbe";
-    case TagImportValidationError::MissingWeight: return "Der Tag enthaelt kein gueltiges Gewicht";
-    case TagImportValidationError::UnsupportedMaterial: return "Fuer dieses Material ist keine sichere Dichte hinterlegt";
-    case TagImportValidationError::InvalidColor: return "Der Farbcode im Tag ist ungueltig";
-    case TagImportValidationError::InvalidWeight: return "Das Leergewicht im Tag ist ungueltig";
-    case TagImportValidationError::InvalidTemperature: return "Der Temperaturbereich im Tag ist ungueltig";
+    case TagImportValidationError::MissingVendor: return "Der Tag enth\xC3\xA4lt keinen Hersteller";
+    case TagImportValidationError::MissingMaterial: return "Der Tag enth\xC3\xA4lt kein Material";
+    case TagImportValidationError::MissingFilament: return "Der Tag enth\xC3\xA4lt keinen Filamentnamen";
+    case TagImportValidationError::MissingColor: return "Der Tag enth\xC3\xA4lt keine g\xC3\xBCltige Farbe";
+    case TagImportValidationError::MissingWeight: return "Der Tag enth\xC3\xA4lt kein g\xC3\xBCltiges Gewicht";
+    case TagImportValidationError::UnsupportedMaterial: return "F\xC3\xBCr dieses Material ist keine sichere Dichte hinterlegt";
+    case TagImportValidationError::InvalidColor: return "Der Farbcode im Tag ist ung\xC3\xBCltig";
+    case TagImportValidationError::InvalidWeight: return "Das Leergewicht im Tag ist ung\xC3\xBCltig";
+    case TagImportValidationError::InvalidTemperature: return "Der Temperaturbereich im Tag ist ung\xC3\xBCltig";
   }
   return "Unbekannter Importfehler";
 }

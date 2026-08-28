@@ -366,9 +366,10 @@ typedef struct _objects_t {
     lv_obj_t *tag_action_info;
     lv_obj_t *tag_action_select_spool;
     lv_obj_t *tag_action_use_last_spool;
-    lv_obj_t *tag_action_write;
+    lv_obj_t *tag_action_link_staging;
     lv_obj_t *tag_action_erase;
     lv_obj_t *tag_action_back;
+    lv_obj_t *tag_action_load_to_staging;
     lv_obj_t *tag_review_header;
     lv_obj_t *tag_review_header_spoolman;
     lv_obj_t *tag_review_header_wifi;

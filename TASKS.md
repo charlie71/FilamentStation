@@ -6027,3 +6027,97 @@ SD-Zugriff) bereits behoben; die jetzt reparierte SD-Karte sollte das mit
 dem aktuellen Code nicht erneut zeigen. Build 0 Warnungen, 103/103 native
 Tests gruen. Kein Hardware-Test dieser Haertung moeglich (SD-Karte war zum
 Zeitpunkt dieser Sitzung nicht verfuegbar).
+
+---
+
+**Bugfix (2026-08-28, Nutzerbericht: Import einer echten Bambu "Support for
+PLA"-Spule scheitert mit "F\xC3\xBCr dieses Material ist keine sichere Dichte
+hinterlegt"):** `SpoolmanCatalog.cpp::materialDensity()` ist eine separate,
+fest codierte (Material, Dichte)-Tabelle, unabhaengig von der Bambu-AMS-
+Material-Mapping-Tabelle (`bambu_materials.json`) -- exakter Textvergleich
+(nur getrimmt, gross-/kleinschreibungsunabhaengig, **keine**
+Trennzeichen-Normalisierung), kannte bislang nur einzelne Basis-
+Polymerfamilien (PLA, PETG, ABS, ...). Der vom Bambu-Tag gelesene Materialtext
+fuer eine Support-Spule ("Support for PLA") matcht dadurch weder "Support"
+noch "PLA" -- Dichte 0, Ablehnung.
+
+Recherche (`Donkie/SpoolmanDB`, community-gepflegte Datenbank aus Bambus
+eigenen Datenblaettern) ergab reale Dichtewerte fuer mehrere Bambu-Support-/
+Verbundmaterialien, u. a. "Support for PLA" = 1,33 g/cm3 -- **deutlich
+dichter** als reines PLA (1,24 g/cm3), ein simpler "Basismaterial-Dichte
+wiederverwenden"-Fallback waere hier also falsch gewesen. Tabelle um die
+recherchierten, belegten Eintraege ergaenzt: "Support for PLA" (1.33),
+"Support for PLA/PETG" (1.28), "Support for ABS" (1.16), "Support for PA/PET"
+(1.17), "PLA-CF" (1.22), "PETG-CF" (1.25), "ABS-GF" (1.08), "ASA-CF" (1.02),
+"ASA-AERO" (0.99), "PA6-CF"/"PA6-GF" (1.09), "PAHT-CF" (1.06), "PET-CF"
+(1.29), "PPS-CF" (1.26), "TPU 95A" (1.22), "TPU-AMS" (1.26). Bewusst
+**keine Ratewerte**: mehrere weitere, von diesem Projekt bereits als
+Bambu-Material erkannte Namen (die meisten uebrigen "Support For ..."-
+Varianten, PPA-CF/GF, PCTG, PP-CF/GF, HIPS, PE, PHA, BVOH, EVA) haben noch
+keine verifizierte Dichtequelle gefunden und werden weiterhin korrekt
+abgelehnt -- gleiche Fail-closed-Philosophie wie `resolveBambuMaterial()`,
+keine Regression, nur erweiterte Abdeckung. 2 neue native Tests (Import-
+Erfolg fuer alle sieben neuen Eintraege inkl. Gross-/Kleinschreibungs-
+Variante, Ablehnung eines weiterhin unbekannten Materials als
+Regressionsschutz). Build 0 Warnungen, 105/105 native Tests gruen.
+
+---
+
+**Feature (2026-08-29, Nutzerwunsch: nicht zugeordneten NFC-Tag direkt der
+Staging-Spule zuordnen):** neuer Button "Tag Staging zuordnen" auf
+`SCR_TAG_ACTION_SELECT`, sichtbar/aktivierbar nur wenn der gerade
+gescannte Tag zuordenbar ist **und** eine Staging-Spule aktiv ist. Keine
+neue AppTask-Logik nötig -- `UiActionType::AssignTag`s bestehender
+Handler (`AppTask.cpp:2545`) unterstützt bereits eine explizit gesetzte
+`action.spoolId` (überspringt dann den Spulen-Picker), und
+`UiBridge.cpp`s generischer `tagActionClicked()`-Handler setzt bei
+`type == AssignTag` bereits automatisch `spoolId = stagingState.spoolId`
+-- exakt derselbe, bereits produktiv genutzte Pfad wie beim bestehenden
+"Tag verknüpfen"-Button auf dem StagingActions-Screen
+(`staging_action_link_tag`). Der neue Button baut das bislang versteckte,
+ungenutzte Platzhalter-Widget `tag_action_write` (Position/Größe
+unverändert) zu einem echten, per `setLabelButtonAvailable()`
+laufzeitgesteuerten Button um, umbenannt zu `tag_action_link_staging`
+(`screens.h`/`screens.c`/`UiBridge.cpp`). Die zusätzliche Bedingung "nur
+wenn eine Staging-Spule vorhanden ist" wird rein clientseitig in
+`UiBridge.cpp` ausgewertet (`stagingState.spoolId != 0`, bereits
+vorhandener, stets aktueller UI-Zustand) -- keine neue Datenübertragung
+von `AppTask` nötig. Die EEZ-Studio-Quelle
+(`ui-project/FilamentStation.eez-project`) wurde von Hand nach dem Muster
+des Nachbar-Widgets `tag_action_erase` mitgepflegt (neue, kollisionsfrei
+geprüfte eindeutige UUIDs) -- **das EEZ-Studio-Tool selbst ist in dieser
+Umgebung nicht installiert**, die JSON-Änderung ist daher nur syntaktisch
+(gültiges JSON) geprüft, nicht gegen das echte Tool validiert; vor der
+nächsten Nutzung von EEZ Studio kurz gegenprüfen, ob die Datei dort
+fehlerfrei lädt. Build 0 Warnungen, 105/105 native Tests grün (dieser
+Bereich ist reines UI-Wiring, keine natively-testbare Logik betroffen).
+Kein Hardware-/Simulator-Test möglich (kein LVGL-Simulator-Build in
+dieser Sitzung verfügbar).
+
+---
+
+**Feature (2026-08-29, Nutzerwunsch: zugeordneten NFC-Tag direkt ins
+Staging laden):** Gegenstück zum obigen Button -- der Nutzer hat den
+Button `tag_action_load_to_staging` ("ins Staging laden") selbst per
+EEZ Studio auf `SCR_TAG_ACTION_SELECT` angelegt (Layout dabei leicht
+angepasst); diese Sitzung hat ihn verdrahtet. Anders als
+`tag_action_link_staging` (Tag → aktuelle Staging-Spule zuordnen) geht die
+Richtung hier umgekehrt: die vom Tag bereits **aufgelöste** Spule wird
+direkt ins Staging geladen, ohne die Tag-Identität selbst zu lesen/
+schreiben. Da `UiActionType::SelectSpool`/`AssignTag` auf
+`TagActionSelect` bereits für den Schreib-/Zuordnungsablauf reserviert
+sind, wurde dafür ein neuer, eigenständiger `UiActionType::
+LoadTagSpoolToStaging` ergänzt (`rtos/Commands.h`) -- der Handler
+(`AppTask.cpp`) ruft lediglich das bereits bestehende
+`requestStagingSpool()` auf, exakt derselbe, bereits produktiv genutzte
+Fetch-Pfad wie beim automatischen Staging-Laden eines aufgelösten Tags in
+`showNativeTagAction()` und beim Spulen-Picker auf `StagingActions`
+(`pendingStagingSpoolRequestId`, generisch in der bestehenden
+`SpoolmanResponse`-Behandlung abgeschlossen -- keine neue Abschlusslogik
+nötig). Neuer UI-Zustand `currentTagSpoolId` (`UiBridge.cpp`, analog zu
+`currentTagCanAssign`/`currentTagCanRemove`) hält die vom Tag aufgelöste
+Spulen-ID fest; der Button ist genau dann aktiv, wenn diese ID `!= 0` ist
+(**deaktiviert bei nicht zugeordnetem Tag**, wie gewünscht) und Spoolman
+online ist (`applySpoolmanAppState()`, gleiche `online`-Gate-Kategorie wie
+z. B. `staging_action_configure`). Build 0 Warnungen, 105/105 native
+Tests grün. Kein Hardware-/Simulator-Test möglich in dieser Sitzung.

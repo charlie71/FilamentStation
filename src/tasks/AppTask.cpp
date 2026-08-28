@@ -122,12 +122,12 @@ struct TraySpoolDetailsEntry {
   bool kFactorValid = false;   ///< Whether #kFactor was successfully resolved.
   float kFactor = 0.0F;        ///< Fetched flow-dynamics K-factor, only valid if #kFactorValid.
   // Nutzerbericht 2026-08-28: Home zeigte bisher den vom Drucker
-  // gemeldeten Bambu-`tray_type` (z. B. "PLA-S") statt des tatsaechlich
+  // gemeldeten Bambu-`tray_type` (z. B. "PLA-S") statt des tatsächlich
   // zugewiesenen Spoolman-Materials (z. B. "Support For PLA") -- seit dem
-  // erweiterten Material-Mapping koennen beide deutlich auseinanderlaufen.
+  // erweiterten Material-Mapping können beide deutlich auseinanderlaufen.
   // Diese Spule ist bereits Teil der LoadSpool-Antwort, die
-  // resolveTraySpoolDetails() ohnehin fuer Restgewicht abruft (kein
-  // zusaetzlicher Spoolman-Request), war bislang aber ungenutzt.
+  // resolveTraySpoolDetails() ohnehin für Restgewicht abruft (kein
+  // zusätzlicher Spoolman-Request), war bislang aber ungenutzt.
   char material[24]{};  ///< Spoolman spool's own material name, valid once stage reaches Loaded (matches models::SpoolmanSpool::material's size).
 };
 std::array<TraySpoolDetailsEntry, kMaximumTraySpoolDetailsEntries>
@@ -140,9 +140,9 @@ std::uint32_t pendingPrinterTestRequestId = 0;  ///< Correlation id for an in-fl
 std::uint32_t pendingUpdateCheckRequestId = 0;  ///< Correlation id for an in-flight firmware update check.
 std::uint32_t pendingUpdateDownloadRequestId = 0;  ///< Correlation id for an in-flight firmware download.
 // Gesetzt sobald ein Versions-Check ein neueres Release meldet; ein
-// erneutes Antippen von "Pr\xC3\xBCfen" bietet dann Installieren statt
-// erneut Pr\xC3\xBCfen an (TASKS.md Phase 13.3). Wird beim Start eines
-// Downloads verworfen -- der Download loest ohnehin eine eigene, frische
+// erneutes Antippen von "Prüfen" bietet dann Installieren statt
+// erneut Prüfen an (TASKS.md Phase 13.3). Wird beim Start eines
+// Downloads verworfen -- der Download löst ohnehin eine eigene, frische
 // Abfrage aus (siehe UpdateCommandType::DownloadUpdate).
 bool updateAvailable = false;  ///< Whether the last update check found a newer release.
 std::uint32_t pendingBambuMaterialUpdateRequestId = 0;  ///< Correlation id for an in-flight Bambu material-mapping download (TASKS.md Nachtrag 2026-08-28).
@@ -1058,14 +1058,14 @@ void persistTraySpoolCache(rtos::RtosContext& ctx) {
     entry["material"] = source.material;
     entry["colorHex"] = source.colorHex;
     // Nutzerbericht 2026-08-27: ein Speichern eines einzelnen, dem Anschein
-    // nach gueltigen Eintrags ("ABS", printer_id=1, ams_id=0, tray_id=0)
+    // nach gültigen Eintrags ("ABS", printer_id=1, ams_id=0, tray_id=0)
     // scheiterte an validateTraySpoolCacheEntries() mit
     // "invalid_document_field", ohne dass der eigentlich verletzte Feldwert
     // aus dieser generischen Fehlermeldung ablesbar war -- die Validierung
     // bewertet stets das gesamte Dokument, ein anderer, hier nicht direkt
     // sichtbarer Eintrag kann also ebenso gut die Ursache sein. Jeder
     // Eintrag wird deshalb vor dem Schreiben einzeln geloggt, um die
-    // tatsaechlich betroffene (printerId, amsId, trayId) beim naechsten
+    // tatsächlich betroffene (printerId, amsId, trayId) beim nächsten
     // Fehlschlag direkt zu identifizieren, statt weiter zu raten.
     FS_LOGD(services::LogComponent::App,
             "Tray-Spoolman cache entry printer_id=%u ams_id=%u tray_id=%u "
@@ -1196,9 +1196,9 @@ void syncAmsToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
       tray.printerId = printerId;
       tray.amsId = uiAmsId;
       tray.trayId = trayIndex;
-      // Bit 0: belegt (Ready). Bit 1: gerade in der Duese aktiv
+      // Bit 0: belegt (Ready). Bit 1: gerade in der Düse aktiv
       // ("tray_now", Nutzerwunsch 2026-08-24) -- siehe UiBridge.cpp's
-      // UpdateTrayDetails-Handler fuer die Gegenseite dieser Kodierung.
+      // UpdateTrayDetails-Handler für die Gegenseite dieser Kodierung.
       tray.value = 300 + (slot.state == models::PrinterSlotState::Ready ? 1 : 0) +
                    (isActiveTray ? 2 : 0);
       tray.spoolId = resolveTraySpoolCacheSpoolId(
@@ -1211,7 +1211,7 @@ void syncAmsToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
         // bleibt sonst 0 (UiBridge liest das als "noch nicht geladen" und
         // zeigt nur das Material). K-Faktor ist eine Spoolman-*Filament*-
         // Eigenschaft (Nutzerhinweis 2026-08-24), daher eigene
-        // UiCommand-Felder statt tray.spool (das nur Spulen-Felder traegt).
+        // UiCommand-Felder statt tray.spool (das nur Spulen-Felder trägt).
         const TraySpoolDetailsSnapshot details =
             resolveTraySpoolDetails(ctx, tray.spoolId);
         if (details.loaded) {
@@ -2601,6 +2601,41 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       selection.type = rtos::UiActionType::SelectSpool;
       selection.spoolId = spoolId;
       handleUiAction(ctx, selection);
+      return;
+    }
+
+    case rtos::UiActionType::LoadTagSpoolToStaging: {
+      // "ins Staging laden" auf TagActionSelect (TASKS.md Nachtrag
+      // 2026-08-29, Nutzerwunsch): laedt die vom Tag bereits aufgeloeste
+      // Spule direkt ins Staging -- keine Tag-Identitaet wird dabei
+      // gelesen/geschrieben, anders als bei AssignTag/RemoveTagAssignment.
+      // UiBridge.cpp sperrt den Button bereits, wenn der Tag keiner Spule
+      // zugeordnet ist; hier trotzdem defensiv erneut geprueft.
+      if (action.spoolId == 0) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Laden nicht m\xC3\xB6glich",
+                    "Der Tag ist keiner Spule zugeordnet.");
+        return;
+      }
+      if (pendingStagingSpoolRequestId != 0) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Laden nicht m\xC3\xB6glich",
+                    "Es l\xC3\xA4uft bereits eine Staging-Anfrage.");
+        return;
+      }
+      if (!requestStagingSpool(ctx, action.requestId, action.spoolId)) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, action.requestId,
+                    "Laden fehlgeschlagen",
+                    "Die Spule konnte nicht angefordert werden.");
+        return;
+      }
+      pendingStagingSpoolRequestId = action.requestId;
+      sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                  rtos::UiOverlayKind::SpoolmanRequest, action.requestId,
+                  "Spule laden", "Spoolman-Daten werden geladen.");
       return;
     }
 

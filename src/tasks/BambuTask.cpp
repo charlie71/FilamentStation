@@ -205,9 +205,9 @@ void checkPendingTrayAssignment(rtos::RtosContext& ctx,
                                 PrinterConnection& conn) {
   if (!conn.pending.active) return;
   // Das externe/manuelle Fach (kein AMS) hat keinen Eintrag in
-  // conn.state.amsUnits[] -- findSlot() findet es grundsaetzlich nie
-  // (Nutzerbericht 2026-08-27: "Extern konfigurieren" bestaetigte deshalb
-  // nie, auch nachdem der Drucker die Zuordnung laengst angenommen hatte).
+  // conn.state.amsUnits[] -- findSlot() findet es grundsätzlich nie
+  // (Nutzerbericht 2026-08-27: "Extern konfigurieren" bestätigte deshalb
+  // nie, auch nachdem der Drucker die Zuordnung längst angenommen hatte).
   const models::PrinterSlotStateData* slot =
       conn.pending.amsId == models::kBambuExternalAmsId
           ? &conn.state.externalSlot

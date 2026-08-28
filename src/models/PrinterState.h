@@ -30,7 +30,7 @@ constexpr std::uint8_t kActiveTrayNowNone = 255;      ///< `tray_now` value mean
 // Bambu "ams_filament_setting"/"extrusion_cali_sel" wire addressing for the
 // external/manual spool holder (no AMS involved) -- a different pair of
 // fields than tray_now above, coincidentally sharing 254 for the tray part.
-// See docs/bambu-protocol.md ("Vergleich mit FilaMan-System": "Default fuer
+// See docs/bambu-protocol.md ("Vergleich mit FilaMan-System": "Default für
 // den externen Slot: ams_id=255, tray_id=254").
 constexpr std::uint8_t kBambuExternalAmsId = 255;   ///< Wire `ams_id` value addressing the external/manual spool holder.
 constexpr std::uint8_t kBambuExternalTrayId = 254;  ///< Wire `tray_id`/`slot_id` value addressing the external/manual spool holder.

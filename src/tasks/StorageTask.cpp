@@ -1258,8 +1258,8 @@ void storageTask(void* parameter) {
   bool removalLatched =
       (xEventGroupGetBits(ctx.systemEventGroup) & rtos::EVENT_SD_READY) == 0;
   bool reinsertionReported = false;
-  // Der feste JSON-Puffer macht StorageCommand fuer eine Stackvariable zu
-  // gross. Der Puffer bleibt statisch und gehoert weiterhin exklusiv diesem
+  // Der feste JSON-Puffer macht StorageCommand für eine Stackvariable zu
+  // gross. Der Puffer bleibt statisch und gehört weiterhin exklusiv diesem
   // einzelnen Task.
   static rtos::StorageCommand command{};
   for (;;) {
