@@ -121,6 +121,14 @@ struct TraySpoolDetailsEntry {
   float remainingWeightGrams = 0.0F;  ///< Fetched remaining weight, valid once stage reaches Loaded.
   bool kFactorValid = false;   ///< Whether #kFactor was successfully resolved.
   float kFactor = 0.0F;        ///< Fetched flow-dynamics K-factor, only valid if #kFactorValid.
+  // Nutzerbericht 2026-08-28: Home zeigte bisher den vom Drucker
+  // gemeldeten Bambu-`tray_type` (z. B. "PLA-S") statt des tatsaechlich
+  // zugewiesenen Spoolman-Materials (z. B. "Support For PLA") -- seit dem
+  // erweiterten Material-Mapping koennen beide deutlich auseinanderlaufen.
+  // Diese Spule ist bereits Teil der LoadSpool-Antwort, die
+  // resolveTraySpoolDetails() ohnehin fuer Restgewicht abruft (kein
+  // zusaetzlicher Spoolman-Request), war bislang aber ungenutzt.
+  char material[24]{};  ///< Spoolman spool's own material name, valid once stage reaches Loaded (matches models::SpoolmanSpool::material's size).
 };
 std::array<TraySpoolDetailsEntry, kMaximumTraySpoolDetailsEntries>
     traySpoolDetails{};  ///< Fixed-size, spoolId-keyed cache of #TraySpoolDetailsEntry, oldest entry evicted on overflow.
@@ -137,6 +145,7 @@ std::uint32_t pendingUpdateDownloadRequestId = 0;  ///< Correlation id for an in
 // Downloads verworfen -- der Download loest ohnehin eine eigene, frische
 // Abfrage aus (siehe UpdateCommandType::DownloadUpdate).
 bool updateAvailable = false;  ///< Whether the last update check found a newer release.
+std::uint32_t pendingBambuMaterialUpdateRequestId = 0;  ///< Correlation id for an in-flight Bambu material-mapping download (TASKS.md Nachtrag 2026-08-28).
 constexpr std::uint32_t kScaleLoadRequestId = 0x53430001U;  ///< Fixed correlation id for the scale-config storage load.
 constexpr std::uint32_t kBambuLoadRequestId = 0x42414D01U;  ///< Fixed correlation id for the Bambu-config storage load.
 constexpr std::uint32_t kBambuMappingLoadRequestId = 0x4E464301U;  ///< Fixed correlation id for the legacy bambu-tags.json load.
@@ -348,12 +357,12 @@ PendingTagResolution pendingTagResolution{};  ///< Active tag-resolution state.
 // AMS slot. AppTask does not retain resolved spool data after staging (see
 // requestStagingSpool), so the spool is re-loaded here (LoadingSpool) before
 // its material/color are sent to the printer via BambuCommand::AssignTray
-// (WritingSlot). bambu_temp_min/bambu_temp_max are Spoolman *filament*
-// properties (Nutzerhinweis 2026-08-24), fetched via a dedicated
-// LoadingFilament step (using the spool's filamentId) rather than trusted
-// from the spool response's embedded filament object -- material/colorHex
-// are captured in PendingSlotAssignment across that step since they're
-// still needed once it completes.
+// (WritingSlot). Nozzle temperature is deliberately NOT fetched from
+// Spoolman here (Nutzerwunsch 2026-08-27) -- BambuTask resolves it from a
+// static Bambu-material-profile table (services::resolveBambuMaterial())
+// keyed by the material name alone, so no separate LoadFilament round trip
+// is needed for AssignTray (unlike staging/tray-card K-Faktor display,
+// which still fetch filament data for that unrelated purpose).
 /**
  * @brief State machine for assigning the staged Spoolman spool to a
  *        printer's AMS slot.
@@ -363,8 +372,7 @@ PendingTagResolution pendingTagResolution{};  ///< Active tag-resolution state.
  *   rankdir=LR;
  *   None -> SelectingSpool;
  *   SelectingSpool -> LoadingSpool;
- *   LoadingSpool -> LoadingFilament [label="LoadSpool response"];
- *   LoadingFilament -> WritingSlot [label="LoadFilament response (or failure)"];
+ *   LoadingSpool -> WritingSlot [label="LoadSpool response"];
  *   WritingSlot -> None [label="printer confirms (BambuTask) or fails"];
  * }
  * @enddot
@@ -373,7 +381,6 @@ enum class SlotAssignmentStage : std::uint8_t {
   None,
   SelectingSpool,
   LoadingSpool,
-  LoadingFilament,
   WritingSlot,
 };
 /// @brief In-flight AMS slot assignment being tracked through SlotAssignmentStage.
@@ -385,14 +392,9 @@ struct PendingSlotAssignment {
   std::uint8_t trayId = 0;       ///< Target tray index.
   rtos::SpoolId spoolId = 0;     ///< Spool being assigned.
   // Captured from the LoadingSpool response, needed again once
-  // LoadingFilament completes.
-  char trayType[16]{};       ///< Material resolved from the spool, sent to the printer.
+  // sendPendingSlotAssignTray() builds the BambuCommand.
+  char trayType[16]{};       ///< Material resolved from the spool, sent to the printer (BambuTask maps it to a Bambu AMS profile).
   char trayColorHex[9]{};    ///< Color resolved from the spool, sent to the printer.
-  // Set when the resolved filament has no usable bambu_temp_min/
-  // bambu_temp_max extra fields (or the LoadFilament fetch itself failed),
-  // so the completion dialog can tell the user the printer only received
-  // material/color, not a temperature range.
-  bool tempFieldsMissing = false;  ///< Whether the temperature range could not be resolved.
 };
 PendingSlotAssignment pendingSlotAssignment{};  ///< Active AMS slot-assignment state.
 
@@ -549,15 +551,14 @@ bool requestStagingSpool(rtos::RtosContext& ctx, std::uint32_t requestId,
 /// @return false if the Spoolman command queue was full.
 bool requestFilamentDetails(rtos::RtosContext& ctx, std::uint32_t requestId,
                             std::uint32_t filamentId);
-/// @brief Sends the pending AMS slot assignment's AssignTray command to BambuTask.
+/// @brief Sends the pending AMS slot assignment's AssignTray command to
+///        BambuTask. `pendingSlotAssignment.trayType` carries the raw
+///        Spoolman material name; BambuTask resolves the Bambu AMS
+///        profile (tray_info_idx/nozzle temperature range) from it.
 /// @param ctx Owning RTOS context.
 /// @param requestId Correlation id.
-/// @param nozzleTempMinC Minimum nozzle temperature to send.
-/// @param nozzleTempMaxC Maximum nozzle temperature to send.
 /// @return false if the Bambu command queue was full.
-bool sendPendingSlotAssignTray(rtos::RtosContext& ctx, std::uint32_t requestId,
-                               std::uint16_t nozzleTempMinC,
-                               std::uint16_t nozzleTempMaxC);
+bool sendPendingSlotAssignTray(rtos::RtosContext& ctx, std::uint32_t requestId);
 /// @brief Sends an UpdateStaging UiCommand reflecting a resolved staged spool.
 /// @param ctx Owning RTOS context.
 /// @param requestId Correlation id.
@@ -575,6 +576,7 @@ struct TraySpoolDetailsSnapshot {
   float remainingWeightGrams = 0.0F;  ///< Resolved remaining weight, valid if #loaded.
   bool kFactorValid = false;          ///< Whether #kFactor is valid.
   float kFactor = 0.0F;               ///< Resolved flow-dynamics K-factor, only valid if #kFactorValid.
+  char material[24]{};                ///< Spoolman spool's own material name, valid (may still be empty) if #loaded.
 };
 /// @brief Looks up (or starts loading) a tray's cached live Spoolman weight/K-factor.
 /// @param ctx Owning RTOS context.
@@ -1207,6 +1209,16 @@ void syncAmsToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
           tray.weightGrams = details.remainingWeightGrams;
           tray.kFactorValid = details.kFactorValid;
           tray.kFactor = details.kFactor;
+          // Prefer the actually-assigned Spoolman material (e.g. "Support
+          // For PLA") over the printer-reported Bambu tray_type (e.g.
+          // "PLA-S", already set above as a fallback for an unresolved/
+          // not-yet-loaded spool) -- Nutzerbericht 2026-08-28: with the
+          // expanded material mapping these can now differ significantly,
+          // not just cosmetically.
+          if (details.material[0] != '\0') {
+            std::snprintf(tray.title, sizeof(tray.title), "%s",
+                         details.material);
+          }
         }
       }
       sendUiCommand(ctx, tray, "AppTask: tray details sync overflow");
@@ -1242,6 +1254,11 @@ void syncAmsToUi(rtos::RtosContext& ctx, rtos::PrinterId printerId) {
       external.weightGrams = details.remainingWeightGrams;
       external.kFactorValid = details.kFactorValid;
       external.kFactor = details.kFactor;
+      // See the matching AMS-tray comment above.
+      if (details.material[0] != '\0') {
+        std::snprintf(external.title, sizeof(external.title), "%s",
+                     details.material);
+      }
     }
   }
   sendUiCommand(ctx, external, "AppTask: external tray sync overflow");
@@ -1560,6 +1577,8 @@ TraySpoolDetailsSnapshot resolveTraySpoolDetails(rtos::RtosContext& ctx,
     snapshot.remainingWeightGrams = entry->remainingWeightGrams;
     snapshot.kFactorValid = entry->kFactorValid;
     snapshot.kFactor = entry->kFactor;
+    std::snprintf(snapshot.material, sizeof(snapshot.material), "%s",
+                 entry->material);
     return snapshot;
   }
   if (entry->stage != TraySpoolDetailsStage::Idle) return snapshot;
@@ -1663,13 +1682,12 @@ bool sendUpdateCommand(rtos::RtosContext& ctx,
 }
 
 // Builds and sends the AssignTray command from pendingSlotAssignment's
-// captured material/colorHex (set when its LoadingSpool step completed),
-// plus whatever nozzle temperature range the caller resolved (0/0 if
-// bambu_temp_min/bambu_temp_max are missing/invalid/unreachable -- no
-// temperature is ever invented, see the LoadingFilament response handler).
-bool sendPendingSlotAssignTray(rtos::RtosContext& ctx, std::uint32_t requestId,
-                               std::uint16_t nozzleTempMinC,
-                               std::uint16_t nozzleTempMaxC) {
+// captured material/colorHex (set when its LoadingSpool step completed).
+// trayType carries the raw Spoolman material name (or empty, to clear the
+// slot) -- BambuTask resolves the Bambu AMS profile (tray_info_idx/nozzle
+// temperature range) from it via services::resolveBambuMaterial(), see
+// docs/bambu-protocol.md; no Spoolman temperature is ever sent.
+bool sendPendingSlotAssignTray(rtos::RtosContext& ctx, std::uint32_t requestId) {
   rtos::BambuCommand assignTray{};
   assignTray.type = rtos::BambuCommandType::AssignTray;
   assignTray.requestId = requestId;
@@ -1696,14 +1714,10 @@ bool sendPendingSlotAssignTray(rtos::RtosContext& ctx, std::uint32_t requestId,
                pendingSlotAssignment.trayType);
   std::snprintf(assignTray.trayColorHex, sizeof(assignTray.trayColorHex), "%s",
                pendingSlotAssignment.trayColorHex);
-  assignTray.nozzleTempMinC = nozzleTempMinC;
-  assignTray.nozzleTempMaxC = nozzleTempMaxC;
   FS_LOGD(services::LogComponent::App,
-          "Sending AssignTray request_id=%lu spool_id=%lu "
-          "nozzle_temp_min=%u nozzle_temp_max=%u",
+          "Sending AssignTray request_id=%lu spool_id=%lu material=\"%s\"",
           static_cast<unsigned long>(requestId),
-          static_cast<unsigned long>(assignTray.spoolId), nozzleTempMinC,
-          nozzleTempMaxC);
+          static_cast<unsigned long>(assignTray.spoolId), assignTray.trayType);
   return sendBambuCommand(ctx, assignTray);
 }
 
@@ -3268,7 +3282,8 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     case rtos::UiActionType::StartWifiPortal:
     case rtos::UiActionType::ResetWifiCredentials:
     case rtos::UiActionType::PrepareRestart:
-    case rtos::UiActionType::CheckFirmwareUpdate: {
+    case rtos::UiActionType::CheckFirmwareUpdate:
+    case rtos::UiActionType::UpdateBambuMaterials: {
       if (action.type == rtos::UiActionType::StartWifiPortal) {
         rtos::NetworkCommand networkCommand{};
         networkCommand.type = rtos::NetworkCommandType::StartPortal;
@@ -3316,9 +3331,12 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
           sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                       rtos::UiOverlayKind::UpdateInstallConfirmation,
                       action.requestId, "Update installieren?",
-                      "Firmware wird heruntergeladen und installiert. Ein "
-                      "Neustart in die neue Version folgt erst in einer "
-                      "sp\xC3\xA4teren Phase (13.5).");
+                      "Falls dieses Release eine Bambu-Material-Zuordnung "
+                      "ver\xC3\xB6" "ffentlicht, wird sie zuerst "
+                      "aktualisiert. Danach wird die Firmware "
+                      "heruntergeladen und installiert; ein Neustart in "
+                      "die neue Version wird anschlie\xC3\x9F" "end "
+                      "best\xC3\xA4tigt.");
           return;
         }
         if (pendingUpdateCheckRequestId != 0) {
@@ -3344,6 +3362,36 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
             300 + static_cast<std::int32_t>(rtos::UiActionType::CheckFirmwareUpdate);
         std::snprintf(command.text, sizeof(command.text), "Wird gepr\xC3\xBC" "ft...");
         sendUiCommand(ctx, command, "AppTask: firmware update check queue overflow");
+        return;
+      }
+      if (action.type == rtos::UiActionType::UpdateBambuMaterials) {
+        // No confirmation dialog needed (unlike the firmware download
+        // above): activation is atomic and SHA-256-validated, and a
+        // rejected/failed download never touches the currently active
+        // bambu_materials.json (see docs/bambu-protocol.md) -- there is
+        // nothing destructive to confirm.
+        if (pendingBambuMaterialUpdateRequestId != 0) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Material-Zuordnung",
+                      "Es l\xC3\xA4uft bereits ein Download.");
+          return;
+        }
+        rtos::UpdateCommand updateCommand{};
+        updateCommand.type = rtos::UpdateCommandType::DownloadBambuMaterials;
+        updateCommand.requestId = action.requestId;
+        if (!sendUpdateCommand(ctx, updateCommand)) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Material-Zuordnung",
+                      "Der Auftrag konnte nicht an den UpdateTask gesendet werden.");
+          return;
+        }
+        pendingBambuMaterialUpdateRequestId = action.requestId;
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::UpdateDownload, action.requestId,
+                    "Material-Zuordnung",
+                    "Bambu-Material-Zuordnung wird heruntergeladen...");
         return;
       }
       command.type = rtos::UiCommandType::ShowToast;
@@ -5159,6 +5207,8 @@ void appTask(void* parameter) {
       if (entry.stage == TraySpoolDetailsStage::LoadingSpool) {
         if (event->value >= 0 && event->spool.id == entry.spoolId) {
           entry.remainingWeightGrams = event->spool.remainingWeightGrams;
+          std::snprintf(entry.material, sizeof(entry.material), "%s",
+                       event->spool.material);
           if (event->spool.filamentId != 0 &&
               requestFilamentDetails(ctx, event->requestId,
                                      event->spool.filamentId)) {
@@ -5312,11 +5362,14 @@ void appTask(void* parameter) {
       }
       // Material/color aus der aufgeloesten Spule; Bambu erwartet
       // trayColorHex als RRGGBB(AA)-Hexstring, colorHex[0] liefert genau
-      // das. Fuer die spaetere LoadingFilament-Antwort gemerkt (siehe
-      // sendPendingSlotAssignTray()) -- bambu_temp_min/bambu_temp_max sind
-      // eine Spoolman *Filament*-Eigenschaft (Nutzerhinweis 2026-08-24),
-      // dafuer ein eigener Request statt sich auf das verschachtelte
-      // filament-Objekt dieser Spool-Antwort zu verlassen.
+      // das. Keine Spoolman-Duesentemperatur mehr angefragt (Nutzerwunsch
+      // 2026-08-27) -- BambuTask loest tray_info_idx/Duesentemperatur aus
+      // dem Material allein per services::resolveBambuMaterial() auf, ein
+      // separater LoadFilament-Folge-Request ist fuer AssignTray daher
+      // nicht mehr noetig (anders als beim Staging/den Tray-Karten, die
+      // Filamentdaten weiterhin fuer den -- hiervon unabhaengigen --
+      // K-Faktor-Anzeigewert laden, siehe pendingStagingFilamentLoad/
+      // resolveTraySpoolDetails()).
       pendingSlotAssignment.spoolId = event->spool.id;
       std::snprintf(pendingSlotAssignment.trayType,
                     sizeof(pendingSlotAssignment.trayType), "%s",
@@ -5324,83 +5377,13 @@ void appTask(void* parameter) {
       std::snprintf(pendingSlotAssignment.trayColorHex,
                     sizeof(pendingSlotAssignment.trayColorHex), "%s",
                     event->spool.colorCount > 0 ? event->spool.colorHex[0] : "");
-      if (event->spool.filamentId != 0 &&
-          requestFilamentDetails(ctx, event->requestId,
-                                 event->spool.filamentId)) {
-        pendingSlotAssignment.stage = SlotAssignmentStage::LoadingFilament;
-        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                    rtos::UiOverlayKind::SpoolmanRequest, event->requestId,
-                    "Slot konfigurieren", "Filamentdaten werden geladen.");
-        continue;
-      }
-      // Keine Filament-ID (sollte normalerweise nicht vorkommen) oder der
-      // Folge-Request konnte nicht gesendet werden -- ohne Temperatur
-      // fortfahren statt die ganze Zuordnung abzubrechen (gleiche
-      // Nutzerfreundlichkeit wie bei fehlenden/ungueltigen bambu_temp_min/
-      // bambu_temp_max-Werten, siehe LoadingFilament-Behandlung unten).
-      FS_LOGD(services::LogComponent::App,
-              "LoadFilament skipped request_id=%lu spool_filament_id=%lu -- "
-              "proceeding without temperature",
-              static_cast<unsigned long>(event->requestId),
-              static_cast<unsigned long>(event->spool.filamentId));
-      pendingSlotAssignment.tempFieldsMissing = true;
       {
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
         sendUiCommand(ctx, hide,
                       "AppTask: slot assignment progress close overflow");
       }
-      if (!sendPendingSlotAssignTray(ctx, event->requestId, 0, 0)) {
-        pendingSlotAssignment = {};
-        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                    rtos::UiOverlayKind::Error, event->requestId,
-                    "Slot nicht konfiguriert",
-                    "Der Auftrag konnte nicht an den Drucker gesendet werden.");
-        continue;
-      }
-      pendingSlotAssignment.stage = SlotAssignmentStage::WritingSlot;
-      sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                  rtos::UiOverlayKind::BambuConnection, event->requestId,
-                  "Slot konfigurieren",
-                  "Slotdaten werden an den Drucker gesendet.");
-      continue;
-    } else if (event->type == rtos::AppEventType::SpoolmanResponse &&
-               pendingSlotAssignment.stage ==
-                   SlotAssignmentStage::LoadingFilament &&
-               event->requestId == pendingSlotAssignment.requestId &&
-               event->filament.id != 0) {
-      // event->filament.id != 0 excludes loadSpools()'s trailing "N Spulen
-      // gefunden" completion marker (see docs/bambu-protocol.md): the
-      // preceding LoadSpool request (requestStagingSpool()) and this
-      // LoadFilament follow-up both key off event->requestId, and that
-      // marker -- always sent after a LoadSpool response, empty spool/
-      // filament payload, value=-1 -- reaches this queue well before the
-      // real (HTTP-round-trip-bound) filament response. Without this guard
-      // it was mistaken for "filament fetch done, no data", sending the
-      // AssignTray command with nozzle_temp_min/max=0 immediately -- the
-      // real response then arrived to a stage that had already moved to
-      // WritingSlot and was silently dropped (root cause of the
-      // nozzle_temp_min=0/nozzle_temp_max=0 hardware finding, 2026-08-24).
-      rtos::UiCommand hide{};
-      hide.type = rtos::UiCommandType::HideProgress;
-      sendUiCommand(ctx, hide,
-                    "AppTask: slot assignment progress close overflow");
-      // bambu_temp_min/bambu_temp_max bleiben 0, wenn sie fehlen/ungueltig
-      // sind oder der Fetch selbst fehlschlug -- der Nutzer wird darauf per
-      // Hinweis im Ergebnisdialog aufmerksam gemacht (siehe die BambuUpdate/
-      // BambuError-Behandlung fuer SlotAssignmentStage::WritingSlot), es
-      // wird keine Temperatur erfunden.
-      std::uint16_t nozzleTempMinC = 0;
-      std::uint16_t nozzleTempMaxC = 0;
-      if (event->value >= 0 && event->filament.bambuTempFieldsValid) {
-        nozzleTempMinC = event->filament.bambuTempMinC;
-        nozzleTempMaxC = event->filament.bambuTempMaxC;
-        pendingSlotAssignment.tempFieldsMissing = false;
-      } else {
-        pendingSlotAssignment.tempFieldsMissing = true;
-      }
-      if (!sendPendingSlotAssignTray(ctx, event->requestId, nozzleTempMinC,
-                                     nozzleTempMaxC)) {
+      if (!sendPendingSlotAssignTray(ctx, event->requestId)) {
         pendingSlotAssignment = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, event->requestId,
@@ -5907,8 +5890,7 @@ void appTask(void* parameter) {
         // Filament fetch failed (network hiccup etc.) -- spool data is
         // already known from the LoadSpool step, so show the staged spool
         // anyway without empty-weight/K-Faktor rather than abandoning the
-        // staging selection (same graceful degradation as the AssignTray
-        // LoadingFilament error path above).
+        // staging selection.
         const models::SpoolmanSpool spool = pendingStagingFilamentLoad.spool;
         pendingStagingFilamentLoad = {};
         sendStagingUpdate(ctx, event->requestId, spool,
@@ -5924,33 +5906,6 @@ void appTask(void* parameter) {
                     event->text[0] != '\0'
                         ? event->text
                         : "Spulendaten konnten nicht geladen werden.");
-        continue;
-      }
-      if (pendingSlotAssignment.stage == SlotAssignmentStage::LoadingFilament &&
-          event->requestId == pendingSlotAssignment.requestId) {
-        // Filament fetch failed (network hiccup etc.) -- material/color are
-        // already known from the LoadingSpool step, so proceed without a
-        // temperature range instead of abandoning an otherwise-successful
-        // assignment (same graceful degradation as missing/invalid
-        // bambu_temp_min/bambu_temp_max, see the SpoolmanResponse handler).
-        pendingSlotAssignment.tempFieldsMissing = true;
-        rtos::UiCommand hide{};
-        hide.type = rtos::UiCommandType::HideProgress;
-        sendUiCommand(ctx, hide,
-                      "AppTask: slot assignment progress close overflow");
-        if (!sendPendingSlotAssignTray(ctx, event->requestId, 0, 0)) {
-          pendingSlotAssignment = {};
-          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
-                      rtos::UiOverlayKind::Error, event->requestId,
-                      "Slot nicht konfiguriert",
-                      "Der Auftrag konnte nicht an den Drucker gesendet werden.");
-          continue;
-        }
-        pendingSlotAssignment.stage = SlotAssignmentStage::WritingSlot;
-        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
-                    rtos::UiOverlayKind::BambuConnection, event->requestId,
-                    "Slot konfigurieren",
-                    "Slotdaten werden an den Drucker gesendet.");
         continue;
       }
       if (event->requestId >= kTraySpoolDetailsRequestIdBase &&
@@ -6086,6 +6041,43 @@ void appTask(void* parameter) {
                     rtos::UiOverlayKind::Error, event->requestId,
                     "Firmware-Update fehlgeschlagen", event->text);
       }
+    } else if (event->type == rtos::AppEventType::BambuMaterialUpdateProgress) {
+      // Same throttled-progress-forwarding pattern as UpdateDownloadProgress
+      // above -- sent by tasks::updateTask() while it streams the download
+      // to tasks::storageTask() (see docs/bambu-protocol.md).
+      if (pendingBambuMaterialUpdateRequestId != 0 &&
+          event->requestId == pendingBambuMaterialUpdateRequestId) {
+        rtos::UiCommand progress{};
+        progress.type = rtos::UiCommandType::UpdateProgress;
+        progress.requestId = event->requestId;
+        progress.value = event->value;
+        std::snprintf(progress.text, sizeof(progress.text),
+                      "Material-Zuordnung wird heruntergeladen... %ld %%",
+                      static_cast<long>(event->value));
+        sendUiCommand(ctx, progress,
+                     "AppTask: bambu material update progress overflow");
+      }
+    } else if (event->type == rtos::AppEventType::BambuMaterialUpdateResult) {
+      // Sent either by tasks::updateTask() (an early network/TLS failure
+      // before StorageTask had anything to validate) or by
+      // tasks::storageTask() (the SHA-256/JSON-validation/activation
+      // result) -- only one of the two ever sends this for a given
+      // requestId, see docs/bambu-protocol.md.
+      if (event->requestId == pendingBambuMaterialUpdateRequestId) {
+        pendingBambuMaterialUpdateRequestId = 0;
+      }
+      rtos::UiCommand hide{};
+      hide.type = rtos::UiCommandType::HideProgress;
+      sendUiCommand(ctx, hide, "AppTask: bambu material update hide overflow");
+      if (event->value == 1) {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Success, event->requestId,
+                    "Material-Zuordnung aktualisiert", event->text);
+      } else {
+        sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                    rtos::UiOverlayKind::Error, event->requestId,
+                    "Material-Zuordnung fehlgeschlagen", event->text);
+      }
     } else if (event->type == rtos::AppEventType::BambuConnected ||
                event->type == rtos::AppEventType::BambuDisconnected ||
                event->type == rtos::AppEventType::BambuUpdate ||
@@ -6120,7 +6112,6 @@ void appTask(void* parameter) {
         // completion path with spoolId == 0 -- distinguish the dialog
         // wording without adding a second pending-state machine.
         const bool wasClearing = pendingSlotAssignment.spoolId == 0;
-        const bool tempFieldsMissing = pendingSlotAssignment.tempFieldsMissing;
         // Persist (or drop) the Spoolman association locally now that the
         // printer's own telemetry has confirmed the write -- see
         // models/TraySpoolCache.h and docs/bambu-protocol.md. amsId here is
@@ -6225,17 +6216,12 @@ void appTask(void* parameter) {
                     "bertragen."
                   : "Die Spule wurde dem AMS-Slot zugeordnet und an den "
                     "Drucker \xC3\xBC" "bertragen.");
-          // Ohne bambu_temp_min/bambu_temp_max in Spoolman (Filament-Extra-
-          // Felder) wurden nur Material/Farbe uebertragen, keine
-          // Duesentemperatur -- Hinweis statt erfundener Werte.
-          if (!wasClearing && tempFieldsMissing) {
-            const std::size_t used = std::strlen(resultText);
-            std::snprintf(
-                resultText + used, sizeof(resultText) - used,
-                "\nHinweis: Keine g\xC3\xBCltige Bambu-Duesentemperatur in "
-                "Spoolman (Filament-Extra-Felder bambu_temp_min/"
-                "bambu_temp_max fehlen oder sind ung\xC3\xBCltig).");
-          }
+          // Duesentemperatur kommt jetzt immer aus dem Bambu-Material-
+          // Mapping (services::resolveBambuMaterial(), BambuTask.cpp) --
+          // ein unbekanntes Material laesst die Zuordnung schon vorher mit
+          // einer eigenen Fehlermeldung scheitern (siehe BambuError unten),
+          // ein erfolgreicher Erfolgsfall hat daher immer eine gueltige
+          // Temperatur uebertragen; kein Hinweistext mehr noetig.
         } else {
           std::snprintf(resultText, sizeof(resultText), "%s",
                         event->text[0] != '\0'

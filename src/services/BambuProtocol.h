@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "models/BambuMaterialMapping.h"
 #include "models/PrinterState.h"
 
 namespace filament_station {
@@ -21,11 +22,42 @@ namespace services {
 /// @brief Filament fields written to a single AMS tray slot via
 ///        bambuBuildAmsFilamentSetting().
 struct BambuTrayFilament {
-  char trayType[16]{};             ///< Material name as sent on the wire (e.g. "PLA").
-  char trayColorHex[9]{};          ///< 8-digit RRGGBBAA color, see bambuNormalizeTrayColorHex().
-  std::uint16_t nozzleTempMinC = 0;  ///< Minimum recommended nozzle temperature.
-  std::uint16_t nozzleTempMaxC = 0;  ///< Maximum recommended nozzle temperature.
+  char trayInfoIdx[16]{};           ///< Bambu generic filament profile id ("tray_info_idx" on the wire), from BambuMaterialMappingEntry::trayInfoIdx.
+  char trayType[16]{};              ///< Material name as sent on the wire (e.g. "PLA"), from BambuMaterialMappingEntry::trayType.
+  char trayColorHex[9]{};           ///< 8-digit RRGGBBAA color, see bambuNormalizeTrayColorHex().
+  std::uint16_t nozzleTempMinC = 0;  ///< Minimum nozzle temperature, from BambuMaterialMappingEntry::nozzleTempMinC.
+  std::uint16_t nozzleTempMaxC = 0;  ///< Maximum nozzle temperature, from BambuMaterialMappingEntry::nozzleTempMaxC.
 };
+
+/// @brief Compares two material/alias names ignoring case and '-'/' '/'_'
+///        separators (so "PLA-CF"/"PLA CF"/"PLACF" all compare equal).
+/// @param a First name.
+/// @param b Second name.
+/// @return true if they normalize to the same key.
+/// @note Exact (post-normalization) matching, never prefix matching -- a
+///       prefix match would risk a more specific material (e.g. "PLA-CF")
+///       being matched by a shorter, more general key ("PLA"). Exposed here
+///       (rather than kept file-local) so services::BambuMaterialCatalog can
+///       reuse the identical normalization when detecting duplicate
+///       material/alias keys at parse time.
+bool sameMaterialKey(const char* a, const char* b);
+
+/// @brief Looks up the Bambu AMS profile for a free-text Spoolman material
+///        name against a runtime-loaded mapping table.
+/// @param table Mapping table loaded from /config/bambu_materials.json (see
+///        services::BambuMaterialCatalog, tasks::storageTask()).
+/// @param material Free-text material name (e.g. Spoolman's filament.material
+///        field: "PLA"/"PETG"/"PLA-CF"/...). Matched via sameMaterialKey()
+///        against each entry's canonical material name and its aliases, so
+///        a more specific entry (e.g. "PLA-CF") is never confused with a
+///        more general one (e.g. "PLA").
+/// @return Pointer to the matching entry (valid as long as `table` is, i.e.
+///         until the next atomic reload -- callers must not retain it past
+///         the call that produced `table`), or nullptr if no explicit
+///         mapping exists for this material -- never falls back to a
+///         related/guessed material.
+const models::BambuMaterialMappingEntry* resolveBambuMaterial(
+    const models::BambuMaterialMappingTable& table, const char* material);
 
 /// @brief Builds the MQTT topic the printer publishes status reports on.
 /// @param serialNumber Printer serial number.
@@ -65,7 +97,11 @@ void bambuNormalizeTrayColorHex(const char* input, char* output);
 std::size_t bambuBuildPushAllRequest(std::uint32_t sequenceId, char* output,
                                      std::size_t outputCapacity);
 
-/// @brief Builds an "ams_filament_setting" command payload to write one tray's filament data.
+/// @brief Builds an "ams_filament_setting" command payload to write one
+///        tray's filament data. `filament.trayInfoIdx` is sent as-is (the
+///        caller resolves it via resolveBambuMaterial()); no "setting_id"
+///        field is ever sent -- that is a concrete Bambu-Studio-preset
+///        concept this project deliberately does not resolve or send.
 /// @param sequenceId Command sequence id, sent as "print.sequence_id".
 /// @param amsId Target AMS unit index.
 /// @param trayId Local slot index within `amsId` (0..kSlotsPerAms-1).
@@ -86,7 +122,7 @@ std::size_t bambuBuildAmsFilamentSetting(std::uint32_t sequenceId,
 /// @param sequenceId Command sequence id, sent as "print.sequence_id".
 /// @param amsId Target AMS unit index.
 /// @param trayId Local slot index within `amsId` (0..kSlotsPerAms-1); encoded on the wire as the *global* index (amsId * kSlotsPerAms + trayId), since this command uses global addressing unlike ams_filament_setting.
-/// @param trayInfoIdx Generic filament profile id, echoed back as "filament_id" (see bambuGenericTrayInfoIdx()).
+/// @param trayInfoIdx Generic filament profile id, echoed back as "filament_id" (see resolveBambuMaterial()).
 /// @param nozzleDiameter Wire string (e.g. "0.4") read from the printer's own status report (`PrinterState::nozzleDiameter`); pass "0.4" if no report has arrived yet.
 /// @param caliIdx Flow/pressure-advance calibration record id, or -1 if none is known (the common case for a plain material without a specific calibration profile).
 /// @param output Destination buffer receiving the JSON payload.
@@ -106,18 +142,6 @@ std::size_t bambuBuildExtrusionCaliSel(std::uint32_t sequenceId,
                                        std::int32_t caliIdx,
                                        char* output,
                                        std::size_t outputCapacity);
-
-/// @brief Maps a free-text material name to Bambu's internal generic
-///        filament profile "setting_id" ("tray_info_idx" in
-///        ams_filament_setting).
-/// @param material Free-text material name (e.g. Spoolman's
-///        filament.material field: "PLA"/"PETG"/"ABS"/"PLA-CF"/...).
-/// @return The mapped profile id, or an empty string if no known generic
-///         mapping exists (never guesses a brand-specific id).
-// These are Bambu Studio's built-in *generic* (non-brand) profile ids --
-// community-documented via RFID-Tag-Guide/Home Assistant Bambu Lab
-// integration, see docs/bambu-protocol.md.
-const char* bambuGenericTrayInfoIdx(const char* material);
 
 /// @brief Merges recognized fields from a "report" topic payload into `state`.
 /// @param document Parsed MQTT message payload.

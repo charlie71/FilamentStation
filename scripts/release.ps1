@@ -15,14 +15,19 @@
       4. Build the wt32-s3-wrover-n16r2 firmware and verify 0 warnings.
       5. Copy firmware.bin next to the repo root and generate
          firmware.bin.sha256 (lowercase hex, matching the OTA update
-         checker's expected format).
+         checker's expected format). Do the same for
+         data/bambu-materials/bambu_materials.json ->
+         bambu_materials.json/bambu_materials.json.sha256 (TASKS.md
+         Nachtrag 2026-08-28: the Bambu material-mapping table, downloaded
+         at runtime the same way as the firmware).
       6. Without -Publish: stop here and print the exact commands to
          review/tag/publish by hand -- nothing is committed, tagged, or
          pushed automatically.
          With -Publish: commit the version bump, create annotated tag
          "v<Version>", push both, and create the GitHub release via
-         `gh release create` with firmware.bin/firmware.bin.sha256
-         attached (requires `gh auth login` beforehand).
+         `gh release create` with firmware.bin/firmware.bin.sha256/
+         bambu_materials.json/bambu_materials.json.sha256 attached
+         (requires `gh auth login` beforehand).
 
 .PARAMETER Version
     New version number, e.g. "0.2.0" or "0.2.0-rc1" (no leading "v" --
@@ -86,6 +91,9 @@ $NativeTestEnvs = @(
 $FirmwareSourcePath = Join-Path $RepoRoot ".pio\build\$BuildEnv\firmware.bin"
 $FirmwareOutPath = Join-Path $RepoRoot "firmware.bin"
 $ChecksumOutPath = Join-Path $RepoRoot "firmware.bin.sha256"
+$BambuMaterialsSourcePath = Join-Path $RepoRoot "data\bambu-materials\bambu_materials.json"
+$BambuMaterialsOutPath = Join-Path $RepoRoot "bambu_materials.json"
+$BambuMaterialsChecksumOutPath = Join-Path $RepoRoot "bambu_materials.json.sha256"
 $TagName = "v$Version"
 
 # --- 1. Vorpruefungen -------------------------------------------------
@@ -188,6 +196,17 @@ Write-Host "SHA256: $Hash"
 Write-Host "Firmware:  $FirmwareOutPath"
 Write-Host "Pruefsumme: $ChecksumOutPath"
 
+Write-Step "Erzeuge bambu_materials.json / bambu_materials.json.sha256"
+if (-not (Test-Path $BambuMaterialsSourcePath)) {
+    Fail "bambu_materials.json nicht gefunden unter $BambuMaterialsSourcePath"
+}
+Copy-Item -Path $BambuMaterialsSourcePath -Destination $BambuMaterialsOutPath -Force
+$BambuMaterialsHash = (Get-FileHash -Path $BambuMaterialsOutPath -Algorithm SHA256).Hash.ToLower()
+Set-Content -Path $BambuMaterialsChecksumOutPath -Value $BambuMaterialsHash -NoNewline -Encoding ascii
+Write-Host "SHA256: $BambuMaterialsHash"
+Write-Host "Material-Mapping: $BambuMaterialsOutPath"
+Write-Host "Pruefsumme: $BambuMaterialsChecksumOutPath"
+
 # --- 6. Commit/Tag/Release (nur mit -Publish) -----------------------------
 
 if (-not $Publish) {
@@ -199,7 +218,7 @@ if (-not $Publish) {
     Write-Host "  git commit -m `"Release $Version`""
     Write-Host "  git tag -a $TagName -m `"Release $Version`""
     Write-Host "  git push origin HEAD --tags"
-    Write-Host "  gh release create $TagName `"$FirmwareOutPath`" `"$ChecksumOutPath`""
+    Write-Host "  gh release create $TagName `"$FirmwareOutPath`" `"$ChecksumOutPath`" `"$BambuMaterialsOutPath`" `"$BambuMaterialsChecksumOutPath`""
     exit 0
 }
 
@@ -217,8 +236,8 @@ git push origin HEAD --tags
 if ($LASTEXITCODE -ne 0) { Fail "git push fehlgeschlagen -- Tag ist lokal bereits gesetzt, ggf. manuell nachziehen oder 'git tag -d $TagName' zum Zuruecksetzen." }
 
 Write-Step "Veroeffentliche GitHub-Release $TagName"
-gh release create $TagName $FirmwareOutPath $ChecksumOutPath --title $TagName --generate-notes
-if ($LASTEXITCODE -ne 0) { Fail "gh release create fehlgeschlagen -- Commit/Tag/Push sind bereits durch, Release kann manuell mit 'gh release create $TagName $FirmwareOutPath $ChecksumOutPath' nachgeholt werden." }
+gh release create $TagName $FirmwareOutPath $ChecksumOutPath $BambuMaterialsOutPath $BambuMaterialsChecksumOutPath --title $TagName --generate-notes
+if ($LASTEXITCODE -ne 0) { Fail "gh release create fehlgeschlagen -- Commit/Tag/Push sind bereits durch, Release kann manuell mit 'gh release create $TagName $FirmwareOutPath $ChecksumOutPath $BambuMaterialsOutPath $BambuMaterialsChecksumOutPath' nachgeholt werden." }
 
 Write-Step "Fertig"
 Write-Host "Release $TagName veroeffentlicht. Geraete finden es automatisch ueber Einstellungen -> Firmware -> Nach Update suchen." -ForegroundColor Green

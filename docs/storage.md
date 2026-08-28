@@ -162,6 +162,46 @@ nicht ueberschrieben. Der StorageTask meldet den Fehler, laesst
 `EVENT_SD_READY` geloescht und verlangt entsprechend der SD-Fehlerstrategie
 einen Neustart.
 
+## Bambu-Material-Mapping (`/config/bambu_materials.json`)
+
+Nutzerwunsch vom 2026-08-28: bildet Spoolman-Materialtexte (z. B. `PLA`,
+`PLA-CF`) auf Bambus AMS-Profil (`tray_info_idx`/`tray_type`/
+`nozzle_temp_min`/`nozzle_temp_max`) ab -- fruehher eine fest kompilierte
+Tabelle in `src/services/BambuProtocol.cpp`, jetzt eine JSON-Datei, damit
+neue Materialien ohne Firmware-Neukompilierung ergaenzt werden koennen
+(siehe `docs/bambu-protocol.md` fuer das vollstaendige Schema).
+
+Diese Datei ist **kein** `kInitialDocuments`-Eintrag (siehe oben) -- es
+gibt bewusst keine automatisch erzeugte Default-Datei, und sie nutzt
+**nicht** `JsonStorage`s Envelope/Validator (`schemaVersion`/`updatedAt`/
+`documentType`), sondern ein eigenes, im Auftrag vorgegebenes Schema
+(`schema_version`/`materials[]`, siehe `services::BambuMaterialCatalog`).
+Die `.tmp.json`/`.bak.json`-Namenskonvention wird trotzdem uebernommen
+(`config::kBambuMaterialsTempPath`/`kBambuMaterialsBackupPath`) -- gleiche
+Optik auf der SD-Karte wie jedes andere Dokument, auch wenn die
+Aktivierungslogik eigenstaendig implementiert ist (`StorageTask.cpp::
+activateBambuMaterialFile()`), da `JsonStorage::atomicSave()`s Validator
+dieses Schema nicht versteht.
+
+Geladen wird einmal beim Boot (`loadBambuMaterialCatalog()`, direkt nach
+den `kInitialDocuments`) und erneut nach einem erfolgreich aktivierten
+Download (`StorageCommandType::CommitBambuMaterialDownload`) -- die
+geparste Tabelle wird **nicht** ueber eine Queue transportiert (zu gross
+fuer `AppEvent`, siehe `docs/architecture.md`), sondern per atomarem
+Zeiger `RtosContext::bambuMaterialMappings` veroeffentlicht. Fehlt die
+Datei oder ist sie ungueltig, bleibt dieser Zeiger `nullptr` -- es gibt
+bewusst **keinen** Fallback auf eine fest kompilierte Tabelle.
+
+Der Laufzeit-Download (`UpdateCommandType::DownloadBambuMaterials`) nutzt
+denselben GitHub-Release-Mechanismus wie das Firmware-Update, schreibt
+aber **nie** selbst auf die SD-Karte (nur `StorageTask` darf das) --
+`UpdateTask` streamt die HTTPS-Antwort in `StorageCommand.json`-grossen
+Haeppchen (`StorageCommandType::BeginBambuMaterialDownload`/
+`WriteBambuMaterialChunk`/`CommitBambuMaterialDownload`/
+`AbortBambuMaterialDownload`) an `StorageTask`, das die geschriebene
+`.tmp.json` selbst per SHA-256 verifiziert, parst/validiert und erst dann
+atomar aktiviert. Details siehe `docs/bambu-protocol.md`.
+
 Die Unit-Tests fuer Standardwerte, Objektwurzel, Schema-Version, Zeitstempel und
 Serialisierung lassen sich fuer das ESP32-S3-Ziel kompilieren. Der Lauf vom
 2026-08-03 wurde wegen eines durch einen anderen Prozess belegten COM4-Ports

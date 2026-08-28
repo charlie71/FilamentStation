@@ -118,6 +118,15 @@ struct PrinterSlotStateData {
   // though the printer applied the assignment correctly.
   char material[16]{};   ///< Printer-reported `tray_type`.
   char colorHex[9]{};    ///< Printer-reported `tray_color` (8-digit RRGGBBAA hex).
+  // Printer-reported nozzle_temp_min/max for this tray, if the report that
+  // last touched this slot included them (see
+  // services::applyTrayOccupancy()) -- not every report does, so these are
+  // 0 ("unknown") until a report with the fields arrives, and keep their
+  // last known value otherwise. AMS-slot metadata only, from
+  // services::BambuMaterialMapping; unrelated to the actual print
+  // temperature, which always comes from the slicer/filament profile.
+  std::uint16_t nozzleTempMinC = 0;  ///< Printer-reported minimum nozzle temperature for this tray, or 0 if never reported.
+  std::uint16_t nozzleTempMaxC = 0;  ///< Printer-reported maximum nozzle temperature for this tray, or 0 if never reported.
 };
 
 /// @brief Last known state of one AMS unit and its four trays.

@@ -177,6 +177,10 @@ enum class UiActionType : std::uint8_t {
   PrepareRestart,
   RefreshDiagnostics,
   CheckFirmwareUpdate,
+  // Bambu material-mapping download (TASKS.md Nachtrag 2026-08-28): triggers
+  // tasks::updateTask()'s UpdateCommandType::DownloadBambuMaterials, same
+  // settings-screen placement as CheckFirmwareUpdate.
+  UpdateBambuMaterials,
 };
 
 /// @brief Whether a UiActionType is one of the two public tag-assignment
@@ -264,7 +268,27 @@ enum class NfcCommandType : std::uint8_t {
 // naechsten Boot bei fehlender/beschaedigter Zieldatei) -- ein zusaetzlicher
 // manueller Trigger auf demselben Pfad wuerde mit diesem Mechanismus
 // kollidieren, siehe TASKS.md 10.2.
-enum class StorageCommandType : std::uint8_t { LoadJson, SaveJson, DeleteJson };
+enum class StorageCommandType : std::uint8_t {
+  LoadJson,
+  SaveJson,
+  DeleteJson,
+  // Bambu material-mapping download activation (TASKS.md Nachtrag
+  // 2026-08-28): the JSON payload is too large for a single StorageCommand
+  // (see rtos::kStorageJsonPayloadCapacity), so tasks::updateTask() streams
+  // it to /config/bambu_materials.tmp.json in 1024-byte chunks (command.json/
+  // jsonLength) instead of one inline SaveJson. StorageTask holds the only
+  // open temp-file handle; a Begin while one is already open discards the
+  // stale one first (same "reject/replace overlapping request" guard used
+  // throughout AppTask). See docs/bambu-protocol.md.
+  BeginBambuMaterialDownload,
+  WriteBambuMaterialChunk,
+  // command.json carries the 64-hex-digit expected SHA-256 (lowercase);
+  // StorageTask computes the actual hash itself over the written temp file
+  // -- the sole authority on activation, independent of anything UpdateTask
+  // already checked while streaming.
+  CommitBambuMaterialDownload,
+  AbortBambuMaterialDownload,
+};
 
 /// @brief Commands AppTask can send to tasks::networkTask().
 enum class NetworkCommandType : std::uint8_t {
@@ -326,9 +350,16 @@ enum class BambuCommandType : std::uint8_t {
 // loest eine eigene, frische Abfrage plus Download/Flash des ersten
 // .bin-Assets aus (kein Zustand aus einem vorherigen CheckForUpdate wird
 // wiederverwendet -- vermeidet veraltete Download-URLs).
+// DownloadBambuMaterials (TASKS.md Nachtrag 2026-08-28): fetches
+// bambu_materials.json/.sha256 from the same GitHub release as the
+// firmware, streams the verified bytes to tasks::storageTask() (see
+// StorageCommandType::BeginBambuMaterialDownload et al.) instead of
+// flashing them -- StorageTask, not UpdateTask, has the final say on
+// SHA-256/activation (only StorageTask may touch the SD card, AGENTS.md).
 enum class UpdateCommandType : std::uint8_t {
   CheckForUpdate,
   DownloadUpdate,
+  DownloadBambuMaterials,
 };
 
 /// @brief Commands sent to/from tasks::powerTask() for the Energiesparen

@@ -5423,3 +5423,451 @@ tote/unbenutzte Scaffolding-Dateien identifiziert und mit
 `@deprecated`-Hinweis versehen statt entfernt, `doxygen Doxyfile` liefert
 0 Warnungen ueber den gesamten Umfang, Firmware-Build und native Tests
 durchgaengig gruen gehalten.
+
+---
+
+**Nachtrag (2026-08-28, Nutzerwunsch: Bambu-AssignTray-Temperaturhandling
+vereinfacht, Material-Mapping erweitert):** Der bisherige Weg, die AMS-
+Duesentemperatur (`nozzle_temp_min`/`nozzle_temp_max`) im
+`ams_filament_setting`-Kommando aus den Spoolman-Filament-Extra-Feldern
+`bambu_temp_min`/`bambu_temp_max` zu lesen, wurde auf Nutzerwunsch
+vollstaendig ersetzt durch eine statische, im Quellcode hinterlegte
+36-Eintrag-Tabelle `BambuProtocol::kBambuMaterialMappings[]`
+(`resolveBambuMaterial()`), die je Spoolman-Materialtext (`PLA`, `PETG`,
+`PLA-CF`, ...) `tray_info_idx`/`tray_type`/Duesentemperaturspanne in einem
+Schritt liefert. Matching ist exakt nach Normalisierung (Gross-/
+Kleinschreibung, Trennzeichen `-`/` `/keins), bewusst kein
+Praefix-Matching mehr, damit spezifische Materialien (z. B. `PLA-CF`,
+`PETG-CF`, `PA-CF`, `PA-GF`, `PP-CF`, `PP-GF`, `PPA-CF`, `PPA-GF`,
+`PLA-AERO`, `ASA-CF`) nie mit ihrem allgemeinen Gegenstueck verwechselt
+werden. Ein nicht zuordenbares Material lehnt `AssignTray` jetzt komplett
+ab (`AppEventType::BambuError`, `FS_LOGW reason=no_material_mapping`)
+statt mit erfundener/unvollstaendiger Temperatur fortzufahren. Es wird an
+keiner Stelle dieses Ablaufs ein Bambu-`setting_id`-Feld resolved oder
+gesendet -- bewusst ausserhalb des Umfangs dieser Aufgabe, ebenso wie
+K-Faktor/Pressure-Advance/`extrusion_cali_get`/`extrusion_cali_set`
+(separate, noch offene Aufgabe).
+
+Da die Materialzuordnung keinen zusaetzlichen `GET /filament/{filamentId}`-
+Abruf mehr braucht (der Materialtext liegt bereits aus `LoadSpool` vor),
+entfaellt der bisherige `SlotAssignmentStage::LoadingFilament`-
+Zwischenschritt ersatzlos: `SlotAssignmentStage` kennt seitdem nur noch
+`None -> SelectingSpool -> LoadingSpool -> WritingSlot`. Die Spoolman-
+Felder `bambu_temp_min`/`bambu_temp_max` selbst bleiben unveraendert
+bestehen und werden weiterhin fuer die Home-Tray-Karten-Anzeige
+(`AppTask::resolveTraySpoolDetails()`, unveraendert) genutzt -- nur nicht
+mehr fuer den an den Drucker gesendeten Payload. `BambuProtocol::
+applyTrayOccupancy()`/`PrinterSlotStateData` parsen zusaetzlich neu
+`nozzle_temp_min`/`nozzle_temp_max` aus Statusberichten (robust gegenueber
+JSON-String- und -Zahl-Form), rein informativ, ohne bestehendes
+Verhalten zu aendern.
+
+Umgesetzt in `src/services/BambuProtocol.h/.cpp` (neue
+`BambuMaterialMapping`/`resolveBambuMaterial()`, `kBambuMaterialMappings[]`
+ersetzt die alte praefixbasierte `kGenericMaterialMappings[]`),
+`src/models/PrinterState.h` (`nozzleTempMinC`/`MaxC` in
+`PrinterSlotStateData`), `src/rtos/Messages.h` (Temperaturfelder aus
+`BambuCommand` entfernt, werden jetzt in `BambuTask` aus der Tabelle
+aufgeloest statt von `AppTask` durchgereicht), `src/tasks/BambuTask.cpp`
+(`handleAssignTray()` neu), `src/tasks/AppTask.cpp` (`SlotAssignmentStage`
+verschlankt, `LoadingFilament`-Handler entfernt), `docs/bambu-protocol.md`
+aktualisiert. 71/71 native Tests gruen (`pio test -e
+native-spoolman-tests`, 11 neue Tests fuer Material-Mapping/Report-
+Parsing), Firmware-Build (`pio run -e wt32-s3-wrover-n16r2`) erfolgreich,
+0 Compilerwarnungen. Noch nicht auf echter Hardware verifiziert.
+
+---
+
+**Nachtrag (2026-08-28, Fortsetzung, Nutzerwunsch: Bambu-Material-Mapping
+von der SD-Karte laden, aus dem Repository herunterladen, SHA-256-
+validiert):** Die oben beschriebene `kBambuMaterialMappings[]`-Tabelle war
+zu diesem Zeitpunkt noch fest im Quellcode kompiliert. Direkt im
+Anschluss wurde sie durch eine zur Laufzeit von `/config/
+bambu_materials.json` geladene JSON-Datei ersetzt, damit neue Materialien
+ohne Firmware-Neukompilierung ergaenzt werden koennen -- Resolver-
+Architektur (Exact-Match nach Normalisierung, kein `setting_id`, kein
+Fallback auf Spoolman-Temperaturen) bleibt unveraendert, nur die
+Datenquelle aendert sich.
+
+Architektur-Entscheidungen, dem Auftrag entsprechend zuerst gegen
+bestehende Regeln geprueft (`AGENTS.md` "keine SD-Zugriffe ausserhalb
+StorageTask"; `rtos::AppEvent` wird als Wert in eine 16-tiefe Queue in
+knappem internem RAM kopiert, ein zusaetzliches ~18-KiB-Feld waere dort
+16-fach so teuer):
+
+* **RAM-Cache als atomarer Zeiger statt Queue-Transport:** neues Feld
+  `RtosContext::bambuMaterialMappings`
+  (`std::atomic<const models::BambuMaterialMappingTable*>`, `nullptr` =
+  "keine gueltige Tabelle geladen"). `StorageTask` haelt zwei
+  PSRAM-Doppelpuffer-Instanzen und veroeffentlicht eine neu geladene
+  Tabelle mit genau einem atomaren `store()`. `BambuTask::
+  handleAssignTray()` liest den Zeiger direkt (`load()`) -- kein
+  SD-Zugriff, verletzt die o. g. Regel nicht, `rtos::BambuCommand`
+  bleibt unveraendert (Resolution bleibt wie im vorigen Nachtrag in
+  `BambuTask`, nicht `AppTask`).
+* **Download in 768-Byte-Haeppchen ueber das bestehende
+  `StorageCommand`** (`StorageCommandType::BeginBambuMaterialDownload`/
+  `WriteBambuMaterialChunk`/`CommitBambuMaterialDownload`/
+  `AbortBambuMaterialDownload`) statt einer neuen, groesseren Queue --
+  `UpdateTask` (Netzwerk) und `StorageTask` (SD-Schreiben) kooperieren
+  fire-and-forget, keine neue Synchronisationsprimitive. `StorageTask`
+  berechnet die SHA-256 der geschriebenen `.tmp.json` **selbst neu** und
+  ist damit alleinige Autoritaet ueber Aktivierung, unabhaengig davon,
+  was `UpdateTask` beim Streamen schon sah.
+* **Reiner Parser `services::BambuMaterialCatalog`**
+  (`services/BambuMaterialCatalog.h/.cpp`, kein Datei-/Netzwerkzugriff,
+  vollstaendig nativ unit-testbar) validiert `schema_version`,
+  Pflichtfelder, Temperaturbereich (`0 < min <= 400`, `min <= max`),
+  optionale `aliases` (Array nicht-leerer Strings) und projektweite
+  Eindeutigkeit von `material`/`aliases` nach Normalisierung -- ein
+  Fehler verwirft die komplette Datei, nie Teilerfolg. `services::
+  sameMaterialKey()` wurde dafuer aus `BambuProtocol.cpp`s anonymem
+  Namensraum exportiert (Wiederverwendung statt Duplikat).
+* **Neues Datenmodell** `models::BambuMaterialMappingTable`
+  (`models/BambuMaterialMapping.h`, bis zu 96 Eintraege, Aliase als ein
+  `|`-getrennter String statt `char[N][M]`, spart Speicher).
+* **Repository-Quelle** `data/bambu-materials/bambu_materials.json` +
+  `.sha256` + `README.md`: 1:1-Migration der bisherigen 36
+  Tabelleneintraege (keine Werte veraendert) plus 14 `Support For ...`-
+  Supportmaterialien sowie `PAHT-CF`/`PC-CF`/`BAMBU-PVA`/`TPU 95A` aus
+  der Aufgabenbeschreibung (54 Eintraege gesamt). `scripts/release.ps1`
+  erzeugt/veroeffentlicht diese Dateien jetzt automatisch mit jedem
+  Firmware-Release, als zusaetzliche GitHub-Release-Assets (Nutzer-
+  entscheidung: Release-Assets statt roher Repo-Datei, gleicher
+  Downloadpfad wie `firmware.bin`).
+* **Bekannter offener Punkt:** `PAHT-CF` (`GFN96`, aus der
+  Aufgabenbeschreibung uebernommen) teilt sich seinen `tray_info_idx` mit
+  dem bereits vorhandenen, verifizierten Eintrag `PPA-GF` (ebenfalls
+  `GFN96`) -- nicht gegen echte Bambu-Studio-Profile verifiziert, siehe
+  `data/bambu-materials/README.md`. `services::BambuMaterialCatalog`
+  erzwingt keine `tray_info_idx`-Eindeutigkeit (mehrere Spoolman-
+  Materialnamen koennen legitim auf dasselbe Bambu-Profil zeigen).
+
+Geaenderte/neue Dateien: `src/models/BambuMaterialMapping.h` (neu),
+`src/services/BambuMaterialCatalog.h/.cpp` (neu),
+`src/services/Sha256Hex.h/.cpp` (neu, aus `UpdateTask.cpp` extrahiert),
+`src/services/BambuProtocol.h/.cpp` (`resolveBambuMaterial()`-Signatur,
+`sameMaterialKey()` exportiert, `kBambuMaterialMappings[]` entfernt),
+`src/config/BambuMaterialConfig.h` (neu), `src/rtos/Commands.h`
+(`StorageCommandType`/`UpdateCommandType`/`UiActionType` erweitert),
+`src/rtos/Events.h` (`BambuMaterialUpdateProgress`/`Result`),
+`src/rtos/RtosContext.h` (`bambuMaterialMappings`-Feld),
+`src/tasks/StorageTask.cpp` (Laden beim Boot, Download-Aktivierung),
+`src/tasks/UpdateTask.cpp` (`downloadBambuMaterials()`),
+`src/tasks/BambuTask.cpp` (`handleAssignTray()` liest den Tabellen-
+Zeiger), `src/tasks/AppTask.cpp` (Pending-Guard + UI-Aktion, noch kein
+GUI-Button -- interne API genuegt laut Auftrag),
+`data/bambu-materials/bambu_materials.json/.sha256/README.md` (neu),
+`scripts/release.ps1`, `docs/bambu-protocol.md`, `docs/architecture.md`,
+`docs/storage.md`.
+
+Tests: `test/test_bambu_material_catalog/` (neu, 14 Tests: gueltige
+Datei, Formatierung, ungueltiges JSON, fehlende/unbekannte
+`schema_version`, fehlendes Pflichtfeld, falscher Feldtyp, invertierter
+Temperaturbereich, ungueltiger Alias-Typ, doppelter Schluessel, erlaubter
+"redundanter" Alias, leeres/fehlendes `materials`-Array,
+Fehlernamen-Stabilitaet), `test/test_sha256_hex/` (neu, 9 Tests fuer
+`extractHexSha256()`), `test/test_bambu_protocol/` erweitert (neue
+Tabellen-basierte Resolver-Signatur, 6 neue Testfaelle fuer
+Support-Materialien/Alias-Aufloesung/Bambu-PVA-vs-Generic-PVA/leere
+Tabelle). Insgesamt 98/98 native Tests gruen (`native-spoolman-tests`,
+`native-scale-tests`, `native-nfc-tests`, `native-logger-tests`
+zusammengenommen 149/149), Firmware-Build (`pio run -e
+wt32-s3-wrover-n16r2`) erfolgreich, 0 Compilerwarnungen.
+
+Nicht nativ testbar (konsistent mit der bestehenden Projektgrenze --
+`JsonStorage::atomicSave()` selbst ist ebenfalls ungetestet): der
+komplette Download-/Chunk-/Commit-/Aktivierungs-Ablauf in
+`StorageTask.cpp`/`UpdateTask.cpp` (SHA-256-Mismatch, fehlende
+Pruefsumme, beschaedigter Download, Stromausfall-Recovery ueber liegen
+gebliebene `.tmp.json`/`.bak.json`) -- nur ueber `pio run` + Codelesung
+verifiziert, noch kein Hardware-/Download-Test in dieser Session. GUI-
+Button fuer den Download fehlt noch (laut Auftrag zunaechst nicht
+erforderlich, interne API `UiActionType::UpdateBambuMaterials` bereits
+vollstaendig angebunden).
+
+---
+
+**Nachtrag (2026-08-28, Fortsetzung, Nutzerwunsch: Material-Mapping
+zusammen mit der Firmware herunterladen und installieren):**
+`UpdateTask::downloadUpdate()` (Firmware-Installation) sucht jetzt in
+derselben bereits abgerufenen `releases/latest`-Asset-Liste zusaetzlich
+nach `bambu_materials.json`/`.sha256` (kein zweiter API-Aufruf). Sind
+beide vorhanden, wird die Material-Zuordnung automatisch direkt im
+Anschluss an eine erfolgreiche Firmware-Installation heruntergeladen und
+aktiviert, ueber denselben `streamBambuMaterialsFromUrls()`-Kern wie der
+eigenstaendige Weg, aber mit `reportEvents=false` (kein eigenes
+Fortschritts-Overlay/Ergebnis-Dialog -- wuerde mit dem bereits gezeigten
+"Update installiert, jetzt neu starten?"-Dialog der Firmware kollidieren;
+Ausgang wird stattdessen nur geloggt). Ein Fehlschlag hier aendert nie
+das bereits gemeldete Firmware-Ergebnis. Fehlen die Assets in einem
+Release (z. B. aeltere Releases), wird der Teil stillschweigend
+uebersprungen, kein Fehler.
+
+Dafuer `src/tasks/UpdateTask.cpp` refaktoriert: der bisherige
+Firmware-Download-Koerper von `downloadUpdate()` wurde in eine eigene
+Funktion `downloadAndFlashFirmware()` ausgelagert (`WiFiClientSecure`/
+`HTTPClient` muessen vollstaendig zerstoert sein, bevor die
+anschliessende Material-Mapping-TLS-Verbindung aufgebaut wird -- gleicher
+mbedTLS-RAM-Grund wie beim bestehenden Pruefsummen-Fund vom 2026-08-24).
+Der Streaming-/Chunk-/Commit-Kern von `downloadBambuMaterials()` wurde in
+eine gemeinsame Funktion `streamBambuMaterialsFromUrls(ctx, requestId,
+downloadUrl, checksumUrl, reportEvents)` extrahiert, von beiden Wegen
+(eigenstaendig und mit der Firmware gebuendelt) genutzt. Der
+eigenstaendige Weg (`UiActionType::UpdateBambuMaterials`) bleibt
+zusaetzlich bestehen, fuer ein Nachziehen der Material-Zuordnung
+unabhaengig von einem Firmware-Release. Bestaetigungsdialog "Update
+installieren?" (`AppTask.cpp`) erwaehnt jetzt, dass die Material-Zuordnung
+ggf. mit aktualisiert wird (Text zudem korrigiert -- verwies faelschlich
+noch auf einen "spaeter folgenden" Neustart, der laengst umgesetzt ist).
+
+Firmware-Build (`pio run -e wt32-s3-wrover-n16r2`) erfolgreich, 0
+Compilerwarnungen. 98/98 native Tests weiterhin gruen
+(`native-spoolman-tests`) -- `UpdateTask.cpp` selbst bleibt wie zuvor
+nicht nativ testbar (Netzwerk-/Update.h-Abhaengigkeit). Noch nicht auf
+echter Hardware verifiziert.
+
+**Bugfix (2026-08-28, Hardware-Test, Nutzerbericht):** Erster Hardwaretest
+zeigte, dass die Material-Zuordnung trotz "bundled with this release,
+updating alongside firmware"-Logzeile nicht ankam, ohne jede
+Fehlermeldung danach. Ursache: `downloadUpdate()` sendete das
+`UpdateDownloadResult`-Erfolgsevent (loest sofort den "Update installiert,
+jetzt neu starten?"-Dialog aus) **vor** dem Material-Mapping-Download
+statt danach -- bestaetigte der Nutzer den Neustart, wurde der noch
+laufende Hintergrund-Download durch `ESP.restart()` abgewuergt, bevor er
+etwas loggen konnte (kein Absturz, daher keine Fehlermeldung). Fix:
+Reihenfolge vertauscht, `streamBambuMaterialsFromUrls()` laeuft jetzt vor
+dem Erfolgsevent -- der Neustart-Dialog erscheint erst, nachdem der
+Materialteil abgeschlossen (oder uebersprungen/fehlgeschlagen) ist. Build
+weiterhin 0 Warnungen, 98/98 native Tests gruen.
+
+**Bugfix 2 (2026-08-28, zweiter Hardwaretest, Nutzerbericht):** Nach dem
+obigen Fix zeigte sich der eigentliche Fehler: `Guru Meditation Error:
+Core 1 panic'ed (Unhandled debug exception) ... Stack canary watchpoint
+triggered (UpdateTask)` -- ein echter Stack-Overflow, kein Reihenfolge-
+problem. Ursache: `streamBambuMaterialsFromUrls()` legte pro Aufruf bis zu
+vier separate `rtos::StorageCommand`-Stacklokale an (`begin`/`chunk`/
+`abort`/`commit`, je ca. 880 Byte wegen `char json[768]`) plus einen
+weiteren 768-Byte-Lesepuffer -- kombiniert mit dem bereits belegten
+Stack-Frame von `downloadUpdate()` (das diese Funktion beim Firmware-
+Update-Huckepack-Pfad aufruft, waehrend sein eigener Frame noch aktiv
+ist) sprengte das den 8192-Byte-Stack von `UpdateTask`. Der eigenstaendige
+Weg (`UiActionType::UpdateBambuMaterials`) war davon vermutlich weniger
+betroffen (kleinerer Aufrufer-Frame), aber ebenfalls riskant.
+
+Fix: `rtos::StorageCommand` jetzt eine einzelne `static`-Instanz
+(`sharedBambuMaterialCommand()`, Datei-lokal wiederverwendet fuer Begin/
+Chunk/Commit/Abort -- sicher, da `xQueueSend()` sie sofort in die Queue
+kopiert und `UpdateTask` immer nur einen Download gleichzeitig
+verarbeitet), plus direktes Lesen der Netzwerkbytes in `command.json`
+statt einen zusaetzlichen 768-Byte-Zwischenpuffer zu fuellen und dann zu
+kopieren -- entfernt zusammen knapp 4 KiB Stackverbrauch aus dieser
+Funktion. Gleiches Muster wie bereits an anderer Stelle im Projekt
+etabliert (`services::allocatePsramInstance`/`static`-Instanzen fuer
+uebergrosse Structs statt Stacklokale, siehe `services/PsramAlloc.h`).
+Build weiterhin 0 Warnungen (RAM +872 Byte durch die neue statische
+Instanz, erwartet), 98/98 native Tests gruen.
+
+**Nachtrag 3 (2026-08-28, Nutzerwunsch nach drittem Hardwaretest:
+Reihenfolge tauschen + Logging erweitern):** Trotz Bugfix 2 funktionierte
+es weiterhin nicht (kein neues Log vom Nutzer vorgelegt). Auf Wunsch:
+
+1. **Reihenfolge getauscht:** `downloadUpdate()` aktualisiert die Bambu-
+   Material-Zuordnung jetzt **vor** der Firmware (vorher danach) --
+   `streamBambuMaterialsFromUrls()` laeuft direkt nach der Asset-/
+   Pruefsummen-Aufloesung, `downloadAndFlashFirmware()` erst im Anschluss.
+   Ein Fehlschlag beim Materialteil blockiert die Firmware-Installation
+   weiterhin nicht. Bestaetigungsdialog "Update installieren?"
+   (`AppTask.cpp`) entsprechend umformuliert.
+2. **Logging deutlich erweitert** (`FS_LOG_LEVEL` ist default 4=DEBUG,
+   siehe `services/Logger.h` -- DEBUG-Zeilen sind also sichtbar):
+   `ESP.getFreeHeap()` an mehreren Stellen in `UpdateTask.cpp`
+   (Download-Start, nach Pruefsummen-Abruf, nach Verbindungsaufbau, nach
+   Abschluss, vor/nach dem Firmware-Teil) -- Ziel: einen erneuten
+   Stack-Overflow von einem Speicher-/RAM-Problem unterscheiden koennen.
+   Zusaetzlich `FS_LOGD`-Zeilen pro gesendetem Chunk (UpdateTask-Seite)
+   und pro geschriebenem Chunk (StorageTask-Seite, `bytes=.../total=...`),
+   sowie neue `FS_LOGI`-Zeilen beim Empfang des Commit-Kommandos
+   (`bytes_written=...`) und nach erfolgreichem Parsen
+   (`schema_version=.../materials=.../aliases=...`) in
+   `StorageTask.cpp::processCommitBambuMaterialDownload()`. Ziel: ein
+   einziger Log-Mitschnitt soll die exakte Fehlerstelle zeigen, falls es
+   erneut fehlschlaegt.
+
+Build weiterhin 0 Warnungen, 98/98 native Tests gruen.
+
+**Nachtrag 4 (2026-08-28, vierter Hardwaretest, dank erweitertem Logging
+endlich exakt lokalisiert):** Nutzer-Log zeigte diesmal einen vollen
+Crash-Backtrace statt eines stillen Abbruchs. Absturzstelle: nicht mehr
+in eigenem Code, sondern mitten im TLS-Handshake selbst -- `fetchChecksum()`
+(`UpdateTask.cpp:90`, `http.GET()`) -> `WiFiClientSecure::connect()` ->
+`mbedtls_ssl_handshake()` -> ECDSA-Serverschluessel-Verifikation
+(`ssl_parse_server_key_exchange`) -> tiefe Bignum-/EC-Punktmultiplikations-
+Kette -> SHA-512-HMAC-DRBG (Zufallszahlengenerierung fuer ECDSA) ->
+Hardware-SHA-DMA -> `spinlock_acquire`/`gdma_connect` -- "Stack canary
+watchpoint triggered (UpdateTask)". Kein Logikfehler mehr: der
+ECDSA/SHA-512-Handshake-Pfad selbst braucht bereits mehrere KiB Stack;
+der zwei Ebenen tiefere Aufruf (`downloadUpdate()` ->
+`streamBambuMaterialsFromUrls()` -> `fetchChecksum()`, statt vorher direkt
+von `updateTask()` aus) reichte, um die bisher knapp passenden 8192 Byte
+von `UpdateTask` zu ueberschreiten -- derselbe TLS-Handshake waere bei
+flacherer Aufruftiefe (wie bei `checkForUpdate()`/
+`downloadAndFlashFirmware()`) unauffaellig geblieben.
+
+Fix: `config::kUpdateTask`-Stackgroesse in `src/config/TaskConfig.h` von
+8192 auf 16384 Byte verdoppelt -- deutliche Reserve statt einer erneuten
+knappen Anpassung, analog zum bereits etablierten Muster bei
+`kNfcTask`/`kUiTask`/`kSpoolmanTask` (siehe deren Kommentare in derselben
+Datei, jeweils nach einem echten Stack-Overflow-Fund entstanden).
+`docs/architecture.md`s Task-Tabelle mitaktualisiert. Build weiterhin 0
+Warnungen, 98/98 native Tests gruen.
+
+**Nachtrag 5 (2026-08-28, fuenfter Hardwaretest, kein Absturz mehr --
+neuer, klar geloggter Fehler):** Firmware- und Storage-seitiges Logging
+zeigte diesmal den kompletten Ablauf bis zu einem sauberen Fehler:
+`E [BAMBU] Material mapping download rejected reason=write_failed
+expected=603 written=0`, nach mehreren erfolgreich geschriebenen Chunks.
+Ursache: `storageTask()`s Hauptschleife ruft `cardIsAccessible()`
+(oeffnet/schliesst zusaetzlich das Wurzelverzeichnis "/" als eigenes
+`File`-Handle) auf **jeder einzelnen Schleifeniteration** auf, auch
+direkt nach dem Verarbeiten eines `StorageCommand` -- bei den vielen
+schnell aufeinanderfolgenden `WriteBambuMaterialChunk`-Befehlen (11
+Chunks fuer eine ~8,8-KB-Datei) wird dieses parallele Oeffnen/Schliessen
+von "/" also zwischen praktisch jedem Chunk-Schreibvorgang auf dieselbe
+SD-Karte eingestreut, waehrend die Downloaddatei noch zum Schreiben
+offen ist -- das hat einen der Schreibvorgaenge zuverlaessig gestoert
+(0 geschriebene Bytes statt der erwarteten 603). Bei den bisherigen
+Anwendungsfaellen (ein einzelnes LoadJson/SaveJson pro Nutzeraktion) trat
+diese Interferenz nie auf, da dort nie mehrere Schreibvorgaenge auf
+dieselbe offene Datei kurz hintereinander liefen.
+
+Fix: `cardIsAccessible()` wird in `storageTask()`s Hauptschleife jetzt
+uebersprungen (Ergebnis `true` angenommen), solange ein Bambu-Material-
+Mapping-Download aktiv laeuft (`bambuMaterialDownloadRequestId !=
+kDownloadRequestIdNone`) -- gezielt nur fuer diesen einen Fall, keine
+Aenderung am bestehenden SD-Entfernungs-Erkennungsverhalten fuer alle
+anderen StorageCommands. Sobald der Download abgeschlossen (Erfolg,
+Fehler oder Abbruch) ist, laeuft die normale Pruefung pro Iteration
+sofort wieder. Build weiterhin 0 Warnungen, 98/98 native Tests gruen.
+Erneuter Hardwaretest steht noch aus.
+
+**Nachtrag 6 (2026-08-28, sechster Hardwaretest -- Update laeuft
+grundsaetzlich durch, Material-Datei aber weiterhin nie aktiviert):**
+Trotz Fix 5 (cardIsAccessible() uebersprungen) weiterhin
+`reason=write_failed`, aber jetzt mit klar unterscheidbarem Muster: kein
+Absturz, kein sofortiger Fehlschlag, sondern nach 7-12 von 11
+erfolgreich geschriebenen Chunks ein **kurzer/unvollstaendiger**
+Schreibvorgang (`expected=603 written=0` bzw. `expected=552 written=94`
+-- nicht immer 0, mal ein Teilschreiben). Intermittierend (Nutzer:
+Versuch 1 und 3 schlugen fehl, dazwischen mind. ein Versuch nicht). Das
+ist typisches SD-Karten-Verhalten bei einem kurzen "busy"-Zustand
+(Sektor-Commit, Wear-Leveling) waehrend vieler schnell aufeinanderfolgender
+kleiner Schreibvorgaenge (11 Chunks fuer eine ~8,8-KB-Datei in unter einer
+Sekunde) -- kein Logik- oder Speicherfehler mehr.
+
+Fix: `processWriteBambuMaterialChunk()` behandelt einen kurzen Schreib-
+vorgang (`File::write()` liefert weniger Bytes als angefordert) nicht
+mehr sofort als fatal, sondern versucht den Rest erneut (bis zu
+`kMaxWriteStallRetries=10` Versuche mit `kWriteStallRetryDelayMs=20` ms
+Pause dazwischen, macht max. ca. 200 ms Toleranz pro Chunk) -- Standard-
+Verhalten fuer `write()`-Semantik, bei der ein Kurzschreiben fuer sich
+genommen kein Fehler ist. Ein tatsaechlich dauerhaft blockierter
+Schreibpfad (0 Byte ueber alle Retries) gilt weiterhin als echter
+Fehler. Build weiterhin 0 Warnungen, 98/98 native Tests gruen.
+
+**Nachtrag 7 (2026-08-28, siebter Hardwaretest -- Retry half nicht, neues
+Fehlerbild):** Der Retry aus Nachtrag 6 griff nicht wie erhofft: statt
+eines kurzzeitigen Hakelns blieb ein Schreibvorgang exakt bei
+`offset=111` von 768 Byte dauerhaft haengen -- alle 10 Retries lieferten
+`written=0`, keinerlei Fortschritt. Kein voruebergehendes "SD kurz
+beschaeftigt" mehr, sondern ein Schreibpfad, der ohne aeusseres Eingreifen
+nie wieder in Gang kam. Verdacht: ESP32-S3 teilt sich fuer TLS/Krypto-
+Beschleunigung (aktiver Firmware-/Material-Download in `UpdateTask`) und
+fuer SD/SPI-DMA (`StorageTask`s Schreibvorgaenge) dieselbe zugrunde-
+liegende GDMA-Hardware -- echte Nebenlaeufigkeit zwischen beiden (wie im
+bisherigen Chunk-Streaming-Design, das waehrend des laufenden TLS-
+Downloads bereits parallel an StorageTask schrieb) vertraegt diese
+offenbar nicht zuverlaessig.
+
+Fix (grundlegender Redesign von `streamBambuMaterialsFromUrls()` in
+`UpdateTask.cpp`): die Datei wird jetzt **komplett in einen
+PSRAM-Puffer** (`services::allocatePsramInstance<std::array<uint8_t,
+kBambuMaterialsMaxFileSize>>`, wiederverwendet wie `sharedBambuMaterial
+Command()`) heruntergeladen, **bevor** irgendein `StorageCommand`
+gesendet wird. Erst nach `dataHttp.end()` (TLS-Sitzung vollstaendig
+abgebaut) werden Begin/Chunks/Commit direkt hintereinander ohne jede
+weitere Netzwerk-/TLS-Aktivitaet verschickt -- keine Ueberschneidung
+zwischen aktiver TLS-Nutzung und SD-Schreibzugriffen mehr moeglich. Bei
+max. 16 KiB Dateigroesse (durchgaengig >30 KiB freier Heap in allen
+bisherigen Logs) ist das komplette Puffern unkritisch; kostet nur ein
+paar Sekunden zusaetzliche Latenz, bevor das erste Byte die SD-Karte
+erreicht. `AbortBambuMaterialDownload` wird von diesem Pfad dadurch nicht
+mehr ausgeloest (nichts wird mehr gesendet, solange der Download nicht
+vollstaendig+verifiziert im Puffer steht) -- Kommandotyp und
+`StorageTask`-Handler bleiben als dokumentierte Infrastruktur unveraendert
+bestehen, nur aktuell ungenutzt. Build weiterhin 0 Warnungen, 98/98
+native Tests gruen.
+
+**Nachtrag 8 (2026-08-28, achter Hardwaretest -- Puffer-Redesign allein
+reichte nicht, wahre Ursache gefunden):** Trotz Nachtrag 7 weiterhin
+`reason=write_failed`, diesmal `offset=0` (sofort haengengeblieben, kein
+Teilschreiben mehr). Log zeigte den Grund exakt: `downloadUpdate()`
+wartet nach dem Senden des letzten Material-Mapping-Kommandos (Commit)
+**nicht** darauf, dass `StorageTask` es tatsaechlich fertig verarbeitet
+hat, sondern faehrt sofort mit dem Firmware-Download fort -- dessen
+eigener TLS-Handshake (`downloadAndFlashFirmware()`) startete im Log
+buchstaeblich in derselben Millisekunde, in der `StorageTask` noch
+mitten im Abarbeiten der letzten paar Chunks war. Bestaetigt damit den
+GDMA-Verdacht aus Nachtrag 7 vollstaendig -- nur eben zwischen
+Material-Ende und Firmware-Start ueberlappend, nicht laenger innerhalb
+des Material-Downloads selbst (das Puffer-Redesign hat dieses eine
+Uberlappungsfenster bereits korrekt beseitigt).
+
+Fix: echte Synchronisation eingefuehrt. Neues Feld `RtosContext::
+bambuMaterialDownloadDone` (binaeres FreeRTOS-Semaphore, in
+`createObjects()` erzeugt). `StorageTask::processCommitBambuMaterial
+Download()` gibt es ueber einen kleinen RAII-Guard bei jedem Verlassen
+der Funktion frei (Erfolg oder jeder Fehlerfall), sobald der Commit
+tatsaechlich zu dieser `bambuMaterialDownloadRequestId` gehoert.
+`UpdateTask::streamBambuMaterialsFromUrls()` wartet direkt nach dem
+Senden des Commit-Kommandos darauf (`xSemaphoreTake`, mit einem
+5-Sekunden-Sicherheitsnetz `config::kBambuMaterialCommitWaitTimeoutMs`,
+plus einem vorherigen nicht-blockierenden Leerungsversuch gegen ein
+veraltetes "gegeben"-Semaphore aus einem frueheren Timeout) -- erst
+danach kehrt die Funktion zurueck, und `downloadUpdate()` faehrt mit dem
+Firmware-Download fort. Damit ueberschneidet sich kein TLS-Handshake mehr
+mit einem noch laufenden SD-Schreibvorgang, in keiner Richtung. Build
+weiterhin 0 Warnungen, 98/98 native Tests gruen. Erneuter Hardwaretest
+steht noch aus.
+
+---
+
+**Nachtrag (2026-08-28, Nutzerbericht: Home zeigt Bambu-`tray_type` statt
+Spoolman-Material):** Beispiel: Fach zeigte "PLA-S" statt "Support For
+PLA". Ursache vorbestehend, aber erst durch das erweiterte Material-
+Mapping sichtbar geworden: `AppTask::syncAmsToUi()` fuellt
+`UiCommand::title` (das Material-Label der Tray-Karte) direkt aus
+`PrinterSlotStateData::material` -- dem vom Drucker gemeldeten Bambu
+`tray_type` (`services::applyTrayOccupancy()`), nicht dem tatsaechlich
+zugewiesenen Spoolman-Material. Solange `tray_type` und Spoolman-Material
+meist identisch waren (PLA/PETG/...), fiel das nicht auf; bei den neuen
+Support-Materialien (`tray_type` z. B. "PLA-S"/"ABS-S"/"PA-S" fuer
+mehrere unterschiedliche Spoolman-Materialien) wird der Unterschied
+sichtbar und irrefuehrend.
+
+Fix: das tatsaechliche Spoolman-Material war bereits Teil der ohnehin
+fuer Restgewicht/K-Faktor abgerufenen `LoadSpool`-Antwort
+(`resolveTraySpoolDetails()`), wurde aber bisher verworfen -- kein
+zusaetzlicher Spoolman-Request noetig. `TraySpoolDetailsEntry`/
+`TraySpoolDetailsSnapshot` (`AppTask.cpp`) bekommen ein neues
+`material[24]`-Feld, befuellt aus `event->spool.material` im
+`SpoolmanResponse`-Handler. `syncAmsToUi()` setzt `tray.title`/
+`external.title` weiterhin zuerst auf den Drucker-`tray_type` (Fallback,
+solange die Spule noch nicht aufgeloest/geladen ist), ueberschreibt es
+aber mit dem geladenen Spoolman-Material, sobald verfuegbar.
+`UiBridge.cpp`s `TrayUiEntry::material` von 16 auf 24 Byte vergroessert
+(sonst haetten laengere Spoolman-Materialnamen wie "Support For
+PLA/PETG" wieder abgeschnitten werden koennen -- derselbe Fehlerklasse,
+die dort schon einmal behoben wurde, nur mit der neuen, laengeren
+Quelle). Build 0 Warnungen, 98/98 native Tests gruen. Noch nicht auf
+echter Hardware verifiziert.

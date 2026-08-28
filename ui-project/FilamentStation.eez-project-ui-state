@@ -1,7 +1,7 @@
 {
   "navigation": {
     "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/0",
-    "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/0",
+    "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/6",
     "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/4",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
     "selectedThemeColorObject": "[FilamentStation.eez-project]:/colors/6",
@@ -131,6 +131,7 @@
                   "type": "tabset",
                   "id": "#e9618473-7f24-4b75-af7c-4b03ffdc25e5",
                   "weight": 2,
+                  "selected": 1,
                   "enableClose": false,
                   "children": [
                     {
@@ -197,6 +198,7 @@
               "type": "tabset",
               "id": "EDITORS",
               "weight": 47.72471080229689,
+              "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
@@ -214,10 +216,10 @@
                 {
                   "type": "tab",
                   "id": "#8cca91c9-4476-4a6c-bd1a-9eefd8064973",
-                  "name": "CMP_SPOOL_PICKER",
+                  "name": "CMP_TRAY_CARD",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userWidgets/0",
+                    "objectPath": "[FilamentStation.eez-project]:/userWidgets/6",
                     "permanent": false
                   },
                   "icon": "svg:user_widget"
@@ -1385,6 +1387,9 @@
         "4": {},
         "5": {},
         "6": {},
+        "7": {
+          "$selected": true
+        },
         "9": {}
       },
       "transform": {

@@ -15,23 +15,39 @@ namespace filament_station {
 namespace services {
 namespace {
 
-/// @brief Case-insensitive "does material start with prefix" check.
-/// @param material Free-text material name to test (e.g. "PLA Basic").
-/// @param prefix Material family prefix to match (e.g. "PLA").
-/// @return true if `material` starts with `prefix`, ignoring case.
-// Spoolman material strings are free text (e.g. "PLA", "PLA Basic",
-// "PETG-CF"), so this matches on the material family prefix rather than
-// requiring an exact string.
-bool materialStartsWithCaseInsensitive(const char* material,
-                                       const char* prefix) {
-  std::size_t index = 0;
-  for (; prefix[index] != '\0'; ++index) {
-    if (material[index] == '\0') return false;
-    if (std::toupper(static_cast<unsigned char>(material[index])) !=
-        std::toupper(static_cast<unsigned char>(prefix[index])))
-      return false;
+/// @brief Whether a character is ignored when normalizing a material key,
+///        so "PLA-CF"/"PLA CF"/"PLACF" all compare equal.
+/// @param c Character to check.
+/// @return true for '-', ' ', or '_'.
+bool isMaterialKeySeparator(unsigned char c) {
+  return c == '-' || c == ' ' || c == '_';
+}
+
+/// @brief Whether `material` matches one entry's canonical name or any of
+///        its '|'-separated aliases (see models::BambuMaterialMappingEntry::aliases).
+/// @param material Free-text material name to match.
+/// @param entry Table entry to match against.
+/// @return true if `material` normalizes to #entry's material or any alias.
+bool materialMatchesEntry(const char* material,
+                          const models::BambuMaterialMappingEntry& entry) {
+  if (sameMaterialKey(material, entry.material)) return true;
+  const char* cursor = entry.aliases;
+  while (*cursor != '\0') {
+    char token[models::kBambuMaterialFieldLength]{};
+    std::size_t length = 0;
+    while (*cursor != '\0' && *cursor != models::kBambuMaterialAliasSeparator &&
+          length < sizeof(token) - 1U) {
+      token[length++] = *cursor++;
+    }
+    token[length] = '\0';
+    // Skip any remaining characters of an over-long token rather than
+    // silently comparing a truncated prefix.
+    while (*cursor != '\0' && *cursor != models::kBambuMaterialAliasSeparator)
+      ++cursor;
+    if (*cursor == models::kBambuMaterialAliasSeparator) ++cursor;
+    if (length > 0 && sameMaterialKey(material, token)) return true;
   }
-  return true;
+  return false;
 }
 
 /// @brief Parses a tray/AMS index that may be encoded as a JSON number or
@@ -83,33 +99,25 @@ bool parseTrayNow(JsonVariantConst value, std::uint8_t& out) {
   return false;
 }
 
-/// @brief One (material family prefix, generic profile id) mapping entry.
-struct GenericMaterialMapping {
-  const char* material;     ///< Material family prefix, matched case-insensitively (see materialStartsWithCaseInsensitive()).
-  const char* trayInfoIdx;  ///< Bambu generic filament profile "setting_id" for this material.
-};
-
-/// @brief Bambu Studio's built-in *generic* (non-brand) filament profile ids.
-// community-documented via Bambu-Research-Group/RFID-Tag-Guide and the
-// WolfWithSword Home Assistant Bambu Lab integration (see
-// docs/bambu-protocol.md) -- not from Bambu Lab directly. Composite
-// materials ("-CF" carbon-fiber variants) are listed before their plain
-// base material so the longer prefix matches first.
-constexpr GenericMaterialMapping kGenericMaterialMappings[] = {
-    {"PLA-CF", "GFL98"}, //Generic PLA CF
-    {"PLACF", "GFL98"},
-    {"PA-CF", "GFN98"}, 
-    {"PACF", "GFN98"},
-    {"PLA", "GFL99"}, //Generic PLA
-    {"PETG", "GFG99"},//Generic PETG
-    {"ASA", "GFB98"}, //Generic ASA
-    {"ABS", "GFB99"}, //Generic ABS
-    {"TPU", "GFU99"}, //Generic TPU
-    {"PVA", "GFS99"}, //Generic Support
-    {"PC", "GFC99"}, //Generic PC
-    {"PA", "GFN99"}, //Generic PA (Nylon)
-    
-};
+/// @brief Parses a JSON value that may be a number or a numeric string into a std::uint16_t.
+/// @param value JSON value to parse.
+/// @param out Out parameter receiving the parsed value.
+/// @return false if `value` is not a number/numeric string, or out of the uint16_t range.
+bool parseUint16(JsonVariantConst value, std::uint16_t& out) {
+  if (value.is<std::uint16_t>()) {
+    out = value.as<std::uint16_t>();
+    return true;
+  }
+  if (value.is<const char*>()) {
+    const char* text = value.as<const char*>();
+    char* end = nullptr;
+    const long parsed = std::strtol(text, &end, 10);
+    if (end == text || *end != '\0' || parsed < 0 || parsed > 65535) return false;
+    out = static_cast<std::uint16_t>(parsed);
+    return true;
+  }
+  return false;
+}
 
 /// @brief Merges one tray's occupancy/material/color fields from a status
 ///        report into a slot's state.
@@ -125,6 +133,18 @@ void applyTrayOccupancy(JsonObjectConst trayJson,
   std::snprintf(slot.material, sizeof(slot.material), "%s", trayType);
   const char* trayColor = trayJson["tray_color"] | "";
   std::snprintf(slot.colorHex, sizeof(slot.colorHex), "%s", trayColor);
+  // Not every report that carries occupancy fields also carries the
+  // nozzle-temperature fields (e.g. the community-observed
+  // "ams_filament_setting" command echo does, a regular tray entry inside
+  // ams.ams[]/vt_tray may not) -- only overwrite when present and
+  // parseable, keeping the last known value otherwise, same merge
+  // behavior as the rest of bambuApplyReport().
+  std::uint16_t nozzleTempMin = 0;
+  if (parseUint16(trayJson["nozzle_temp_min"], nozzleTempMin))
+    slot.nozzleTempMinC = nozzleTempMin;
+  std::uint16_t nozzleTempMax = 0;
+  if (parseUint16(trayJson["nozzle_temp_max"], nozzleTempMax))
+    slot.nozzleTempMaxC = nozzleTempMax;
   // spoolId is deliberately never touched here -- see bambuApplyReport()'s
   // doc comment and docs/bambu-protocol.md: hardware-confirmed
   // (2026-08-23) that this printer accepts "tray_id_name" on write but
@@ -165,13 +185,33 @@ std::size_t bambuBuildPushAllRequest(std::uint32_t sequenceId, char* output,
   return static_cast<std::size_t>(written);
 }
 
-const char* bambuGenericTrayInfoIdx(const char* material) {
-  if (material == nullptr || material[0] == '\0') return "";
-  for (const auto& mapping : kGenericMaterialMappings) {
-    if (materialStartsWithCaseInsensitive(material, mapping.material))
-      return mapping.trayInfoIdx;
+bool sameMaterialKey(const char* a, const char* b) {
+  // Exact (post-normalization) matching rather than prefix matching -- a
+  // prefix match would risk a more specific material (e.g. "PLA-CF") being
+  // matched by a shorter, more general table entry ("PLA") depending on
+  // table order; comparing full normalized keys sidesteps that entirely.
+  for (;;) {
+    while (*a != '\0' && isMaterialKeySeparator(static_cast<unsigned char>(*a)))
+      ++a;
+    while (*b != '\0' && isMaterialKeySeparator(static_cast<unsigned char>(*b)))
+      ++b;
+    if (*a == '\0' || *b == '\0') return *a == *b;
+    if (std::toupper(static_cast<unsigned char>(*a)) !=
+        std::toupper(static_cast<unsigned char>(*b)))
+      return false;
+    ++a;
+    ++b;
   }
-  return "";
+}
+
+const models::BambuMaterialMappingEntry* resolveBambuMaterial(
+    const models::BambuMaterialMappingTable& table, const char* material) {
+  if (material == nullptr || material[0] == '\0') return nullptr;
+  for (std::uint16_t index = 0; index < table.entryCount; ++index) {
+    const models::BambuMaterialMappingEntry& entry = table.entries[index];
+    if (materialMatchesEntry(material, entry)) return &entry;
+  }
+  return nullptr;
 }
 
 std::size_t bambuBuildAmsFilamentSetting(std::uint32_t sequenceId,
@@ -206,7 +246,10 @@ std::size_t bambuBuildAmsFilamentSetting(std::uint32_t sequenceId,
   // tray_info_idx alongside tray_type/tray_color/nozzle_temp_*; omitting it
   // is a likely reason a real printer silently ignores a filament change
   // on an already-occupied slot even though the other fields are correct.
-  print["tray_info_idx"] = bambuGenericTrayInfoIdx(filament.trayType);
+  // Resolved by the caller via resolveBambuMaterial() rather than looked up
+  // here, so both this command and the following extrusion_cali_sel reuse
+  // the exact same resolution instead of computing it twice.
+  print["tray_info_idx"] = filament.trayInfoIdx;
   print["tray_type"] = filament.trayType;
   print["tray_color"] = colorWithAlpha;
   print["nozzle_temp_min"] = filament.nozzleTempMinC;

@@ -9,18 +9,25 @@
 #include <Arduino.h>
 #include <SD.h>
 #include <SPI.h>
+#include <mbedtls/sha256.h>
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
 #include "config/BoardConfig.h"
+#include "config/BambuMaterialConfig.h"
 #include "config/NfcConfig.h"
+#include "models/BambuMaterialMapping.h"
 #include "models/BambuPrinterConfig.h"
 #include "models/TraySpoolCache.h"
 #include "rtos/Messages.h"
 #include "rtos/RtosContext.h"
+#include "services/BambuMaterialCatalog.h"
 #include "services/JsonStorage.h"
 #include "services/Logger.h"
+#include "services/PsramAlloc.h"
+#include "services/Sha256Hex.h"
 
 namespace filament_station::tasks {
 namespace {
@@ -455,12 +462,566 @@ void processSaveCommand(rtos::RtosContext& ctx,
                     result, "JSON saved atomically");
 }
 
+// ---------------------------------------------------------------------
+// Bambu material-mapping table: boot-time load, and download activation
+// (TASKS.md Nachtrag 2026-08-28). See docs/bambu-protocol.md.
+// ---------------------------------------------------------------------
+
+/// @brief Sends a BambuMaterialUpdateResult AppEvent to AppTask.
+/// @param ctx Owning RTOS context.
+/// @param requestId Correlation id.
+/// @param success Whether the update succeeded.
+/// @param text Result text (error message on failure).
+void sendBambuMaterialUpdateResult(rtos::RtosContext& ctx,
+                                   std::uint32_t requestId, bool success,
+                                   const char* text) {
+  rtos::AppEvent event{};
+  event.type = rtos::AppEventType::BambuMaterialUpdateResult;
+  event.requestId = requestId;
+  event.value = success ? 1 : 0;
+  std::snprintf(event.text, sizeof(event.text), "%s", text);
+  if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS) {
+    FS_LOGW(services::LogComponent::Storage,
+            "Event enqueue failed queue=app_event "
+            "event=bambu_material_update_result");
+  }
+}
+
+/// @brief Number of alias tokens across every entry of `table` (for the
+///        "aliases=" field of the "[BAMBU] Material mappings loaded" log line).
+std::uint32_t countBambuMaterialAliases(
+    const models::BambuMaterialMappingTable& table) {
+  std::uint32_t count = 0;
+  for (std::uint16_t index = 0; index < table.entryCount; ++index) {
+    const char* cursor = table.entries[index].aliases;
+    if (*cursor == '\0') continue;
+    ++count;
+    for (; *cursor != '\0'; ++cursor) {
+      if (*cursor == models::kBambuMaterialAliasSeparator) ++count;
+    }
+  }
+  return count;
+}
+
+/// @brief Returns the PSRAM-backed double-buffer instance NOT currently
+///        published on `ctx.bambuMaterialMappings`, allocating both
+///        instances on first use. Callers write a freshly parsed table into
+///        this instance, then publish it via publishBambuMaterialTable().
+/// @param ctx Owning RTOS context.
+/// @return Reference to the inactive buffer.
+models::BambuMaterialMappingTable& bambuMaterialInactiveBuffer(
+    rtos::RtosContext& ctx) {
+  static models::BambuMaterialMappingTable* bufferA =
+      services::allocatePsramInstance<models::BambuMaterialMappingTable>(
+          "StorageTask.bambuMaterialsA");
+  static models::BambuMaterialMappingTable* bufferB =
+      services::allocatePsramInstance<models::BambuMaterialMappingTable>(
+          "StorageTask.bambuMaterialsB");
+  const auto* current = ctx.bambuMaterialMappings.load(std::memory_order_relaxed);
+  return current == bufferA ? *bufferB : *bufferA;
+}
+
+/// @brief Atomically publishes `table` (previously obtained from
+///        bambuMaterialInactiveBuffer()) as the active mapping table.
+/// @param ctx Owning RTOS context.
+/// @param table Newly loaded/validated table to publish.
+void publishBambuMaterialTable(rtos::RtosContext& ctx,
+                               const models::BambuMaterialMappingTable& table) {
+  ctx.bambuMaterialMappings.store(&table, std::memory_order_release);
+}
+
+/// @brief Opens, parses and fully validates a bambu_materials.json-shaped
+///        file into `out`.
+/// @param filesystem Filesystem to read from.
+/// @param path Path to open.
+/// @param out Table to fill; see services::parseBambuMaterialCatalog()'s
+///        contract (may be left partially written on failure).
+/// @param result Out parameter receiving the specific success/failure reason.
+/// @return true if `out` now holds a fully valid table.
+bool loadAndValidateBambuMaterialFile(
+    fs::FS& filesystem, const char* path,
+    models::BambuMaterialMappingTable& out,
+    services::BambuMaterialCatalogResult& result) {
+  File file = filesystem.open(path, FILE_READ);
+  if (!file || file.isDirectory() || file.size() == 0 ||
+      file.size() > config::kBambuMaterialsMaxFileSize) {
+    if (file) file.close();
+    result.error = services::BambuMaterialCatalogError::InvalidJson;
+    result.offendingKey[0] = '\0';
+    return false;
+  }
+  JsonDocument document;
+  const DeserializationError parseError = deserializeJson(document, file);
+  file.close();
+  if (parseError) {
+    result.error = services::BambuMaterialCatalogError::InvalidJson;
+    result.offendingKey[0] = '\0';
+    return false;
+  }
+  result = services::parseBambuMaterialCatalog(document, out);
+  return result.error == services::BambuMaterialCatalogError::Ok;
+}
+
+/// @brief Promotes /config/bambu_materials.tmp.json to the active
+///        bambu_materials.json, keeping the previous active file as
+///        bambu_materials.bak.json -- mirrors services::JsonStorage::
+///        atomicSave()'s backup/rename sequence (a separate, small
+///        implementation rather than a shared one: this document uses a
+///        different schema/envelope than JsonStorage's validator
+///        understands, see services/BambuMaterialCatalog.h). Unlike
+///        JsonStorage::atomicSave(), the backup is deliberately kept (not
+///        removed) after a successful activation -- loadBambuMaterialCatalog()
+///        treats it as a valid recovery source if the active file is ever
+///        found missing/invalid on a later boot (docs/bambu-protocol.md).
+/// @param filesystem Filesystem to operate on.
+/// @return true if the temp file is now the active file.
+bool activateBambuMaterialFile(fs::FS& filesystem) {
+  if (filesystem.exists(config::kBambuMaterialsBackupPath) &&
+      !filesystem.remove(config::kBambuMaterialsBackupPath)) {
+    return false;
+  }
+  const bool hadTarget = filesystem.exists(config::kBambuMaterialsPath);
+  if (hadTarget &&
+      !filesystem.rename(config::kBambuMaterialsPath,
+                         config::kBambuMaterialsBackupPath)) {
+    return false;
+  }
+  if (!filesystem.rename(config::kBambuMaterialsTempPath,
+                         config::kBambuMaterialsPath)) {
+    if (hadTarget) {
+      filesystem.rename(config::kBambuMaterialsBackupPath,
+                        config::kBambuMaterialsPath);
+    }
+    return false;
+  }
+  return true;
+}
+
+/// @brief Computes the SHA-256 of a file's content as a lowercase hex string.
+/// @param filesystem Filesystem to read from.
+/// @param path File to hash.
+/// @param outHex65 Destination buffer, at least 65 bytes.
+/// @return false if the file could not be opened/read.
+bool computeFileSha256Hex(fs::FS& filesystem, const char* path, char* outHex65) {
+  File file = filesystem.open(path, FILE_READ);
+  if (!file) return false;
+  mbedtls_sha256_context sha;
+  mbedtls_sha256_init(&sha);
+  mbedtls_sha256_starts_ret(&sha, 0);  // 0 = SHA-256, not SHA-224
+  std::array<std::uint8_t, 1024> buffer;
+  for (;;) {
+    const int readBytes = file.read(buffer.data(), buffer.size());
+    if (readBytes < 0) {
+      file.close();
+      mbedtls_sha256_free(&sha);
+      return false;
+    }
+    if (readBytes == 0) break;
+    mbedtls_sha256_update_ret(&sha, buffer.data(),
+                              static_cast<std::size_t>(readBytes));
+  }
+  file.close();
+  std::uint8_t hash[32];
+  mbedtls_sha256_finish_ret(&sha, hash);
+  mbedtls_sha256_free(&sha);
+  for (std::size_t index = 0; index < sizeof(hash); ++index) {
+    std::snprintf(outHex65 + index * 2, 3, "%02x", hash[index]);
+  }
+  return true;
+}
+
+/// @brief Loads /config/bambu_materials.json at boot, with a fallback to a
+///        surviving .bak.json (never .tmp.json, which is only ever an
+///        in-progress download) -- see docs/bambu-protocol.md. Publishes
+///        the loaded table via publishBambuMaterialTable() on success;
+///        `ctx.bambuMaterialMappings` is left untouched (nullptr at boot)
+///        on failure -- there is deliberately no fallback to a compiled-in
+///        table (that defeats the point of moving this to SD, see the
+///        Aufgabenbeschreibung this implements).
+/// @param ctx Owning RTOS context.
+void loadBambuMaterialCatalog(rtos::RtosContext& ctx) {
+  const bool targetExists = SD.exists(config::kBambuMaterialsPath);
+  const bool tempExists = SD.exists(config::kBambuMaterialsTempPath);
+  const bool backupExists = SD.exists(config::kBambuMaterialsBackupPath);
+  models::BambuMaterialMappingTable& candidate = bambuMaterialInactiveBuffer(ctx);
+
+  if (targetExists) {
+    services::BambuMaterialCatalogResult result{};
+    if (loadAndValidateBambuMaterialFile(SD, config::kBambuMaterialsPath,
+                                         candidate, result)) {
+      if (tempExists) SD.remove(config::kBambuMaterialsTempPath);
+      publishBambuMaterialTable(ctx, candidate);
+      FS_LOGI(services::LogComponent::Bambu,
+              "[BAMBU] Material mappings loaded path=\"%s\" "
+              "schema_version=%lu materials=%u aliases=%lu",
+              config::kBambuMaterialsPath,
+              static_cast<unsigned long>(candidate.schemaVersion),
+              static_cast<unsigned>(candidate.entryCount),
+              static_cast<unsigned long>(countBambuMaterialAliases(candidate)));
+      return;
+    }
+    FS_LOGW(services::LogComponent::Bambu,
+            "[BAMBU] Material mapping load failed path=\"%s\" reason=%s",
+            config::kBambuMaterialsPath,
+            services::bambuMaterialCatalogErrorName(result.error));
+  }
+
+  if (backupExists) {
+    services::BambuMaterialCatalogResult result{};
+    if (loadAndValidateBambuMaterialFile(SD, config::kBambuMaterialsBackupPath,
+                                         candidate, result)) {
+      if (!targetExists || SD.remove(config::kBambuMaterialsPath)) {
+        if (SD.rename(config::kBambuMaterialsBackupPath,
+                      config::kBambuMaterialsPath)) {
+          if (tempExists) SD.remove(config::kBambuMaterialsTempPath);
+          publishBambuMaterialTable(ctx, candidate);
+          FS_LOGI(services::LogComponent::Bambu,
+                  "[BAMBU] Material mappings recovered from backup "
+                  "path=\"%s\" schema_version=%lu materials=%u aliases=%lu",
+                  config::kBambuMaterialsPath,
+                  static_cast<unsigned long>(candidate.schemaVersion),
+                  static_cast<unsigned>(candidate.entryCount),
+                  static_cast<unsigned long>(
+                      countBambuMaterialAliases(candidate)));
+          return;
+        }
+      }
+      FS_LOGW(services::LogComponent::Bambu,
+              "[BAMBU] Material mapping backup recovery failed "
+              "reason=rename_failed");
+    } else {
+      FS_LOGW(services::LogComponent::Bambu,
+              "[BAMBU] Material mapping load failed path=\"%s\" reason=%s",
+              config::kBambuMaterialsBackupPath,
+              services::bambuMaterialCatalogErrorName(result.error));
+    }
+  }
+
+  // An incomplete/in-progress temp file is never a valid activation source
+  // (docs/bambu-protocol.md section 10) -- discard it rather than leaving
+  // it to confuse a later manual inspection or download attempt.
+  if (tempExists) SD.remove(config::kBambuMaterialsTempPath);
+  if (!targetExists && !backupExists) {
+    FS_LOGW(services::LogComponent::Bambu,
+            "[BAMBU] Material mapping load failed path=\"%s\" "
+            "reason=file_missing",
+            config::kBambuMaterialsPath);
+  }
+  // ctx.bambuMaterialMappings stays nullptr -- BambuTask::handleAssignTray()
+  // rejects with reason=material_mapping_unavailable until a valid file is
+  // loaded (via a later download activation) and this device restarts, or a
+  // reload is added -- see docs/bambu-protocol.md.
+}
+
+// Shared state for the in-progress Bambu material-mapping download, across
+// processBeginBambuMaterialDownload()/processWriteBambuMaterialChunk()/
+// processCommitBambuMaterialDownload()/processAbortBambuMaterialDownload()
+// below -- file-scope (not function-local) since all four must see the same
+// open handle. StorageTask processes exactly one StorageCommand at a time
+// (see storageTask()'s single-threaded receive loop), so no locking is
+// needed; #kDownloadRequestIdNone marks "no download currently open".
+constexpr std::uint32_t kDownloadRequestIdNone = 0;
+// Bounds for the short-write retry loop in processWriteBambuMaterialChunk()
+// -- generous enough to absorb a momentary SD-card busy condition, bounded
+// so a genuinely broken write path still fails within roughly 200 ms.
+constexpr std::uint8_t kMaxWriteStallRetries = 10;
+constexpr std::uint32_t kWriteStallRetryDelayMs = 20;
+File bambuMaterialDownloadFile;                              ///< Open handle to the in-progress download's temp file, or invalid if none is open.
+std::uint32_t bambuMaterialDownloadRequestId = kDownloadRequestIdNone;  ///< requestId of the in-progress download, or #kDownloadRequestIdNone.
+std::size_t bambuMaterialDownloadBytesWritten = 0;            ///< Bytes written to #bambuMaterialDownloadFile so far.
+
+/// @brief Closes and discards any in-progress Bambu material-mapping
+///        download temp file, resetting the guard state.
+void abortBambuMaterialDownloadFile() {
+  if (bambuMaterialDownloadFile) bambuMaterialDownloadFile.close();
+  if (SD.exists(config::kBambuMaterialsTempPath)) {
+    SD.remove(config::kBambuMaterialsTempPath);
+  }
+  bambuMaterialDownloadRequestId = kDownloadRequestIdNone;
+  bambuMaterialDownloadBytesWritten = 0;
+}
+
+/// @brief Handles StorageCommandType::BeginBambuMaterialDownload: (re)opens
+///        the temp file, discarding any previous in-progress download.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
+void processBeginBambuMaterialDownload(rtos::RtosContext& ctx,
+                                       const rtos::StorageCommand& command) {
+  if (bambuMaterialDownloadRequestId != kDownloadRequestIdNone) {
+    FS_LOGW(services::LogComponent::Bambu,
+            "[BAMBU] Material mapping download restarted "
+            "previous_request_id=%lu new_request_id=%lu",
+            static_cast<unsigned long>(bambuMaterialDownloadRequestId),
+            static_cast<unsigned long>(command.requestId));
+    abortBambuMaterialDownloadFile();
+  } else if (SD.exists(config::kBambuMaterialsTempPath)) {
+    SD.remove(config::kBambuMaterialsTempPath);
+  }
+
+  bambuMaterialDownloadFile = SD.open(config::kBambuMaterialsTempPath, FILE_WRITE);
+  if (!bambuMaterialDownloadFile) {
+    FS_LOGE(services::LogComponent::Bambu,
+            "[BAMBU] Material mapping download failed "
+            "temporary=\"%s\" reason=temporary_file_failed",
+            config::kBambuMaterialsTempPath);
+    sendBambuMaterialUpdateResult(
+        ctx, command.requestId, false,
+        "Tempor\xC3\xA4re Datei konnte nicht angelegt werden");
+    return;
+  }
+  bambuMaterialDownloadRequestId = command.requestId;
+  bambuMaterialDownloadBytesWritten = 0;
+  FS_LOGI(services::LogComponent::Bambu,
+          "[BAMBU] Material mapping download started target=\"%s\" "
+          "temporary=\"%s\" free_heap=%u",
+          config::kBambuMaterialsPath, config::kBambuMaterialsTempPath,
+          static_cast<unsigned>(ESP.getFreeHeap()));
+}
+
+/// @brief Handles StorageCommandType::WriteBambuMaterialChunk: appends
+///        `command.json[0..jsonLength)` to the open download temp file.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
+/// @note Silently ignored (DEBUG log only) if no download matching
+///       `command.requestId` is open -- an expected, harmless race when
+///       BeginBambuMaterialDownload already failed and reported its own
+///       error; UpdateTask does not learn of that failure (it never reads
+///       appEventQueue) and keeps streaming chunks regardless.
+void processWriteBambuMaterialChunk(rtos::RtosContext& ctx,
+                                    const rtos::StorageCommand& command) {
+  if (bambuMaterialDownloadRequestId != command.requestId ||
+      !bambuMaterialDownloadFile) {
+    FS_LOGD(services::LogComponent::Bambu,
+            "[BAMBU] Material mapping chunk ignored request_id=%lu "
+            "reason=no_open_download",
+            static_cast<unsigned long>(command.requestId));
+    return;
+  }
+  if (command.jsonLength == 0) return;
+  if (bambuMaterialDownloadBytesWritten + command.jsonLength >
+      config::kBambuMaterialsMaxFileSize) {
+    FS_LOGE(services::LogComponent::Bambu,
+            "[BAMBU] Material mapping download rejected "
+            "reason=file_too_large limit_bytes=%u",
+            static_cast<unsigned>(config::kBambuMaterialsMaxFileSize));
+    abortBambuMaterialDownloadFile();
+    sendBambuMaterialUpdateResult(ctx, command.requestId, false,
+                                  "Heruntergeladene Datei ist zu gro\xC3\x9F");
+    return;
+  }
+  // File::write() can legitimately return fewer bytes than requested under
+  // a momentary SD-card busy condition (sector commit, wear-leveling) --
+  // not a real failure. Retrying the remainder instead of treating any
+  // short write as fatal fixed intermittent "written=0"/"written=94"
+  // rejections seen on real hardware despite an otherwise healthy download
+  // (Nutzerbericht 2026-08-28, TASKS.md). A write that stays stuck at 0
+  // bytes for kMaxWriteStallRetries consecutive attempts is still treated
+  // as a real failure.
+  std::size_t offset = 0;
+  std::uint8_t stallRetries = 0;
+  while (offset < command.jsonLength) {
+    const std::size_t written = bambuMaterialDownloadFile.write(
+        reinterpret_cast<const std::uint8_t*>(command.json) + offset,
+        command.jsonLength - offset);
+    if (written == 0) {
+      ++stallRetries;
+      if (stallRetries > kMaxWriteStallRetries) {
+        bambuMaterialDownloadBytesWritten += offset;
+        FS_LOGE(services::LogComponent::Bambu,
+                "[BAMBU] Material mapping download rejected "
+                "reason=write_failed offset=%u expected=%u",
+                static_cast<unsigned>(offset),
+                static_cast<unsigned>(command.jsonLength));
+        abortBambuMaterialDownloadFile();
+        sendBambuMaterialUpdateResult(ctx, command.requestId, false,
+                                      "Schreibfehler beim Herunterladen");
+        return;
+      }
+      FS_LOGD(services::LogComponent::Bambu,
+              "[BAMBU] Material mapping write stalled offset=%u retry=%u",
+              static_cast<unsigned>(offset),
+              static_cast<unsigned>(stallRetries));
+      vTaskDelay(pdMS_TO_TICKS(kWriteStallRetryDelayMs));
+      continue;
+    }
+    offset += written;
+    stallRetries = 0;
+  }
+  bambuMaterialDownloadBytesWritten += offset;
+  FS_LOGD(services::LogComponent::Bambu,
+          "[BAMBU] Material mapping chunk written bytes=%u total=%u",
+          static_cast<unsigned>(offset),
+          static_cast<unsigned>(bambuMaterialDownloadBytesWritten));
+}
+
+/// @brief Handles StorageCommandType::AbortBambuMaterialDownload: discards
+///        the in-progress temp file (used when UpdateTask hit a
+///        network/TLS error mid-stream and already reported its own
+///        failure event -- this only cleans up the temp file, no event is
+///        sent from here).
+/// @param command Command to process.
+void processAbortBambuMaterialDownload(const rtos::StorageCommand& command) {
+  if (bambuMaterialDownloadRequestId != command.requestId) return;
+  FS_LOGI(services::LogComponent::Bambu,
+          "[BAMBU] Material mapping download aborted request_id=%lu",
+          static_cast<unsigned long>(command.requestId));
+  abortBambuMaterialDownloadFile();
+}
+
+/// @brief Handles StorageCommandType::CommitBambuMaterialDownload:
+///        SHA-256-validates the completed temp file against
+///        `command.json` (the expected hash), parses/validates it as a
+///        bambu_materials.json document, and -- only if both succeed --
+///        atomically activates it and publishes the new RAM cache. This is
+///        the sole authority on activation (docs/bambu-protocol.md
+///        section 8/9): UpdateTask never writes to the SD card itself.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
+void processCommitBambuMaterialDownload(rtos::RtosContext& ctx,
+                                        const rtos::StorageCommand& command) {
+  if (bambuMaterialDownloadRequestId != command.requestId ||
+      !bambuMaterialDownloadFile) {
+    FS_LOGD(services::LogComponent::Bambu,
+            "[BAMBU] Material mapping commit ignored request_id=%lu "
+            "reason=no_open_download",
+            static_cast<unsigned long>(command.requestId));
+    return;
+  }
+  // Gives ctx.bambuMaterialDownloadDone on every exit from here on
+  // (success or any failure return below), via the destructor -- signals
+  // UpdateTask that it may now safely proceed to its own next TLS
+  // connection (e.g. the firmware download), see RtosContext.h's doc
+  // comment on bambuMaterialDownloadDone for why that ordering matters on
+  // real hardware.
+  struct DoneSignal {
+    SemaphoreHandle_t semaphore;
+    ~DoneSignal() { xSemaphoreGive(semaphore); }
+  } doneSignal{ctx.bambuMaterialDownloadDone};
+
+  FS_LOGI(services::LogComponent::Bambu,
+          "[BAMBU] Material mapping commit received request_id=%lu "
+          "bytes_written=%u",
+          static_cast<unsigned long>(command.requestId),
+          static_cast<unsigned>(bambuMaterialDownloadBytesWritten));
+
+  bambuMaterialDownloadFile.flush();
+  const bool writeFailed = bambuMaterialDownloadFile.getWriteError() != 0;
+  bambuMaterialDownloadFile.close();
+  bambuMaterialDownloadRequestId = kDownloadRequestIdNone;
+  if (writeFailed) {
+    SD.remove(config::kBambuMaterialsTempPath);
+    FS_LOGE(services::LogComponent::Bambu,
+            "[BAMBU] Material mapping download rejected reason=write_failed");
+    sendBambuMaterialUpdateResult(ctx, command.requestId, false,
+                                  "Schreibfehler beim Herunterladen");
+    return;
+  }
+
+  char expectedHashHex[65]{};
+  if (command.jsonLength != 64 ||
+      !services::extractHexSha256(command.json, expectedHashHex)) {
+    SD.remove(config::kBambuMaterialsTempPath);
+    FS_LOGW(services::LogComponent::Bambu,
+            "[BAMBU] Material mapping download rejected reason=missing_sha256");
+    sendBambuMaterialUpdateResult(
+        ctx, command.requestId, false,
+        "Keine g\xC3\xBCltige Pr\xC3\xBC" "fsumme \xC3\xBC" "bergeben");
+    return;
+  }
+
+  char actualHashHex[65]{};
+  if (!computeFileSha256Hex(SD, config::kBambuMaterialsTempPath, actualHashHex)) {
+    SD.remove(config::kBambuMaterialsTempPath);
+    FS_LOGE(services::LogComponent::Bambu,
+            "[BAMBU] Material mapping download rejected reason=hash_failed");
+    sendBambuMaterialUpdateResult(
+        ctx, command.requestId, false,
+        "Pr\xC3\xBC" "fsumme konnte nicht berechnet werden");
+    return;
+  }
+  if (std::strcmp(actualHashHex, expectedHashHex) != 0) {
+    SD.remove(config::kBambuMaterialsTempPath);
+    FS_LOGE(services::LogComponent::Bambu,
+            "[BAMBU] Material mapping download rejected reason=sha256_mismatch "
+            "expected_sha256=\"%s\" actual_sha256=\"%s\"",
+            expectedHashHex, actualHashHex);
+    sendBambuMaterialUpdateResult(
+        ctx, command.requestId, false,
+        "Pr\xC3\xBC" "fsumme stimmt nicht \xC3\xBC" "berein");
+    return;
+  }
+  FS_LOGI(services::LogComponent::Bambu,
+          "[BAMBU] Material mapping sha256 validated sha256=\"%s\"",
+          actualHashHex);
+
+  models::BambuMaterialMappingTable& candidate = bambuMaterialInactiveBuffer(ctx);
+  services::BambuMaterialCatalogResult parseResult{};
+  if (!loadAndValidateBambuMaterialFile(SD, config::kBambuMaterialsTempPath,
+                                       candidate, parseResult)) {
+    SD.remove(config::kBambuMaterialsTempPath);
+    FS_LOGW(services::LogComponent::Bambu,
+            "[BAMBU] Material mapping download rejected reason=%s",
+            services::bambuMaterialCatalogErrorName(parseResult.error));
+    sendBambuMaterialUpdateResult(ctx, command.requestId, false,
+                                  "Heruntergeladene Datei ist ung\xC3\xBCltig");
+    return;
+  }
+  FS_LOGI(services::LogComponent::Bambu,
+          "[BAMBU] Material mapping parsed schema_version=%lu materials=%u "
+          "aliases=%lu",
+          static_cast<unsigned long>(candidate.schemaVersion),
+          static_cast<unsigned>(candidate.entryCount),
+          static_cast<unsigned long>(countBambuMaterialAliases(candidate)));
+
+  if (!activateBambuMaterialFile(SD)) {
+    SD.remove(config::kBambuMaterialsTempPath);
+    FS_LOGE(services::LogComponent::Bambu,
+            "[BAMBU] Material mapping download rejected reason=activation_failed");
+    sendBambuMaterialUpdateResult(ctx, command.requestId, false,
+                                  "Aktivierung fehlgeschlagen");
+    return;
+  }
+
+  publishBambuMaterialTable(ctx, candidate);
+  FS_LOGI(services::LogComponent::Bambu,
+          "[BAMBU] Material mapping activated path=\"%s\"",
+          config::kBambuMaterialsPath);
+  sendBambuMaterialUpdateResult(ctx, command.requestId, true,
+                                "Material-Zuordnung aktualisiert");
+}
+
 /// @brief Validates the path and dispatches to processLoadCommand()/
 ///        processSaveCommand()/direct delete, based on `command.type`.
 /// @param ctx Owning RTOS context.
 /// @param command Command to process.
+/// @note The four BambuMaterial* download commands are dispatched first,
+///       before the generic path check below -- they never use
+///       `command.path` (the temp path is a fixed constant, see
+///       config/BambuMaterialConfig.h), by design: trusting a caller-
+///       supplied path for this fixed, security-relevant temp file would
+///       reopen exactly the path-injection risk isAllowedJsonPath() exists
+///       to prevent for every other command.
 void processStorageCommand(rtos::RtosContext& ctx,
                            const rtos::StorageCommand& command) {
+  switch (command.type) {
+    case rtos::StorageCommandType::BeginBambuMaterialDownload:
+      processBeginBambuMaterialDownload(ctx, command);
+      return;
+    case rtos::StorageCommandType::WriteBambuMaterialChunk:
+      processWriteBambuMaterialChunk(ctx, command);
+      return;
+    case rtos::StorageCommandType::CommitBambuMaterialDownload:
+      processCommitBambuMaterialDownload(ctx, command);
+      return;
+    case rtos::StorageCommandType::AbortBambuMaterialDownload:
+      processAbortBambuMaterialDownload(command);
+      return;
+    case rtos::StorageCommandType::LoadJson:
+    case rtos::StorageCommandType::SaveJson:
+    case rtos::StorageCommandType::DeleteJson:
+      break;
+  }
+
   if (std::memchr(command.path, '\0', sizeof(command.path)) == nullptr ||
       !isAllowedJsonPath(command.path)) {
     sendStorageResult(ctx, command, rtos::AppEventType::StorageRequestError,
@@ -482,6 +1043,8 @@ void processStorageCommand(rtos::RtosContext& ctx,
         sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
                          "JSON delete failed", command.requestId);
       }
+      return;
+    default:
       return;
   }
 }
@@ -675,6 +1238,11 @@ void storageTask(void* parameter) {
             "Initial JSON documents ready count=%u",
             static_cast<unsigned>(sizeof(kInitialDocuments) /
                                   sizeof(kInitialDocuments[0])));
+    // Not an "initial document" (see #kInitialDocuments): no default is
+    // auto-created if missing (docs/bambu-protocol.md) -- a missing/invalid
+    // file leaves ctx.bambuMaterialMappings nullptr rather than failing SD
+    // initialization as a whole.
+    loadBambuMaterialCatalog(ctx);
     FS_LOGD(services::LogComponent::Storage,
             "Stack watermark free_bytes=%u",
             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
@@ -717,7 +1285,21 @@ void storageTask(void* parameter) {
       }
     }
 
-    const bool accessible = cardIsAccessible();
+    // Skipped while a Bambu material-mapping download is actively writing
+    // its temp file (TASKS.md Nachtrag 2026-08-28, Nutzerbericht):
+    // cardIsAccessible() opens/closes a second File handle ("/") on every
+    // single loop iteration -- interleaved with the many rapid
+    // WriteBambuMaterialChunk writes to the still-open download file, this
+    // reliably corrupted one of the writes ("reason=write_failed
+    // written=0") a few chunks in. No such interleaving happens for the
+    // occasional single LoadJson/SaveJson command this check was designed
+    // around, so skipping it only during this specific multi-part
+    // operation is safe -- SD removal is still caught as soon as the
+    // download finishes (success, failure, or abort) and this loop resumes
+    // its normal per-iteration check.
+    const bool accessible = bambuMaterialDownloadRequestId != kDownloadRequestIdNone
+                                ? true
+                                : cardIsAccessible();
     if (!removalLatched && !accessible) {
       removalLatched = true;
       xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_SD_READY);

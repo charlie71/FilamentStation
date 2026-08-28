@@ -158,13 +158,17 @@ enum class StorageDocumentType : std::uint8_t {
 constexpr std::size_t kStorageJsonPayloadCapacity = 768;  ///< Maximum size of the inline JSON payload carried in StorageCommand::json.
 
 /// @brief Command sent from AppTask to tasks::storageTask().
+/// @note #path/#documentType are unused for the BambuMaterial* download
+///       commands (the temp path is a fixed constant, see StorageTask.cpp) --
+///       #json/#jsonLength carry a raw byte chunk for WriteBambuMaterialChunk,
+///       or the 64-hex-digit expected SHA-256 for CommitBambuMaterialDownload.
 struct StorageCommand {
   StorageCommandType type;           ///< Which operation to perform.
   std::uint32_t requestId;           ///< Correlation id.
   char path[96];                     ///< Absolute SD-card path to operate on.
   StorageDocumentType documentType;  ///< Which document schema #path holds.
-  std::uint16_t jsonLength;          ///< Number of valid bytes in #json, for SaveJson.
-  char json[kStorageJsonPayloadCapacity];  ///< Inline JSON payload to write, for SaveJson.
+  std::uint16_t jsonLength;          ///< Number of valid bytes in #json, for SaveJson/WriteBambuMaterialChunk.
+  char json[kStorageJsonPayloadCapacity];  ///< Inline JSON payload to write, for SaveJson; raw chunk bytes or expected SHA-256 for the BambuMaterial* download commands.
 };
 
 /// @brief Command sent from AppTask to tasks::networkTask().
@@ -208,11 +212,14 @@ struct BambuCommand {
   models::BambuPrinterConfig printerConfig{};  ///< Connection details, for Connect/TestConnection.
   // Required for AssignTray ("Slotdaten schreiben"). Resolving a Spoolman
   // spool to filament type/color happens outside BambuTask (Phase 8.5); the
-  // caller supplies the already-resolved values here.
-  char trayType[16]{};              ///< Material to write, for AssignTray.
+  // caller supplies the already-resolved values here. `trayType` is the raw
+  // Spoolman material name (e.g. "PLA-CF"), empty to clear the slot --
+  // BambuTask resolves it to a services::BambuMaterialMapping (tray_info_idx/
+  // canonical tray_type/nozzle_temp_min/max) itself; no temperature field
+  // here, the wire nozzle_temp_min/max always come from that mapping, never
+  // from Spoolman.
+  char trayType[16]{};              ///< Material to write, for AssignTray (empty clears the slot).
   char trayColorHex[9]{};           ///< Color to write, for AssignTray.
-  std::uint16_t nozzleTempMinC = 0;  ///< Minimum nozzle temperature to write, for AssignTray.
-  std::uint16_t nozzleTempMaxC = 0;  ///< Maximum nozzle temperature to write, for AssignTray.
 };
 
 /// @brief Command sent from AppTask to tasks::updateTask().

@@ -1,8 +1,10 @@
 #include <ArduinoJson.h>
 #include <unity.h>
 
+#include <cstdio>
 #include <cstring>
 
+#include "models/BambuMaterialMapping.h"
 #include "services/BambuProtocol.h"
 
 using namespace filament_station;
@@ -13,6 +15,54 @@ void setUp() {}
 void tearDown() {}
 
 namespace {
+
+/// @brief Appends one entry to a test models::BambuMaterialMappingTable --
+///        resolveBambuMaterial() now takes a runtime-loaded table (see
+///        services/BambuMaterialCatalog.h) rather than a compiled-in
+///        constexpr array, so these tests build their own small table
+///        instead of relying on a fixed global one.
+/// @param table Table to append to.
+/// @param material Canonical material key.
+/// @param trayInfoIdx Bambu generic filament profile id.
+/// @param trayType Canonical wire tray_type text.
+/// @param tempMin Minimum nozzle temperature.
+/// @param tempMax Maximum nozzle temperature.
+/// @param aliases '|'-separated alias list (see models::kBambuMaterialAliasSeparator), or "" for none.
+void addTestMaterial(models::BambuMaterialMappingTable& table,
+                     const char* material, const char* trayInfoIdx,
+                     const char* trayType, std::uint16_t tempMin,
+                     std::uint16_t tempMax, const char* aliases = "") {
+  TEST_ASSERT_LESS_THAN_UINT16(models::kMaxBambuMaterialMappings,
+                               table.entryCount);
+  models::BambuMaterialMappingEntry& entry = table.entries[table.entryCount++];
+  std::snprintf(entry.material, sizeof(entry.material), "%s", material);
+  std::snprintf(entry.trayInfoIdx, sizeof(entry.trayInfoIdx), "%s", trayInfoIdx);
+  std::snprintf(entry.trayType, sizeof(entry.trayType), "%s", trayType);
+  entry.nozzleTempMinC = tempMin;
+  entry.nozzleTempMaxC = tempMax;
+  std::snprintf(entry.aliases, sizeof(entry.aliases), "%s", aliases);
+}
+
+/// @brief Builds a small models::BambuMaterialMappingTable covering the
+///        cases these tests exercise -- a representative subset of
+///        data/bambu-materials/bambu_materials.json, not the full catalog.
+models::BambuMaterialMappingTable buildTestMaterialTable() {
+  models::BambuMaterialMappingTable table{};
+  addTestMaterial(table, "PLA", "GFL99", "PLA", 190, 240);
+  addTestMaterial(table, "PETG", "GFG99", "PETG", 220, 260);
+  addTestMaterial(table, "PLA-CF", "GFL98", "PLA-CF", 190, 240,
+                  "PLA CF|PLACF|PLA_CF");
+  addTestMaterial(table, "PETG-CF", "GFG98", "PETG-CF", 220, 260);
+  addTestMaterial(table, "PA-CF", "GFN98", "PA-CF", 260, 300);
+  addTestMaterial(table, "PPS-CF", "GFT98", "PPS-CF", 300, 340);
+  addTestMaterial(table, "PVA", "GFS99", "PVA", 190, 240);
+  addTestMaterial(table, "Bambu PVA", "GFS04", "PVA", 220, 250);
+  addTestMaterial(table, "Support For PLA", "GFS02", "PLA-S", 220, 230);
+  addTestMaterial(table, "Support For PLA/PETG", "GFS05", "PLA-S", 190, 220);
+  addTestMaterial(table, "Support For ABS", "GFS06", "ABS-S", 240, 270);
+  addTestMaterial(table, "Support For PA/PET", "GFS03", "PA-S", 280, 300);
+  return table;
+}
 
 void testTopicsUseSerialNumber() {
   char report[64]{};
@@ -44,6 +94,7 @@ void testPushAllRequestRejectsTooSmallBuffer() {
 
 void testAmsFilamentSettingPayload() {
   services::BambuTrayFilament filament{};
+  std::snprintf(filament.trayInfoIdx, sizeof(filament.trayInfoIdx), "GFL99");
   std::snprintf(filament.trayType, sizeof(filament.trayType), "PLA");
   std::snprintf(filament.trayColorHex, sizeof(filament.trayColorHex),
                "FFFFFFFF");
@@ -70,6 +121,45 @@ void testAmsFilamentSettingPayload() {
   TEST_ASSERT_EQUAL_UINT32(190, print["nozzle_temp_min"].as<std::uint32_t>());
   TEST_ASSERT_EQUAL_UINT32(240, print["nozzle_temp_max"].as<std::uint32_t>());
   TEST_ASSERT_EQUAL_STRING("GFL99", print["tray_info_idx"].as<const char*>());
+  // setting_id is a concrete Bambu-Studio-preset concept this workflow
+  // deliberately never resolves or sends.
+  TEST_ASSERT_FALSE(print["setting_id"].is<const char*>());
+}
+
+void testAmsFilamentSettingPayloadFromResolvedMaterial() {
+  // End-to-end: resolveBambuMaterial() -> BambuTrayFilament ->
+  // bambuBuildAmsFilamentSetting(), mirroring what BambuTask::
+  // handleAssignTray() does. Spoolman's own temperature (191/241, as if
+  // loaded from bambu_temp_min/bambu_temp_max) must NOT appear anywhere in
+  // the result -- only the Bambu-material-mapping defaults (190/240).
+  const models::BambuMaterialMappingTable table = buildTestMaterialTable();
+  const models::BambuMaterialMappingEntry* mapping =
+      services::resolveBambuMaterial(table, "PLA");
+  TEST_ASSERT_NOT_NULL(mapping);
+
+  services::BambuTrayFilament filament{};
+  std::snprintf(filament.trayInfoIdx, sizeof(filament.trayInfoIdx), "%s",
+               mapping->trayInfoIdx);
+  std::snprintf(filament.trayType, sizeof(filament.trayType), "%s",
+               mapping->trayType);
+  std::snprintf(filament.trayColorHex, sizeof(filament.trayColorHex),
+               "AD0088");
+  filament.nozzleTempMinC = mapping->nozzleTempMinC;
+  filament.nozzleTempMaxC = mapping->nozzleTempMaxC;
+
+  char payload[256]{};
+  const std::size_t length = services::bambuBuildAmsFilamentSetting(
+      1, 0, 0, filament, payload, sizeof(payload));
+  TEST_ASSERT_GREATER_THAN_UINT32(0, length);
+
+  JsonDocument document;
+  TEST_ASSERT_FALSE(deserializeJson(document, payload, length));
+  const JsonObjectConst print = document["print"];
+  TEST_ASSERT_EQUAL_STRING("GFL99", print["tray_info_idx"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("PLA", print["tray_type"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("AD0088FF", print["tray_color"].as<const char*>());
+  TEST_ASSERT_EQUAL_UINT32(190, print["nozzle_temp_min"].as<std::uint32_t>());
+  TEST_ASSERT_EQUAL_UINT32(240, print["nozzle_temp_max"].as<std::uint32_t>());
 }
 
 void testAmsFilamentSettingAppendsAlphaToSixDigitColor() {
@@ -139,28 +229,167 @@ void testExtrusionCaliSelUsesGlobalTrayIdForSecondAms() {
   TEST_ASSERT_EQUAL_UINT32(2, print["slot_id"].as<std::uint32_t>());
 }
 
-void testGenericTrayInfoIdxMapping() {
-  // Composite ("-CF") variants must win over their plain base material.
-  TEST_ASSERT_EQUAL_STRING("GFL98",
-                           services::bambuGenericTrayInfoIdx("PLA-CF"));
-  TEST_ASSERT_EQUAL_STRING("GFN98",
-                           services::bambuGenericTrayInfoIdx("PA-CF"));
-  TEST_ASSERT_EQUAL_STRING("GFL99", services::bambuGenericTrayInfoIdx("PLA"));
-  // Free-text Spoolman material strings (e.g. "PLA Basic") still match on
-  // the material family prefix.
-  TEST_ASSERT_EQUAL_STRING("GFL99",
-                           services::bambuGenericTrayInfoIdx("PLA Basic"));
-  TEST_ASSERT_EQUAL_STRING("GFG99", services::bambuGenericTrayInfoIdx("PETG"));
-  TEST_ASSERT_EQUAL_STRING("GFB98", services::bambuGenericTrayInfoIdx("ASA"));
-  TEST_ASSERT_EQUAL_STRING("GFB99", services::bambuGenericTrayInfoIdx("ABS"));
-  TEST_ASSERT_EQUAL_STRING("GFU99", services::bambuGenericTrayInfoIdx("TPU"));
-  TEST_ASSERT_EQUAL_STRING("GFS99", services::bambuGenericTrayInfoIdx("PVA"));
-  TEST_ASSERT_EQUAL_STRING("GFC99", services::bambuGenericTrayInfoIdx("PC"));
-  TEST_ASSERT_EQUAL_STRING("GFN99", services::bambuGenericTrayInfoIdx("PA"));
-  // Unknown/empty material: no invented id.
-  TEST_ASSERT_EQUAL_STRING("", services::bambuGenericTrayInfoIdx("Wood"));
-  TEST_ASSERT_EQUAL_STRING("", services::bambuGenericTrayInfoIdx(""));
-  TEST_ASSERT_EQUAL_STRING("", services::bambuGenericTrayInfoIdx(nullptr));
+void testResolveBambuMaterialPla() {
+  const models::BambuMaterialMappingTable table = buildTestMaterialTable();
+  const auto* mapping = services::resolveBambuMaterial(table, "PLA");
+  TEST_ASSERT_NOT_NULL(mapping);
+  TEST_ASSERT_EQUAL_STRING("GFL99", mapping->trayInfoIdx);
+  TEST_ASSERT_EQUAL_STRING("PLA", mapping->trayType);
+  TEST_ASSERT_EQUAL_UINT16(190, mapping->nozzleTempMinC);
+  TEST_ASSERT_EQUAL_UINT16(240, mapping->nozzleTempMaxC);
+}
+
+void testResolveBambuMaterialPetg() {
+  const models::BambuMaterialMappingTable table = buildTestMaterialTable();
+  const auto* mapping = services::resolveBambuMaterial(table, "PETG");
+  TEST_ASSERT_NOT_NULL(mapping);
+  TEST_ASSERT_EQUAL_STRING("GFG99", mapping->trayInfoIdx);
+  TEST_ASSERT_EQUAL_UINT16(220, mapping->nozzleTempMinC);
+  TEST_ASSERT_EQUAL_UINT16(260, mapping->nozzleTempMaxC);
+}
+
+void testResolveBambuMaterialPlaCfWinsOverPla() {
+  // A specific composite material must never be matched by its more
+  // general base material, in either table order.
+  const models::BambuMaterialMappingTable table = buildTestMaterialTable();
+  const auto* mapping = services::resolveBambuMaterial(table, "PLA-CF");
+  TEST_ASSERT_NOT_NULL(mapping);
+  TEST_ASSERT_EQUAL_STRING("GFL98", mapping->trayInfoIdx);
+}
+
+void testResolveBambuMaterialPetgCfWinsOverPetg() {
+  const models::BambuMaterialMappingTable table = buildTestMaterialTable();
+  const auto* mapping = services::resolveBambuMaterial(table, "PETG-CF");
+  TEST_ASSERT_NOT_NULL(mapping);
+  TEST_ASSERT_EQUAL_STRING("GFG98", mapping->trayInfoIdx);
+}
+
+void testResolveBambuMaterialPaCf() {
+  const models::BambuMaterialMappingTable table = buildTestMaterialTable();
+  const auto* mapping = services::resolveBambuMaterial(table, "PA-CF");
+  TEST_ASSERT_NOT_NULL(mapping);
+  TEST_ASSERT_EQUAL_STRING("GFN98", mapping->trayInfoIdx);
+  TEST_ASSERT_EQUAL_UINT16(260, mapping->nozzleTempMinC);
+  TEST_ASSERT_EQUAL_UINT16(300, mapping->nozzleTempMaxC);
+}
+
+void testResolveBambuMaterialPpsCf() {
+  const models::BambuMaterialMappingTable table = buildTestMaterialTable();
+  const auto* mapping = services::resolveBambuMaterial(table, "PPS-CF");
+  TEST_ASSERT_NOT_NULL(mapping);
+  TEST_ASSERT_EQUAL_STRING("GFT98", mapping->trayInfoIdx);
+  TEST_ASSERT_EQUAL_UINT16(300, mapping->nozzleTempMinC);
+  TEST_ASSERT_EQUAL_UINT16(340, mapping->nozzleTempMaxC);
+}
+
+void testResolveBambuMaterialSpellingVariants() {
+  // Case, leading whitespace, and '-'/' '/no-separator must all normalize
+  // to the same entry -- exact matching after normalization, not prefix
+  // matching.
+  const models::BambuMaterialMappingTable table = buildTestMaterialTable();
+  const char* const variants[] = {"pla", "PLA", " PLA", "PLA "};
+  for (const char* variant : variants) {
+    const auto* mapping = services::resolveBambuMaterial(table, variant);
+    TEST_ASSERT_NOT_NULL(mapping);
+    TEST_ASSERT_EQUAL_STRING("GFL99", mapping->trayInfoIdx);
+  }
+  const char* const cfVariants[] = {"PLA-CF", "PLA CF", "PLACF", "pla-cf"};
+  for (const char* variant : cfVariants) {
+    const auto* mapping = services::resolveBambuMaterial(table, variant);
+    TEST_ASSERT_NOT_NULL(mapping);
+    TEST_ASSERT_EQUAL_STRING("GFL98", mapping->trayInfoIdx);
+  }
+}
+
+void testResolveBambuMaterialViaExplicitAlias() {
+  // "PLA_CF" is only reachable in this test table via the explicit alias
+  // list (not via material-name separator-normalization of "PLA-CF" alone,
+  // which sameMaterialKey() already covers) -- exercises
+  // materialMatchesEntry()'s alias-token walk specifically.
+  const models::BambuMaterialMappingTable table = buildTestMaterialTable();
+  const auto* mapping = services::resolveBambuMaterial(table, "PLA_CF");
+  TEST_ASSERT_NOT_NULL(mapping);
+  TEST_ASSERT_EQUAL_STRING("GFL98", mapping->trayInfoIdx);
+}
+
+void testResolveBambuMaterialSupportMaterials() {
+  // docs/bambu-protocol.md / Aufgabenbeschreibung 2026-08-28 section 38.
+  const models::BambuMaterialMappingTable table = buildTestMaterialTable();
+
+  const auto* supportForPla =
+      services::resolveBambuMaterial(table, "Support For PLA");
+  TEST_ASSERT_NOT_NULL(supportForPla);
+  TEST_ASSERT_EQUAL_STRING("GFS02", supportForPla->trayInfoIdx);
+  TEST_ASSERT_EQUAL_STRING("PLA-S", supportForPla->trayType);
+  TEST_ASSERT_EQUAL_UINT16(220, supportForPla->nozzleTempMinC);
+  TEST_ASSERT_EQUAL_UINT16(230, supportForPla->nozzleTempMaxC);
+
+  const auto* supportForPlaPetg =
+      services::resolveBambuMaterial(table, "Support For PLA/PETG");
+  TEST_ASSERT_NOT_NULL(supportForPlaPetg);
+  TEST_ASSERT_EQUAL_STRING("GFS05", supportForPlaPetg->trayInfoIdx);
+  TEST_ASSERT_EQUAL_UINT16(190, supportForPlaPetg->nozzleTempMinC);
+  TEST_ASSERT_EQUAL_UINT16(220, supportForPlaPetg->nozzleTempMaxC);
+
+  const auto* supportForAbs =
+      services::resolveBambuMaterial(table, "Support For ABS");
+  TEST_ASSERT_NOT_NULL(supportForAbs);
+  TEST_ASSERT_EQUAL_STRING("GFS06", supportForAbs->trayInfoIdx);
+  TEST_ASSERT_EQUAL_STRING("ABS-S", supportForAbs->trayType);
+  TEST_ASSERT_EQUAL_UINT16(240, supportForAbs->nozzleTempMinC);
+  TEST_ASSERT_EQUAL_UINT16(270, supportForAbs->nozzleTempMaxC);
+
+  const auto* supportForPaPet =
+      services::resolveBambuMaterial(table, "Support For PA/PET");
+  TEST_ASSERT_NOT_NULL(supportForPaPet);
+  TEST_ASSERT_EQUAL_STRING("GFS03", supportForPaPet->trayInfoIdx);
+  TEST_ASSERT_EQUAL_STRING("PA-S", supportForPaPet->trayType);
+  TEST_ASSERT_EQUAL_UINT16(280, supportForPaPet->nozzleTempMinC);
+  TEST_ASSERT_EQUAL_UINT16(300, supportForPaPet->nozzleTempMaxC);
+}
+
+void testResolveBambuMaterialBambuPvaSeparateFromGenericPva() {
+  // A specific alias/material ("Bambu PVA") must resolve to its own,
+  // distinct entry and never be shadowed by a more general entry ("PVA")
+  // that happens to share a normalized prefix -- exact matching, not
+  // prefix matching (docs/bambu-protocol.md section 39).
+  const models::BambuMaterialMappingTable table = buildTestMaterialTable();
+
+  const auto* genericPva = services::resolveBambuMaterial(table, "PVA");
+  TEST_ASSERT_NOT_NULL(genericPva);
+  TEST_ASSERT_EQUAL_STRING("GFS99", genericPva->trayInfoIdx);
+
+  const auto* bambuPva = services::resolveBambuMaterial(table, "Bambu PVA");
+  TEST_ASSERT_NOT_NULL(bambuPva);
+  TEST_ASSERT_EQUAL_STRING("GFS04", bambuPva->trayInfoIdx);
+  TEST_ASSERT_EQUAL_UINT16(220, bambuPva->nozzleTempMinC);
+  TEST_ASSERT_EQUAL_UINT16(250, bambuPva->nozzleTempMaxC);
+}
+
+void testResolveBambuMaterialRejectsUnknown() {
+  // No fallback to a related/base material -- an unrecognized material
+  // must never guess a profile (e.g. "PC-ABS" must not resolve to "PC" or
+  // "ABS").
+  const models::BambuMaterialMappingTable table = buildTestMaterialTable();
+  TEST_ASSERT_NULL(services::resolveBambuMaterial(table, "PC-ABS"));
+  TEST_ASSERT_NULL(services::resolveBambuMaterial(table, "PLA-WOOD"));
+  TEST_ASSERT_NULL(services::resolveBambuMaterial(table, "Wood"));
+  TEST_ASSERT_NULL(services::resolveBambuMaterial(table, ""));
+  TEST_ASSERT_NULL(services::resolveBambuMaterial(table, nullptr));
+}
+
+void testHandleAssignTrayRejectsWhenMaterialMappingUnavailable() {
+  // BambuTask::handleAssignTray() checks ctx.bambuMaterialMappings ==
+  // nullptr before ever calling resolveBambuMaterial() -- not exercised
+  // here directly (that requires the full BambuTask/RtosContext plumbing,
+  // covered by the fact that resolveBambuMaterial() itself is never called
+  // with a null table anywhere in production code); this test instead
+  // documents/locks in that resolveBambuMaterial() itself never crashes on
+  // an empty (zero-entry) table, the state a freshly constructed
+  // RtosContext::bambuMaterialMappings buffer would have before first load.
+  const models::BambuMaterialMappingTable emptyTable{};
+  TEST_ASSERT_EQUAL_UINT16(0, emptyTable.entryCount);
+  TEST_ASSERT_NULL(services::resolveBambuMaterial(emptyTable, "PLA"));
 }
 
 void testApplyReportRejectsPayloadWithoutPrintObject() {
@@ -310,6 +539,48 @@ void testApplyReportParsesExternalTray() {
   TEST_ASSERT_EQUAL_STRING("00FF00FF", state.externalSlot.colorHex);
 }
 
+void testApplyReportParsesNozzleTempAsNumber() {
+  JsonDocument document;
+  deserializeJson(document, R"({
+    "print": {"vt_tray": {"tray_type":"PLA","nozzle_temp_min":190,"nozzle_temp_max":240}}
+  })");
+  PrinterState state{};
+  TEST_ASSERT_TRUE(services::bambuApplyReport(document, state));
+  TEST_ASSERT_EQUAL_UINT16(190, state.externalSlot.nozzleTempMinC);
+  TEST_ASSERT_EQUAL_UINT16(240, state.externalSlot.nozzleTempMaxC);
+}
+
+void testApplyReportParsesNozzleTempAsString() {
+  JsonDocument document;
+  deserializeJson(document, R"({
+    "print": {"vt_tray": {"tray_type":"PLA","nozzle_temp_min":"190","nozzle_temp_max":"240"}}
+  })");
+  PrinterState state{};
+  TEST_ASSERT_TRUE(services::bambuApplyReport(document, state));
+  TEST_ASSERT_EQUAL_UINT16(190, state.externalSlot.nozzleTempMinC);
+  TEST_ASSERT_EQUAL_UINT16(240, state.externalSlot.nozzleTempMaxC);
+}
+
+void testApplyReportKeepsNozzleTempWhenAbsentFromLaterReport() {
+  JsonDocument first;
+  deserializeJson(first, R"({
+    "print": {"vt_tray": {"tray_type":"PLA","nozzle_temp_min":190,"nozzle_temp_max":240}}
+  })");
+  PrinterState state{};
+  TEST_ASSERT_TRUE(services::bambuApplyReport(first, state));
+
+  // A later report for the same tray without the temperature fields must
+  // not reset them to 0 -- same merge behavior as the rest of
+  // bambuApplyReport().
+  JsonDocument second;
+  deserializeJson(second, R"({
+    "print": {"vt_tray": {"tray_type":"PLA","tray_color":"FFFFFFFF"}}
+  })");
+  TEST_ASSERT_TRUE(services::bambuApplyReport(second, state));
+  TEST_ASSERT_EQUAL_UINT16(190, state.externalSlot.nozzleTempMinC);
+  TEST_ASSERT_EQUAL_UINT16(240, state.externalSlot.nozzleTempMaxC);
+}
+
 void testApplyReportParsesNozzleDiameter() {
   JsonDocument document;
   deserializeJson(document, R"({
@@ -363,12 +634,24 @@ int main(int, char**) {
   RUN_TEST(testPushAllRequestPayload);
   RUN_TEST(testPushAllRequestRejectsTooSmallBuffer);
   RUN_TEST(testAmsFilamentSettingPayload);
+  RUN_TEST(testAmsFilamentSettingPayloadFromResolvedMaterial);
   RUN_TEST(testAmsFilamentSettingAppendsAlphaToSixDigitColor);
   RUN_TEST(testNormalizeTrayColorHexAppendsAlpha);
   RUN_TEST(testNormalizeTrayColorHexPassesThroughEightDigits);
   RUN_TEST(testExtrusionCaliSelPayload);
   RUN_TEST(testExtrusionCaliSelUsesGlobalTrayIdForSecondAms);
-  RUN_TEST(testGenericTrayInfoIdxMapping);
+  RUN_TEST(testResolveBambuMaterialPla);
+  RUN_TEST(testResolveBambuMaterialPetg);
+  RUN_TEST(testResolveBambuMaterialPlaCfWinsOverPla);
+  RUN_TEST(testResolveBambuMaterialPetgCfWinsOverPetg);
+  RUN_TEST(testResolveBambuMaterialPaCf);
+  RUN_TEST(testResolveBambuMaterialPpsCf);
+  RUN_TEST(testResolveBambuMaterialSpellingVariants);
+  RUN_TEST(testResolveBambuMaterialViaExplicitAlias);
+  RUN_TEST(testResolveBambuMaterialSupportMaterials);
+  RUN_TEST(testResolveBambuMaterialBambuPvaSeparateFromGenericPva);
+  RUN_TEST(testResolveBambuMaterialRejectsUnknown);
+  RUN_TEST(testHandleAssignTrayRejectsWhenMaterialMappingUnavailable);
   RUN_TEST(testApplyReportRejectsPayloadWithoutPrintObject);
   RUN_TEST(testApplyReportParsesAmsTraysWithStringIds);
   RUN_TEST(testApplyReportParsesAmsWithNumericIds);
@@ -376,6 +659,9 @@ int main(int, char**) {
   RUN_TEST(testApplyReportClearsAmsRemovedFromFullReport);
   RUN_TEST(testApplyReportPartialUpdateKeepsAmsPresence);
   RUN_TEST(testApplyReportParsesExternalTray);
+  RUN_TEST(testApplyReportParsesNozzleTempAsNumber);
+  RUN_TEST(testApplyReportParsesNozzleTempAsString);
+  RUN_TEST(testApplyReportKeepsNozzleTempWhenAbsentFromLaterReport);
   RUN_TEST(testApplyReportParsesNozzleDiameter);
   RUN_TEST(testApplyReportParsesTrayNow);
   return UNITY_END();

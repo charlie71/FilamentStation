@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "config/TaskConfig.h"
+#include "models/BambuMaterialMapping.h"
 
 namespace filament_station::rtos {
 
@@ -52,6 +53,32 @@ struct RtosContext {
   TaskHandle_t bambuTask = nullptr;     ///< Handle for tasks::bambuTask.
   TaskHandle_t powerTask = nullptr;     ///< Handle for tasks::powerTask.
   TaskHandle_t updateTask = nullptr;    ///< Handle for tasks::updateTask.
+
+  // Bambu material-mapping RAM cache (TASKS.md Nachtrag 2026-08-28):
+  // published exclusively by tasks::storageTask() via a single atomic
+  // pointer store after a newly loaded/validated table is fully written
+  // into one of its two PSRAM-backed double-buffer instances -- readers
+  // (tasks::bambuTask()) load() it directly, never a torn/partial table.
+  // Deliberately NOT carried through rtos::AppEvent: AppEvent is copied by
+  // value into a 16-deep FreeRTOS queue backed by internal RAM (see
+  // services/PsramAlloc.h), so every extra field costs 16x its size
+  // regardless of AppEventType -- unaffordable for a ~18 KiB table. nullptr
+  // means "no valid table currently loaded" (see docs/bambu-protocol.md).
+  std::atomic<const models::BambuMaterialMappingTable*> bambuMaterialMappings{
+      nullptr};  ///< Currently active Bambu material-mapping table, or nullptr if none has loaded successfully yet.
+
+  // Signals that tasks::storageTask() has fully finished processing a
+  // StorageCommandType::CommitBambuMaterialDownload (success or failure) --
+  // given exactly once per real commit by StorageTask, taken by UpdateTask
+  // right after sending Commit (TASKS.md Nachtrag 2026-08-28). Needed
+  // because tasks::downloadUpdate() otherwise proceeds straight to the
+  // firmware download's own TLS handshake immediately after firing off the
+  // material-mapping StorageCommands -- on real hardware that overlapped
+  // with StorageTask still writing the SD card and reliably stalled one of
+  // its writes (ESP32-S3 shares GDMA hardware between TLS/crypto
+  // acceleration and SD/SPI DMA). Binary semaphore, not a queue: exactly
+  // one "done" signal per download, no payload.
+  SemaphoreHandle_t bambuMaterialDownloadDone = nullptr;  ///< Given by StorageTask after Commit finishes; taken by UpdateTask before proceeding to the firmware download.
 
   /// @brief Creates every queue, the queue set, and the event group.
   /// @return true if all objects were created successfully.

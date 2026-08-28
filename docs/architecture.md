@@ -61,12 +61,12 @@ Konstanten in `src/config/TaskConfig.h`.
 | `UiTask` | Alleiniger LVGL-/LovyanGFX-Eigentuemer, Display-Flush, Touch-Callback | 2 | 16384 |
 | `ScaleTask` | HX711-Rohwerte, Filterung, Tara/Kalibrierung | 2 | 8192 |
 | `NfcTask` | PN532-Polling, Tag-Lesen/-Schreiben, Bambu-/OpenTag-Erkennung | 2 | 16384 |
-| `StorageTask` | SD-Karte: JSON laden/speichern/loeschen, Erreichbarkeitspruefung | 2 | 8192 |
+| `StorageTask` | SD-Karte: JSON laden/speichern/loeschen, Erreichbarkeitspruefung, Bambu-Material-Mapping laden/aktivieren (siehe unten) | 2 | 8192 |
 | `NetworkTask` | WiFiManager, Captive Portal, Verbindungsstatus | 1 | 8192 |
 | `SpoolmanTask` | Spoolman-REST-API (HTTPS/JSON) | 1 | 10240 |
 | `BambuTask` | Bambu-MQTT (bis zu vier TLS-Verbindungen gleichzeitig) | 1 | 8192 |
 | `PowerTask` | Energiesparen-Statemachine (Aktiv/Gedimmt/Sleep) | 1 | 4096 |
-| `UpdateTask` | Firmware-Update: GitHub-Releases-Abfrage, Download, Flash | 1 | 8192 |
+| `UpdateTask` | Firmware-Update: GitHub-Releases-Abfrage, Download, Flash; Bambu-Material-Mapping-Download (streamt an `StorageTask`, siehe unten) | 1 | 16384 |
 | `LoggingTask` | Einziger Zugriff auf USB-CDC `Serial`, serialisiert alle Logzeilen | 1 | 2048 |
 
 ### Prioritäten
@@ -114,6 +114,17 @@ TaskConfig.h`). Antworten laufen fuer alle Service-Tasks einheitlich als
 dieselbe `requestId` wie der ausloesende Befehl, sodass der `AppTask`
 Anfrage und Antwort zuordnen kann, ohne selbst blockieren zu muessen.
 
+**Ausnahme (2026-08-28):** die Bambu-Material-Mapping-Tabelle
+(`models::BambuMaterialMappingTable`, bis zu ~18 KiB) wird bewusst
+**nicht** durch eine Queue transportiert -- ein zusaetzliches Feld dieser
+Groesse in `AppEvent` waere wegen der festen Queue-Tiefe (16) 16-fach so
+teuer im knappen internen RAM. Stattdessen haelt `RtosContext` ein
+`std::atomic<const models::BambuMaterialMappingTable*>
+bambuMaterialMappings` -- `StorageTask` ist der einzige Schreiber
+(PSRAM-Doppelpufferung + ein atomarer `store()` nach vollstaendiger
+Validierung), jeder Leser (`BambuTask`) liest per `load()` direkt, ohne
+Queue-Umweg. Siehe `docs/bambu-protocol.md`.
+
 ## Events
 
 `rtos::AppEventType` (`rtos/Events.h`) ist der einzige Nachrichtentyp auf der
@@ -134,6 +145,7 @@ Gruppen:
 | Spoolman | `SpoolmanConnected`, `SpoolmanTagFieldReady`, `SpoolmanTagLookup`, `SpoolmanTagDuplicate`, `SpoolmanTagUpdated`, `SpoolmanResponse`, `SpoolmanVendorResult`, `SpoolmanFilamentResult`, `SpoolmanCatalogCreated`, `SpoolmanCatalogDuplicate`, `SpoolmanImportCompleted`, `SpoolmanWeightUpdated`, `SpoolmanError` |
 | Bambu | `BambuConnected`, `BambuDisconnected`, `BambuUpdate`, `BambuTestResult`, `BambuError`, `BambuAssignProgress` |
 | Firmware-Update | `UpdateCheckResult`, `UpdateDownloadProgress`, `UpdateDownloadResult` |
+| Bambu-Material-Mapping-Update | `BambuMaterialUpdateProgress` (von `UpdateTask`), `BambuMaterialUpdateResult` (von `UpdateTask` bei fruehem Netzwerkfehler, sonst von `StorageTask` nach SHA-256-/JSON-Validierung/Aktivierung -- siehe `docs/bambu-protocol.md`) |
 
 Getrennt davon signalisiert das globale `systemEventGroup` (FreeRTOS Event
 Group) reine Bereitschafts-/Fehlerzustaende als Bits, die mehrere Tasks ohne

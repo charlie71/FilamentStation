@@ -153,12 +153,169 @@ Zuordnung als unbekannt (`spoolId` 0, UI zeigt "?") statt einer
 womoeglich falschen Nummer. Ueberlebt Neuverbindung/Neustart, da rein
 lokal auf der SD-Karte, unabhaengig vom Drucker.
 
-`nozzle_temp_min`/`nozzle_temp_max` stammen aus den projektspezifischen
-Spoolman-Filament-Extra-Feldern `bambu_temp_min`/`bambu_temp_max` (vom
-Nutzer selbst in Spoolman angelegt, kein Standardfeld). Fehlen diese Felder
-oder sind sie nicht als gueltige, positive Zahl mit `min <= max` dekodierbar,
-bleiben beide Werte `0` und die App zeigt einen Hinweis im
-Ergebnisdialog -- es wird keine Temperatur erfunden.
+**Nachtrag (2026-08-28, Nutzerwunsch -- Temperaturhandling vereinfacht,
+Material-Mapping erweitert):** `nozzle_temp_min`/`nozzle_temp_max` stammen
+seitdem **nicht mehr** aus Spoolman-Filament-Extra-Feldern, sondern aus der
+statischen, im Quellcode hinterlegten Tabelle
+`BambuProtocol::kBambuMaterialMappings[]` (`resolveBambuMaterial()`) --
+indiziert ueber den freien Spoolman-Materialtext (z. B. `PLA`, `PETG`,
+`PLA-CF`), exaktes Matching nach Normalisierung (Gross-/Kleinschreibung und
+Trennzeichen `-`/` `/keins werden ignoriert), **kein** Praefix-Matching mehr
+(damit z. B. `PLA-CF` nie faelschlich als `PLA` erkannt wird). Jeder
+Tabelleneintrag liefert `tray_info_idx`, `tray_type` und die zugehoerige
+AMS-Duesentemperaturspanne in einem Schritt. Ist das Material nicht in der
+Tabelle enthalten, wird die gesamte `AssignTray`-Anfrage abgelehnt
+(`AppEventType::BambuError`, Log `reason=no_material_mapping`) statt mit
+einer erfundenen oder unvollstaendigen Temperatur fortzufahren. Grund fuer
+die Umstellung: die zuvor genutzten Spoolman-Felder
+`bambu_temp_min`/`bambu_temp_max` sind Inventar-/Hersteller-Metadaten des
+Filaments, nicht zwingend die vom Drucker fuer dieses Material erwarteten
+Werte; die statische Tabelle liefert stattdessen konsistent dieselben
+Werte, die auch Bambu Studio fuer sein generisches Profil verwendet. Die
+Spoolman-Felder `bambu_temp_min`/`bambu_temp_max` selbst wurden **nicht**
+entfernt und bleiben fuer andere Zwecke (z. B. Anzeige) nutzbar -- sie
+fliessen nur nicht mehr in den `ams_filament_setting`-Payload ein. Ebenso
+bewusst **nicht** angefasst: `tray_info_idx` wird weiterhin ausschliesslich
+ueber diese Tabelle aufgeloest, es wird an keiner Stelle dieses Ablaufs ein
+Bambu-`setting_id`-Feld resolved oder gesendet.
+
+Damit entfaellt auch der bisherige Zwischenschritt, extra fuer
+`AssignTray` ein `GET /filament/{filamentId}` abzufragen
+(`SlotAssignmentStage::LoadingFilament`, siehe Nachtrag unten) -- die
+Materialzuordnung braucht nur noch den bereits aus `LoadSpool` bekannten
+Materialtext, `SlotAssignmentStage` kennt seitdem nur noch `None ->
+SelectingSpool -> LoadingSpool -> WritingSlot`. Die Home-Tray-Karten-Anzeige
+(`AppTask::resolveTraySpoolDetails()`, K-Faktor/Restgewicht) ist von dieser
+Aenderung nicht betroffen und fragt `GET /filament/{filamentId}` weiterhin
+wie zuvor ab.
+
+**Nachtrag (2026-08-28, Fortsetzung, Nutzerwunsch -- Material-Mapping von
+der SD-Karte laden, aus dem Repository herunterladen, SHA-256-validiert):**
+Die oben beschriebene `kBambuMaterialMappings[]`-Tabelle war zu diesem
+Zeitpunkt noch fest im Quellcode kompiliert. Direkt im Anschluss wurde sie
+durch eine **zur Laufzeit von der SD-Karte geladene JSON-Datei**
+(`/config/bambu_materials.json`) ersetzt, damit neue Materialien ohne
+Firmware-Neukompilierung ergaenzt werden koennen -- Architektur (Resolver,
+Exact-Match nach Normalisierung, kein `setting_id`, kein Fallback auf
+Spoolman-Temperaturen) bleibt dabei unveraendert, nur die Datenquelle
+aendert sich.
+
+* **Schema** (`services::BambuMaterialCatalog`,
+  `services/BambuMaterialCatalog.h/.cpp`, reine Parser-/Validierungslogik
+  ohne Datei-/Netzwerkzugriff): oberste Ebene `{"schema_version": 1,
+  "materials": [...]}`, je Eintrag `material`/`tray_info_idx`/`tray_type`
+  (Pflicht, nicht-leer) und `nozzle_temp_min`/`nozzle_temp_max` (Pflicht,
+  `0 < min <= 400`, `min <= max`), optional `aliases` (Array
+  nicht-leerer Strings, alternative Schreibweisen). Nach Normalisierung
+  (identische Regeln wie `services::sameMaterialKey()`) muessen `material`
+  und alle `aliases` projektweit eindeutig sein -- eine Kollision verwirft
+  die **komplette** Datei beim Laden (kein Teilerfolg), ebenso jeder
+  sonstige Parse-/Validierungsfehler. Quelle im Repository:
+  `data/bambu-materials/bambu_materials.json` (1:1-Migration der
+  vorherigen 36 Tabelleneintraege, ergaenzt um 14 `Support For ...`-
+  Supportmaterialien sowie `PAHT-CF`/`PC-CF`/`BAMBU-PVA`/`TPU 95A`, siehe
+  `data/bambu-materials/README.md`) + `.sha256`-Pruefsummendatei, beide
+  bei jedem `scripts/release.ps1`-Release automatisch mit neu erzeugt und
+  als GitHub-Release-Assets veroeffentlicht (wie `firmware.bin`).
+* **RAM-Cache statt Queue-Transport:** Die geladene Tabelle
+  (`models::BambuMaterialMappingTable`, bis zu 96 Eintraege, ca. 18 KiB)
+  wird **nicht** durch `rtos::AppEvent` geschickt -- `AppEvent` wird als
+  Wert in eine 16 Elemente tiefe FreeRTOS-Queue in knappem internem RAM
+  kopiert (unabhaengig vom tatsaechlichen `AppEventType`, da kein
+  `union`), ein zusaetzliches Feld dieser Groesse waere dort 16-fach so
+  teuer. Stattdessen haelt `rtos::RtosContext` ein neues Feld
+  `std::atomic<const models::BambuMaterialMappingTable*>
+  bambuMaterialMappings` (`nullptr` = "keine gueltige Tabelle geladen").
+  `StorageTask` ist der einzige Schreiber: es haelt zwei
+  PSRAM-allokierte Pufferinstanzen (`services::allocatePsramInstance()`,
+  Doppelpufferung), schreibt eine frisch geparste Tabelle in die gerade
+  inaktive Instanz und veroeffentlicht sie danach mit genau einem
+  atomaren `store(..., std::memory_order_release)` -- kein Mutex noetig,
+  jeder Leser bekommt entweder die alte oder die neue, nie eine halb
+  geschriebene Tabelle. `BambuTask::handleAssignTray()` liest den Zeiger
+  direkt (`load(std::memory_order_acquire)`) -- das ist kein SD-Zugriff
+  (reines Lesen eines bereits validierten, unveraenderlichen Snapshots im
+  RAM) und verletzt damit nicht die Regel "keine SD-Zugriffe ausserhalb
+  StorageTask" (`AGENTS.md`); die im vorigen Nachtrag getroffene
+  Entscheidung, dass `BambuTask` selbst aufloest, bleibt dadurch
+  bestehen, `rtos::BambuCommand` aendert sich nicht.
+* **Laden beim Boot** (`StorageTask.cpp::loadBambuMaterialCatalog()`):
+  direkt nach `ensureInitialDocuments()`, aber **kein**
+  `InitialDocument` -- es gibt bewusst **keine** automatisch erzeugte
+  Default-Datei (dieses Projekt hat keinen bestehenden
+  Bundled-Asset-Copy-Mechanismus, der dafuer wiederverwendet werden
+  koennte). Fehlt `/config/bambu_materials.json` oder ist sie ungueltig,
+  wird ein **gueltiges** `.bak.json` als Fallback probiert (3-Wege-
+  Wiederherstellung wie `services::JsonStorage::recoverAtomicSave()`,
+  aber mit `parseBambuMaterialCatalog()` statt `JsonStorage::load()` als
+  Gueltigkeitspruefung); eine unvollstaendige `.tmp.json` (Rest eines
+  unterbrochenen Downloads) wird nie als aktiv betrachtet. Schlaegt auch
+  das fehl, bleibt `bambuMaterialMappings` auf `nullptr` -- es gibt
+  bewusst **keinen** Fallback auf eine fest kompilierte Tabelle (das
+  wuerde den Zweck der Auslagerung unterlaufen). `BambuTask::
+  handleAssignTray()` lehnt `AssignTray` in diesem Fall mit
+  `reason=material_mapping_unavailable` ab, ohne abzustuerzen.
+* **Download ueber denselben GitHub-Release-Mechanismus wie die
+  Firmware** (`UpdateCommandType::DownloadBambuMaterials`,
+  `UiActionType::UpdateBambuMaterials` -- aktuell nur als interne
+  API/Command angebunden, noch kein eigener GUI-Button): `UpdateTask`
+  fragt dieselbe `releases/latest`-Antwort ab wie `downloadUpdate()`,
+  sucht darin nach den exakten Asset-Namen `bambu_materials.json` und
+  `bambu_materials.json.sha256` (beide muessen vorhanden sein, sonst
+  Ablehnung, `reason=missing_sha256`) und streamt die Bytes in
+  `kStorageJsonPayloadCapacity`-grossen Haeppchen (768 Byte je Nachricht,
+  keine Vergroesserung der bestehenden `StorageCommand`-Queue) an
+  `StorageTask` (`StorageCommandType::BeginBambuMaterialDownload` /
+  `WriteBambuMaterialChunk` / `CommitBambuMaterialDownload` /
+  `AbortBambuMaterialDownload`) -- `UpdateTask` schreibt selbst **nie**
+  auf die SD-Karte, das darf ausschliesslich `StorageTask`. `StorageTask`
+  ist die alleinige Autoritaet ueber Aktivierung: nach vollstaendigem
+  Empfang wird die geschriebene `/config/bambu_materials.tmp.json`
+  **selbst neu geoeffnet und gehasht** (`mbedtls_sha256_*`, identisches
+  Muster wie beim Firmware-Download) und mit dem von `UpdateTask`
+  mitgelieferten erwarteten Hash verglichen -- unabhaengig davon, was
+  `UpdateTask` waehrend des Streamens schon gesehen hat. Nur bei
+  Uebereinstimmung **und** erfolgreicher JSON-Validierung wird die Datei
+  atomar aktiviert (Backup-/Umbenennungs-Sequenz analog zu
+  `JsonStorage::atomicSave()`, aber eigenstaendig implementiert -- dieses
+  Dokument nutzt ein anderes Schema/Envelope als `JsonStorage` versteht)
+  und der RAM-Cache atomar getauscht. Bei jedem Fehler (Netzwerk, SHA-256-
+  Mismatch, ungueltiges JSON, zu grosse Datei) bleiben aktive Datei und
+  RAM-Cache unveraendert; die temporaere Datei wird verworfen. Vertrauens-
+  basis fuer den erwarteten Hash: derselbe `.sha256`-Sidecar-Mechanismus
+  wie beim Firmware-Update -- **HTTPS-Transport plus Integritaetspruefung,
+  keine Signatur-/Authentizitaetspruefung**, identische, bereits
+  dokumentierte Einschraenkung wie in `docs/release.md` ("Kein
+  Security-Key"), keine neue Schwaeche.
+* **Nachtrag (2026-08-28, Fortsetzung, Nutzerwunsch: mit der Firmware
+  zusammen aktualisieren):** `UpdateTask::downloadUpdate()` (Firmware-
+  Installation) sucht in derselben bereits abgerufenen `releases/latest`-
+  Asset-Liste zusaetzlich nach `bambu_materials.json`/`.sha256` (kein
+  zweiter API-Aufruf noetig). Sind beide vorhanden, wird die
+  Material-Zuordnung **automatisch direkt im Anschluss** an eine
+  erfolgreiche Firmware-Installation heruntergeladen und aktiviert --
+  ueber denselben `streamBambuMaterialsFromUrls()`-Kern wie der
+  eigenstaendige Weg (`UpdateCommandType::DownloadBambuMaterials`), nur
+  mit `reportEvents=false`: kein eigenes Fortschritts-Overlay/Ergebnis-
+  Dialog, der mit dem bereits gezeigten "Update installiert, jetzt neu
+  starten?"-Dialog der Firmware kollidieren wuerde -- der Ausgang wird
+  stattdessen nur geloggt (`[BAMBU] Material mapping ...`-Zeilen, siehe
+  oben). Ein Fehlschlag hier aendert **nie** das bereits gemeldete
+  Firmware-Ergebnis (das wird zuerst, unabhaengig davon gemeldet).
+  Veroeffentlicht ein Release die Material-Mapping-Assets nicht (z. B.
+  aeltere Releases vor dieser Funktion), wird dieser Teil stillschweigend
+  uebersprungen -- kein Fehler. Der eigenstaendige Weg
+  (`UiActionType::UpdateBambuMaterials`) bleibt zusaetzlich bestehen, fuer
+  ein Nachziehen der Material-Zuordnung unabhaengig von einem
+  Firmware-Release.
+* **Offener Verifikationspunkt:** `PAHT-CF` (`GFN96`, aus der
+  Aufgabenbeschreibung uebernommen) teilt sich seinen `tray_info_idx` mit
+  dem bereits vorhandenen, verifizierten Eintrag `PPA-GF` (ebenfalls
+  `GFN96`) -- `services::BambuMaterialCatalog` erzwingt keine
+  `tray_info_idx`-Eindeutigkeit (mehrere Spoolman-Materialnamen koennen
+  legitim auf dasselbe Bambu-Profil zeigen), trotzdem noch nicht gegen
+  echte Bambu-Studio-Profile verifiziert, siehe
+  `data/bambu-materials/README.md`.
 
 **Nutzerhinweis (2026-08-24):** `bambu_temp_min`/`bambu_temp_max` (und das
 neue, Anzeige-only `flow_dynamics_k_factor`, siehe unten) sind
@@ -242,16 +399,26 @@ Tests gruen, geflasht -- Hardware-Test steht noch aus.
 tray_color/nozzle_temp_*) hat den physischen Slot-Inhalt eines bereits
 belegten Slots **nicht** geaendert, obwohl der Befehl mit korrekter
 Adressierung ankam -- ein starkes Indiz, dass echte Firmware das Feld fuer
-diesen Vorgang braucht. `BambuProtocol::bambuGenericTrayInfoIdx()` bildet
-den freien Spoolman-Materialtext (z. B. `PLA`, `PETG`, `PLA-CF`) auf Bambu
-Studios eingebaute *generische* (nicht markenspezifische) Profil-IDs ab --
-community-dokumentiert ueber `Bambu-Research-Group/RFID-Tag-Guide` und die
-WolfWithSword Home-Assistant-Bambu-Lab-Integration, nicht von Bambu Lab
-selbst. Bekannte Zuordnungen: PLA→GFL99, PLA-CF→GFL98, PETG→GFG99,
-ASA→GFB98, ABS→GFB99, TPU→GFU99, PVA→GFS99, PC→GFC99, PA→GFN99,
-PA-CF→GFN98. Ein nicht zuordenbares Material liefert einen leeren String
-(kein erfundener Wert) -- ob der Drucker `tray_info_idx: ""` akzeptiert
-oder ebenfalls verwirft, ist noch unverifiziert.
+diesen Vorgang braucht. `BambuProtocol::resolveBambuMaterial()` bildet den
+freien Spoolman-Materialtext (z. B. `PLA`, `PETG`, `PLA-CF`) ueber die zur
+Laufzeit von der SD-Karte geladene Tabelle
+(`models::BambuMaterialMappingTable`, siehe Nachtrag 2026-08-28 oben) auf
+Bambu Studios eingebaute *generische* (nicht markenspezifische) Profil-IDs
+ab -- community-dokumentiert ueber `Bambu-Research-Group/RFID-Tag-Guide`
+und die WolfWithSword Home-Assistant-Bambu-Lab-Integration, nicht von
+Bambu Lab selbst. Bekannte Zuordnungen (Auszug): PLA→GFL99, PLA-CF→GFL98,
+PETG→GFG99, ASA→GFB98, ABS→GFB99, TPU→GFU99, PVA→GFS99, PC→GFC99,
+PA→GFN99, PA-CF→GFN98 (vollstaendige, 54 Eintraege umfassende Tabelle
+inkl. PETG-CF/PA-GF/PP-CF/PP-GF/PPA-CF/PPA-GF/PLA-AERO/ASA-CF sowie 14
+`Support For ...`-Supportmaterialien, siehe
+`data/bambu-materials/bambu_materials.json`). Das Matching ist
+**exakt** (nach Normalisierung von Gross-/Kleinschreibung und Trennzeichen),
+nicht praefixbasiert -- ein reines Praefix-Matching haette z. B. `PLA-CF`
+faelschlich schon bei `PLA` treffen lassen. Ein nicht in der Tabelle
+enthaltenes Material liefert `nullptr` statt eines erfundenen oder leeren
+Werts; `BambuTask::handleAssignTray()` lehnt die gesamte Zuordnung in
+diesem Fall ab, statt mit einem unvollstaendigen `tray_info_idx: ""` zu
+senden (siehe Nachtrag 2026-08-28 oben).
 
 ### Unter Untersuchung: Ueberschreiben eines bereits belegten Slots wird zurueckgesetzt
 
@@ -311,7 +478,7 @@ nachweislich funktioniert. Feld-fuer-Feld-Vergleich mit
   8-stelligen Wert erwartet.
 * **`tray_info_idx`**: identisch enthalten, kommt aus einer eigenen
   Materialtabelle (`AMSFilamentSettings`/`Filament`-Enum), analog zu
-  unserem `bambuGenericTrayInfoIdx()`.
+  unserer von der SD-Karte geladenen Tabelle/`resolveBambuMaterial()`.
 * **`ams_id`/`tray_id`**: als einfache Ganzzahlen 0-basiert (Default fuer
   den externen Slot: `ams_id=255`, `tray_id=254`) -- keine zusaetzliche
   Adress-Transformation, deckt sich mit unserer 0-basierten Zaehlung.

@@ -72,9 +72,17 @@ constexpr TaskSettings kBambuTask{"BambuTask", 8192, 1, kNoCoreAffinity};  ///< 
 // AppEvent-grosser Stack-Local wie bei den anderen Tasks noetig.
 constexpr TaskSettings kPowerTask{"PowerTask", 4096, 1, kNoCoreAffinity};  ///< tasks::powerTask() settings.
 // HTTPS (WiFiClientSecure, wie BambuTask) plus ArduinoJson-Parsing der
-// GitHub-Releases-Antwort; Groessenordnung analog zu kBambuTask/
-// kSpoolmanTask.
-constexpr TaskSettings kUpdateTask{"UpdateTask", 8192, 1, kNoCoreAffinity};  ///< tasks::updateTask() settings.
+// GitHub-Releases-Antwort. Bumped from 8192 nach einem echten
+// Stack-Overflow-Absturz (TASKS.md Nachtrag 2026-08-28, Nutzerbericht,
+// "Stack canary watchpoint triggered (UpdateTask)"): der TLS-Handshake
+// selbst (mbedTLS ECDSA-Signaturpruefung ueber eine tiefe
+// bignum/ECC/SHA-512-HMAC-DRBG-Aufrufkette, siehe Backtrace) braucht
+// bereits mehrere KiB Stack; ein zusaetzlicher, nur zwei Ebenen tieferer
+// Aufruf (downloadUpdate() -> streamBambuMaterialsFromUrls() ->
+// fetchChecksum() statt direkt von updateTask() aus) reichte, um die
+// vorher knapp passenden 8192 Byte zu ueberschreiten. Deutliche Reserve
+// statt einer erneuten knappen Anpassung, analog zu kNfcTask/kUiTask.
+constexpr TaskSettings kUpdateTask{"UpdateTask", 16384, 1, kNoCoreAffinity};  ///< tasks::updateTask() settings.
 
 // Queue-Laengen basieren auf geringer Last der Task-Gerueste und werden nach
 // Messung der maximalen Auslastung in spaeteren Phasen angepasst.

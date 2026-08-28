@@ -19,6 +19,7 @@
 #include <cstring>
 
 #include "config/BambuConfig.h"
+#include "models/BambuMaterialMapping.h"
 #include "models/BambuPrinterConfig.h"
 #include "models/PrinterState.h"
 #include "rtos/Messages.h"
@@ -509,12 +510,16 @@ void handleRequestStatus(rtos::RtosContext& ctx,
   }
 }
 
-/// @brief Handles BambuCommandType::AssignTray: sends
-///        ams_filament_setting+extrusion_cali_sel and starts tracking a
+/// @brief Handles BambuCommandType::AssignTray: resolves the material to a
+///        services::BambuMaterialMapping, sends
+///        ams_filament_setting+extrusion_cali_sel, and starts tracking a
 ///        PendingTrayAssignment for confirmation.
 /// @param ctx Owning RTOS context.
 /// @param connections Connection pool.
 /// @param command Command to process.
+/// @note Rejects (BambuError, no MQTT traffic sent) if `command.trayType`
+///       is non-empty but has no known services::BambuMaterialMapping
+///       entry -- never guesses a profile for an unrecognized material.
 void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
                       const rtos::BambuCommand& command) {
   PrinterConnection* conn =
@@ -541,13 +546,80 @@ void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
     return;
   }
 
+  // command.trayType is the raw Spoolman material name (empty clears the
+  // slot, see rtos::BambuCommand::trayType) -- resolved here to Bambu's own
+  // AMS profile (tray_info_idx/canonical tray_type/nozzle_temp_min/max).
+  // Deliberately NOT the individual Spoolman filament's bambu_temp_min/
+  // bambu_temp_max: those only ever affect the load/unload temperature
+  // range shown on the AMS slot, not the actual print temperature (that
+  // comes from the slicer/filament profile used for a print job), so
+  // Bambu's own generic-material defaults are used instead -- see
+  // services::resolveBambuMaterial() and docs/bambu-protocol.md.
   services::BambuTrayFilament filament{};
-  std::snprintf(filament.trayType, sizeof(filament.trayType), "%s",
-               command.trayType);
+  if (command.trayType[0] != '\0') {
+    // Material-mapping table is loaded at boot (and refreshed on a
+    // successful download) by tasks::storageTask() -- BambuTask has no SD
+    // access of its own, so it reads the already-validated, published
+    // snapshot via this atomic pointer rather than the SD card directly
+    // (see rtos/RtosContext.h, docs/bambu-protocol.md).
+    const auto* table = ctx.bambuMaterialMappings.load(std::memory_order_acquire);
+    if (table == nullptr) {
+      FS_LOGW(services::LogComponent::Bambu,
+              "AssignTray rejected printer_id=%u ams_id=%u tray_id=%u "
+              "reason=material_mapping_unavailable",
+              static_cast<unsigned>(command.printerId),
+              static_cast<unsigned>(command.amsId),
+              static_cast<unsigned>(command.trayId));
+      publishBambuError(
+          ctx, command.requestId, command.printerId,
+          "Material-Zuordnung nicht verf\xC3\xBCgbar (bambu_materials.json fehlt oder ist ung\xC3\xBCltig)");
+      return;
+    }
+    const models::BambuMaterialMappingEntry* mapping =
+        services::resolveBambuMaterial(*table, command.trayType);
+    if (mapping == nullptr) {
+      // No invented/guessed profile for an unrecognized material -- reject
+      // outright rather than silently sending a wrong or empty
+      // tray_info_idx/temperature range.
+      FS_LOGW(services::LogComponent::Bambu,
+              "[BAMBU] Material resolve failed input=\"%s\" reason=no_mapping",
+              command.trayType);
+      FS_LOGW(services::LogComponent::Bambu,
+              "AssignTray rejected printer_id=%u ams_id=%u tray_id=%u "
+              "material=\"%s\" reason=no_material_mapping",
+              static_cast<unsigned>(command.printerId),
+              static_cast<unsigned>(command.amsId),
+              static_cast<unsigned>(command.trayId), command.trayType);
+      publishBambuError(ctx, command.requestId, command.printerId,
+                        "Unbekanntes Material, keine Bambu-Zuordnung hinterlegt");
+      return;
+    }
+    std::snprintf(filament.trayInfoIdx, sizeof(filament.trayInfoIdx), "%s",
+                 mapping->trayInfoIdx);
+    std::snprintf(filament.trayType, sizeof(filament.trayType), "%s",
+                 mapping->trayType);
+    filament.nozzleTempMinC = mapping->nozzleTempMinC;
+    filament.nozzleTempMaxC = mapping->nozzleTempMaxC;
+    FS_LOGD(services::LogComponent::Bambu,
+            "[BAMBU] Material resolved input=\"%s\" canonical=\"%s\" "
+            "tray_info_idx=\"%s\" tray_type=\"%s\" temp_min=%u temp_max=%u",
+            command.trayType, mapping->material, mapping->trayInfoIdx,
+            mapping->trayType, static_cast<unsigned>(mapping->nozzleTempMinC),
+            static_cast<unsigned>(mapping->nozzleTempMaxC));
+  }
   std::snprintf(filament.trayColorHex, sizeof(filament.trayColorHex), "%s",
                command.trayColorHex);
-  filament.nozzleTempMinC = command.nozzleTempMinC;
-  filament.nozzleTempMaxC = command.nozzleTempMaxC;
+  FS_LOGD(services::LogComponent::Bambu,
+          "AssignTray resolve printer_id=%u ams_id=%u tray_id=%u "
+          "spool_id=%lu material=\"%s\" tray_info_idx=\"%s\" tray_type=\"%s\" "
+          "color=\"%s\" temp_min=%u temp_max=%u temp_source=bambu_material_mapping",
+          static_cast<unsigned>(command.printerId),
+          static_cast<unsigned>(command.amsId),
+          static_cast<unsigned>(command.trayId),
+          static_cast<unsigned long>(command.spoolId), command.trayType,
+          filament.trayInfoIdx, filament.trayType, filament.trayColorHex,
+          static_cast<unsigned>(filament.nozzleTempMinC),
+          static_cast<unsigned>(filament.nozzleTempMaxC));
 
   char payload[config::kBambuRequestPayloadCapacity]{};
   const std::size_t length = services::bambuBuildAmsFilamentSetting(
@@ -564,13 +636,13 @@ void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
   // it (see the doc comment on bambuBuildExtrusionCaliSel() and
   // docs/bambu-protocol.md). caliIdx -1: no specific flow/pressure-advance
   // calibration is tracked per Spoolman spool yet.
-  const char* trayInfoIdx = services::bambuGenericTrayInfoIdx(filament.trayType);
   const char* nozzleDiameter =
       conn->state.nozzleDiameter[0] != '\0' ? conn->state.nozzleDiameter : "0.4";
   char caliSelPayload[config::kBambuRequestPayloadCapacity]{};
   const std::size_t caliSelLength = services::bambuBuildExtrusionCaliSel(
-      conn->nextSequenceId++, command.amsId, command.trayId, trayInfoIdx,
-      nozzleDiameter, -1, caliSelPayload, sizeof(caliSelPayload));
+      conn->nextSequenceId++, command.amsId, command.trayId,
+      filament.trayInfoIdx, nozzleDiameter, -1, caliSelPayload,
+      sizeof(caliSelPayload));
   if (caliSelLength == 0 ||
       !publishBambuRequest(*conn, command.printerId, caliSelPayload)) {
     FS_LOGW(services::LogComponent::Bambu,
@@ -610,8 +682,7 @@ void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
           "tray_color=\"%s\" nozzle_temp_min=%d nozzle_temp_max=%d",
           static_cast<unsigned>(command.printerId),
           static_cast<unsigned>(command.amsId),
-          static_cast<unsigned>(command.trayId),
-          services::bambuGenericTrayInfoIdx(filament.trayType),
+          static_cast<unsigned>(command.trayId), filament.trayInfoIdx,
           filament.trayType, filament.trayColorHex,
           static_cast<int>(filament.nozzleTempMinC),
           static_cast<int>(filament.nozzleTempMaxC));

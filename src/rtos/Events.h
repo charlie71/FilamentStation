@@ -82,7 +82,19 @@ enum class AppEventType : std::uint8_t {
   UpdateDownloadProgress,
   // "value" ist 1 (erfolgreich, Neustart folgt erst in Phase 13.5) oder 0
   // (Fehler, "text" traegt die Fehlermeldung).
-  UpdateDownloadResult
+  UpdateDownloadResult,
+  // Bambu-Material-Mapping-Download (TASKS.md Nachtrag 2026-08-28): "value"
+  // ist der Fortschritt in Prozent (0-100), gesendet von tasks::updateTask()
+  // waehrend des Streamens, gleiches Throttle-Intervall wie
+  // UpdateDownloadProgress.
+  BambuMaterialUpdateProgress,
+  // "value" ist 1 (erfolgreich aktiviert) oder 0 (Fehler, "text" traegt die
+  // Fehlermeldung) -- gesendet entweder von tasks::updateTask() (frueher
+  // Netzwerk-/TLS-Fehler waehrend des Streamens) oder von
+  // tasks::storageTask() (Ergebnis von CommitBambuMaterialDownload: SHA-256-
+  // Pruefung, JSON-Validierung, atomare Aktivierung). Nur eines der beiden
+  // sendet dieses Event pro requestId.
+  BambuMaterialUpdateResult,
 };
 
 constexpr EventBits_t EVENT_UI_READY = BIT0;                     ///< UiTask has completed LVGL/display initialization.

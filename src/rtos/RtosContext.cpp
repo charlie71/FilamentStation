@@ -78,12 +78,13 @@ bool RtosContext::createObjects() {
   updateCommandQueue = xQueueCreate(config::kServiceCommandQueueLength, sizeof(UpdateCommand));
   logQueue = xQueueCreate(config::kLogQueueLength, sizeof(LogMessage));
   systemEventGroup = xEventGroupCreate();
+  bambuMaterialDownloadDone = xSemaphoreCreateBinary();
 
   return appEventQueue && uiCommandQueue && scaleCommandQueue && nfcCommandQueue &&
          storageCommandQueue && networkCommandQueue && networkQueuesReady &&
          spoolmanCommandQueue &&
          bambuCommandQueue && powerCommandQueue && updateCommandQueue && logQueue &&
-         systemEventGroup;
+         systemEventGroup && bambuMaterialDownloadDone;
 }
 
 bool RtosContext::createUiTask() {

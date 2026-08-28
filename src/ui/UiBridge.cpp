@@ -132,13 +132,15 @@ std::array<AmsUiEntry, 4> amsEntries{};  ///< Display-list of AMS units for #cur
 /// @brief One tray's display state (material/color/spool/weight), local UI copy synced from AppTask.
 struct TrayUiEntry {
   bool occupied = false;   ///< Whether the tray currently holds filament.
-  // 16 bytes to match models::PrinterSlotStateData::material -- this is
-  // filled via snprintf from command.title (UpdateTrayDetails), which
-  // itself is the full, untruncated slot.material (AppTask::syncAmsToUi).
-  // A smaller buffer here truncated long tray_type values (e.g. "Support
-  // for PLA" -> "Support for") on the tray-card display even after the
-  // backend confirmation-matching fix for the same class of bug.
-  char material[16]{};      ///< Material name reported by the printer.
+  // 24 bytes to match models::SpoolmanSpool::material -- this is filled via
+  // snprintf from command.title (UpdateTrayDetails), which is either the
+  // printer-reported Bambu tray_type (fallback, <=16 bytes, see
+  // models::PrinterSlotStateData::material) or, once resolved, the actually
+  // assigned Spoolman material (AppTask::syncAmsToUi(), Nutzerbericht
+  // 2026-08-28 -- e.g. "Support For PLA" vs. the printer's own "PLA-S").
+  // A smaller buffer here previously truncated long values (e.g. "Support
+  // for PLA" -> "Support for") on the tray-card display.
+  char material[24]{};      ///< Material name to display (Spoolman material once resolved, otherwise the printer-reported tray_type).
   char colorHex[9]{};       ///< Color reported by the printer.
   rtos::SpoolId spoolId = 0;  ///< Resolved Spoolman spool id, or 0 if unknown.
   // Restgewicht/K-Faktor aus Spoolman -- nur aussagekraeftig, wenn
