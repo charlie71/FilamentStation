@@ -32,5 +32,18 @@ constexpr std::size_t kBambuMaterialsMaxFileSize = 16U * 1024U;  ///< Maximum ac
 // second in practice), so this only ever matters if something is
 // genuinely stuck.
 constexpr std::uint32_t kBambuMaterialCommitWaitTimeoutMs = 5000U;  ///< Maximum time UpdateTask waits for StorageTask to finish CommitBambuMaterialDownload.
+// Safety net for tasks::storageTask() itself: how long an open download temp
+// file may sit idle (no WriteChunk/Commit/Abort received) before StorageTask
+// force-closes and discards it on its own -- covers any reason the normal
+// Begin->Write->Commit/Abort sequence never completes (e.g. UpdateTask
+// crashing/rebooting between Begin and Commit for an unrelated reason), not
+// just the specific dropped-Commit-enqueue case UpdateTask itself now guards
+// against. An open file handle surviving indefinitely (until the next
+// download attempt or a full reboot) is the mechanism a 2026-08-28
+// Nutzerbericht (device unbootable, SD card needed repair) traced this
+// safety net back to. Generous headroom over the whole download's realistic
+// duration (a few seconds even on a slow connection/card) so this only ever
+// fires when something is genuinely stuck.
+constexpr std::uint32_t kBambuMaterialDownloadStaleTimeoutMs = 30000U;  ///< Maximum time an open Bambu-material download temp file may sit idle before StorageTask force-closes it.
 
 }  // namespace filament_station::config

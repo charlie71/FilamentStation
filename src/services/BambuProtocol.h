@@ -143,6 +143,104 @@ std::size_t bambuBuildExtrusionCaliSel(std::uint32_t sequenceId,
                                        char* output,
                                        std::size_t outputCapacity);
 
+/// @brief Fields written when creating a new printer-side flow-dynamics
+///        calibration profile via bambuBuildExtrusionCaliSet() -- the
+///        precursor to a K-factor-carrying bambuBuildExtrusionCaliSel()
+///        (see docs/bambu-protocol.md; hardware-unverified, derived from
+///        yanshay/spoolease).
+struct BambuCalibrationRequest {
+  char filamentId[16]{};  ///< Generic filament profile id ("filament_id" on the wire), same value as BambuTrayFilament::trayInfoIdx.
+  // Self-assigned, not printer-generated (yanshay/spoolease's "extrusion_cali_set"
+  // example includes a caller-supplied "setting_id" on the create request
+  // itself) -- deterministic per spool so a later bambuFindCalibrationBySettingId()
+  // can match it back unambiguously. See BambuTask.cpp for how this is built.
+  char settingId[16]{};  ///< Self-assigned unique id for this calibration profile (e.g. "FS000004D2"). Same capacity as config::kBambuCalibrationSettingIdCapacity (not referenced directly -- this header stays free of config/*.h, see BambuTrayFilament above for the same convention).
+  char name[32]{};  ///< Cosmetic profile name, shown in Bambu Studio's calibration list. Same capacity as config::kBambuCalibrationNameCapacity.
+  // Best-effort, unverified -- built from the printer's own reported
+  // PrinterState::nozzleType + nozzleDiameter (e.g. "hardened_steel-0.4");
+  // no verified type-to-code mapping (e.g. "HS00") is known, see
+  // docs/bambu-protocol.md and PrinterState::nozzleType's doc comment.
+  char nozzleId[24]{};    ///< Best-effort "nozzle_id" wire value.
+  float kValue = 0.0F;    ///< Flow-dynamics K-factor to write ("k_value" on the wire, sent as a "%.6f" string).
+};
+
+/// @brief Builds an "extrusion_cali_set" command payload: creates a new
+///        printer-side flow-dynamics calibration profile carrying a custom
+///        K-factor. Does not assign it to any slot by itself -- the printer
+///        assigns it a numeric "cali_idx" that must be looked up afterwards
+///        (bambuBuildExtrusionCaliGet() + bambuFindCalibrationBySettingId())
+///        and then applied via bambuBuildExtrusionCaliSel().
+/// @param sequenceId Command sequence id, sent as "print.sequence_id".
+/// @param amsId Target AMS unit index (only used for the external-slot address special-case, see bambuBuildExtrusionCaliSel()'s doc comment).
+/// @param trayId Local slot index within `amsId`.
+/// @param nozzleDiameter Wire string (e.g. "0.4"), same source as bambuBuildExtrusionCaliSel().
+/// @param request Calibration fields to write.
+/// @param output Destination buffer receiving the JSON payload.
+/// @param outputCapacity Size of `output` in bytes (needs more room than
+///        kBambuRequestPayloadCapacity, see config::kBambuCalibrationRequestPayloadCapacity).
+/// @return Number of bytes written, or 0 on failure.
+// Payload shape (print.filaments[0].{ams_id,extruder_id,filament_id,k_value,
+// n_coef,name,nozzle_diameter,nozzle_id,setting_id,slot_id,tray_id},
+// print.nozzle_diameter, print.sequence_id) taken from yanshay/spoolease's
+// reverse-engineered "extrusion_cali_set" example -- hardware-unverified
+// against this project's own printer, see docs/bambu-protocol.md.
+// extruder_id is always 0 (single-extruder assumption, consistent with the
+// rest of this project); n_coef is always "0.000000" (no corresponding
+// Spoolman filament field exists); the inner filaments[0].tray_id is always
+// -1 (the profile is not assigned to a slot by this command).
+std::size_t bambuBuildExtrusionCaliSet(std::uint32_t sequenceId,
+                                       std::uint8_t amsId,
+                                       std::uint8_t trayId,
+                                       const char* nozzleDiameter,
+                                       const BambuCalibrationRequest& request,
+                                       char* output,
+                                       std::size_t outputCapacity);
+
+/// @brief Builds an "extrusion_cali_get" command payload requesting the full
+///        list of the printer's existing flow-dynamics calibration profiles
+///        for one nozzle diameter (needed to look up the "cali_idx" a
+///        preceding bambuBuildExtrusionCaliSet() was assigned, see
+///        bambuFindCalibrationBySettingId()).
+/// @param sequenceId Command sequence id, sent as "print.sequence_id".
+/// @param nozzleDiameter Wire string (e.g. "0.4").
+/// @param output Destination buffer receiving the JSON payload.
+/// @param outputCapacity Size of `output` in bytes.
+/// @return Number of bytes written, or 0 on failure.
+// "print.filament_id" is always sent empty (unfiltered, full-list request) --
+// matches yanshay/spoolease's own "extrusion_cali_get" request, which never
+// populates it either.
+std::size_t bambuBuildExtrusionCaliGet(std::uint32_t sequenceId,
+                                       const char* nozzleDiameter,
+                                       char* output,
+                                       std::size_t outputCapacity);
+
+/// @brief Result of bambuFindCalibrationBySettingId().
+struct BambuCalibrationLookupResult {
+  bool found = false;        ///< Whether a matching entry was found.
+  std::int32_t caliIdx = 0;  ///< The matching entry's "cali_idx", only valid if #found.
+};
+
+/// @brief Searches a parsed "extrusion_cali_get" response for the entry
+///        whose "setting_id" matches `settingId`, to learn the "cali_idx"
+///        the printer assigned a just-created calibration profile (see
+///        bambuBuildExtrusionCaliSet()).
+/// @param document Parsed MQTT message payload (a report-topic message with
+///        `print.command == "extrusion_cali_get"`).
+/// @param settingId Self-assigned setting id to match (see
+///        BambuCalibrationRequest::settingId) -- an exact string comparison,
+///        safe because this id is never reused/collides with printer- or
+///        Bambu-Studio-assigned ids (different, unrelated naming scheme).
+/// @return The match, or `found == false` if the list is absent/empty or
+///        contains no matching entry. Entries missing expected fields are
+///        skipped rather than treated as an error.
+// Iterates document["print"]["filaments"] -- the field name is carried over
+// from yanshay/spoolease's own response handling, NOT verified against a
+// real captured response from this project's printer (see
+// docs/bambu-protocol.md); the most likely single point needing correction
+// once this is tested against real hardware.
+BambuCalibrationLookupResult bambuFindCalibrationBySettingId(
+    const JsonDocument& document, const char* settingId);
+
 /// @brief Merges recognized fields from a "report" topic payload into `state`.
 /// @param document Parsed MQTT message payload.
 /// @param state Printer state to update in place.

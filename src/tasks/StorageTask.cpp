@@ -729,6 +729,12 @@ constexpr std::uint32_t kWriteStallRetryDelayMs = 20;
 File bambuMaterialDownloadFile;                              ///< Open handle to the in-progress download's temp file, or invalid if none is open.
 std::uint32_t bambuMaterialDownloadRequestId = kDownloadRequestIdNone;  ///< requestId of the in-progress download, or #kDownloadRequestIdNone.
 std::size_t bambuMaterialDownloadBytesWritten = 0;            ///< Bytes written to #bambuMaterialDownloadFile so far.
+// Staleness safety net (see storageTask()'s main loop and
+// config::kBambuMaterialDownloadStaleTimeoutMs's doc comment) -- set once in
+// processBeginBambuMaterialDownload(), not refreshed per chunk (the whole
+// file is at most kBambuMaterialsMaxFileSize, realistically a few seconds
+// end to end even on a slow card/connection).
+TickType_t bambuMaterialDownloadStartedAtTicks = 0;  ///< Tick count when the currently open download started, if any.
 
 /// @brief Closes and discards any in-progress Bambu material-mapping
 ///        download temp file, resetting the guard state.
@@ -771,6 +777,7 @@ void processBeginBambuMaterialDownload(rtos::RtosContext& ctx,
   }
   bambuMaterialDownloadRequestId = command.requestId;
   bambuMaterialDownloadBytesWritten = 0;
+  bambuMaterialDownloadStartedAtTicks = xTaskGetTickCount();
   FS_LOGI(services::LogComponent::Bambu,
           "[BAMBU] Material mapping download started target=\"%s\" "
           "temporary=\"%s\" free_heap=%u",
@@ -1283,6 +1290,24 @@ void storageTask(void* parameter) {
                   static_cast<unsigned long>(elapsedMs));
         }
       }
+    }
+
+    // Staleness safety net (Nutzerbericht 2026-08-28: unbootable device, SD
+    // card needed repair) -- an open download temp file that never receives
+    // its Commit/Abort (e.g. UpdateTask crashing/rebooting between Begin and
+    // Commit) would otherwise stay open for the rest of this boot session.
+    // Force-closed here instead of waiting indefinitely; see
+    // config::kBambuMaterialDownloadStaleTimeoutMs's doc comment.
+    if (bambuMaterialDownloadRequestId != kDownloadRequestIdNone &&
+        pdTICKS_TO_MS(static_cast<TickType_t>(
+            xTaskGetTickCount() - bambuMaterialDownloadStartedAtTicks)) >=
+            config::kBambuMaterialDownloadStaleTimeoutMs) {
+      FS_LOGE(services::LogComponent::Bambu,
+              "[BAMBU] Material mapping download stale, force-closing "
+              "request_id=%lu bytes_written=%u",
+              static_cast<unsigned long>(bambuMaterialDownloadRequestId),
+              static_cast<unsigned>(bambuMaterialDownloadBytesWritten));
+      abortBambuMaterialDownloadFile();
     }
 
     // Skipped while a Bambu material-mapping download is actively writing

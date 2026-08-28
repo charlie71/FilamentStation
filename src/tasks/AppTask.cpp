@@ -360,9 +360,12 @@ PendingTagResolution pendingTagResolution{};  ///< Active tag-resolution state.
 // (WritingSlot). Nozzle temperature is deliberately NOT fetched from
 // Spoolman here (Nutzerwunsch 2026-08-27) -- BambuTask resolves it from a
 // static Bambu-material-profile table (services::resolveBambuMaterial())
-// keyed by the material name alone, so no separate LoadFilament round trip
-// is needed for AssignTray (unlike staging/tray-card K-Faktor display,
-// which still fetch filament data for that unrelated purpose).
+// keyed by the material name alone. The K-factor (flow_dynamics_k_factor)
+// IS a spool-specific filament property, though, and BambuTask uploads it
+// to the printer if present (K-Faktor-Upload task) -- so a LoadFilament
+// round trip is still needed here after all, via the same
+// requestFilamentDetails()/event->filament.bambuKFactor* fields already
+// used for staging/tray-card K-Faktor display (LoadingFilament).
 /**
  * @brief State machine for assigning the staged Spoolman spool to a
  *        printer's AMS slot.
@@ -372,7 +375,8 @@ PendingTagResolution pendingTagResolution{};  ///< Active tag-resolution state.
  *   rankdir=LR;
  *   None -> SelectingSpool;
  *   SelectingSpool -> LoadingSpool;
- *   LoadingSpool -> WritingSlot [label="LoadSpool response"];
+ *   LoadingSpool -> LoadingFilament [label="LoadSpool response"];
+ *   LoadingFilament -> WritingSlot [label="LoadFilament response (or failure)"];
  *   WritingSlot -> None [label="printer confirms (BambuTask) or fails"];
  * }
  * @enddot
@@ -381,6 +385,7 @@ enum class SlotAssignmentStage : std::uint8_t {
   None,
   SelectingSpool,
   LoadingSpool,
+  LoadingFilament,
   WritingSlot,
 };
 /// @brief In-flight AMS slot assignment being tracked through SlotAssignmentStage.
@@ -395,6 +400,11 @@ struct PendingSlotAssignment {
   // sendPendingSlotAssignTray() builds the BambuCommand.
   char trayType[16]{};       ///< Material resolved from the spool, sent to the printer (BambuTask maps it to a Bambu AMS profile).
   char trayColorHex[9]{};    ///< Color resolved from the spool, sent to the printer.
+  // Captured from the LoadingFilament response (or left at defaults on a
+  // failed/skipped fetch -- graceful degradation, same pattern as
+  // sendStagingUpdate()/pendingStagingFilamentLoad).
+  bool kFactorValid = false;  ///< Whether #kFactor was successfully fetched.
+  float kFactor = 0.0F;       ///< Flow-dynamics K-factor to upload, only valid if #kFactorValid.
 };
 PendingSlotAssignment pendingSlotAssignment{};  ///< Active AMS slot-assignment state.
 
@@ -1714,6 +1724,8 @@ bool sendPendingSlotAssignTray(rtos::RtosContext& ctx, std::uint32_t requestId) 
                pendingSlotAssignment.trayType);
   std::snprintf(assignTray.trayColorHex, sizeof(assignTray.trayColorHex), "%s",
                pendingSlotAssignment.trayColorHex);
+  assignTray.kFactorValid = pendingSlotAssignment.kFactorValid;
+  assignTray.kFactor = pendingSlotAssignment.kFactor;
   FS_LOGD(services::LogComponent::App,
           "Sending AssignTray request_id=%lu spool_id=%lu material=\"%s\"",
           static_cast<unsigned long>(requestId),
@@ -5364,11 +5376,12 @@ void appTask(void* parameter) {
       // trayColorHex als RRGGBB(AA)-Hexstring, colorHex[0] liefert genau
       // das. Keine Spoolman-Duesentemperatur mehr angefragt (Nutzerwunsch
       // 2026-08-27) -- BambuTask loest tray_info_idx/Duesentemperatur aus
-      // dem Material allein per services::resolveBambuMaterial() auf, ein
-      // separater LoadFilament-Folge-Request ist fuer AssignTray daher
-      // nicht mehr noetig (anders als beim Staging/den Tray-Karten, die
-      // Filamentdaten weiterhin fuer den -- hiervon unabhaengigen --
-      // K-Faktor-Anzeigewert laden, siehe pendingStagingFilamentLoad/
+      // dem Material allein per services::resolveBambuMaterial() auf. Der
+      // K-Faktor ist dagegen eine spulenspezifische Filament-Eigenschaft
+      // und wird -- anders als die Duesentemperatur -- weiterhin per
+      // eigenem LoadFilament-Folge-Request geholt (K-Faktor-Upload-Aufgabe),
+      // ueber dieselbe requestFilamentDetails()-Funktion wie beim
+      // Staging/den Tray-Karten (siehe pendingStagingFilamentLoad/
       // resolveTraySpoolDetails()).
       pendingSlotAssignment.spoolId = event->spool.id;
       std::snprintf(pendingSlotAssignment.trayType,
@@ -5377,6 +5390,15 @@ void appTask(void* parameter) {
       std::snprintf(pendingSlotAssignment.trayColorHex,
                     sizeof(pendingSlotAssignment.trayColorHex), "%s",
                     event->spool.colorCount > 0 ? event->spool.colorHex[0] : "");
+      if (event->spool.filamentId != 0 &&
+          requestFilamentDetails(ctx, event->requestId,
+                                 event->spool.filamentId)) {
+        pendingSlotAssignment.stage = SlotAssignmentStage::LoadingFilament;
+        continue;
+      }
+      // Kein filamentId oder Folge-Request fehlgeschlagen: wie bisher ohne
+      // K-Faktor fortfahren (graceful degradation, gleiches Muster wie
+      // sendStagingUpdate()).
       {
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
@@ -5396,6 +5418,40 @@ void appTask(void* parameter) {
                   rtos::UiOverlayKind::BambuConnection, event->requestId,
                   "Slot konfigurieren",
                   "Slotdaten werden an den Drucker gesendet.");
+      continue;
+    } else if (event->type == rtos::AppEventType::SpoolmanResponse &&
+               pendingSlotAssignment.stage ==
+                   SlotAssignmentStage::LoadingFilament &&
+               event->requestId == pendingSlotAssignment.requestId) {
+      // Dieselbe event->filament.id != 0-Guard-Falle wie bei
+      // pendingStagingFilamentLoad beachten: der Lade-Abschlussmarker "N
+      // Spulen gefunden" (leeres Filament, value=-1) teilt sich denselben
+      // requestId und traefe sonst zuerst ein (Ursache eines bereits
+      // gefundenen Hardware-Bugs, 2026-08-24, siehe der ausfuehrliche
+      // Kommentar weiter unten bei pendingStagingFilamentLoad).
+      if (event->filament.id != 0) {
+        pendingSlotAssignment.kFactorValid = event->filament.bambuKFactorValid;
+        pendingSlotAssignment.kFactor = event->filament.bambuKFactor;
+        {
+          rtos::UiCommand hide{};
+          hide.type = rtos::UiCommandType::HideProgress;
+          sendUiCommand(ctx, hide,
+                        "AppTask: slot assignment progress close overflow");
+        }
+        if (!sendPendingSlotAssignTray(ctx, event->requestId)) {
+          pendingSlotAssignment = {};
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, event->requestId,
+                      "Slot nicht konfiguriert",
+                      "Der Auftrag konnte nicht an den Drucker gesendet werden.");
+          continue;
+        }
+        pendingSlotAssignment.stage = SlotAssignmentStage::WritingSlot;
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::BambuConnection, event->requestId,
+                    "Slot konfigurieren",
+                    "Slotdaten werden an den Drucker gesendet.");
+      }
       continue;
     } else if (event->type == rtos::AppEventType::SpoolmanResponse) {
       if (pendingStagingSpoolRequestId != 0 &&
@@ -5895,6 +5951,36 @@ void appTask(void* parameter) {
         pendingStagingFilamentLoad = {};
         sendStagingUpdate(ctx, event->requestId, spool,
                           spool.emptyWeightGrams, false, 0.0F);
+        continue;
+      }
+      if (pendingSlotAssignment.stage == SlotAssignmentStage::LoadingFilament &&
+          event->requestId == pendingSlotAssignment.requestId) {
+        // Filament fetch failed (network hiccup etc.) -- spool data
+        // (material/color) is already known from the completed LoadingSpool
+        // step, so proceed without a K-factor rather than abandoning the
+        // whole slot assignment (graceful degradation, same pattern as
+        // pendingStagingFilamentLoad above).
+        pendingSlotAssignment.kFactorValid = false;
+        pendingSlotAssignment.kFactor = 0.0F;
+        {
+          rtos::UiCommand hide{};
+          hide.type = rtos::UiCommandType::HideProgress;
+          sendUiCommand(ctx, hide,
+                        "AppTask: slot assignment progress close overflow");
+        }
+        if (!sendPendingSlotAssignTray(ctx, event->requestId)) {
+          pendingSlotAssignment = {};
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, event->requestId,
+                      "Slot nicht konfiguriert",
+                      "Der Auftrag konnte nicht an den Drucker gesendet werden.");
+          continue;
+        }
+        pendingSlotAssignment.stage = SlotAssignmentStage::WritingSlot;
+        sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
+                    rtos::UiOverlayKind::BambuConnection, event->requestId,
+                    "Slot konfigurieren",
+                    "Slotdaten werden an den Drucker gesendet.");
         continue;
       }
       if (pendingSlotAssignment.stage == SlotAssignmentStage::LoadingSpool &&

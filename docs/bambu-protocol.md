@@ -308,6 +308,28 @@ aendert sich.
   (`UiActionType::UpdateBambuMaterials`) bleibt zusaetzlich bestehen, fuer
   ein Nachziehen der Material-Zuordnung unabhaengig von einem
   Firmware-Release.
+* **Nachtrag (2026-08-28, Nutzerbericht: Ger\xC3\xA4t bootete nicht mehr, SD-
+  Karte musste repariert werden -- Frage: wird die Temp-Datei korrekt
+  geschlossen?):** Codepruefung bestaetigte, dass die offene Temp-Datei in
+  jedem regulaer erreichbaren Codepfad (Commit, Abort, jeder Fehlerfall in
+  Begin/WriteChunk) korrekt geflusht/geschlossen wird, bevor irgendeine
+  weitere SD-Operation folgt. Zwei enge Luecken trotzdem gefunden und
+  behoben: (1) `UpdateTask::sendStorageCommand()` pr\xC3\xBCft jetzt seinen
+  eigenen Erfolg -- schl\xC3\xA4gt ausgerechnet der `Commit`-Versand fehl
+  (Queue voll), schickt `streamBambuMaterialsFromUrls()` sofort ein
+  `AbortBambuMaterialDownload` nach, statt die bereits offene Temp-Datei
+  bei `StorageTask` unbegrenzt offen zu lassen. (2) Neues, unabh\xC3\xA4ngiges
+  Sicherheitsnetz direkt in `StorageTask`: eine offene Download-Datei, die
+  laenger als `config::kBambuMaterialDownloadStaleTimeoutMs` (30 s) ohne
+  `WriteChunk`/`Commit`/`Abort` daliegt, wird von der Haupt-Loop selbst
+  geschlossen/verworfen -- deckt auch einen Absturz/Reboot von `UpdateTask`
+  selbst zwischen `Begin` und `Commit` ab. Wahrscheinlichste tats\xC3\xA4chliche
+  Ursache der gemeldeten SD-Besch\xC3\xA4digung bleibt trotzdem eine der bereits
+  oben dokumentierten, mittlerweile behobenen GDMA/TLS/SD-Abst\xC3\xBCrze
+  waehrend eines aktiven Schreibvorgangs (SPI-Transaktion mitten im Ablauf
+  unterbrochen -- ein haerterer Mechanismus als ein lediglich offen
+  gebliebenes, aber inaktives Handle). Details/Code-Kommentare siehe
+  `TASKS.md`.
 * **Offener Verifikationspunkt:** `PAHT-CF` (`GFN96`, aus der
   Aufgabenbeschreibung uebernommen) teilt sich seinen `tray_info_idx` mit
   dem bereits vorhandenen, verifizierten Eintrag `PPA-GF` (ebenfalls
@@ -340,12 +362,13 @@ Nutzerfreundlichkeit wie bei fehlenden/ungueltigen Extra-Feldern, siehe
 oben.
 
 `flow_dynamics_k_factor` (K-Faktor, Flow-Dynamics-Kalibrierung) ist ein
-weiteres projektspezifisches Filament-Extra-Feld, rein fuer die Anzeige
-auf der Home-Tray-Karte gedacht (Nutzerwunsch 2026-08-24) -- kein Einfluss
-auf ein an den Drucker gesendetes Kommando, keine Plausibilitaetsspanne
+weiteres projektspezifisches Filament-Extra-Feld, keine Plausibilitaetsspanne
 wie bei den Temperaturen (nur "> 0" gefordert). Der urspruenglich von mir
 angenommene Feldname `bambu_k_factor` war falsch; per Hardware-Test
-(2026-08-24) vom Nutzer korrigiert.
+(2026-08-24) vom Nutzer korrigiert. Urspruenglich (2026-08-24) rein fuer die
+Anzeige auf der Home-Tray-Karte gedacht, ohne Einfluss auf ein an den
+Drucker gesendetes Kommando -- seit 2026-08-28 wird er zusaetzlich an den
+Drucker hochgeladen, siehe "K-Faktor-Upload" weiter unten.
 
 **Nachtrag (2026-08-24, Hardware-Test zeigte `nozzle_temp_min=0
 nozzle_temp_max=0` trotz konfigurierter Extra-Felder):** neben der
@@ -719,6 +742,14 @@ Von `BambuProtocol::bambuApplyReport()` ausgewertete Pfade:
 * `print.nozzle_diameter`: String (z. B. `"0.4"`), wird nach
   `PrinterState::nozzleDiameter` uebernommen -- benoetigt fuer das
   `extrusion_cali_sel`-Kommando (siehe oben).
+* `print.nozzle_type` (2026-08-28, K-Faktor-Upload): String (z. B.
+  `"hardened_steel"`), wird nach `PrinterState::nozzleType` uebernommen --
+  **unverifiziert, ob/in welcher Form dieser Drucker es sendet** (nur aus
+  Community-Dokumentation uebernommen, nie an echter Hardware bestaetigt).
+  Solange dieses Feld nie eintrifft, bleibt `PrinterState::nozzleType` leer
+  und der K-Faktor-Upload faellt fuer diesen Drucker dauerhaft aus
+  (fail-closed, siehe "K-Faktor-Upload" weiter unten) -- alles andere
+  bleibt davon unberuehrt.
 
 **Bewusst nicht ausgewertet:** `tray_id_name`. Ein Versuch, eine Spoolman-
 `spoolId` daraus aufzuloesen ("SM:<spoolmanId>", siehe "ams_filament_setting"
@@ -734,6 +765,99 @@ Druckfortschritt, Kamera/AI-Erkennung, Temperaturen, Firmwareversion,
 Fehlercodes des Druckers. Kann bei Bedarf in `bambuApplyReport()` ergaenzt
 werden, sobald die entsprechenden Felder verifiziert sind.
 
+### K-Faktor-Upload (2026-08-28): `extrusion_cali_set` -> `extrusion_cali_get` -> `extrusion_cali_sel`
+
+Bisher (siehe oben, Nutzerwunsch 2026-08-24) wurde der Spoolman-K-Faktor
+(`flow_dynamics_k_factor`) nur auf der Home-Tray-Karte angezeigt, nie an
+den Drucker gesendet -- eine bewusste Scope-Entscheidung, die dieser
+Nachtrag jetzt umsetzt. **Hardware-unverifiziert**, wie der Rest dieser
+Datei -- community-reverse-engineert aus `yanshay/spoolease`.
+
+Das bereits implementierte `extrusion_cali_sel` (siehe oben) kann selbst
+keinen K-Wert transportieren, es waehlt nur ein bereits auf dem Drucker
+vorhandenes Kalibrierungsprofil per `cali_idx` aus (`-1` = keines). Ein
+neues Profil mit einem frei waehlbaren K-Wert anzulegen erfordert zwei
+zusaetzliche Kommandos:
+
+1. **`extrusion_cali_set`**: legt ein neues Kalibrierungsprofil an.
+
+```json
+{
+  "print": {
+    "command": "extrusion_cali_set",
+    "filaments": [{
+      "ams_id": 0, "extruder_id": 0, "filament_id": "GFL99",
+      "k_value": "0.123000", "n_coef": "0.000000",
+      "name": "FilamentStation #1234", "nozzle_diameter": "0.4",
+      "nozzle_id": "hardened_steel-0.4", "setting_id": "FS000004D2",
+      "slot_id": 2, "tray_id": -1
+    }],
+    "nozzle_diameter": "0.4", "sequence_id": "10"
+  }
+}
+```
+
+* `setting_id`: **selbst vergeben**, nicht vom Drucker (das
+  `yanshay/spoolease`-Beispiel, aus dem dieser Payload uebernommen wurde,
+  liefert diesen Wert selbst auf dem Create-Request mit). Deterministisch
+  pro Spule gebildet (`"FS" + 8 Hex-Ziffern der Spoolman-`spoolId`), damit
+  eine erneute Zuweisung derselben Spule dasselbe Profil trifft statt
+  verwaiste Duplikate auf dem Drucker anzuhaeufen.
+* `nozzle_id`: best-effort aus `PrinterState::nozzleType` +
+  `PrinterState::nozzleDiameter` zusammengesetzt (`"<nozzle_type>-<nozzle_diameter>"`).
+  **Keine verifizierte Typ-Code-Zuordnung bekannt** (das
+  `yanshay/spoolease`-Beispiel zeigt `"HS00-0.4"`, also vermutlich einen
+  Kurzcode statt des rohen Telemetrie-Strings) -- absichtlich trotzdem so
+  gewaehlt statt eine geratene Codetabelle zu erfinden, siehe "Bekannte
+  Risiken" oben.
+* `n_coef`: immer `"0.000000"`, kein entsprechendes Spoolman-Filament-Feld
+  vorhanden.
+* `filaments[0].tray_id`: immer `-1` -- das Profil wird durch dieses
+  Kommando noch keinem Slot zugewiesen, das macht erst Schritt 3.
+
+2. **`extrusion_cali_get`**: fragt die komplette Liste der auf dem Drucker
+   vorhandenen Kalibrierungsprofile fuer einen Duesendurchmesser ab
+   (`print.filament_id` bleibt dabei immer leer, ungefiltert). Wird
+   unmittelbar nach `extrusion_cali_set` gesendet, ohne auf ein Echo zu
+   warten (gleiche Annahme wie beim bestehenden
+   `ams_filament_setting`+`extrusion_cali_sel`-Paar: MQTT/TCP erhaelt die
+   Reihenfolge). Die Antwort kommt asynchron auf dem Report-Topic zurueck
+   (`print.command == "extrusion_cali_get"`); `services::
+   bambuFindCalibrationBySettingId()` durchsucht `print.filaments[]` nach
+   dem selbst vergebenen `setting_id` und liest bei Treffer `cali_idx`
+   aus. **Das Feld `print.filaments[]` in der Antwort ist ebenfalls nur
+   aus `yanshay/spoolease`s Antwortverarbeitung uebernommen, nie an einer
+   echten Antwort dieses Projekts verifiziert** -- der wahrscheinlichste
+   Punkt, der nach dem ersten Hardwaretest korrigiert werden muss.
+
+3. **`extrusion_cali_sel`** (siehe oben) mit dem so gefundenen `cali_idx`
+   statt `-1` -- identisches Kommando, nur mit dem echten Index.
+
+Implementiert in `BambuTask::handleAssignTray()` (Schritte 1+2, plus
+`PendingCalibrationAssignment`-Tracking) und
+`BambuTask::handleReportPayload()` (Schritt 3, sobald die
+`extrusion_cali_get`-Antwort eintrifft). **Vollstaendig entkoppelt** von
+der bereits mehrfach hardware-validierten AssignTray-Bestaetigung
+(`PendingTrayAssignment`): fehlt der K-Faktor, hat der Drucker noch nie
+`print.nozzle_type` gemeldet, oder laeuft die Kalibrierungssuche nach
+`kBambuCalibrationTimeoutMs` (8 s, wie `kBambuAssignConfirmTimeoutMs`) in
+den Timeout, wird nur eine `FS_LOGW`-Zeile geschrieben -- kein Fehler an
+die UI, kein Einfluss auf die normale Slotzuweisung (Material/Farbe), die
+in diesem Fall unveraendert `extrusion_cali_sel(cali_idx=-1)` sendet wie
+vor dieser Funktion.
+
+Der K-Faktor wird ueber denselben `LoadSpool`->`LoadFilament`-Weg geholt
+wie die Home-Tray-Karten-Anzeige (`SpoolmanCommandType::LoadFilament`,
+`event->filament.bambuKFactorValid`/`bambuKFactor`) -- `AppTask`s
+`SlotAssignmentStage` bekam dafuer eine neue Zwischenstufe
+`LoadingFilament` zwischen `LoadingSpool` und `WritingSlot` (dieselbe
+`event.filament.id != 0`-Guard-Falle wie bei `pendingStagingFilamentLoad`
+beachtet, siehe Nachtrag 2026-08-24 oben zum Spoolman-Listenabschluss-
+Marker).
+
+**Kein Hardware-Test dieser Funktion in der Einfuehrungssitzung
+moeglich.**
+
 ## Bekannte Risiken
 
 * Feldnamen und Nummerierungen (insbesondere die spezielle ID des externen
@@ -746,3 +870,12 @@ werden, sobald die entsprechenden Felder verifiziert sind.
   TLS-Verschluesselung hinaus (kein Server-Identitaetsnachweis). Das ist im
   vertrauenswuerdigen LAN mit Access-Code-Auth ein akzeptierter Kompromiss,
   aber kein Schutz gegen einen bereits kompromittierten LAN-Teilnehmer.
+* Der K-Faktor-Upload (`extrusion_cali_set`/`extrusion_cali_get`, siehe
+  "K-Faktor-Upload" weiter unten) ist zum Zeitpunkt seiner Einfuehrung
+  (2026-08-28) an **keiner** echten Hardware getestet worden. Insbesondere
+  das `nozzle_id`-Feld (best-effort aus dem unverifizierten
+  `print.nozzle_type`-Telemetriewert zusammengesetzt) und die genaue
+  Feldstruktur der `extrusion_cali_get`-Antwort (`print.filaments[]`,
+  nur aus `yanshay/spoolease`s Quellcode uebernommen, nie an einer echten
+  Antwort dieses Projekts verifiziert) sind die wahrscheinlichsten Punkte,
+  die nach dem ersten echten Test korrigiert werden muessen.

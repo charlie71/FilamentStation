@@ -59,6 +59,23 @@ struct PendingTrayAssignment {
   std::int32_t lastReportedRemainingSeconds = -1;  ///< Last remaining-seconds value reported via BambuAssignProgress.
 };
 
+/// @brief Tracks an in-flight K-factor upload (extrusion_cali_set followed
+///        by extrusion_cali_get, see handleAssignTray()) until the printer
+///        reports the new calibration's cali_idx, or it times out.
+// Deliberately a separate struct/field from PendingTrayAssignment, not
+// nested inside it: a K-factor upload failing/timing out must never affect
+// the (separately hardware-validated) AssignTray confirmation itself, see
+// docs/bambu-protocol.md's design note on this feature.
+struct PendingCalibrationAssignment {
+  bool active = false;              ///< Whether a cali_idx lookup is currently being awaited.
+  std::uint32_t requestId = 0;      ///< Correlation id, for logging only (no AppEvent is ever sent for this).
+  std::uint8_t amsId = 0;           ///< Target AMS index (wire-encoded), for the final extrusion_cali_sel.
+  std::uint8_t trayId = 0;          ///< Target tray index (wire-encoded), for the final extrusion_cali_sel.
+  char filamentId[16]{};             ///< Same value as BambuTrayFilament::trayInfoIdx, for the final extrusion_cali_sel.
+  char settingId[config::kBambuCalibrationSettingIdCapacity]{};  ///< Self-assigned id to match in the extrusion_cali_get response.
+  TickType_t startedAtTicks = 0;    ///< Tick count when extrusion_cali_set/get were sent, for the timeout check.
+};
+
 /// @brief One printer's MQTT connection, state, and in-flight assignment tracking.
 struct PrinterConnection {
   bool inUse = false;               ///< Whether this slot is currently assigned to a printer.
@@ -75,6 +92,7 @@ struct PrinterConnection {
   // MQTT session.
   std::uint32_t nextSequenceId = 1;  ///< Next "print.sequence_id" value to send.
   PendingTrayAssignment pending{};   ///< In-flight AssignTray confirmation state, if any.
+  PendingCalibrationAssignment pendingCalibration{};  ///< In-flight K-factor upload state, if any.
   // See kBambuReconnectIntervalMs (Robustheit/Diagnose, TASKS.md 10.4): a
   // dropped MQTT session (printer reboot, LAN hiccup) was previously never
   // retried on its own -- only an explicit BambuCommandType::Connect
@@ -268,6 +286,49 @@ void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
               "reason=\"%s\" err_code=%ld",
               static_cast<unsigned>(conn.config.printerId), command, result,
               reason, errCode);
+    }
+    // K-factor upload continuation (see handleAssignTray()): the
+    // extrusion_cali_get response carries the cali_idx the printer assigned
+    // the calibration profile created by the preceding extrusion_cali_set.
+    // Field name/shape unverified against real hardware, see
+    // services::bambuFindCalibrationBySettingId()'s doc comment.
+    if (conn.pendingCalibration.active &&
+        std::strcmp(command, "extrusion_cali_get") == 0) {
+      const services::BambuCalibrationLookupResult lookup =
+          services::bambuFindCalibrationBySettingId(
+              document, conn.pendingCalibration.settingId);
+      if (lookup.found) {
+        const char* nozzleDiameter = conn.state.nozzleDiameter[0] != '\0'
+                                         ? conn.state.nozzleDiameter
+                                         : "0.4";
+        char caliSelPayload[config::kBambuRequestPayloadCapacity]{};
+        const std::size_t caliSelLength = services::bambuBuildExtrusionCaliSel(
+            conn.nextSequenceId++, conn.pendingCalibration.amsId,
+            conn.pendingCalibration.trayId, conn.pendingCalibration.filamentId,
+            nozzleDiameter, lookup.caliIdx, caliSelPayload,
+            sizeof(caliSelPayload));
+        if (caliSelLength == 0 ||
+            !publishBambuRequest(conn, conn.config.printerId, caliSelPayload)) {
+          FS_LOGW(services::LogComponent::Bambu,
+                  "K-Faktor extrusion_cali_sel send failed printer_id=%u "
+                  "setting_id=\"%s\" cali_idx=%ld",
+                  static_cast<unsigned>(conn.config.printerId),
+                  conn.pendingCalibration.settingId,
+                  static_cast<long>(lookup.caliIdx));
+        } else {
+          FS_LOGI(services::LogComponent::Bambu,
+                  "K-Faktor upload confirmed printer_id=%u setting_id=\"%s\" "
+                  "cali_idx=%ld",
+                  static_cast<unsigned>(conn.config.printerId),
+                  conn.pendingCalibration.settingId,
+                  static_cast<long>(lookup.caliIdx));
+        }
+        conn.pendingCalibration = {};
+      }
+      // No match in this particular response: the printer may not have
+      // finished processing the extrusion_cali_set yet -- left pending for
+      // either a later extrusion_cali_get response or the timeout in
+      // serviceConnections() (kBambuCalibrationTimeoutMs).
     }
   }
 
@@ -513,7 +574,12 @@ void handleRequestStatus(rtos::RtosContext& ctx,
 /// @brief Handles BambuCommandType::AssignTray: resolves the material to a
 ///        services::BambuMaterialMapping, sends
 ///        ams_filament_setting+extrusion_cali_sel, and starts tracking a
-///        PendingTrayAssignment for confirmation.
+///        PendingTrayAssignment for confirmation. If `command.kFactorValid`
+///        and the printer has already reported a nozzle type, also uploads
+///        the K-factor (extrusion_cali_set+extrusion_cali_get, tracked
+///        separately via PendingCalibrationAssignment) instead of the plain
+///        extrusion_cali_sel(-1) -- best-effort, see
+///        docs/bambu-protocol.md.
 /// @param ctx Owning RTOS context.
 /// @param connections Connection pool.
 /// @param command Command to process.
@@ -638,20 +704,97 @@ void handleAssignTray(rtos::RtosContext& ctx, PrinterConnections& connections,
   // calibration is tracked per Spoolman spool yet.
   const char* nozzleDiameter =
       conn->state.nozzleDiameter[0] != '\0' ? conn->state.nozzleDiameter : "0.4";
-  char caliSelPayload[config::kBambuRequestPayloadCapacity]{};
-  const std::size_t caliSelLength = services::bambuBuildExtrusionCaliSel(
-      conn->nextSequenceId++, command.amsId, command.trayId,
-      filament.trayInfoIdx, nozzleDiameter, -1, caliSelPayload,
-      sizeof(caliSelPayload));
-  if (caliSelLength == 0 ||
-      !publishBambuRequest(*conn, command.printerId, caliSelPayload)) {
-    FS_LOGW(services::LogComponent::Bambu,
-            "extrusion_cali_sel send failed printer_id=%u ams_id=%u "
-            "tray_id=%u -- Zuordnung wird m\xC3\xB6glicherweise nicht "
-            "dauerhaft \xC3\xBC" "bernommen",
+
+  // K-factor upload (extrusion_cali_set -> extrusion_cali_get ->
+  // extrusion_cali_sel with a real cali_idx) replaces the plain
+  // extrusion_cali_sel(-1) below entirely -- only one of the two may "win".
+  // Fail-closed: no K-factor, no material resolved, or the printer has
+  // never reported a nozzle type (required to best-effort build nozzle_id,
+  // see PrinterState::nozzleType) all fall through to today's unchanged
+  // behavior. See docs/bambu-protocol.md for the (hardware-unverified)
+  // protocol details.
+  const bool attemptKFactorUpload = command.kFactorValid &&
+                                    filament.trayInfoIdx[0] != '\0' &&
+                                    conn->state.nozzleType[0] != '\0';
+  if (attemptKFactorUpload) {
+    services::BambuCalibrationRequest calibration{};
+    std::snprintf(calibration.filamentId, sizeof(calibration.filamentId),
+                 "%s", filament.trayInfoIdx);
+    // Deterministic per spool (not per request) so a retried/duplicate
+    // AssignTray for the same spool reuses the same setting_id rather than
+    // accumulating orphaned calibration profiles on the printer.
+    std::snprintf(calibration.settingId, sizeof(calibration.settingId),
+                 "FS%08lX", static_cast<unsigned long>(command.spoolId));
+    std::snprintf(calibration.name, sizeof(calibration.name),
+                 "FilamentStation #%lu",
+                 static_cast<unsigned long>(command.spoolId));
+    std::snprintf(calibration.nozzleId, sizeof(calibration.nozzleId),
+                 "%s-%s", conn->state.nozzleType, nozzleDiameter);
+    calibration.kValue = command.kFactor;
+
+    char caliSetPayload[config::kBambuCalibrationRequestPayloadCapacity]{};
+    const std::size_t caliSetLength = services::bambuBuildExtrusionCaliSet(
+        conn->nextSequenceId++, command.amsId, command.trayId, nozzleDiameter,
+        calibration, caliSetPayload, sizeof(caliSetPayload));
+    char caliGetPayload[config::kBambuRequestPayloadCapacity]{};
+    const std::size_t caliGetLength = services::bambuBuildExtrusionCaliGet(
+        conn->nextSequenceId++, nozzleDiameter, caliGetPayload,
+        sizeof(caliGetPayload));
+    if (caliSetLength == 0 || caliGetLength == 0 ||
+        !publishBambuRequest(*conn, command.printerId, caliSetPayload) ||
+        !publishBambuRequest(*conn, command.printerId, caliGetPayload)) {
+      FS_LOGW(services::LogComponent::Bambu,
+              "K-Faktor-Upload send failed printer_id=%u ams_id=%u "
+              "tray_id=%u setting_id=\"%s\" -- K-Faktor wird nicht "
+              "\xC3\xBC" "bernommen",
+              static_cast<unsigned>(command.printerId),
+              static_cast<unsigned>(command.amsId),
+              static_cast<unsigned>(command.trayId), calibration.settingId);
+    } else {
+      conn->pendingCalibration.active = true;
+      conn->pendingCalibration.requestId = command.requestId;
+      conn->pendingCalibration.amsId = command.amsId;
+      conn->pendingCalibration.trayId = command.trayId;
+      std::snprintf(conn->pendingCalibration.filamentId,
+                   sizeof(conn->pendingCalibration.filamentId), "%s",
+                   filament.trayInfoIdx);
+      std::snprintf(conn->pendingCalibration.settingId,
+                   sizeof(conn->pendingCalibration.settingId), "%s",
+                   calibration.settingId);
+      conn->pendingCalibration.startedAtTicks = xTaskGetTickCount();
+      FS_LOGI(services::LogComponent::Bambu,
+              "K-Faktor upload started printer_id=%u ams_id=%u tray_id=%u "
+              "setting_id=\"%s\" k_value=%.6f nozzle_id=\"%s\"",
+              static_cast<unsigned>(command.printerId),
+              static_cast<unsigned>(command.amsId),
+              static_cast<unsigned>(command.trayId), calibration.settingId,
+              static_cast<double>(calibration.kValue), calibration.nozzleId);
+    }
+  } else {
+    FS_LOGD(services::LogComponent::Bambu,
+            "K-Faktor upload skipped printer_id=%u ams_id=%u tray_id=%u "
+            "reason=%s",
             static_cast<unsigned>(command.printerId),
             static_cast<unsigned>(command.amsId),
-            static_cast<unsigned>(command.trayId));
+            static_cast<unsigned>(command.trayId),
+            !command.kFactorValid ? "no_kfactor"
+            : filament.trayInfoIdx[0] == '\0' ? "no_material"
+                                              : "nozzle_type_unavailable");
+    char caliSelPayload[config::kBambuRequestPayloadCapacity]{};
+    const std::size_t caliSelLength = services::bambuBuildExtrusionCaliSel(
+        conn->nextSequenceId++, command.amsId, command.trayId,
+        filament.trayInfoIdx, nozzleDiameter, -1, caliSelPayload,
+        sizeof(caliSelPayload));
+    if (caliSelLength == 0 ||
+        !publishBambuRequest(*conn, command.printerId, caliSelPayload)) {
+      FS_LOGW(services::LogComponent::Bambu,
+              "extrusion_cali_sel send failed printer_id=%u ams_id=%u "
+              "tray_id=%u -- Zuordnung wird m\xC3\xB6glicherweise nicht "
+              "dauerhaft \xC3\xBC" "bernommen",
+              static_cast<unsigned>(command.printerId),
+              static_cast<unsigned>(command.amsId),
+              static_cast<unsigned>(command.trayId));
+    }
   }
 
   // publish() succeeding only means the MQTT broker accepted the packet --
@@ -808,6 +951,23 @@ void serviceConnections(rtos::RtosContext& ctx, PrinterConnections& connections)
           }
         }
       }
+      if (conn.pendingCalibration.active) {
+        const std::uint32_t calibrationElapsedMs =
+            pdTICKS_TO_MS(static_cast<TickType_t>(
+                xTaskGetTickCount() - conn.pendingCalibration.startedAtTicks));
+        if (calibrationElapsedMs >= config::kBambuCalibrationTimeoutMs) {
+          // No AppEvent/UI error here on purpose -- a K-factor upload
+          // failing never affects the (already-confirmed-or-not,
+          // independently tracked) AssignTray itself, see
+          // docs/bambu-protocol.md's design note on this feature.
+          FS_LOGW(services::LogComponent::Bambu,
+                  "K-Faktor upload timeout printer_id=%u setting_id=\"%s\" "
+                  "reason=cali_idx_not_found",
+                  static_cast<unsigned>(conn.config.printerId),
+                  conn.pendingCalibration.settingId);
+          conn.pendingCalibration = {};
+        }
+      }
       continue;
     }
     if (conn.reportedConnected) {
@@ -816,6 +976,7 @@ void serviceConnections(rtos::RtosContext& ctx, PrinterConnections& connections)
       FS_LOGW(services::LogComponent::Bambu, "Connection lost printer_id=%u",
               static_cast<unsigned>(conn.config.printerId));
       failPendingAssignment(ctx, conn, "Verbindung verloren");
+      conn.pendingCalibration = {};
       publishBambuEvent(ctx, rtos::AppEventType::BambuDisconnected, 0,
                         conn.config.printerId, conn.state,
                         "Verbindung verloren");

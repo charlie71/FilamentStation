@@ -61,14 +61,25 @@ void sendEvent(rtos::RtosContext& ctx, rtos::AppEventType type,
 ///        never waits for it directly (see docs/architecture.md).
 /// @param ctx Owning RTOS context.
 /// @param command Command to send.
-void sendStorageCommand(rtos::RtosContext& ctx,
+/// @return true if the command was enqueued, false if the queue stayed full
+///         for the whole 1 s send timeout -- callers that opened a
+///         StorageTask-side resource (e.g. BeginBambuMaterialDownload's temp
+///         file) and depend on a later command to close/clean it up MUST
+///         check this (see streamBambuMaterialsFromUrls()'s Commit send,
+///         Nutzerbericht 2026-08-28: unbootable device, SD card needed
+///         repair -- this exact silent-drop gap was the most plausible
+///         still-reachable cause found on review, alongside the already-
+///         fixed GDMA/TLS/SD crash history, see docs/bambu-protocol.md).
+bool sendStorageCommand(rtos::RtosContext& ctx,
                         const rtos::StorageCommand& command) {
   if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
       pdPASS) {
     FS_LOGW(services::LogComponent::Update,
             "Command enqueue failed queue=storage_command type=%u",
             static_cast<unsigned>(command.type));
+    return false;
   }
+  return true;
 }
 
 /// @brief Fetches a plain-text checksum file and extracts its SHA-256 hex digest.
@@ -534,7 +545,14 @@ void streamBambuMaterialsFromUrls(rtos::RtosContext& ctx,
   command = rtos::StorageCommand{};
   command.type = rtos::StorageCommandType::BeginBambuMaterialDownload;
   command.requestId = requestId;
-  sendStorageCommand(ctx, command);
+  if (!sendStorageCommand(ctx, command)) {
+    // No file was ever opened on StorageTask's side -- nothing to clean up,
+    // but sending the chunks/Commit below would be pointless (StorageTask
+    // ignores them, request_id mismatch) and the later semaphore wait would
+    // stall a full kBambuMaterialCommitWaitTimeoutMs for nothing.
+    reportFailure("Startbefehl konnte nicht gesendet werden");
+    return;
+  }
   FS_LOGD(services::LogComponent::Update,
           "Bambu material mapping Begin command sent request_id=%lu",
           static_cast<unsigned long>(requestId));
@@ -566,7 +584,27 @@ void streamBambuMaterialsFromUrls(rtos::RtosContext& ctx,
   command.requestId = requestId;
   command.jsonLength = static_cast<std::uint16_t>(std::strlen(expectedHashHex));
   std::snprintf(command.json, sizeof(command.json), "%s", expectedHashHex);
-  sendStorageCommand(ctx, command);
+  if (!sendStorageCommand(ctx, command)) {
+    // StorageTask never learns the download is complete: its open temp-file
+    // handle (from the earlier, successfully enqueued Begin) would otherwise
+    // stay open indefinitely -- nothing else ever prompts a close except the
+    // *next* download's Begin, or a reboot/crash while it's still open
+    // (Nutzerbericht 2026-08-28: unbootable device, SD card needed repair).
+    // Best-effort Abort to force StorageTask to close+discard it now rather
+    // than leave that open handle dangling; also fire-and-forget (nothing
+    // further we could do if even this fails), and skip the semaphore wait
+    // below since no Commit ever arrived to trigger it.
+    FS_LOGE(services::LogComponent::Update,
+            "Bambu material mapping Commit command dropped request_id=%lu "
+            "-- sending Abort to avoid a dangling open temp file",
+            static_cast<unsigned long>(requestId));
+    rtos::StorageCommand abortCommand{};
+    abortCommand.type = rtos::StorageCommandType::AbortBambuMaterialDownload;
+    abortCommand.requestId = requestId;
+    sendStorageCommand(ctx, abortCommand);
+    reportFailure("Best\xC3\xA4tigung konnte nicht gesendet werden");
+    return;
+  }
   FS_LOGD(services::LogComponent::Update,
           "Bambu material mapping Commit command sent request_id=%lu "
           "expected_sha256=\"%s\"",

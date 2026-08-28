@@ -5934,3 +5934,96 @@ tatsaechlich immer Folge bereits vorhandener echter Aktivitaet
 `ReportInactivity`); der Uebergang nach Dimmed selbst loest den Reset
 jetzt nicht mehr aus. Build 0 Warnungen, 98/98 native Tests gruen.
 Erneuter Hardwaretest steht noch aus.
+
+---
+
+**Nachtrag (2026-08-28, K-Faktor-Upload -- die bei der Temperaturhandling-
+Vereinfachung bewusst ausgeklammerte "separate Aufgabe"):** der Spoolman-
+K-Faktor (`flow_dynamics_k_factor`) wurde bisher nur auf der Home-Tray-
+Karte angezeigt, nie an den Drucker gesendet. Jetzt implementiert: das
+bereits vorhandene `extrusion_cali_sel` kann selbst keinen K-Wert
+transportieren (waehlt nur ein bereits vorhandenes Kalibrierungsprofil per
+`cali_idx` aus) -- dafuer legt ein neues `extrusion_cali_set` ein Profil
+mit dem gewuenschten K-Wert an, ein `extrusion_cali_get` fragt danach die
+komplette Profilliste ab, um den vom Drucker vergebenen `cali_idx`
+nachzuschlagen (`services::bambuFindCalibrationBySettingId()`, matcht auf
+einen selbst vergebenen, deterministischen `setting_id`), und erst dann
+folgt `extrusion_cali_sel` mit diesem echten Index. Details/Payload-
+Beispiele in `docs/bambu-protocol.md` (Abschnitt "K-Faktor-Upload
+(2026-08-28)").
+
+Der K-Faktor wird jetzt auch fuer `AssignTray` per `LoadSpool`-
+>`LoadFilament`-Kette geholt (neue `SlotAssignmentStage::LoadingFilament`
+zwischen `LoadingSpool` und `WritingSlot`, dieselbe `event.filament.id !=
+0`-Guard-Falle wie bei `pendingStagingFilamentLoad` beachtet). Das dafuer
+benoetigte `nozzle_id`-Feld wird best-effort aus einem neu ausgewerteten,
+**unverifizierten** `print.nozzle_type`-Telemetriefeld gebaut (keine
+bekannte verifizierte Typ-Code-Zuordnung, siehe Doku). Vollstaendig
+entkoppelt von der bereits mehrfach hardware-validierten AssignTray-
+Bestaetigung: fehlt der K-Faktor, hat der Drucker `nozzle_type` nie
+gemeldet, oder laeuft die Kalibrierungssuche in einen eigenen, separaten
+Timeout (`kBambuCalibrationTimeoutMs`), wird nur eine `FS_LOGW`-Zeile
+geschrieben -- kein Fehler an die UI, kein Einfluss auf die normale
+Slotzuweisung, die dann unveraendert `extrusion_cali_sel(cali_idx=-1)`
+sendet wie zuvor. Build 0 Warnungen, 103/103 native Tests gruen (5 neue
+Tests fuer die beiden neuen Kommando-Builder und den Kalibrierungs-
+Listenabgleich). **Kein Hardware-Test dieser Funktion moeglich** in dieser
+Sitzung -- insbesondere `nozzle_id`-Format und die genaue Feldstruktur der
+`extrusion_cali_get`-Antwort sind unverifiziert und der wahrscheinlichste
+Punkt, der nach dem ersten echten Test korrigiert werden muss.
+
+---
+
+**Nachtrag (2026-08-28, Nutzerbericht: System bootet nicht mehr, SD-Karte
+musste repariert werden -- "wird das bambu_materials-File korrekt
+geschlossen?"):** Codepruefung des kompletten Bambu-Material-Download-Datei-
+Lebenszyklus (`StorageTask.cpp`s `processBeginBambuMaterialDownload()`/
+`processWriteBambuMaterialChunk()`/`processCommitBambuMaterialDownload()`/
+`abortBambuMaterialDownloadFile()`). Ergebnis: in jedem regulaer erreichbaren
+Codepfad wird die offene Datei korrekt geflusht/geschlossen, bevor
+irgendeine weitere SD-Operation (Rename/Remove) darauf folgt --
+`processCommitBambuMaterialDownload()` schliesst z. B. ganz am Anfang, noch
+vor jeder der nachfolgenden Validierungspruefungen. Kein Fehlverhalten in
+diesem Teil gefunden.
+
+Zwei echte, wenn auch enge Luecken wurden trotzdem gefunden und behoben:
+
+1. `UpdateTask.cpp`s `sendStorageCommand()` war reines Fire-and-Forget ohne
+   Rueckgabewert -- schlug ausgerechnet der **Commit**-Befehl fehl
+   (Queue 1s lang voll), erfuhr `StorageTask` nie vom Abschluss und liess
+   die bereits geoeffnete Temp-Datei unbegrenzt offen (bis zum naechsten
+   `Begin` oder einem Reboot). Fix: `sendStorageCommand()` gibt jetzt
+   `bool` zurueck; schlaegt der Commit-Versand fehl, wird sofort ein
+   `AbortBambuMaterialDownload` nachgeschickt statt auf das (nie
+   eintreffende) `bambuMaterialDownloadDone`-Semaphor zu warten. Derselbe
+   Schutz zusaetzlich fuer den `Begin`-Versand (dort haengt zwar keine
+   offene Datei dran, aber ein sinnloses 8s-Warten am Ende waere die
+   Folge).
+2. Neues, unabhaengiges Sicherheitsnetz direkt in `StorageTask` selbst
+   (`config::kBambuMaterialDownloadStaleTimeoutMs`, 30 s): die
+   Haupt-Loop prueft jetzt bei jedem Tick (alle `kSdHealthCheckIntervalMs`
+   = 2 s), ob eine offene Download-Datei laenger als dieses Zeitfenster
+   ohne `WriteChunk`/`Commit`/`Abort` daliegt, und schliesst/verwirft sie
+   in diesem Fall selbst -- deckt **jeden** Grund ab, aus dem die normale
+   Begin->Write->Commit/Abort-Sequenz nie abgeschlossen wird (z. B. ein
+   Absturz/Reboot von `UpdateTask` selbst zwischen Begin und Commit, aus
+   einem mit diesem Feature voellig unabhaengigen Grund), nicht nur den
+   oben behobenen Einzelfall.
+
+**Wahrscheinlichste tatsaechliche Ursache der gemeldeten SD-Beschaedigung:**
+keine der beiden oben behobenen Luecken haelt selbst eine Datei waehrend
+eines *aktiven* Schreibvorgangs offen -- ein blosses "Handle offen, aber
+gerade nichts wird geschrieben" korrumpiert typischerweise nicht die
+Dateisystemstruktur selbst (nur den Inhalt der einen Datei). Weitaus
+plausibler: die in dieser Sitzung bereits mehrfach dokumentierten
+Guru-Meditation-Abstuerze (Stack-Overflow durch die GDMA-Teilung zwischen
+TLS-Kryptobeschleunigung und SD/SPI-DMA, siehe die Nachtraege weiter oben
+zum urspruenglichen Bambu-Material-Download-Feature) traten *waehrend*
+eines laufenden SD-Schreibvorgangs auf (SPI-Transaktion mitten im Ablauf
+unterbrochen) -- ein weitaus haerterer Beschaedigungsmechanismus als ein
+lediglich offen gebliebenes Handle. Diese Abstuerze sind durch die
+damaligen Fixes (Semaphor-Synchronisation, komplette Pufferung vor jedem
+SD-Zugriff) bereits behoben; die jetzt reparierte SD-Karte sollte das mit
+dem aktuellen Code nicht erneut zeigen. Build 0 Warnungen, 103/103 native
+Tests gruen. Kein Hardware-Test dieser Haertung moeglich (SD-Karte war zum
+Zeitpunkt dieser Sitzung nicht verfuegbar).

@@ -40,4 +40,19 @@ constexpr std::uint32_t kBambuAssignConfirmTimeoutMs = 8000;  ///< Timeout waiti
 constexpr std::size_t kBambuTopicCapacity = 64;              ///< Buffer size for a formatted MQTT topic string.
 constexpr std::size_t kBambuRequestPayloadCapacity = 256;    ///< Buffer size for a serialized outgoing MQTT JSON payload.
 
+// K-factor upload (extrusion_cali_set/extrusion_cali_get/extrusion_cali_sel,
+// see docs/bambu-protocol.md) -- hardware-unverified, community-derived from
+// yanshay/spoolease. Same confirmation-timeout reasoning as
+// kBambuAssignConfirmTimeoutMs, but tracked and timed out independently so a
+// failed/slow K-factor upload never affects the (separately hardware-
+// validated) AssignTray confirmation itself.
+constexpr std::uint32_t kBambuCalibrationTimeoutMs = 8000;  ///< Timeout waiting for extrusion_cali_get to report the newly created calibration's cali_idx.
+// extrusion_cali_set's payload has noticeably more fields than any other
+// outgoing command (see BambuProtocol.cpp) -- a dedicated, larger capacity
+// instead of enlarging the shared kBambuRequestPayloadCapacity for every
+// other, smaller command.
+constexpr std::size_t kBambuCalibrationRequestPayloadCapacity = 384;  ///< Buffer size for a serialized extrusion_cali_set payload.
+constexpr std::size_t kBambuCalibrationSettingIdCapacity = 16;  ///< Buffer size for the self-assigned "setting_id" (e.g. "FS000004D2").
+constexpr std::size_t kBambuCalibrationNameCapacity = 32;      ///< Buffer size for the cosmetic "name" field shown in Bambu Studio.
+
 }  // namespace filament_station::config

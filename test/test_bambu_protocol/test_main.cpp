@@ -229,6 +229,107 @@ void testExtrusionCaliSelUsesGlobalTrayIdForSecondAms() {
   TEST_ASSERT_EQUAL_UINT32(2, print["slot_id"].as<std::uint32_t>());
 }
 
+void testExtrusionCaliSetPayload() {
+  services::BambuCalibrationRequest request{};
+  std::snprintf(request.filamentId, sizeof(request.filamentId), "GFL99");
+  std::snprintf(request.settingId, sizeof(request.settingId), "FS000004D2");
+  std::snprintf(request.name, sizeof(request.name), "FilamentStation #1234");
+  std::snprintf(request.nozzleId, sizeof(request.nozzleId),
+               "hardened_steel-0.4");
+  request.kValue = 0.123F;
+
+  char payload[384]{};
+  const std::size_t length = services::bambuBuildExtrusionCaliSet(
+      9, 0, 2, "0.4", request, payload, sizeof(payload));
+  TEST_ASSERT_GREATER_THAN_UINT32(0, length);
+
+  JsonDocument document;
+  TEST_ASSERT_FALSE(deserializeJson(document, payload, length));
+  const JsonObjectConst print = document["print"];
+  TEST_ASSERT_EQUAL_STRING("extrusion_cali_set",
+                           print["command"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("0.4", print["nozzle_diameter"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("9", print["sequence_id"].as<const char*>());
+  const JsonArrayConst filaments = print["filaments"];
+  TEST_ASSERT_EQUAL_UINT32(1, filaments.size());
+  const JsonObjectConst filament = filaments[0];
+  TEST_ASSERT_EQUAL_UINT32(0, filament["ams_id"].as<std::uint32_t>());
+  TEST_ASSERT_EQUAL_UINT32(0, filament["extruder_id"].as<std::uint32_t>());
+  TEST_ASSERT_EQUAL_STRING("GFL99", filament["filament_id"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("0.123000", filament["k_value"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("0.000000", filament["n_coef"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("FilamentStation #1234",
+                           filament["name"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("0.4",
+                           filament["nozzle_diameter"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("hardened_steel-0.4",
+                           filament["nozzle_id"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("FS000004D2",
+                           filament["setting_id"].as<const char*>());
+  TEST_ASSERT_EQUAL_UINT32(2, filament["slot_id"].as<std::uint32_t>());
+  TEST_ASSERT_EQUAL_INT32(-1, filament["tray_id"].as<std::int32_t>());
+}
+
+void testExtrusionCaliGetPayload() {
+  char payload[256]{};
+  const std::size_t length =
+      services::bambuBuildExtrusionCaliGet(3, "0.4", payload, sizeof(payload));
+  TEST_ASSERT_GREATER_THAN_UINT32(0, length);
+
+  JsonDocument document;
+  TEST_ASSERT_FALSE(deserializeJson(document, payload, length));
+  const JsonObjectConst print = document["print"];
+  TEST_ASSERT_EQUAL_STRING("extrusion_cali_get",
+                           print["command"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("", print["filament_id"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("0.4", print["nozzle_diameter"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("3", print["sequence_id"].as<const char*>());
+}
+
+void testFindCalibrationBySettingIdMatches() {
+  JsonDocument document;
+  deserializeJson(document, R"({
+    "print": {
+      "command": "extrusion_cali_get",
+      "filaments": [
+        {"setting_id":"OTHER","cali_idx":1},
+        {"setting_id":"FS000004D2","cali_idx":7}
+      ]
+    }
+  })");
+  const auto result =
+      services::bambuFindCalibrationBySettingId(document, "FS000004D2");
+  TEST_ASSERT_TRUE(result.found);
+  TEST_ASSERT_EQUAL_INT32(7, result.caliIdx);
+}
+
+void testFindCalibrationBySettingIdNoMatch() {
+  JsonDocument withoutMatch;
+  deserializeJson(withoutMatch, R"({
+    "print": {"filaments": [{"setting_id":"OTHER","cali_idx":1}]}
+  })");
+  TEST_ASSERT_FALSE(
+      services::bambuFindCalibrationBySettingId(withoutMatch, "FS000004D2")
+          .found);
+
+  JsonDocument emptyList;
+  deserializeJson(emptyList, R"({"print": {"filaments": []}})");
+  TEST_ASSERT_FALSE(
+      services::bambuFindCalibrationBySettingId(emptyList, "FS000004D2")
+          .found);
+
+  JsonDocument noFilaments;
+  deserializeJson(noFilaments, R"({"print": {"command":"extrusion_cali_get"}})");
+  TEST_ASSERT_FALSE(
+      services::bambuFindCalibrationBySettingId(noFilaments, "FS000004D2")
+          .found);
+
+  JsonDocument noPrint;
+  deserializeJson(noPrint, R"({"system":{}})");
+  TEST_ASSERT_FALSE(
+      services::bambuFindCalibrationBySettingId(noPrint, "FS000004D2").found);
+}
+
 void testResolveBambuMaterialPla() {
   const models::BambuMaterialMappingTable table = buildTestMaterialTable();
   const auto* mapping = services::resolveBambuMaterial(table, "PLA");
@@ -591,6 +692,23 @@ void testApplyReportParsesNozzleDiameter() {
   TEST_ASSERT_EQUAL_STRING("0.4", state.nozzleDiameter);
 }
 
+void testApplyReportParsesNozzleType() {
+  JsonDocument document;
+  deserializeJson(document, R"({
+    "print": {"nozzle_type": "hardened_steel"}
+  })");
+  PrinterState state{};
+  TEST_ASSERT_TRUE(services::bambuApplyReport(document, state));
+  TEST_ASSERT_EQUAL_STRING("hardened_steel", state.nozzleType);
+
+  // A later report without the field must not reset it (same merge
+  // behavior as nozzleDiameter/the rest of bambuApplyReport()).
+  JsonDocument partial;
+  deserializeJson(partial, R"({"print": {"nozzle_diameter": "0.4"}})");
+  TEST_ASSERT_TRUE(services::bambuApplyReport(partial, state));
+  TEST_ASSERT_EQUAL_STRING("hardened_steel", state.nozzleType);
+}
+
 void testApplyReportParsesTrayNow() {
   // Global AMS slot (string form, as the printer sends it): AMS 1 slot 2 ->
   // amsId 1 * kSlotsPerAms 4 + trayId 2 = 6.
@@ -640,6 +758,10 @@ int main(int, char**) {
   RUN_TEST(testNormalizeTrayColorHexPassesThroughEightDigits);
   RUN_TEST(testExtrusionCaliSelPayload);
   RUN_TEST(testExtrusionCaliSelUsesGlobalTrayIdForSecondAms);
+  RUN_TEST(testExtrusionCaliSetPayload);
+  RUN_TEST(testExtrusionCaliGetPayload);
+  RUN_TEST(testFindCalibrationBySettingIdMatches);
+  RUN_TEST(testFindCalibrationBySettingIdNoMatch);
   RUN_TEST(testResolveBambuMaterialPla);
   RUN_TEST(testResolveBambuMaterialPetg);
   RUN_TEST(testResolveBambuMaterialPlaCfWinsOverPla);
@@ -663,6 +785,7 @@ int main(int, char**) {
   RUN_TEST(testApplyReportParsesNozzleTempAsString);
   RUN_TEST(testApplyReportKeepsNozzleTempWhenAbsentFromLaterReport);
   RUN_TEST(testApplyReportParsesNozzleDiameter);
+  RUN_TEST(testApplyReportParsesNozzleType);
   RUN_TEST(testApplyReportParsesTrayNow);
   return UNITY_END();
 }

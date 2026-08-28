@@ -307,6 +307,85 @@ std::size_t bambuBuildExtrusionCaliSel(std::uint32_t sequenceId,
   return written;
 }
 
+std::size_t bambuBuildExtrusionCaliSet(std::uint32_t sequenceId,
+                                       std::uint8_t amsId,
+                                       std::uint8_t trayId,
+                                       const char* nozzleDiameter,
+                                       const BambuCalibrationRequest& request,
+                                       char* output,
+                                       std::size_t outputCapacity) {
+  char sequenceIdText[12]{};
+  std::snprintf(sequenceIdText, sizeof(sequenceIdText), "%lu",
+               static_cast<unsigned long>(sequenceId));
+  char kValueText[16]{};
+  std::snprintf(kValueText, sizeof(kValueText), "%.6f",
+               static_cast<double>(request.kValue));
+
+  JsonDocument document;
+  JsonObject print = document["print"].to<JsonObject>();
+  print["command"] = "extrusion_cali_set";
+  JsonArray filaments = print["filaments"].to<JsonArray>();
+  JsonObject filament = filaments.add<JsonObject>();
+  filament["ams_id"] = amsId;
+  filament["extruder_id"] = 0;
+  filament["filament_id"] = request.filamentId;
+  filament["k_value"] = kValueText;
+  filament["n_coef"] = "0.000000";
+  filament["name"] = request.name;
+  filament["nozzle_diameter"] = nozzleDiameter;
+  filament["nozzle_id"] = request.nozzleId;
+  filament["setting_id"] = request.settingId;
+  filament["slot_id"] = trayId;
+  // Not yet assigned to a slot -- that's what the follow-up
+  // extrusion_cali_sel (with the cali_idx learned via extrusion_cali_get)
+  // does, see the doc comment on this function.
+  filament["tray_id"] = -1;
+  print["nozzle_diameter"] = nozzleDiameter;
+  print["sequence_id"] = sequenceIdText;
+
+  const std::size_t written = serializeJson(document, output, outputCapacity);
+  if (written == 0 || written >= outputCapacity) return 0;
+  return written;
+}
+
+std::size_t bambuBuildExtrusionCaliGet(std::uint32_t sequenceId,
+                                       const char* nozzleDiameter,
+                                       char* output,
+                                       std::size_t outputCapacity) {
+  char sequenceIdText[12]{};
+  std::snprintf(sequenceIdText, sizeof(sequenceIdText), "%lu",
+               static_cast<unsigned long>(sequenceId));
+
+  JsonDocument document;
+  JsonObject print = document["print"].to<JsonObject>();
+  print["command"] = "extrusion_cali_get";
+  print["filament_id"] = "";
+  print["nozzle_diameter"] = nozzleDiameter;
+  print["sequence_id"] = sequenceIdText;
+
+  const std::size_t written = serializeJson(document, output, outputCapacity);
+  if (written == 0 || written >= outputCapacity) return 0;
+  return written;
+}
+
+BambuCalibrationLookupResult bambuFindCalibrationBySettingId(
+    const JsonDocument& document, const char* settingId) {
+  BambuCalibrationLookupResult result{};
+  if (!document["print"].is<JsonObjectConst>()) return result;
+  const JsonObjectConst print = document["print"].as<JsonObjectConst>();
+  if (!print["filaments"].is<JsonArrayConst>()) return result;
+  for (JsonObjectConst entry : print["filaments"].as<JsonArrayConst>()) {
+    const char* entrySettingId = entry["setting_id"] | "";
+    if (entrySettingId[0] == '\0' || std::strcmp(entrySettingId, settingId) != 0)
+      continue;
+    if (!entry["cali_idx"].is<std::int32_t>()) continue;
+    result.found = true;
+    result.caliIdx = entry["cali_idx"].as<std::int32_t>();
+    return result;
+  }
+  return result;
+}
+
 bool bambuApplyReport(const JsonDocument& document,
                       models::PrinterState& state) {
   if (!document["print"].is<JsonObjectConst>()) return false;
@@ -378,6 +457,14 @@ bool bambuApplyReport(const JsonDocument& document,
   if (print["nozzle_diameter"].is<const char*>()) {
     std::snprintf(state.nozzleDiameter, sizeof(state.nozzleDiameter), "%s",
                  print["nozzle_diameter"].as<const char*>());
+  }
+  // Unverified against real hardware whether/in what form this printer
+  // sends "nozzle_type" -- see PrinterState::nozzleType's doc comment. Kept
+  // at its last known value if a report doesn't include the field, same
+  // merge behavior as the rest of this function.
+  if (print["nozzle_type"].is<const char*>()) {
+    std::snprintf(state.nozzleType, sizeof(state.nozzleType), "%s",
+                 print["nozzle_type"].as<const char*>());
   }
   return true;
 }

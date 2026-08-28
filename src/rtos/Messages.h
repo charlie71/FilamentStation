@@ -220,6 +220,14 @@ struct BambuCommand {
   // from Spoolman.
   char trayType[16]{};              ///< Material to write, for AssignTray (empty clears the slot).
   char trayColorHex[9]{};           ///< Color to write, for AssignTray.
+  // Spoolman filament's flow_dynamics_k_factor, for AssignTray -- fetched by
+  // AppTask via the same LoadSpool->LoadFilament chain already used for the
+  // Home-screen K-factor display (see AppTask.cpp's SlotAssignmentStage).
+  // BambuTask uploads it (extrusion_cali_set/get/sel) only if kFactorValid
+  // and the printer has already reported a nozzle type; otherwise AssignTray
+  // proceeds exactly as before (fail-closed, see docs/bambu-protocol.md).
+  bool kFactorValid = false;        ///< Whether #kFactor is valid, for AssignTray.
+  float kFactor = 0.0F;             ///< Flow-dynamics K-factor to upload, for AssignTray, only valid if #kFactorValid.
 };
 
 /// @brief Command sent from AppTask to tasks::updateTask().

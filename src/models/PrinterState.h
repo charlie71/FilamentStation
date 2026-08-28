@@ -155,6 +155,14 @@ struct PrinterState {
   // required (as a string) by the "extrusion_cali_sel" wire command, see
   // docs/bambu-protocol.md.
   char nozzleDiameter[8]{};  ///< Printer-reported nozzle diameter string, e.g. "0.4".
+  // Printer-reported nozzle type (e.g. "hardened_steel"), from
+  // "print.nozzle_type" -- unverified against real hardware whether/in what
+  // form this printer sends it (community docs only, see
+  // docs/bambu-protocol.md). Empty until (if ever) a report with that field
+  // arrives; used only to best-effort build the "nozzle_id" field required
+  // by "extrusion_cali_set" (K-factor upload) -- that upload is skipped
+  // entirely while this stays empty (fail-closed, see BambuTask.cpp).
+  char nozzleType[24]{};  ///< Printer-reported nozzle type string, e.g. "hardened_steel", or empty if never reported.
   // Which tray is currently loaded into the nozzle ("print.ams.tray_now"),
   // see kActiveTrayNowExternal/kActiveTrayNowNone above -- Nutzerwunsch
   // 2026-08-24 (Home-Tray-Karten zeigen das Duesen-Icon nur beim wirklich
