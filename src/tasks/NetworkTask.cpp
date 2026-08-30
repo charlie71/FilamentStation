@@ -33,18 +33,39 @@ enum class WifiSignal : std::uint8_t {
   GotIp,              ///< IP address acquired; connection is fully usable.
   Disconnected,       ///< Lost the AP association.
   LostIp,             ///< Still associated, but the IP address was lost.
+  // Nutzerbericht 2026-08-30 (Fortsetzung): der bisherige feste
+  // Settle-Delay (kWifiPostWakeSettleMs) nach dem Aufwachen löste den
+  // Reconnect-Fehlschlag nicht zuverlässig -- Verdacht war richtig
+  // (WiFi.mode(WIFI_STA) noch nicht wirklich bereit), aber eine feste
+  // Wartezeit ist ein Ratespiel. Reagiert jetzt stattdessen auf das
+  // tatsächliche STA_START-Ereignis (siehe wifiEventCallback()), mit
+  // Fallback-Timeout falls das Ereignis ausbleibt.
+  StationStarted,     ///< STA-Schnittstelle ist bereit (ARDUINO_EVENT_WIFI_STA_START), erst danach ist WiFi.reconnect() zuverlässig.
 };
 static_assert(sizeof(WifiSignal) == sizeof(std::uint8_t));
 
 QueueHandle_t wifiEventQueue = nullptr;  ///< Copy of rtos::RtosContext::wifiEventQueue, set at task startup for wifiEventCallback() to use.
 volatile bool wifiEventQueueOverflow = false;  ///< Set by wifiEventCallback() when #wifiEventQueue is full; polled and logged once per occurrence by networkTask().
+// Nur für Diagnose (Nutzerbericht 2026-08-30): der bisherige
+// "WiFi station disconnected"-Log verriet nie, WARUM -- wifi_err_reason_t
+// als roher Zahlenwert (u. a. 2=AUTH_EXPIRE, 201=NO_AP_FOUND,
+// 202=AUTH_FAIL, 204=HANDSHAKE_TIMEOUT, siehe esp_wifi_types.h), aus dem
+// vollen WiFiEventFuncCb-Callback gelesen (die bisherige Callback-Variante
+// bekam nur die Event-ID, nicht die Zusatzinfo). Nicht synchronisiert
+// (volatile genügt, reiner Diagnosewert, keine Ablaufsteuerung hängt
+// daran) -- gleiches Muster wie #wifiEventQueueOverflow.
+volatile std::uint8_t lastWifiDisconnectReason = 0;  ///< Raw wifi_err_reason_t of the most recent STA disconnect, for diagnostic logging only.
 
 /// @brief Arduino WiFi event callback; classifies and forwards relevant events to #wifiEventQueue.
 /// @param event Raw Arduino WiFi event id.
+/// @param info Event-specific details (only the disconnect reason is used here).
 /// @note Runs on the Arduino WiFi event task, not an ISR; kept bounded (one enqueue, no blocking).
-void wifiEventCallback(arduino_event_id_t event) {
+void wifiEventCallback(arduino_event_id_t event, arduino_event_info_t info) {
   WifiSignal signal{};
   switch (event) {
+    case ARDUINO_EVENT_WIFI_STA_START:
+      signal = WifiSignal::StationStarted;
+      break;
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
       signal = WifiSignal::StationConnected;
       break;
@@ -53,6 +74,7 @@ void wifiEventCallback(arduino_event_id_t event) {
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       signal = WifiSignal::Disconnected;
+      lastWifiDisconnectReason = info.wifi_sta_disconnected.reason;
       break;
     case ARDUINO_EVENT_WIFI_STA_LOST_IP:
       signal = WifiSignal::LostIp;
@@ -220,9 +242,14 @@ void handleWifiSignal(rtos::RtosContext& ctx, WifiSignal signal,
       break;
     case WifiSignal::Disconnected:
       xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_WIFI_CONNECTED);
-      FS_LOGW(services::LogComponent::Net, "WiFi station disconnected");
+      FS_LOGW(services::LogComponent::Net,
+              "WiFi station disconnected reason=%u",
+              static_cast<unsigned>(lastWifiDisconnectReason));
       publishEvent(ctx, rtos::AppEventType::WifiDisconnected,
                    portalRequestId, "WLAN-Verbindung getrennt");
+      break;
+    case WifiSignal::StationStarted:
+      FS_LOGD(services::LogComponent::Net, "WiFi STA interface started");
       break;
     case WifiSignal::LostIp:
       xEventGroupClearBits(ctx.systemEventGroup, rtos::EVENT_WIFI_CONNECTED);
@@ -308,9 +335,18 @@ void networkTask(void* parameter) {
   // compiled out in this project, so a runtime WiFi loss is otherwise never
   // retried. 0 allows an immediate first attempt.
   TickType_t lastReconnectAttemptAt = 0;
-  // Energiesparen (TASKS.md Phase 11.5): waehrend absichtlich abgeschaltetem
-  // WiFi soll der bestehende Reconnect-Mechanismus nicht dagegen ankaempfen.
+  // Energiesparen (TASKS.md Phase 11.5): während absichtlich abgeschaltetem
+  // WiFi soll der bestehende Reconnect-Mechanismus nicht dagegen ankämpfen.
   bool poweredDown = false;
+  // Nutzerbericht 2026-08-30 (Fortsetzung, der feste kWifiPostWakeSettleMs-
+  // Delay reichte nicht zuverlässig): nach WiFi.mode(WIFI_STA) im
+  // Aufwach-Pfad wird jetzt auf das echte STA_START-Ereignis gewartet,
+  // statt eine feste Zeit zu raten -- awaitingStaStart/staStartFallbackAt
+  // steuern das, siehe PowerUp/StationStarted unten. Fallback-Deadline
+  // verhindert ein permanentes Hängenbleiben, falls das Ereignis auf
+  // dieser Hardware/Firmware-Version doch einmal ausbleiben sollte.
+  bool awaitingStaStart = false;
+  TickType_t staStartFallbackAt = 0;
 
   rtos::NetworkCommand command{};
   for (;;) {
@@ -320,6 +356,8 @@ void networkTask(void* parameter) {
     const TickType_t wait =
         portalActive
             ? pdMS_TO_TICKS(config::kWifiPortalServiceIntervalMs)
+        : awaitingStaStart
+            ? pdMS_TO_TICKS(config::kWifiStaStartPollIntervalMs)
         : disconnectedAndConfigured
             ? pdMS_TO_TICKS(config::kWifiReconnectIntervalMs)
             : portMAX_DELAY;
@@ -399,29 +437,32 @@ void networkTask(void* parameter) {
         case rtos::NetworkCommandType::PowerUp:
           if (poweredDown) {
             poweredDown = false;
+            // Nutzerbericht 2026-08-30 (Fortsetzung): ein fester Delay vor
+            // dem ersten reconnect()-Versuch löste das vereinzelte
+            // Fehlschlagen nicht zuverlässig -- statt eine Wartezeit zu
+            // raten, jetzt auf das tatsächliche STA_START-Ereignis warten
+            // (siehe wifiEventCallback()/awaitingStaStart oben);
+            // lastReconnectAttemptAt wird erst dort (oder vom
+            // Fallback-Timeout weiter unten) auf 0 gesetzt.
             WiFi.mode(WIFI_STA);
-            // Nutzerbericht 2026-08-30: der allererste reconnect()-Versuch
-            // nach dem Aufwachen schlug vereinzelt fehl (klappte beim
-            // nächsten Aufwachen wieder) -- WiFi.mode(WIFI_STA) kehrt auf
-            // ESP32 zurück, bevor die STA-Schnittstelle tatsächlich
-            // vollständig bereit ist; siehe config::kWifiPostWakeSettleMs's
-            // Kommentar. Kurze, einmalige Wartezeit hier, kein eigener
-            // Sonderpfad für die eigentliche Reconnect-Logik nötig.
-            vTaskDelay(pdMS_TO_TICKS(config::kWifiPostWakeSettleMs));
-            // 0 löst im nächsten Schleifendurchlauf sofort den bestehenden
-            // Reconnect-Versuch aus (siehe lastReconnectAttemptAt oben),
-            // ohne eigenen Sonderpfad. Bambu-MQTT und Spoolman erkennen die
-            // Wiederverbindung selbstständig über EVENT_WIFI_CONNECTED
-            // (bestehende Recovery-Logik aus Phase 10.4/10.5).
-            lastReconnectAttemptAt = 0;
+            awaitingStaStart = true;
+            staStartFallbackAt =
+                xTaskGetTickCount() +
+                pdMS_TO_TICKS(config::kWifiStaStartFallbackMs);
             FS_LOGI(services::LogComponent::Net,
-                    "WiFi powered on, reconnect scheduled");
+                    "WiFi powered on, waiting for STA start event");
           }
           break;
       }
     } else if (ready == wifiEventQueue) {
       WifiSignal signal{};
       if (xQueueReceive(wifiEventQueue, &signal, 0) == pdTRUE) {
+        if (signal == WifiSignal::StationStarted && awaitingStaStart) {
+          awaitingStaStart = false;
+          lastReconnectAttemptAt = 0;
+          FS_LOGI(services::LogComponent::Net,
+                  "STA start event received, reconnect scheduled");
+        }
         handleWifiSignal(ctx, signal, portalRequestId);
       }
     }
@@ -432,15 +473,31 @@ void networkTask(void* parameter) {
               "Event enqueue failed queue=wifi_event");
     }
 
-    if (!poweredDown && !portalActive && configurationApplied &&
-        WiFi.status() != WL_CONNECTED) {
+    if (awaitingStaStart &&
+        static_cast<std::int32_t>(xTaskGetTickCount() - staStartFallbackAt) >=
+            0) {
+      // Fallback (Nutzerbericht 2026-08-30): STA_START ist auf ESP32
+      // normalerweise zuverlässig, aber falls es doch einmal ausbleibt,
+      // soll der Reconnect trotzdem irgendwann versucht werden statt für
+      // immer zu warten.
+      awaitingStaStart = false;
+      lastReconnectAttemptAt = 0;
+      FS_LOGW(services::LogComponent::Net,
+              "STA start event timed out, attempting reconnect anyway");
+    }
+
+    if (!awaitingStaStart && !poweredDown && !portalActive &&
+        configurationApplied && WiFi.status() != WL_CONNECTED) {
       const TickType_t now = xTaskGetTickCount();
       if (static_cast<TickType_t>(now - lastReconnectAttemptAt) >=
           pdMS_TO_TICKS(config::kWifiReconnectIntervalMs)) {
         lastReconnectAttemptAt = now;
+        const wl_status_t statusBefore = WiFi.status();
+        const bool reconnectStarted = WiFi.reconnect();
         FS_LOGI(services::LogComponent::Net,
-                "Attempting WiFi reconnect after runtime loss");
-        WiFi.reconnect();
+                "Attempting WiFi reconnect after runtime loss "
+                "status_before=%d reconnect_started=%d",
+                static_cast<int>(statusBefore), reconnectStarted ? 1 : 0);
       }
     }
 

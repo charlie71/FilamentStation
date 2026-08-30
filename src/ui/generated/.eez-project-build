@@ -17,6 +17,7 @@
     "ui_image_3_d_printer_nozzle_w.c",
     "ui_image_3_d_printer_w.c",
     "ui_image_back_w.c",
+    "ui_image_bambu_logo_g.c",
     "ui_image_bambulab_logo.c",
     "ui_image_cancel.c",
     "ui_image_cancel_w.c",
@@ -34,9 +35,10 @@
     "ui_image_spoolman_connected_w.c",
     "ui_image_spoolman_disconneced.c",
     "ui_image_spoolman_logo.c",
+    "ui_image_spule_w.c",
     "ui_image_wifi.c",
     "ui_image_wifi_connected_w.c",
-    "ui_image_wifi_disconnected_w.c",
+    "ui_image_wifi_disconnected_g.c",
     "vars.h"
   ]
 }

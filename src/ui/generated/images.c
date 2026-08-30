@@ -1,6 +1,6 @@
 #include "images.h"
 
-const ext_img_desc_t images[24] = {
+const ext_img_desc_t images[26] = {
     { "WIFI", &img_wifi },
     { "Scale", &img_scale },
     { "3D Printer W", &img_3_d_printer_w },
@@ -19,10 +19,12 @@ const ext_img_desc_t images[24] = {
     { "Refresh W", &img_refresh_w },
     { "conneced W", &img_conneced_w },
     { "disconneced W", &img_disconneced_w },
-    { "WIFI disconnected W", &img_wifi_disconnected_w },
+    { "WIFI disconnected G", &img_wifi_disconnected_g },
     { "Spoolman disconneced", &img_spoolman_disconneced },
     { "bambulab logo", &img_bambulab_logo },
     { "spoolman logo", &img_spoolman_logo },
     { "3D Printer Nozzle", &img_3_d_printer_nozzle },
     { "3D Printer Nozzle W", &img_3_d_printer_nozzle_w },
+    { "bambu logo G", &img_bambu_logo_g },
+    { "Spule W", &img_spule_w },
 };

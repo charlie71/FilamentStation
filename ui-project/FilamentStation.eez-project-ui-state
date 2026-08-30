@@ -1,12 +1,12 @@
 {
   "navigation": {
     "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/17",
-    "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/6",
+    "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/17",
     "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/4",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
     "selectedThemeColorObject": "[FilamentStation.eez-project]:/colors/6",
     "selectedFontObject": "[FilamentStation.eez-project]:/fonts/1",
-    "selectedBitmapObject": "[FilamentStation.eez-project]:/bitmaps/14",
+    "selectedBitmapObject": "[FilamentStation.eez-project]:/bitmaps/24",
     "subnavigationSelectedItems": {
       "variables-tab/sub-navigation/selected-item": "Global"
     }
@@ -124,7 +124,7 @@
             {
               "type": "row",
               "id": "#bcb8346a-a1d4-458f-ad8d-c7a84e05f3a1",
-              "weight": 21.833243547309298,
+              "weight": 29.135788736379535,
               "children": [
                 {
                   "type": "tabset",
@@ -196,40 +196,30 @@
             {
               "type": "tabset",
               "id": "EDITORS",
-              "weight": 49.58596004047339,
+              "weight": 42.283414851403165,
+              "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
                 {
                   "type": "tab",
-                  "id": "#e368c9bf-289f-49c9-9192-04b65e68fad0",
-                  "name": "SCR_TAG_ACTION_SELECT",
+                  "id": "#14dbe2e6-69c5-405c-8ae8-c4ff78ea1bcf",
+                  "name": "CMP_AMS_TRAY_OVERVIEW",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/17",
-                    "permanent": false
-                  },
-                  "icon": "svg:page"
-                },
-                {
-                  "type": "tab",
-                  "id": "#8cca91c9-4476-4a6c-bd1a-9eefd8064973",
-                  "name": "CMP_TRAY_CARD",
-                  "component": "editor",
-                  "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userWidgets/6",
+                    "objectPath": "[FilamentStation.eez-project]:/userWidgets/17",
                     "permanent": false
                   },
                   "icon": "svg:user_widget"
                 },
                 {
                   "type": "tab",
-                  "id": "#9b350182-761c-4c67-9ece-429ca7d88b9f",
-                  "name": "SCR_STAGING_DETAILS",
+                  "id": "#7ab8ebf1-f79d-4e3a-b972-ffd5c7735e63",
+                  "name": "SCR_TAG_ACTION_SELECT",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/4",
-                    "permanent": true
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/17",
+                    "permanent": false
                   },
                   "icon": "svg:page"
                 }
@@ -1089,17 +1079,18 @@
       "selectionBack": {
         "0": {
           "0": {},
-          "2": {
+          "1": {
             "$selected": true
-          }
+          },
+          "2": {}
         }
       },
       "transform": {
         "translate": {
-          "x": -235.1139787293043,
-          "y": -147.0404261088999
+          "x": -288.4692276832045,
+          "y": -250.94936273269926
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1112,34 +1103,23 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {},
-            "2": {},
-            "3": {}
-          },
+          "0": {},
           "1": {},
-          "3": {},
-          "4": {},
-          "5": {},
-          "6": {},
-          "7": {},
-          "8": {},
-          "9": {},
-          "10": {},
-          "11": {},
-          "31": {
+          "2": {},
+          "7": {
             "$selected": true
           },
-          "32": {}
+          "8": {},
+          "9": {},
+          "10": {}
         }
       },
       "transform": {
         "translate": {
-          "x": -116.46628563886668,
-          "y": -124.96069464239568
+          "x": -256.9649833219641,
+          "y": -40.8778775507928
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1152,30 +1132,28 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {
-              "$selected": true
-            },
-            "3": {}
-          },
           "1": {},
-          "3": {},
-          "4": {},
-          "5": {
+          "2": {},
+          "3": {
             "0": {}
           },
-          "6": {},
+          "4": {},
+          "5": {
+            "0": {
+              "$selected": true
+            }
+          },
           "7": {},
-          "10": {}
+          "8": {},
+          "9": {}
         }
       },
       "transform": {
         "translate": {
-          "x": -24.211592620023993,
-          "y": -144.38496423610724
+          "x": -215.87886806937948,
+          "y": -164.25467066152663
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1188,32 +1166,29 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {}
-          },
+          "1": {},
           "2": {},
           "3": {},
           "4": {},
-          "5": {},
-          "8": {},
-          "9": {
-            "0": {}
-          },
-          "10": {
+          "7": {},
+          "8": {
+            "0": {},
             "$selected": true
           },
+          "9": {},
+          "11": {},
+          "13": {},
           "14": {},
           "15": {},
-          "16": {},
-          "17": {}
+          "16": {}
         }
       },
       "transform": {
         "translate": {
-          "x": -345.9056969342723,
-          "y": -10.85788648163674
+          "x": -236.36118926046103,
+          "y": -120.40239415544804
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1226,25 +1201,23 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "1": {}
-          },
+          "0": {},
           "1": {},
-          "2": {},
-          "3": {
+          "5": {},
+          "6": {},
+          "10": {},
+          "11": {},
+          "12": {
             "$selected": true
-          },
-          "7": {},
-          "8": {},
-          "14": {}
+          }
         }
       },
       "transform": {
         "translate": {
-          "x": -197.83240670015854,
-          "y": -159.82127645612943
+          "x": -277.6646526808802,
+          "y": -265.40716780549326
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1269,7 +1242,7 @@
           "x": -258,
           "y": -38
         },
-        "scale": 1.25
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1281,18 +1254,21 @@
     "[FilamentStation.eez-project]:/userWidgets/1[flow-state]": {
       "selectionFront": {},
       "selectionBack": {
-        "0": {
-          "0": {
+        "0": {},
+        "1": {
+          "2": {
             "$selected": true
           }
-        }
+        },
+        "2": {},
+        "5": {}
       },
       "transform": {
         "translate": {
-          "x": -258,
-          "y": -46
+          "x": -0.5897590969364757,
+          "y": -30.98898172478934
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1309,7 +1285,7 @@
           "x": -24,
           "y": -24
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1332,7 +1308,7 @@
           "x": -64,
           "y": -16
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1349,7 +1325,7 @@
           "x": -116,
           "y": -24
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1366,7 +1342,7 @@
           "x": -56,
           "y": -52
         },
-        "scale": 0.9
+        "scale": 1.5
       },
       "timeline": {
         "isEditorActive": false,
@@ -1395,7 +1371,7 @@
           "x": -157.34782359575934,
           "y": -255.30327180262583
         },
-        "scale": 1.25
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1411,18 +1387,18 @@
         "1": {},
         "4": {},
         "6": {},
-        "7": {
-          "$selected": true
-        },
+        "7": {},
         "8": {},
-        "9": {}
+        "9": {
+          "$selected": true
+        }
       },
       "transform": {
         "translate": {
           "x": -125.82143839518227,
           "y": -98.90783437093097
         },
-        "scale": 1.25
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1456,7 +1432,7 @@
           "x": -200,
           "y": -110
         },
-        "scale": 1.1
+        "scale": 1.5
       },
       "timeline": {
         "isEditorActive": false,
@@ -1473,7 +1449,7 @@
           "x": -200,
           "y": -110
         },
-        "scale": 1.1
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1490,7 +1466,7 @@
           "x": -200,
           "y": -110
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1507,7 +1483,7 @@
           "x": -150,
           "y": -28
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1524,7 +1500,7 @@
           "x": -34,
           "y": -24
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1541,7 +1517,7 @@
           "x": -150,
           "y": -28
         },
-        "scale": 0.8
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1558,7 +1534,7 @@
           "x": -200,
           "y": -100
         },
-        "scale": 1.1
+        "scale": 0.9
       },
       "timeline": {
         "isEditorActive": false,
@@ -1573,25 +1549,21 @@
         "0": {
           "0": {
             "0": {},
-            "1": {},
-            "3": {}
+            "$selected": true
           },
-          "2": {
+          "1": {
             "0": {}
           },
-          "3": {
-            "0": {}
-          },
+          "3": {},
+          "4": {},
           "5": {},
+          "6": {},
           "7": {},
           "8": {},
-          "9": {},
           "10": {},
           "11": {},
           "12": {},
-          "15": {
-            "$selected": true
-          }
+          "13": {}
         }
       },
       "transform": {
@@ -1599,7 +1571,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1612,25 +1584,19 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {},
-            "2": {},
-            "3": {}
-          },
-          "1": {},
-          "5": {},
-          "9": {
-            "0": {
-              "$selected": true
-            }
-          },
-          "10": {
+          "0": {},
+          "3": {},
+          "7": {
             "0": {}
           },
+          "8": {
+            "0": {}
+          },
+          "10": {},
           "12": {},
-          "13": {},
-          "15": {}
+          "13": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -1638,7 +1604,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1651,20 +1617,13 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {
-              "$selected": true
-            },
-            "2": {},
-            "3": {}
-          },
-          "1": {},
-          "4": {},
+          "2": {},
+          "6": {},
+          "7": {},
           "8": {},
-          "9": {},
-          "10": {},
-          "11": {}
+          "9": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -1672,7 +1631,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1685,18 +1644,13 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {
-              "$selected": true
-            },
-            "2": {},
-            "3": {}
-          },
+          "8": {},
           "10": {},
+          "11": {},
           "12": {},
-          "13": {},
-          "15": {}
+          "13": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -1704,7 +1658,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1717,22 +1671,16 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {},
-            "2": {},
-            "3": {}
-          },
+          "0": {},
           "1": {},
-          "2": {
-            "$selected": true
-          },
+          "2": {},
           "3": {},
-          "4": {},
-          "5": {},
+          "10": {},
           "12": {},
-          "15": {},
-          "16": {}
+          "13": {},
+          "14": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -1740,7 +1688,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1753,21 +1701,15 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {
-              "$selected": true
-            },
-            "2": {},
-            "3": {}
-          },
-          "1": {},
-          "2": {},
-          "6": {},
+          "0": {},
+          "4": {},
+          "7": {},
           "9": {},
           "11": {},
-          "14": {},
-          "15": {}
+          "12": {},
+          "13": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -1775,7 +1717,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1788,23 +1730,17 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {
-              "$selected": true
-            },
-            "2": {},
-            "3": {}
-          },
+          "0": {},
           "1": {},
-          "2": {},
           "3": {},
-          "5": {},
-          "10": {},
+          "8": {},
+          "11": {},
+          "12": {},
           "13": {},
           "14": {},
-          "16": {},
-          "17": {}
+          "15": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -1812,7 +1748,7 @@
           "x": -240,
           "y": -269.54450767381127
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1825,26 +1761,18 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "1": {},
-            "2": {},
-            "3": {}
-          },
-          "1": {},
-          "2": {
-            "$selected": true
-          },
+          "0": {},
+          "2": {},
+          "3": {},
           "4": {},
           "5": {},
           "6": {},
           "7": {},
           "8": {},
-          "9": {
+          "9": {},
+          "10": {
             "$selected": true
-          },
-          "10": {},
-          "11": {},
-          "12": {}
+          }
         }
       },
       "transform": {
@@ -1852,7 +1780,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1865,25 +1793,17 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {},
-            "2": {},
-            "3": {}
-          },
+          "0": {},
           "1": {},
-          "2": {
-            "$selected": true
-          },
-          "3": {},
-          "4": {},
+          "2": {},
+          "5": {},
+          "6": {},
+          "7": {},
           "8": {},
-          "9": {
+          "9": {},
+          "10": {
             "$selected": true
-          },
-          "10": {},
-          "11": {},
-          "12": {}
+          }
         }
       },
       "transform": {
@@ -1891,7 +1811,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1904,18 +1824,14 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {},
-            "2": {},
-            "3": {}
-          },
-          "1": {},
-          "4": {},
+          "2": {},
+          "3": {},
           "5": {},
+          "6": {},
           "7": {},
-          "9": {},
-          "10": {}
+          "8": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -1923,7 +1839,7 @@
           "x": -240,
           "y": -60.000003152642265
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1936,20 +1852,14 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {
-              "$selected": true
-            },
-            "2": {},
-            "3": {}
-          },
           "1": {},
-          "3": {},
+          "5": {},
+          "6": {},
           "7": {},
-          "9": {},
-          "10": {},
-          "11": {}
+          "8": {},
+          "9": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -1957,7 +1867,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1970,21 +1880,15 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {},
-            "2": {},
-            "3": {}
-          },
-          "1": {},
-          "2": {
-            "$selected": true
-          },
-          "4": {},
+          "0": {},
+          "2": {},
+          "3": {},
           "5": {},
+          "6": {},
           "7": {},
-          "9": {},
-          "10": {}
+          "8": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -1992,7 +1896,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 0.9
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -2005,31 +1909,29 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {},
-            "2": {},
-            "3": {}
-          },
+          "0": {},
           "1": {},
           "2": {},
           "3": {},
-          "4": {},
+          "4": {
+            "0": {}
+          },
           "5": {},
-          "6": {},
           "7": {},
-          "9": {},
-          "11": {},
+          "8": {},
           "12": {},
-          "16": {}
+          "14": {
+            "$selected": true
+          },
+          "15": {}
         }
       },
       "transform": {
         "translate": {
-          "x": -240,
-          "y": -259.99999684735775
+          "x": -239.99999999999997,
+          "y": -150.4554891735465
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -2052,9 +1954,9 @@
       "transform": {
         "translate": {
           "x": -240,
-          "y": -160
+          "y": 59.08901534762259
         },
-        "scale": 1.25
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -2067,28 +1969,21 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {},
-            "2": {},
-            "3": {}
-          },
+          "0": {},
           "1": {},
           "2": {},
-          "3": {},
+          "4": {},
+          "5": {},
           "6": {},
-          "8": {},
-          "9": {
-            "$selected": true
-          }
+          "7": {}
         }
       },
       "transform": {
         "translate": {
-          "x": -240,
-          "y": -488.6335230214338
+          "x": -173.85868496365015,
+          "y": -126.48673329208835
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -2101,20 +1996,14 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {},
-            "2": {},
-            "3": {}
-          },
-          "1": {
-            "$selected": true
-          },
-          "2": {},
+          "0": {},
+          "1": {},
           "3": {},
           "5": {},
           "7": {},
-          "10": {}
+          "8": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -2122,7 +2011,7 @@
           "x": -240,
           "y": -269.54450767381127
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -2135,29 +2024,17 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {},
-            "2": {},
-            "3": {}
-          },
+          "0": {},
           "1": {},
           "2": {},
-          "3": {
-            "$selected": true
-          },
-          "4": {
-            "$selected": true
-          },
-          "5": {
-            "$selected": true
-          },
-          "6": {
-            "$selected": true
-          },
+          "3": {},
+          "4": {},
+          "5": {},
           "7": {},
-          "9": {},
-          "11": {}
+          "8": {},
+          "9": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -2165,7 +2042,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -2178,19 +2055,13 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {},
-            "2": {},
-            "3": {}
-          },
+          "0": {},
           "1": {},
-          "2": {},
-          "3": {
+          "5": {},
+          "6": {},
+          "7": {
             "$selected": true
-          },
-          "7": {},
-          "9": {}
+          }
         }
       },
       "transform": {
@@ -2198,7 +2069,7 @@
           "x": -179.2998374135237,
           "y": -160
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -2211,23 +2082,17 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {},
-            "2": {},
-            "3": {}
+          "0": {},
+          "1": {
+            "$selected": true
           },
-          "1": {},
           "2": {},
           "3": {},
           "4": {},
-          "5": {},
           "6": {},
-          "9": {},
-          "10": {
-            "$selected": true
-          },
-          "11": {}
+          "7": {},
+          "8": {},
+          "9": {}
         }
       },
       "transform": {
@@ -2235,7 +2100,7 @@
           "x": -240,
           "y": -269.54450767381127
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -2248,32 +2113,30 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "0": {},
-            "1": {},
-            "2": {},
-            "3": {}
-          },
+          "0": {},
           "1": {},
-          "2": {},
-          "3": {},
-          "4": {
+          "2": {
+            "0": {}
+          },
+          "3": {
             "0": {}
           },
           "5": {
             "0": {}
           },
           "7": {},
-          "9": {},
-          "11": {}
+          "11": {},
+          "12": {
+            "$selected": true
+          }
         }
       },
       "transform": {
         "translate": {
-          "x": -240,
-          "y": -160
+          "x": -210.02631258584992,
+          "y": -211.55094824896912
         },
-        "scale": 1.25
+        "scale": 1.1
       },
       "timeline": {
         "isEditorActive": false,
@@ -2295,11 +2158,34 @@
     },
     "[FilamentStation.eez-project]:/userWidgets/16[flow-state]": {
       "selectionFront": {},
+      "selectionBack": {
+        "0": {
+          "0": {
+            "$selected": true
+          }
+        }
+      },
+      "transform": {
+        "translate": {
+          "x": -51.12621307373047,
+          "y": -33.43087577819824
+        },
+        "scale": 0.9
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[FilamentStation.eez-project]:/userWidgets/17[flow-state]": {
+      "selectionFront": {},
       "selectionBack": {},
       "transform": {
         "translate": {
-          "x": -34,
-          "y": -24
+          "x": -207.39080524615312,
+          "y": -196.4256009475708
         },
         "scale": 1.1
       },
@@ -2325,10 +2211,13 @@
   "selectedStylePropertyName": "",
   "lvglPart": "MAIN",
   "lvglState": "DEFAULT",
-  "lvglExpandedPropertiesGroup": [],
+  "lvglExpandedPropertiesGroup": [
+    "POSITION AND SIZE",
+    "LAYOUT"
+  ],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,
-  "flowZoom": 1.25,
+  "flowZoom": 1.1,
   "implementationLanguage": "C",
-  "openDialogDefaultPath": "C:\\VSCode\\Projects\\FilamentStation\\ui-project\\images\\3d-nozzle_W.png"
+  "openDialogDefaultPath": "C:\\VSCode\\Projects\\FilamentStation\\ui-project\\images\\bambu-lab_G.png"
 }

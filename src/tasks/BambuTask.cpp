@@ -332,6 +332,7 @@ void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
     }
   }
 
+  const std::uint8_t previousActiveTrayNow = conn.state.activeTrayNow;
   if (!services::bambuApplyReport(document, conn.state)) {
     // Message on the report topic without a "print" object: a different,
     // currently unhandled message type. Not an error (see
@@ -340,6 +341,23 @@ void handleReportPayload(rtos::RtosContext& ctx, PrinterConnection& conn,
             "Report message ignored printer_id=%u reason=no_print_object",
             static_cast<unsigned>(conn.config.printerId));
     return;
+  }
+  // Diagnose (Nutzerbericht 2026-08-30): Nutzer beobachtete, dass das
+  // externe-Spule-Duesen-Icon aktiv angezeigt wurde, waehrend laut AMS
+  // eigentlich noch Tray 1 (jetzt leer, aber mit Restfilament in der
+  // Zuleitung) druckte. activeTrayNow kommt 1:1 aus dem vom Drucker
+  // gemeldeten "print.ams.tray_now" (siehe bambuApplyReport()); ob der
+  // Drucker in diesem Fall selbst schon 254 (extern) meldet oder ob hier
+  // ein Merge-/Zustandsfehler in unserem Code vorliegt, ist ohne diesen
+  // Log bislang nicht unterscheidbar (Info-Level, damit ohne
+  // FS_LOG_LEVEL=5-Neubau sichtbar -- anders als die bestehende
+  // Trace-Rohpayload weiter oben).
+  if (conn.state.activeTrayNow != previousActiveTrayNow) {
+    FS_LOGI(services::LogComponent::Bambu,
+            "Active tray changed printer_id=%u previous=%u current=%u",
+            static_cast<unsigned>(conn.config.printerId),
+            static_cast<unsigned>(previousActiveTrayNow),
+            static_cast<unsigned>(conn.state.activeTrayNow));
   }
   std::uint8_t presentAmsCount = 0;
   std::uint8_t occupiedTrayCount = 0;

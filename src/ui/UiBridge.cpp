@@ -233,6 +233,14 @@ bool currentTagCanRemove = false;   ///< Whether the currently present tag's ass
 // sent as ShowScreen's command.spoolId) -- 0 means the tag is not (yet)
 // assigned to any Spoolman spool.
 rtos::SpoolId currentTagSpoolId = 0;  ///< Spoolman spool the currently present tag already resolves to, or 0.
+// CMP_TOP_PRINTER_BAR's "nfc" image (Nutzerwunsch 2026-08-30): unlike
+// currentTagCanAssign/currentTagSpoolId (only meaningful on the tag-flow
+// screens, updated from ShowScreen's command.value/spoolId), this drives a
+// header icon shown on all 23 screens regardless of which one is active --
+// set from the dedicated UpdateNfcPresence UiCommand AppTask sends on every
+// physical tag detect/remove, independent of any resolution/navigation
+// logic. See updateHeaderStatusIcons().
+bool nfcTagPresent = false;  ///< Whether a tag is currently physically present on the NFC reader.
 bool diagnosticsRefreshedThisSession = false;  ///< Whether the diagnostics screen has been refreshed at least once this session.
 // Real WLAN/NFC connection status for the Home status summary -- previously
 // this read from models::mock::settings() (always hardcoded "Connected")
@@ -871,6 +879,7 @@ void showOverlay(const rtos::UiCommand& command, bool progress) {
         command.overlayKind == rtos::UiOverlayKind::Confirmation ||
         command.overlayKind == rtos::UiOverlayKind::RestartConfirmation ||
         command.overlayKind == rtos::UiOverlayKind::WifiResetConfirmation ||
+        command.overlayKind == rtos::UiOverlayKind::ScaleResetConfirmation ||
         command.overlayKind == rtos::UiOverlayKind::QuickWeightConfirmation ||
         command.overlayKind == rtos::UiOverlayKind::AdvancedWeightConfirmation ||
         command.overlayKind == rtos::UiOverlayKind::TagDefinitionImport ||
@@ -1810,10 +1819,8 @@ void applySpoolmanAppState(const rtos::UiCommand* command = nullptr) {
       filament_station::models::spoolmanTagOperationsAvailable(
           spoolmanAppState);
 
-  const std::array<lv_obj_t*, 7> onlineControls{{
+  const std::array<lv_obj_t*, 5> onlineControls{{
       objects.staging_details_quick_weight,
-      objects.staging_action_configure,
-      objects.staging_action_advanced_weight,
       objects.staging_action_erase_tag,
       objects.tray_action_from_staging,
       objects.tray_action_manual,
@@ -1823,10 +1830,28 @@ void applySpoolmanAppState(const rtos::UiCommand* command = nullptr) {
     setLabelButtonAvailable(control, online);
   setLabelButtonAvailable(objects.tag_result_advanced_weight, online);
 
+  // staging_action_configure/advanced_weight/clear operate on the spool
+  // currently loaded into staging (Nutzerwunsch 2026-08-30) -- disabled
+  // whenever staging is empty, not just when Spoolman is offline.
+  const bool stagingHasSpool = stagingState.spoolId != 0;
+  setLabelButtonAvailable(objects.staging_action_configure,
+                          online && stagingHasSpool);
+  setLabelButtonAvailable(objects.staging_action_advanced_weight,
+                          online && stagingHasSpool);
+  setLabelButtonAvailable(objects.staging_action_clear,
+                          online && stagingHasSpool);
+
+  // staging_action_link_tag/unlink_tag act on the physically present NFC
+  // tag, not on whatever screen last reported tag capabilities (Nutzerwunsch
+  // 2026-08-30) -- currentTagCanAssign/Remove are shared with
+  // TagActionSelect/TagLegacy/TagUnknown and go stale for this screen once
+  // the tag is removed/replaced without a fresh StagingActions navigation.
+  // nfcTagPresent is refreshed on every physical detect/remove independent
+  // of navigation (see its declaration), so it's the reliable source here.
   setLabelButtonAvailable(objects.staging_action_link_tag,
-                          tagReady && currentTagCanAssign);
+                          tagReady && nfcTagPresent);
   setLabelButtonAvailable(objects.staging_action_unlink_tag,
-                          tagReady && currentTagCanRemove);
+                          tagReady && nfcTagPresent);
   setLabelButtonAvailable(objects.tag_action_select_spool,
                           tagReady && currentTagCanAssign);
   setLabelButtonAvailable(objects.tag_action_use_last_spool,
@@ -2020,11 +2045,13 @@ void bindGeneratedWidgets() {
   }
 
   const std::array<lv_obj_t*, 6> tagSettings{{
-      objects.tag_action_settings, objects.tag_review_settings,
-      objects.tag_write_settings, objects.tag_result_settings,
-      objects.tag_legacy_settings, objects.tag_unknown_settings,
+      objects.obj32__cmp_settings_button_content,
+      objects.obj34__cmp_settings_button_content,
+      objects.obj36__cmp_settings_button_content,
+      objects.obj38__cmp_settings_button_content,
+      objects.obj42__cmp_settings_button_content,
+      objects.obj44__cmp_settings_button_content,
   }};
-  //for (lv_obj_t* control : tagSettings) setControlText(control, "Einst.");
   setControlText(objects.tag_review_title, "Tag-Zuordnung pr\xC3\xBC" "fen");
   setControlText(objects.tag_review_back, "Zur\xC3\xBC" "ck");
   setControlText(objects.tag_review_cancel, "Abbrechen");
@@ -2035,7 +2062,6 @@ void bindGeneratedWidgets() {
   setControlText(objects.tag_write_data, "Tag wird bei Bedarf aktualisiert");
   setControlText(objects.tag_write_verify, "Ergebnis wird gepr\xC3\xBC" "ft");
   setControlText(objects.tag_write_cancel, "Abbrechen");
-  //setControlText(objects.tag_definition_import_settings, "Einst.");
   lv_obj_add_flag(objects.tag_legacy_migrate, LV_OBJ_FLAG_HIDDEN);
   setControlText(objects.tag_unknown_title, "Unbekannter NFC-Tag");
   setControlText(objects.tag_unknown_select_spool, "Tag zuordnen");
@@ -2057,10 +2083,10 @@ void bindGeneratedWidgets() {
   styleLabelButton(objects.bambu_spool_type_manual);
   styleLabelButton(objects.bambu_spool_type_back);
 
-  bindClick(objects.tag_action_header, headerClicked);
-  bindClick(objects.tag_review_header, headerClicked);
-  bindClick(objects.tag_write_header, headerClicked);
-  bindClick(objects.tag_result_header, headerClicked);
+  bindClick(objects.obj31__home_header_1, headerClicked);
+  bindClick(objects.obj33__home_header_1, headerClicked);
+  bindClick(objects.obj35__home_header_1, headerClicked);
+  bindClick(objects.obj37__home_header_1, headerClicked);
   for (lv_obj_t* control : tagSettings) bindClick(control, settingsClicked);
   bindClick(objects.tag_action_select_spool, assignTagWithPickerClicked);
   bindClick(objects.tag_action_use_last_spool, lastTagSpoolClicked);
@@ -2083,8 +2109,8 @@ void bindGeneratedWidgets() {
   bindClick(objects.tag_result_advanced_weight, stagingActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::AdvancedWeight));
   bindClick(objects.tag_result_close, backClicked);
-  bindClick(objects.tag_definition_import_header, headerClicked);
-  bindClick(objects.tag_definition_import_settings, settingsClicked);
+  bindClick(objects.obj39__home_header_1, headerClicked);
+  bindClick(objects.obj40__cmp_settings_button_content, settingsClicked);
   bindClick(objects.tag_definition_import_select_spool,
             assignTagWithPickerClicked);
   bindClick(objects.tag_definition_import_spoolman, tagActionClicked,
@@ -2092,7 +2118,7 @@ void bindGeneratedWidgets() {
                 rtos::UiActionType::ImportTagDefinition));
   bindClick(objects.tag_definition_import_cancel, tagActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::Cancel));
-  bindClick(objects.tag_legacy_header, headerClicked);
+  bindClick(objects.obj41__home_header_1, headerClicked);
   bindClick(objects.tag_legacy_select_spool, assignTagWithPickerClicked);
   bindClick(objects.tag_legacy_import, tagActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::ImportTagDefinition));
@@ -2100,29 +2126,29 @@ void bindGeneratedWidgets() {
             static_cast<std::uintptr_t>(
                 rtos::UiActionType::RemoveTagAssignment));
   bindClick(objects.tag_legacy_close, backClicked);
-  bindClick(objects.tag_unknown_header, headerClicked);
+  bindClick(objects.obj43__home_header_1, headerClicked);
   bindClick(objects.tag_unknown_select_spool, assignTagWithPickerClicked);
   bindClick(objects.tag_unknown_close, backClicked);
   bindClick(objects.bambu_spool_type_back, tagActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::Cancel));
 
-  bindClick(objects.home_header, headerClicked);
+  bindClick(objects.obj0__home_header_1, headerClicked);
   // home_bottom_printers wurde im EEZ-Projekt entfernt (Nutzerwunsch:
   // dieselbe Funktion/Druckerauswahl ist bereits ueber die Titelleiste
   // home_header erreichbar) -- kein Code-seitiges Ausblenden mehr noetig.
-  bindClick(objects.select_header, headerClicked);
-  bindClick(objects.settings_header, headerClicked);
+  bindClick(objects.obj2__home_header_1, headerClicked);
+  bindClick(objects.obj4__home_header_1, headerClicked);
 
-  bindClick(objects.home_settings, settingsClicked);
-  bindClick(objects.select_settings, settingsClicked);
+  bindClick(objects.obj1__cmp_settings_button_content, settingsClicked);
+  bindClick(objects.obj3__cmp_settings_button_content, settingsClicked);
   bindClick(objects.select_back, backClicked);
   bindClick(objects.select_bottom_status, managePrintersClicked);
   bindClick(objects.settings_back, backClicked);
 
-  bindClick(objects.staging_details_header, headerClicked);
-  bindClick(objects.staging_actions_header, headerClicked);
-  bindClick(objects.staging_details_settings, settingsClicked);
-  bindClick(objects.staging_actions_settings, settingsClicked);
+  bindClick(objects.obj5__home_header_1, headerClicked);
+  bindClick(objects.obj7__home_header_1, headerClicked);
+  bindClick(objects.obj6__cmp_settings_button_content, settingsClicked);
+  bindClick(objects.obj8__cmp_settings_button_content, settingsClicked);
   bindClick(objects.staging_details_quick_weight, stagingActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::QuickWeight));
   bindClick(objects.staging_details_more, stagingMoreClicked);
@@ -2143,12 +2169,12 @@ void bindGeneratedWidgets() {
   bindClick(objects.staging_action_erase_tag, stagingActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::SelectSpool));
 
-  bindClick(objects.tray_details_header, headerClicked);
-  bindClick(objects.tray_actions_header, headerClicked);
-  bindClick(objects.tray_select_header, headerClicked);
-  bindClick(objects.tray_details_settings, settingsClicked);
-  bindClick(objects.tray_actions_settings, settingsClicked);
-  bindClick(objects.tray_select_settings, settingsClicked);
+  bindClick(objects.obj9__home_header_1, headerClicked);
+  bindClick(objects.obj11__home_header_1, headerClicked);
+  bindClick(objects.obj13__home_header_1, headerClicked);
+  bindClick(objects.obj10__cmp_settings_button_content, settingsClicked);
+  bindClick(objects.obj12__cmp_settings_button_content, settingsClicked);
+  bindClick(objects.obj14__cmp_settings_button_content, settingsClicked);
   bindClick(objects.tray_details_tab_slot, trayDetailsClicked, 3);
   bindClick(objects.tray_details_tab_spool, trayDetailsClicked, 4);
   bindClick(objects.tray_details_more, trayDetailsClicked, 1);
@@ -2180,27 +2206,10 @@ void bindGeneratedWidgets() {
   bindClick(objects.tray_select_external, trayTargetClicked, 0xFF);
   bindClick(objects.tray_select_cancel, backClicked);
 
-  bindClick(objects.home_ams_1, amsClicked, 1);
-  bindClick(objects.home_ams_2, amsClicked, 2);
-  bindClick(objects.home_active_ams, amsClicked, 3);
-  bindClick(objects.home_ams_4, amsClicked, 4);
-  // Die vier Slot-Farbcontainer je AMS-Button sind im EEZ-Projekt
-  // verschachtelt angelegt (home_ams_<ams>_2 ist Kind von _1, _3 Kind von
-  // _2, _4 Kind von _3) und jeweils WEITER RECHTS positioniert als ihr
-  // eigener, schmaler Elterncontainer -- LVGL clippt Kinder standardmaessig
-  // auf die Grenzen ihres Elternobjekts, wodurch nur der erste Container
-  // (_1, noch innerhalb des Buttons selbst) sichtbar war. LV_OBJ_FLAG_
-  // OVERFLOW_VISIBLE deaktiviert dieses Clipping je Container.
-  for (lv_obj_t* container : std::array<lv_obj_t*, 16>{{
-           objects.home_ams_1_1, objects.home_ams_1_2, objects.home_ams_1_3,
-           objects.home_ams_1_4, objects.home_ams_2_1, objects.home_ams_2_2,
-           objects.home_ams_2_3, objects.home_ams_2_4, objects.home_ams_3_1,
-           objects.home_ams_3_2, objects.home_ams_3_3, objects.home_ams_3_4,
-           objects.home_ams_4_1, objects.home_ams_4_2, objects.home_ams_4_3,
-           objects.home_ams_4_4,
-       }}) {
-    lv_obj_add_flag(container, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
-  }
+  bindClick(objects.ams1__ams, amsClicked, 1);
+  bindClick(objects.ams2__ams, amsClicked, 2);
+  bindClick(objects.ams3__ams, amsClicked, 3);
+  bindClick(objects.ams4__ams, amsClicked, 4);
   bindClick(objects.home_tray_1__tray, trayClicked, 0);
   bindClick(objects.home_tray_2__tray, trayClicked, 1);
   bindClick(objects.home_tray_3__tray, trayClicked, 2);
@@ -2232,8 +2241,8 @@ void bindGeneratedWidgets() {
             static_cast<std::uintptr_t>(
                 rtos::UiActionType::OpenFirmwareSettings));
 
-  bindClick(objects.spoolman_settings_header, headerClicked);
-  bindClick(objects.spoolman_settings_settings, settingsClicked);
+  bindClick(objects.obj15__home_header_1, headerClicked);
+  bindClick(objects.obj16__cmp_settings_button_content, settingsClicked);
   bindClick(objects.spoolman_setting_name, spoolmanFieldClicked, 1);
   bindClick(objects.spoolman_setting_protocol, spoolmanFieldClicked, 2);
   bindClick(objects.spoolman_setting_host, spoolmanFieldClicked, 3);
@@ -2248,8 +2257,8 @@ void bindGeneratedWidgets() {
                 rtos::UiActionType::SaveSpoolmanSettings));
   bindClick(objects.spoolman_setting_cancel, backClicked);
 
-  bindClick(objects.printer_settings_header, headerClicked);
-  bindClick(objects.printer_settings_settings, settingsClicked);
+  bindClick(objects.obj17__home_header_1, headerClicked);
+  bindClick(objects.obj18__cmp_settings_button_content, settingsClicked);
   bindClick(objects.printer_settings_row_1, printerRowClicked, 1);
   bindClick(objects.printer_settings_row_2, printerRowClicked, 2);
   bindClick(objects.printer_settings_row_3, printerRowClicked, 3);
@@ -2266,8 +2275,8 @@ void bindGeneratedWidgets() {
             static_cast<std::uintptr_t>(rtos::UiActionType::EditPrinter));
   bindClick(objects.printer_settings_back, backClicked);
 
-  bindClick(objects.printer_edit_header, headerClicked);
-  bindClick(objects.printer_edit_settings, settingsClicked);
+  bindClick(objects.obj19__home_header_1, headerClicked);
+  bindClick(objects.obj20__cmp_settings_button_content, settingsClicked);
   bindClick(objects.printer_edit_name, printerFieldClicked, 1);
   bindClick(objects.printer_edit_host, printerFieldClicked, 2);
   bindClick(objects.printer_edit_serial, printerFieldClicked, 3);
@@ -2281,8 +2290,8 @@ void bindGeneratedWidgets() {
             static_cast<std::uintptr_t>(rtos::UiActionType::DeletePrinter));
   bindClick(objects.printer_edit_cancel, backClicked);
 
-  bindClick(objects.wifi_settings_header, headerClicked);
-  bindClick(objects.wifi_settings_settings, settingsClicked);
+  bindClick(objects.obj21__home_header_1, headerClicked);
+  bindClick(objects.obj22__cmp_settings_button_content, settingsClicked);
   lv_obj_set_pos(objects.wifi_settings_status, 8, 76);
   lv_obj_set_size(objects.wifi_settings_status, 464, 64);
   lv_obj_set_pos(objects.wifi_settings_ssid, 8, 144);
@@ -2299,40 +2308,39 @@ void bindGeneratedWidgets() {
   bindClick(objects.wifi_settings_reset, spoolmanActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::ResetWifiCredentials));
   bindClick(objects.wifi_settings_back, backClicked);
-  bindClick(objects.scale_settings_header, headerClicked);
-  bindClick(objects.scale_settings_settings, settingsClicked);
+  bindClick(objects.obj23__home_header_1, headerClicked);
+  bindClick(objects.obj24__cmp_settings_button_content, settingsClicked);
   bindClick(objects.scale_settings_tare, spoolmanActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::TareScale));
   bindClick(objects.scale_settings_calibrate, calibrationClicked);
   bindClick(objects.scale_settings_reset, spoolmanActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::ResetScaleCalibration));
   bindClick(objects.scale_settings_back, backClicked);
-  bindClick(objects.device_settings_header, headerClicked);
-  bindClick(objects.device_settings_settings, settingsClicked);
+  bindClick(objects.obj25__home_header_1, headerClicked);
+  bindClick(objects.obj26__cmp_settings_button_content, settingsClicked);
   bindClick(objects.device_settings_restart, spoolmanActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::PrepareRestart));
   bindClick(objects.device_settings_back, backClicked);
-  bindClick(objects.diagnostics_settings_header, headerClicked);
-  bindClick(objects.diagnostics_settings_settings, settingsClicked);
+  bindClick(objects.obj27__home_header_1, headerClicked);
+  bindClick(objects.obj28__cmp_settings_button_content, settingsClicked);
   bindClick(objects.diagnostics_settings_refresh, spoolmanActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::RefreshDiagnostics));
   bindClick(objects.diagnostics_settings_back, backClicked);
-  bindClick(objects.firmware_settings_header, headerClicked);
-  bindClick(objects.firmware_settings_settings, settingsClicked);
+  bindClick(objects.obj29__home_header_1, headerClicked);
+  bindClick(objects.obj30__cmp_settings_button_content, settingsClicked);
   bindClick(objects.firmware_settings_check, spoolmanActionClicked,
             static_cast<std::uintptr_t>(rtos::UiActionType::CheckFirmwareUpdate));
   bindClick(objects.firmware_settings_back, backClicked);
 
-  const std::array<lv_obj_t*, 17> additionalSettingsButtons{{
-      objects.wifi_settings_header, objects.wifi_settings_settings,
+  const std::array<lv_obj_t*, 12> additionalSettingsButtons{{
+      objects.obj21__home_header_1,
       objects.wifi_settings_portal, objects.wifi_settings_reset,
-      objects.scale_settings_header, objects.scale_settings_settings,
+      objects.obj23__home_header_1,
       objects.scale_settings_tare, objects.scale_settings_calibrate,
-      objects.scale_settings_reset, objects.device_settings_header,
-      objects.device_settings_settings, objects.device_settings_restart,
-      objects.diagnostics_settings_header, objects.diagnostics_settings_settings,
-      objects.diagnostics_settings_refresh, objects.firmware_settings_header,
-      objects.firmware_settings_settings,
+      objects.scale_settings_reset, objects.obj25__home_header_1,
+      objects.device_settings_restart,
+      objects.obj27__home_header_1,
+      objects.diagnostics_settings_refresh, objects.obj29__home_header_1,
   }};
   for (lv_obj_t* button : additionalSettingsButtons) styleLabelButton(button);
   styleLabelButton(objects.firmware_settings_check);
@@ -2342,14 +2350,14 @@ void bindGeneratedWidgets() {
   styleLabelButton(objects.diagnostics_settings_back);
   styleLabelButton(objects.firmware_settings_back);
 
-  const std::array<lv_obj_t*, 20> printerButtons{{
-      objects.printer_settings_header, objects.printer_settings_settings,
+  const std::array<lv_obj_t*, 18> printerButtons{{
+      objects.obj17__home_header_1,
       objects.printer_settings_row_1, objects.printer_settings_row_2,
       objects.printer_settings_row_3, objects.printer_settings_row_4,
       objects.printer_settings_active, objects.printer_settings_enabled,
       objects.printer_settings_default, objects.printer_settings_add,
-      objects.printer_settings_edit, objects.printer_edit_header,
-      objects.printer_edit_settings, objects.printer_edit_name,
+      objects.printer_settings_edit, objects.obj19__home_header_1,
+      objects.printer_edit_name,
       objects.printer_edit_host, objects.printer_edit_serial,
       objects.printer_edit_access_code, objects.printer_edit_mask,
       objects.printer_edit_test, objects.printer_edit_save,
@@ -2359,8 +2367,8 @@ void bindGeneratedWidgets() {
   styleLabelButton(objects.printer_edit_delete);
   styleLabelButton(objects.printer_edit_cancel);
 
-  const std::array<lv_obj_t*, 10> spoolmanButtons{{
-      objects.spoolman_settings_header, objects.spoolman_settings_settings,
+  const std::array<lv_obj_t*, 9> spoolmanButtons{{
+      objects.obj15__home_header_1,
       objects.spoolman_setting_name, objects.spoolman_setting_protocol,
       objects.spoolman_setting_host, objects.spoolman_setting_port,
       objects.spoolman_setting_base_path, objects.spoolman_setting_timeout,
@@ -2371,14 +2379,12 @@ void bindGeneratedWidgets() {
   }
   styleLabelButton(objects.spoolman_setting_cancel);
 
-  const std::array<lv_obj_t*, 11> stagingButtons{{
-      objects.staging_details_header,
-      objects.staging_details_settings,
+  const std::array<lv_obj_t*, 9> stagingButtons{{
+      objects.obj5__home_header_1,
       objects.staging_details_quick_weight,
       objects.staging_details_more,
       objects.staging_details_close,
-      objects.staging_actions_header,
-      objects.staging_actions_settings,
+      objects.obj7__home_header_1,
       objects.staging_action_configure,
       objects.staging_action_advanced_weight,
       objects.staging_action_link_tag,
@@ -2390,14 +2396,14 @@ void bindGeneratedWidgets() {
   styleLabelButton(objects.staging_action_erase_tag);
   styleLabelButton(objects.staging_action_clear);
   styleLabelButton(objects.staging_actions_back);
-  const std::array<lv_obj_t*, 23> trayButtons{{
-      objects.tray_details_header, objects.tray_details_settings,
+  const std::array<lv_obj_t*, 20> trayButtons{{
+      objects.obj9__home_header_1,
       objects.tray_details_tab_slot, objects.tray_details_tab_spool,
       objects.tray_details_more, objects.tray_details_refresh,
-      objects.tray_actions_header, objects.tray_actions_settings,
+      objects.obj11__home_header_1,
       objects.tray_action_from_staging, objects.tray_action_manual,
       objects.tray_action_reapply, objects.tray_action_refresh,
-      objects.tray_select_header, objects.tray_select_settings,
+      objects.obj13__home_header_1,
       objects.tray_select_ams_1, objects.tray_select_ams_2,
       objects.tray_select_ams_3, objects.tray_select_ams_4,
       objects.tray_select_slot_1, objects.tray_select_slot_2,
@@ -2412,8 +2418,6 @@ void bindGeneratedWidgets() {
   styleLabelButton(objects.tray_details_close);
   styleLabelButton(objects.tray_actions_back);
   styleLabelButton(objects.tray_select_cancel);
-  styleLabelButton(objects.home_active_ams);
-  styleLabelButton(objects.home_ams_4);
   const std::array<lv_obj_t*, 8> tagButtons{{
       objects.tag_action_select_spool, objects.tag_action_use_last_spool,
       objects.tag_review_confirm,
@@ -2447,13 +2451,6 @@ void bindGeneratedWidgets() {
       objects.bambu_spool_type_back,
   }};
   for (lv_obj_t* button : activeBackButtons) styleLabelButton(button);
-  // Frueher hier: Schriftart von objects.home_ams_1s Label-Kind auf
-  // home_active_ams/home_ams_4 uebertragen, fuer eine frueher noch
-  // vorhandene "AMS N"-Beschriftung. Die AMS-Buttons zeigen keinen Text
-  // mehr (Nutzerwunsch) und haben inzwischen auch kein Label-Kind mehr
-  // (durch die vier neuen EEZ-Farbcontainer ersetzt) -- buttonLabel() lief
-  // dadurch ins Leere und lv_obj_get_style_text_font(nullptr, ...) hing die
-  // UI-Task auf (Watchdog-Reboot). Block ersatzlos entfernt.
   vTaskDelay(pdMS_TO_TICKS(250));
   createStagingTableDecoration();
   vTaskDelay(pdMS_TO_TICKS(250));
@@ -2657,25 +2654,40 @@ void updateHomeContent() {
   }
 
   const std::array<lv_obj_t*, 4> amsButtons{{
-      objects.home_ams_1,
-      objects.home_ams_2,
-      objects.home_active_ams,
-      objects.home_ams_4,
+      objects.ams1__ams,
+      objects.ams2__ams,
+      objects.ams3__ams,
+      objects.ams4__ams,
   }};
   // AMS-Buttons zeigen keinen Text mehr, nur einen farbigen Rand am aktuell
-  // gewaehlten AMS (Nutzerwunsch). Die eigentliche Faerbung je Slot passiert
-  // ueber vier vom Nutzer im EEZ-Projekt angelegte Container-Objekte pro
-  // Button (home_ams_<N>_1..4, per Slot-Farbe wenn belegt), nicht mehr ueber
-  // dynamisch erzeugte Overlay-Quadrate.
+  // gewählten AMS (Nutzerwunsch). Die eigentliche Färbung je Slot passiert
+  // über vier CMP_AMS_TRAY_OVERVIEW-Instanzen (ams1..ams4, je vier
+  // Container tray1..tray4, per Slot-Farbe wenn belegt).
   const std::array<std::array<lv_obj_t*, 4>, 4> amsSlotContainers{{
-      {{objects.home_ams_1_1, objects.home_ams_1_2, objects.home_ams_1_3,
-        objects.home_ams_1_4}},
-      {{objects.home_ams_2_1, objects.home_ams_2_2, objects.home_ams_2_3,
-        objects.home_ams_2_4}},
-      {{objects.home_ams_3_1, objects.home_ams_3_2, objects.home_ams_3_3,
-        objects.home_ams_3_4}},
-      {{objects.home_ams_4_1, objects.home_ams_4_2, objects.home_ams_4_3,
-        objects.home_ams_4_4}},
+      {{objects.ams1__tray1, objects.ams1__tray2, objects.ams1__tray3,
+        objects.ams1__tray4}},
+      {{objects.ams2__tray1, objects.ams2__tray2, objects.ams2__tray3,
+        objects.ams2__tray4}},
+      {{objects.ams3__tray1, objects.ams3__tray2, objects.ams3__tray3,
+        objects.ams3__tray4}},
+      {{objects.ams4__tray1, objects.ams4__tray2, objects.ams4__tray3,
+        objects.ams4__tray4}},
+  }};
+  // Düsen-Icon je Slot, sichtbar wenn dieses Fach laut Drucker das aktuell
+  // druckende ist (analog CMP_TRAY_CARD/updateTrayButton's nozzleIcon,
+  // Nutzerwunsch 2026-08-30, Variante korrigiert 2026-08-30). Variante nach
+  // Filamentfarbe (gleiches Kontrastprinzip wie CMP_TRAY_CARD): helles
+  // Filament -> "3D Printer Nozzle" (ohne W), dunkles Filament ->
+  // "3D Printer Nozzle W".
+  const std::array<std::array<lv_obj_t*, 4>, 4> amsNozzleIcons{{
+      {{objects.ams1__nozzle1, objects.ams1__nozzle2, objects.ams1__nozzle3,
+        objects.ams1__nozzle4}},
+      {{objects.ams2__nozzle1, objects.ams2__nozzle2, objects.ams2__nozzle3,
+        objects.ams2__nozzle4}},
+      {{objects.ams3__nozzle1, objects.ams3__nozzle2, objects.ams3__nozzle3,
+        objects.ams3__nozzle4}},
+      {{objects.ams4__nozzle1, objects.ams4__nozzle2, objects.ams4__nozzle3,
+        objects.ams4__nozzle4}},
   }};
   for (std::uint8_t amsId = 1; amsId <= amsButtons.size(); ++amsId) {
     lv_obj_t* button = amsButtons[amsId - 1U];
@@ -2690,16 +2702,26 @@ void updateHomeContent() {
     lv_obj_set_style_border_color(button, lv_color_hex(kColorWarningAmber), LV_PART_MAIN);
     for (std::uint8_t slot = 0; slot < 4; ++slot) {
       lv_obj_t* container = amsSlotContainers[amsId - 1U][slot];
+      lv_obj_t* nozzleIcon = amsNozzleIcons[amsId - 1U][slot];
       if (!available) {
         lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_add_flag(nozzleIcon, LV_OBJ_FLAG_HIDDEN);
         continue;
       }
       const TrayUiEntry* tray = trayUiEntry(amsId, slot);
-      const std::uint32_t color = tray != nullptr && tray->occupied
-                                      ? parseTrayColorHex(tray->colorHex)
-                                      : kColorNeutralGrey;
+      const bool occupied = tray != nullptr && tray->occupied;
+      const std::uint32_t color =
+          occupied ? parseTrayColorHex(tray->colorHex) : kColorNeutralGrey;
       lv_obj_set_style_bg_opa(container, LV_OPA_COVER, LV_PART_MAIN);
       lv_obj_set_style_bg_color(container, lv_color_hex(color), LV_PART_MAIN);
+      if (occupied && tray->isActiveNozzle) {
+        lv_obj_remove_flag(nozzleIcon, LV_OBJ_FLAG_HIDDEN);
+        lv_image_set_src(nozzleIcon, isLightBackground(color)
+                                          ? &img_3_d_printer_nozzle
+                                          : &img_3_d_printer_nozzle_w);
+      } else {
+        lv_obj_add_flag(nozzleIcon, LV_OBJ_FLAG_HIDDEN);
+      }
     }
   }
 
@@ -3101,32 +3123,39 @@ void updateTraySelection(rtos::PrinterId printerId, std::uint8_t amsId,
 /// @brief Sets the printer-name header text on every screen that shows one.
 /// @param text Header text to set.
 void setAllHeaderTexts(const char* text) {
-  const std::array<lv_obj_t*, 23> headers{{
-      objects.home_header,
-      objects.select_header,
-      objects.settings_header,
-      objects.staging_details_header,
-      objects.staging_actions_header,
-      objects.tray_details_header,
-      objects.tray_actions_header,
-      objects.tray_select_header,
-      objects.spoolman_settings_header,
-      objects.printer_settings_header,
-      objects.printer_edit_header,
-      objects.wifi_settings_header,
-      objects.scale_settings_header,
-      objects.device_settings_header,
-      objects.diagnostics_settings_header,
-      objects.firmware_settings_header,
-      objects.tag_action_header,
-      objects.tag_review_header,
-      objects.tag_write_header,
-      objects.tag_result_header,
-      objects.tag_definition_import_header,
-      objects.tag_legacy_header,
-      objects.tag_unknown_header,
+  // CMP_TOP_PRINTER_BAR (Nutzerwunsch 2026-08-30): one shared component
+  // instantiated on all 23 screens instead of a per-screen header button --
+  // printer_label is now a directly named widget, no more setControlText()
+  // child-lookup needed. Array order matches the component's instantiation
+  // order in screens.c (obj0 = Home ... obj22 = TagUnknown), verified by
+  // matching each create_user_widget_cmp_top_printer_bar() call site
+  // against its enclosing create_screen_scr_*() function.
+  const std::array<lv_obj_t*, 23> printerLabels{{
+      objects.obj0__printer_label,
+      objects.obj2__printer_label,
+      objects.obj4__printer_label,
+      objects.obj5__printer_label,
+      objects.obj7__printer_label,
+      objects.obj9__printer_label,
+      objects.obj11__printer_label,
+      objects.obj13__printer_label,
+      objects.obj15__printer_label,
+      objects.obj17__printer_label,
+      objects.obj19__printer_label,
+      objects.obj21__printer_label,
+      objects.obj23__printer_label,
+      objects.obj25__printer_label,
+      objects.obj27__printer_label,
+      objects.obj29__printer_label,
+      objects.obj31__printer_label,
+      objects.obj33__printer_label,
+      objects.obj35__printer_label,
+      objects.obj37__printer_label,
+      objects.obj39__printer_label,
+      objects.obj41__printer_label,
+      objects.obj43__printer_label,
   }};
-  for (lv_obj_t* header : headers) setControlText(header, text);
+  for (lv_obj_t* label : printerLabels) lv_label_set_text(label, text);
 }
 
 // Header-Statusicons (Nutzerwunsch, 2026-08-23): je Header ein Drucker-,
@@ -3137,80 +3166,50 @@ void setAllHeaderTexts(const char* text) {
 // Position/Größe.
 /// @brief Re-renders the header's WiFi/Spoolman/NFC status icons from #currentNetworkState/#spoolmanAppState/#currentNfcStatusText.
 void updateHeaderStatusIcons() {
+  // CMP_TOP_PRINTER_BAR (Nutzerwunsch 2026-08-30): see setAllHeaderTexts()'s
+  // comment -- same shared component, same verified obj0..obj22 order.
   const std::array<lv_obj_t*, 23> printerIcons{{
-      objects.home_header_printer,
-      objects.select_header_printer,
-      objects.settings_header_printer,
-      objects.staging_details_header_printer,
-      objects.staging_actions_header_printer,
-      objects.tray_details_header_printer,
-      objects.tray_actions_header_printer,
-      objects.tray_select_header_printer,
-      objects.spoolman_settings_header_printer,
-      objects.printer_settings_header_printer,
-      objects.printer_edit_header_printer,
-      objects.wifi_settings_header_printer,
-      objects.scale_settings_header_printer,
-      objects.device_settings_header_printer,
-      objects.diagnostics_settings_header_printer,
-      objects.firmware_settings_header_printer,
-      objects.tag_action_header_printer,
-      objects.tag_review_header_printer,
-      objects.tag_write_header_printer,
-      objects.tag_result_header_printer,
-      objects.tag_definition_import_header_printer,
-      objects.tag_legacy_header_printer,
-      objects.tag_unknown_header_printer,
+      objects.obj0__printer, objects.obj2__printer, objects.obj4__printer,
+      objects.obj5__printer, objects.obj7__printer, objects.obj9__printer,
+      objects.obj11__printer, objects.obj13__printer, objects.obj15__printer,
+      objects.obj17__printer, objects.obj19__printer, objects.obj21__printer,
+      objects.obj23__printer, objects.obj25__printer, objects.obj27__printer,
+      objects.obj29__printer, objects.obj31__printer, objects.obj33__printer,
+      objects.obj35__printer, objects.obj37__printer, objects.obj39__printer,
+      objects.obj41__printer, objects.obj43__printer,
   }};
   const std::array<lv_obj_t*, 23> wifiIcons{{
-      objects.home_header_wifi,
-      objects.select_header_wifi,
-      objects.settings_header_wifi,
-      objects.staging_details_header_wifi,
-      objects.staging_actions_header_wifi,
-      objects.tray_details_header_wifi,
-      objects.tray_actions_header_wifi,
-      objects.tray_select_header_wifi,
-      objects.spoolman_settings_header_wifi,
-      objects.printer_settings_header_wifi,
-      objects.printer_edit_header_wifi,
-      objects.wifi_settings_header_wifi,
-      objects.scale_settings_header_wifi,
-      objects.device_settings_header_wifi,
-      objects.diagnostics_settings_header_wifi,
-      objects.firmware_settings_header_wifi,
-      objects.tag_action_header_wifi,
-      objects.tag_review_header_wifi,
-      objects.tag_write_header_wifi,
-      objects.tag_result_header_wifi,
-      objects.tag_definition_import_header_wifi,
-      objects.tag_legacy_header_wifi,
-      objects.tag_unknown_header_wifi,
+      objects.obj0__wifi, objects.obj2__wifi, objects.obj4__wifi,
+      objects.obj5__wifi, objects.obj7__wifi, objects.obj9__wifi,
+      objects.obj11__wifi, objects.obj13__wifi, objects.obj15__wifi,
+      objects.obj17__wifi, objects.obj19__wifi, objects.obj21__wifi,
+      objects.obj23__wifi, objects.obj25__wifi, objects.obj27__wifi,
+      objects.obj29__wifi, objects.obj31__wifi, objects.obj33__wifi,
+      objects.obj35__wifi, objects.obj37__wifi, objects.obj39__wifi,
+      objects.obj41__wifi, objects.obj43__wifi,
   }};
   const std::array<lv_obj_t*, 23> spoolmanIcons{{
-      objects.home_header_spoolman,
-      objects.select_header_spoolman,
-      objects.settings_header_spoolman,
-      objects.staging_details_header_spoolman,
-      objects.staging_actions_header_spoolman,
-      objects.tray_details_header_spoolman,
-      objects.tray_actions_header_spoolman,
-      objects.tray_select_header_spoolman,
-      objects.spoolman_settings_header_spoolman,
-      objects.printer_settings_header_spoolman,
-      objects.printer_edit_header_spoolman,
-      objects.wifi_settings_header_spoolman,
-      objects.scale_settings_header_spoolman,
-      objects.device_settings_header_spoolman,
-      objects.diagnostics_settings_header_spoolman,
-      objects.firmware_settings_header_spoolman,
-      objects.tag_action_header_spoolman,
-      objects.tag_review_header_spoolman,
-      objects.tag_write_header_spoolman,
-      objects.tag_result_header_spoolman,
-      objects.tag_definition_import_header_spoolman,
-      objects.tag_legacy_header_spoolman,
-      objects.tag_unknown_header_spoolman,
+      objects.obj0__spoolman, objects.obj2__spoolman, objects.obj4__spoolman,
+      objects.obj5__spoolman, objects.obj7__spoolman, objects.obj9__spoolman,
+      objects.obj11__spoolman, objects.obj13__spoolman, objects.obj15__spoolman,
+      objects.obj17__spoolman, objects.obj19__spoolman, objects.obj21__spoolman,
+      objects.obj23__spoolman, objects.obj25__spoolman, objects.obj27__spoolman,
+      objects.obj29__spoolman, objects.obj31__spoolman, objects.obj33__spoolman,
+      objects.obj35__spoolman, objects.obj37__spoolman, objects.obj39__spoolman,
+      objects.obj41__spoolman, objects.obj43__spoolman,
+  }};
+  // Neues "nfc"-Bild im Component (Nutzerwunsch 2026-08-30): sichtbar
+  // genau dann, wenn aktuell ein Tag auf dem Reader liegt -- siehe
+  // #nfcTagPresent's Kommentar fuer die AppTask-seitige Herkunft.
+  const std::array<lv_obj_t*, 23> nfcIcons{{
+      objects.obj0__nfc, objects.obj2__nfc, objects.obj4__nfc,
+      objects.obj5__nfc, objects.obj7__nfc, objects.obj9__nfc,
+      objects.obj11__nfc, objects.obj13__nfc, objects.obj15__nfc,
+      objects.obj17__nfc, objects.obj19__nfc, objects.obj21__nfc,
+      objects.obj23__nfc, objects.obj25__nfc, objects.obj27__nfc,
+      objects.obj29__nfc, objects.obj31__nfc, objects.obj33__nfc,
+      objects.obj35__nfc, objects.obj37__nfc, objects.obj39__nfc,
+      objects.obj41__nfc, objects.obj43__nfc,
   }};
 
   const PrinterUiEntry* printer = printerEntry(currentPrinterId);
@@ -3224,10 +3223,12 @@ void updateHeaderStatusIcons() {
   for (lv_obj_t* icon : printerIcons)
     lv_image_set_src(icon, printerConnected ? &img_conneced_w : &img_disconneced_w);
   for (lv_obj_t* icon : wifiIcons)
-    lv_image_set_src(icon, wifiConnected ? &img_wifi_connected_w : &img_wifi_disconnected_w);
+    lv_image_set_src(icon, wifiConnected ? &img_wifi_connected_w : &img_wifi_disconnected_g);
   for (lv_obj_t* icon : spoolmanIcons)
-    lv_image_set_src(icon, spoolmanConnected ? &img_spoolman_connected_w
-                                             : &img_spoolman_disconneced);
+    lv_image_set_src(icon, spoolmanConnected ? &img_conneced_w
+                                             : &img_disconneced_w);
+  for (lv_obj_t* icon : nfcIcons)
+    lv_obj_set_flag(icon, LV_OBJ_FLAG_HIDDEN, !nfcTagPresent);
 }
 
 /// @brief Updates the header for a printer id change: name text and status icons.
@@ -3282,9 +3283,20 @@ void updateAmsOverview(rtos::PrinterId printerId, std::uint8_t amsId) {
 /// @param screenId Screen to show.
 void showScreen(rtos::UiScreenId screenId) {
   switch (screenId) {
-    case rtos::UiScreenId::Boot:
+    case rtos::UiScreenId::Boot: {
+      // Programmatisch statt nur EEZ-Studio-Statisch (wie
+      // SettingsDevice/SettingsFirmware) -- vermeidet Drift, sobald ein
+      // echtes Firmware-Update config::kApplicationVersion aendert
+      // (Nutzerbericht 2026-08-30: release.ps1 bumpt AppConfig.h, aber der
+      // Boot-Screen zeigte weiterhin die zuletzt in EEZ Studio gespeicherte
+      // Version).
+      char versionText[48];
+      std::snprintf(versionText, sizeof(versionText), "Version %s",
+                    config::kApplicationVersion);
+      lv_label_set_text(objects.boot_version, versionText);
       loadScreen(SCREEN_ID_SCR_BOOT);
       break;
+    }
     case rtos::UiScreenId::Home:
       loadScreen(SCREEN_ID_SCR_HOME);
       break;
@@ -3487,6 +3499,15 @@ bool initializeLvgl(UiRuntimeInfo& runtimeInfo, rtos::RtosContext& context) {
           static_cast<unsigned long>(memoryMonitor.free_biggest_size),
           static_cast<unsigned>(memoryMonitor.frag_pct));
   vTaskDelay(pdMS_TO_TICKS(250));
+  // See the matching comment on the Boot case in showScreen() -- this is
+  // the very first paint, before AppTask ever sends a ShowScreen(Boot)
+  // command, so it needs the same dynamic update here too.
+  {
+    char versionText[48];
+    std::snprintf(versionText, sizeof(versionText), "Version %s",
+                  config::kApplicationVersion);
+    lv_label_set_text(objects.boot_version, versionText);
+  }
   loadScreen(SCREEN_ID_SCR_BOOT);
 
   runtimeInfo.bytesPerDrawBuffer = bufferBytes;
@@ -3535,8 +3556,10 @@ void processUiCommand(const rtos::UiCommand& command) {
             (command.value & rtos::UI_TAG_CAP_UNLINK) != 0;
         currentTagCanAssign = canAssign;
         currentTagCanRemove = canRemove;
-        setLabelButtonAvailable(objects.staging_action_link_tag, canAssign);
-        setLabelButtonAvailable(objects.staging_action_unlink_tag, canRemove);
+        setLabelButtonAvailable(objects.staging_action_link_tag,
+                                nfcTagPresent);
+        setLabelButtonAvailable(objects.staging_action_unlink_tag,
+                                nfcTagPresent);
         char assignmentStatus[64]{};
         if (command.spoolId != 0) {
           std::snprintf(assignmentStatus, sizeof(assignmentStatus),
@@ -3573,6 +3596,12 @@ void processUiCommand(const rtos::UiCommand& command) {
       } else if (command.screenId == rtos::UiScreenId::TagResult &&
                  command.text[0] != '\0') {
         lv_label_set_text(objects.tag_result_message, command.text);
+        const bool hideWeighActions =
+            (command.value & rtos::UI_TAG_RESULT_NO_SPOOL_ACTIONS) != 0;
+        lv_obj_set_flag(objects.tag_result_quick_weight, LV_OBJ_FLAG_HIDDEN,
+                        hideWeighActions);
+        lv_obj_set_flag(objects.tag_result_advanced_weight,
+                        LV_OBJ_FLAG_HIDDEN, hideWeighActions);
       } else if (command.screenId == rtos::UiScreenId::TagDefinitionImport &&
                  command.text[0] != '\0') {
         lv_label_set_text(objects.tag_definition_import_summary, command.text);
@@ -3610,6 +3639,14 @@ void processUiCommand(const rtos::UiCommand& command) {
       break;
     case rtos::UiCommandType::UpdateHeader:
       updateHeaders(command.printerId);
+      break;
+    case rtos::UiCommandType::UpdateNfcPresence:
+      nfcTagPresent = command.value != 0;
+      updateHeaderStatusIcons();
+      // staging_action_link_tag/unlink_tag must react immediately while the
+      // user is already on StagingActions, not just on the next navigation
+      // (Nutzerwunsch 2026-08-30).
+      applySpoolmanAppState();
       break;
     case rtos::UiCommandType::UpdateAmsOverview:
       if (command.trayId == 0xFF) {
@@ -3677,6 +3714,7 @@ void processUiCommand(const rtos::UiCommand& command) {
         // struct starts with, no spool/weight data to reload or parse.
         stagingState = {};
         stagingSpoolState = {};
+        applySpoolmanAppState();
         updateStagingContent();
         // Home's staging widget (objects.staging) is only repainted by
         // updateHomeContent(); without this call it stayed stale until some
@@ -3778,6 +3816,7 @@ void processUiCommand(const rtos::UiCommand& command) {
         ++stagingState.colorCount;
         ++stagingSpoolState.colorCount;
       }
+      applySpoolmanAppState();
       updateStagingContent();
       // See the matching comment on the clear-staging branch above.
       updateHomeContent();

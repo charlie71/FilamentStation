@@ -25,12 +25,14 @@ extern const lv_img_dsc_t img_more_w;
 extern const lv_img_dsc_t img_refresh_w;
 extern const lv_img_dsc_t img_conneced_w;
 extern const lv_img_dsc_t img_disconneced_w;
-extern const lv_img_dsc_t img_wifi_disconnected_w;
+extern const lv_img_dsc_t img_wifi_disconnected_g;
 extern const lv_img_dsc_t img_spoolman_disconneced;
 extern const lv_img_dsc_t img_bambulab_logo;
 extern const lv_img_dsc_t img_spoolman_logo;
 extern const lv_img_dsc_t img_3_d_printer_nozzle;
 extern const lv_img_dsc_t img_3_d_printer_nozzle_w;
+extern const lv_img_dsc_t img_bambu_logo_g;
+extern const lv_img_dsc_t img_spule_w;
 
 #ifndef EXT_IMG_DESC_T
 #define EXT_IMG_DESC_T
@@ -40,7 +42,7 @@ typedef struct _ext_img_desc_t {
 } ext_img_desc_t;
 #endif
 
-extern const ext_img_desc_t images[24];
+extern const ext_img_desc_t images[26];
 
 #ifdef __cplusplus
 }

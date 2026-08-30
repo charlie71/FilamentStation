@@ -1623,6 +1623,20 @@ bool sendUiCommand(rtos::RtosContext& ctx, const rtos::UiCommand& command,
   return false;
 }
 
+/// @brief Notifies UiBridge of a physical NFC tag presence change, for
+///        CMP_TOP_PRINTER_BAR's "nfc" header icon (TASKS.md Nachtrag
+///        2026-08-30). Shown on all 23 screens the component is
+///        instantiated on, independent of tag-identity resolution/
+///        navigation -- call at every site that flips #tagPresent.
+/// @param ctx Owning RTOS context.
+/// @param present New value of #tagPresent.
+void notifyNfcPresence(rtos::RtosContext& ctx, bool present) {
+  rtos::UiCommand command{};
+  command.type = rtos::UiCommandType::UpdateNfcPresence;
+  command.value = present ? 1 : 0;
+  sendUiCommand(ctx, command, "AppTask: NFC presence icon queue overflow");
+}
+
 /// @brief Sends a ScaleCommand to ScaleTask.
 /// @param ctx Owning RTOS context.
 /// @param command Command to send.
@@ -2203,6 +2217,11 @@ void finishServerOnlyRemoval(rtos::RtosContext& ctx) {
 void continueRemovalAfterSpoolmanUpdate(rtos::RtosContext& ctx) {
   resolvedTagIdentity = {};
   resolvedTagSpoolId = 0;
+  // spoolId == 0 bedeutet: verwaister Tag, es gab keine Server-seitige
+  // Zuordnung zu entfernen (siehe SpoolmanTagLookup-Handler) -- die
+  // Statusmeldungen unten formulieren das entsprechend anders als beim
+  // regulären Fall mit tatsächlich entfernter Spoolman-Zuordnung.
+  const bool orphaned = pendingTagRemoval.spoolId == 0;
   if (!pendingTagRemoval.clearPayload) {
     finishServerOnlyRemoval(ctx);
     return;
@@ -2215,7 +2234,9 @@ void continueRemovalAfterSpoolmanUpdate(rtos::RtosContext& ctx) {
     sendOverlay(
         ctx, rtos::UiCommandType::ShowDialog, rtos::UiOverlayKind::Error,
         requestId, "Zuordnung teilweise entfernt",
-        "Die Spoolman-Zuordnung wurde entfernt.\nDie FilamentStation-Daten konnten nicht vom Tag entfernt werden.");
+        orphaned
+            ? "Die FilamentStation-Daten konnten nicht vom Tag entfernt werden."
+            : "Die Spoolman-Zuordnung wurde entfernt.\nDie FilamentStation-Daten konnten nicht vom Tag entfernt werden.");
     return;
   }
   rtos::NfcCommand command{};
@@ -2227,7 +2248,9 @@ void continueRemovalAfterSpoolmanUpdate(rtos::RtosContext& ctx) {
     sendOverlay(
         ctx, rtos::UiCommandType::ShowDialog, rtos::UiOverlayKind::Error,
         requestId, "Zuordnung teilweise entfernt",
-        "Die Spoolman-Zuordnung wurde entfernt.\nDer Auftrag zum Entfernen der FilamentStation-Daten konnte nicht gestartet werden.");
+        orphaned
+            ? "Der Auftrag zum Entfernen der FilamentStation-Daten konnte nicht gestartet werden."
+            : "Die Spoolman-Zuordnung wurde entfernt.\nDer Auftrag zum Entfernen der FilamentStation-Daten konnte nicht gestartet werden.");
     return;
   }
   pendingTagOperation = PendingTagOperation::Erase;
@@ -2236,7 +2259,9 @@ void continueRemovalAfterSpoolmanUpdate(rtos::RtosContext& ctx) {
               rtos::UiOverlayKind::TagWrite,
               pendingTagRemoval.requestId,
               "Tag-Zuordnung wird entfernt",
-              "Spoolman-Zuordnung entfernt. FilamentStation-Daten werden vom Tag entfernt und verifiziert.");
+              orphaned
+                  ? "In Spoolman bestand keine Zuordnung mehr. Veraltete FilamentStation-Daten werden vom Tag entfernt und verifiziert."
+                  : "Spoolman-Zuordnung entfernt. FilamentStation-Daten werden vom Tag entfernt und verifiziert.");
 }
 
 /// @brief Completes a tag assignment that only needed the server-side mapping stored (no tag payload write).
@@ -2766,16 +2791,27 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       if (currentScreen == rtos::UiScreenId::TagReview ||
           currentScreen == rtos::UiScreenId::TagWrite) {
         pendingTagOperation = PendingTagOperation::None;
-        command.type = rtos::UiCommandType::ShowScreen;
-        command.screenId =
-            previousScreen == rtos::UiScreenId::StagingActions ||
-                    previousScreen == rtos::UiScreenId::TagLegacy
-                ? previousScreen
-                : rtos::UiScreenId::TagActionSelect;
-        currentScreen = command.screenId;
-        if (command.screenId == rtos::UiScreenId::StagingActions)
-          applyTagUiState(command);
-        sendUiCommand(ctx, command, "AppTask: NFC cancel navigation overflow");
+        if (previousScreen == rtos::UiScreenId::StagingActions ||
+            previousScreen == rtos::UiScreenId::TagLegacy) {
+          command.type = rtos::UiCommandType::ShowScreen;
+          command.screenId = previousScreen;
+          currentScreen = command.screenId;
+          if (command.screenId == rtos::UiScreenId::StagingActions)
+            applyTagUiState(command);
+          sendUiCommand(ctx, command,
+                        "AppTask: NFC cancel navigation overflow");
+          return;
+        }
+        // Zurück zu TagActionSelect (Nutzerwunsch 2026-08-30): eine
+        // leere ShowScreen ohne Text hier liess tag_action_info auf dem
+        // Stand vor dem Abbruch stehen -- z. B. noch die Konfliktmeldung
+        // eines zwischenzeitlich entfernten/geänderten Tags, obwohl der
+        // Tag weiterhin aufliegt. showNativeTagAction() erzeugt stattdessen
+        // frischen Text aus dem aktuellen currentTag-Zustand.
+        showNativeTagAction(
+            ctx, action.requestId, mappedNfcSpool(currentTag),
+            mappedNfcSpool(currentTag) == 0 ? "Nicht zugeordnet"
+                                            : "Zugeordnet");
         return;
       }
       command.type = rtos::UiCommandType::HideProgress;
@@ -2890,7 +2926,16 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
       }
       if (confirmedOverlay == rtos::UiOverlayKind::Confirmation &&
           pendingUnlinkConfirmation) {
-        if (!requireSpoolman(ctx, action.requestId,
+        // Verwaister Tag (spoolId == 0, siehe SpoolmanTagLookup-Handler
+        // oben): es gibt keine Server-seitige Zuordnung zu ändern, also
+        // weder ein Spoolman-Erreichbarkeits-Gate noch einen ClearSpoolTag-
+        // Aufruf -- nur die physische Löschung der veralteten
+        // FilamentStation-Daten ist nötig.
+        const bool orphanedPayloadOnly =
+            pendingTagRemoval.stage == TagRemovalStage::AwaitingConfirmation &&
+            pendingTagRemoval.spoolId == 0;
+        if (!orphanedPayloadOnly &&
+            !requireSpoolman(ctx, action.requestId,
                              "remove_tag_assignment")) {
           pendingUnlinkConfirmation = false;
           pendingTagRemoval = {};
@@ -2912,6 +2957,10 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                       rtos::UiOverlayKind::Error, action.requestId,
                       "Entfernen nicht m\xC3\xB6glich",
                       "Der Tag wurde entfernt oder ausgetauscht.");
+          return;
+        }
+        if (orphanedPayloadOnly) {
+          continueRemovalAfterSpoolmanUpdate(ctx);
           return;
         }
         pendingTagRemoval.stage = TagRemovalStage::ClearingServerAssignment;
@@ -3138,6 +3187,18 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Gespeicherte Zugangsdaten werden gel\xC3\xB6scht.");
         return;
       }
+      if (confirmedOverlay == rtos::UiOverlayKind::ScaleResetConfirmation) {
+        rtos::ScaleCommand scaleCommand{};
+        scaleCommand.type = rtos::ScaleCommandType::ResetCalibration;
+        scaleCommand.requestId = action.requestId;
+        if (!sendScaleCommand(ctx, scaleCommand)) {
+          sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                      rtos::UiOverlayKind::Error, action.requestId,
+                      "Kalibrierung zur\xC3\xBC" "cksetzen",
+                      "Der Auftrag konnte nicht an den ScaleTask gesendet werden.");
+        }
+        return;
+      }
       sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                   rtos::UiOverlayKind::Success, action.requestId,
                   "Vorgang erfolgreich", result);
@@ -3272,18 +3333,32 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         currentScreen = rtos::UiScreenId::SettingsHome;
       } else if (currentScreen == rtos::UiScreenId::TagReview ||
                  currentScreen == rtos::UiScreenId::TagWrite) {
-        command.screenId =
-            previousScreen == rtos::UiScreenId::StagingActions ||
-                    previousScreen == rtos::UiScreenId::TagLegacy
-                ? previousScreen
-                : rtos::UiScreenId::TagActionSelect;
-        currentScreen = command.screenId;
         pendingTagOperation = PendingTagOperation::None;
+        if (previousScreen != rtos::UiScreenId::StagingActions &&
+            previousScreen != rtos::UiScreenId::TagLegacy) {
+          // See the matching Cancel-handler comment above: a bare, empty-
+          // text ShowScreen here left tag_action_info stale.
+          showNativeTagAction(
+              ctx, action.requestId, mappedNfcSpool(currentTag),
+              mappedNfcSpool(currentTag) == 0 ? "Nicht zugeordnet"
+                                              : "Zugeordnet");
+          return;
+        }
+        command.screenId = previousScreen;
+        currentScreen = command.screenId;
       } else if (currentScreen == rtos::UiScreenId::TagActionSelect ||
                  currentScreen == rtos::UiScreenId::TagResult) {
         command.screenId = rtos::UiScreenId::StagingActions;
         currentScreen = command.screenId;
       } else if (currentScreen == rtos::UiScreenId::TagUnknown) {
+        command.screenId = rtos::UiScreenId::Home;
+        currentScreen = command.screenId;
+        previousScreen = command.screenId;
+      } else if (currentScreen == rtos::UiScreenId::SettingsHome) {
+        // Nutzerwunsch 2026-08-30: settings_back führt immer zu Home
+        // zurück, unabhängig davon, von welchem Screen aus die
+        // Einstellungen geöffnet wurden (vorher: previousScreen, z. B.
+        // StagingDetails/TrayDetails).
         command.screenId = rtos::UiScreenId::Home;
         currentScreen = command.screenId;
         previousScreen = command.screenId;
@@ -3481,21 +3556,30 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
     }
 
     case rtos::UiActionType::TareScale:
-    case rtos::UiActionType::StartScaleCalibration:
-    case rtos::UiActionType::ResetScaleCalibration: {
+    case rtos::UiActionType::StartScaleCalibration: {
       rtos::ScaleCommand scaleCommand{};
       scaleCommand.requestId = action.requestId;
       if (action.type == rtos::UiActionType::TareScale) {
         scaleCommand.type = rtos::ScaleCommandType::Tare;
-      } else if (action.type == rtos::UiActionType::StartScaleCalibration) {
+      } else {
         scaleCommand.type = rtos::ScaleCommandType::StartCalibration;
         scaleCommand.referenceWeightGrams = static_cast<float>(action.value);
-      } else {
-        scaleCommand.type = rtos::ScaleCommandType::ResetCalibration;
       }
       sendScaleCommand(ctx, scaleCommand);
       return;
     }
+
+    case rtos::UiActionType::ResetScaleCalibration:
+      // Kritische Aktion (Nutzerwunsch 2026-08-30): löscht die
+      // gespeicherte Kalibrierung unwiderruflich -- wie
+      // ResetWifiCredentials erst nach Bestätigung ausführen, nicht
+      // direkt beim Tastendruck. Der eigentliche ScaleCommand wird erst im
+      // Confirm-Handler unten gesendet.
+      sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
+                  rtos::UiOverlayKind::ScaleResetConfirmation,
+                  action.requestId, "Kalibrierung zur\xC3\xBC" "cksetzen?",
+                  "Die gespeicherte Waagenkalibrierung wird unwiderruflich gel\xC3\xB6scht.");
+      return;
 
     case rtos::UiActionType::OpenPrinterSettings:
       printerSettingsReturnScreen = currentScreen;
@@ -4615,6 +4699,7 @@ void appTask(void* parameter) {
       if (event->type == rtos::AppEventType::NfcTagRead) {
         currentTag = event->tagReadResult;
         tagPresent = true;
+        notifyNfcPresence(ctx, true);
         const bool nativeTechnology =
             currentTag.technology == models::TagTechnology::Ntag213 ||
             currentTag.technology == models::TagTechnology::Ntag215 ||
@@ -4910,6 +4995,7 @@ void appTask(void* parameter) {
         resolvedTagIdentity = {};
         resolvedTagSpoolId = 0;
         tagPresent = false;
+        notifyNfcPresence(ctx, false);
         currentTag = {};
         pendingTagOperation = PendingTagOperation::None;
         pendingUnlinkConfirmation = false;
@@ -4969,6 +5055,7 @@ void appTask(void* parameter) {
         std::memcpy(currentTag.uid, event->nfcUid, event->nfcUidLength);
         nfc::updateTagCapabilities(currentTag);
         tagPresent = true;
+        notifyNfcPresence(ctx, true);
         pendingTagOperation = PendingTagOperation::None;
         rtos::UiCommand hide{};
         hide.type = rtos::UiCommandType::HideProgress;
@@ -4994,6 +5081,8 @@ void appTask(void* parameter) {
       } else if (event->type == rtos::AppEventType::NfcTagErased) {
         const bool assignmentRemoval =
             pendingTagRemoval.stage == TagRemovalStage::ClearingPayload;
+        const bool orphanedAssignmentRemoval =
+            assignmentRemoval && pendingTagRemoval.spoolId == 0;
         if (assignmentRemoval &&
             (event->nfcUidLength != pendingTagRemoval.uidLength ||
              std::memcmp(event->nfcUid, pendingTagRemoval.uid.data(),
@@ -5025,11 +5114,19 @@ void appTask(void* parameter) {
         result.type = rtos::UiCommandType::ShowScreen;
         result.screenId = rtos::UiScreenId::TagResult;
         result.requestId = event->requestId;
+        // Nutzerwunsch 2026-08-30: ohne Spoolman-Zuordnung gibt es nichts
+        // Gestagtes, das dieser Vorgang betrifft -- "Schnell/Erweitert
+        // wiegen" wären hier irreführend (sie wirken ohnehin nur auf
+        // stagingState, nicht auf diesen Tag).
+        if (orphanedAssignmentRemoval)
+          result.value |= rtos::UI_TAG_RESULT_NO_SPOOL_ACTIONS;
         std::snprintf(
             result.text, sizeof(result.text),
-            assignmentRemoval
-                ? "Tag-Zuordnung entfernt.\nFilamentStation-Daten wurden ebenfalls vom Tag entfernt und die L\xC3\xB6schung wurde verifiziert."
-                : "NFC-Tag gel\xC3\xB6scht. Der leere NDEF-Zustand wurde verifiziert.");
+            orphanedAssignmentRemoval
+                ? "Veraltete FilamentStation-Daten vom Tag entfernt und die L\xC3\xB6schung wurde verifiziert.\nIn Spoolman war dieser Tag keiner Spule mehr zugeordnet."
+                : assignmentRemoval
+                      ? "Tag-Zuordnung entfernt.\nFilamentStation-Daten wurden ebenfalls vom Tag entfernt und die L\xC3\xB6schung wurde verifiziert."
+                      : "NFC-Tag gel\xC3\xB6scht. Der leere NDEF-Zustand wurde verifiziert.");
         if (assignmentRemoval) pendingTagRemoval = {};
         if (assignmentRemoval)
           FS_LOGI(services::LogComponent::App,
@@ -5727,6 +5824,27 @@ void appTask(void* parameter) {
         continue;
       }
       if (status != services::TagLookupStatus::Found || event->spoolId == 0) {
+        // Verwaister Tag (Nutzerbericht 2026-08-30): das Spoolman-seitige
+        // extra.tag-Feld zeigt inzwischen auf einen anderen Tag (z. B. weil
+        // die Spule neu ge-tagged wurde), aber der ursprüngliche physische
+        // Tag trägt weiterhin veraltete FilamentStation-Daten. Ohne
+        // Server-seitige Zuordnung gibt es nichts zu löschen/verifizieren,
+        // aber der Nutzer soll den Button trotzdem nutzen können, um die
+        // veralteten Daten physisch vom Tag zu entfernen -- vorher endete der
+        // Vorgang hier ergebnislos mit "Keine Zuordnung gefunden" und liess
+        // den Tag unangetastet.
+        if (pendingTagRemoval.clearPayload && tagPresent &&
+            !pendingTagRemoval.tagRemoved && removalTagMatches(currentTag)) {
+          pendingTagRemoval.spoolId = 0;
+          pendingTagRemoval.stage = TagRemovalStage::AwaitingConfirmation;
+          pendingUnlinkConfirmation = true;
+          sendOverlay(
+              ctx, rtos::UiCommandType::ShowDialog,
+              rtos::UiOverlayKind::Confirmation, event->requestId,
+              "Tag-Zuordnung entfernen?",
+              "Dieser Tag ist in Spoolman keiner Spule (mehr) zugeordnet.\nDie veralteten FilamentStation-Daten werden vom Tag entfernt.");
+          continue;
+        }
         pendingTagRemoval = {};
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, event->requestId,

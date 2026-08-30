@@ -6240,3 +6240,393 @@ Wartezeit (`config::kWifiPostWakeSettleMs`, 300 ms) direkt nach
 Tests grün. **Kein Hardware-Test möglich** -- sowohl die genaue Ursache
 als auch die gewählte Wartezeit sind unverifiziert und sollten anhand
 des nächsten Hardware-Logs bestätigt/nachjustiert werden.
+
+---
+
+**Bugfix (2026-08-30, Nutzerbericht: `boot_version`-Label auf
+`SCR_BOOT` bleibt nach `release.ps1` auf der alten Version stehen):**
+keine Lücke im Release-Skript, sondern derselbe Root-Cause, der für
+`device_settings_version`/`firmware_settings_current` bereits behoben war
+(Kommentar dort: "Programmatisch statt nur EEZ-Studio-Statisch --
+vermeidet Drift, sobald ein echtes Firmware-Update
+config::kApplicationVersion aendert") -- `boot_version` hatte diese
+Behandlung nie bekommen und blieb daher permanent auf dem zuletzt in EEZ
+Studio gespeicherten, statischen Text ("Version 0.1.0-dev") stehen,
+unabhängig davon, was `AppConfig.h` tatsächlich sagt. `release.ps1`
+selbst bumpt ausschliesslich `AppConfig.h` (der einzige Ort, der die
+Versionsnummer tatsächlich definiert) -- korrekt so, keine Änderung dort
+nötig. Fix: `UiBridge.cpp` setzt `boot_version`s Text jetzt dynamisch aus
+`config::kApplicationVersion`, an beiden Stellen, an denen der Boot-
+Screen tatsächlich gezeigt wird (`showScreen()`s `Boot`-Fall für
+spätere `ShowScreen(Boot)`-Aufrufe, plus der allererste `loadScreen()`
+beim UI-Start selbst, noch bevor `AppTask` ueberhaupt eine erste
+`ShowScreen`-Nachricht schickt) -- identisches Muster wie bei den beiden
+Settings-Screens. Der verbleibende statische "Version 0.1.0-dev"-Text in
+`screens.c`/der `.eez-project`-Quelle ist dadurch nur noch ein sofort
+überschriebener Platzhalter, funktional irrelevant (gleiche Situation wie
+bei den beiden bereits bestehenden Fällen). Build 0 Warnungen, 105/105
+native Tests grün.
+
+---
+
+**Feature (2026-08-30, Nutzerwunsch: Header-Statusicons/Druckername auf
+allen 23 Screens durch die gemeinsame Komponente `CMP_TOP_PRINTER_BAR`
+ersetzen, plus neues "nfc"-Statusbild):** der Nutzer hat die Komponente
+selbst per EEZ Studio angelegt und auf allen 23 betroffenen Screens
+platziert (`SCR_HOME` ... `SCR_TAG_UNKNOWN`, siehe Aufgabenbeschreibung)
+-- dabei wurden die bisherigen, pro Screen einzeln vorhandenen
+Header-Widgets (`<screen>_header`/`_header_printer`/`_header_wifi`/
+`_header_spoolman`) vollständig entfernt, wodurch `UiBridge.cpp`s
+darauf zugreifender Code (drei 23-Einträge-Arrays in
+`setAllHeaderTexts()`/`updateHeaderStatusIcons()`, plus 23 einzelne
+`bindClick(..._header, headerClicked)`-Aufrufe, plus mehrere gemischte
+`styleLabelButton`-Arrays) nicht mehr kompilierte.
+
+Diese Sitzung hat die Migration in `UiBridge.cpp` nachgezogen: die
+Komponente instanziiert sich pro Screen als `create_user_widget_
+cmp_top_printer_bar(obj, startWidgetIndex)` mit fortlaufendem
+`startWidgetIndex`, jedes Instanz-Widget ist über `objN__<name>`
+(`printer_label`/`spoolman`/`wifi`/`printer`/`nfc`/`home_header_1`)
+erreichbar, N=0..22. Die Zuordnung N -> Screen wurde durch Abgleich
+jedes `create_user_widget_cmp_top_printer_bar()`-Aufrufs in `screens.c`
+gegen die umschließende `create_screen_scr_*()`-Funktion verifiziert
+(nicht geraten) -- deckt sich exakt mit der bisherigen Array-Reihenfolge
+in `setAllHeaderTexts()`/`updateHeaderStatusIcons()`, was die Migration
+mechanisch und risikoarm machte: 1:1-Ersetzung jedes alten Feldnamens
+durch das passende `objN__...`-Feld, Build kompilierte beim ersten
+Versuch fehlerfrei durch (starkes Indiz, dass die Zuordnung stimmt).
+`setAllHeaderTexts()` nutzt jetzt `lv_label_set_text()` direkt auf dem
+namentlich zugänglichen `printer_label` statt vorher über
+`setControlText()`s Kind-Suche im Button.
+
+Neues "nfc"-Bild im Component: neuer `UiCommandType::UpdateNfcPresence`
+(`command.value` = 0/1), gesendet von einem neuen `AppTask`-Helfer
+`notifyNfcPresence()` an allen drei Stellen, an denen `AppTask`s eigenes
+`tagPresent`-Flag umgeschaltet wird (`NfcTagRead`/`NfcTagWritten` ->
+sichtbar, `NfcTagRemoved` -> unsichtbar) -- unabhängig von
+Tag-Identitäts-Auflösung/Navigation, wirkt daher auf allen 23 Screens,
+nicht nur den Tag-Ablauf-Screens. `UiBridge.cpp` hält dafür ein neues
+`nfcTagPresent`-Flag und blendet/versteckt alle 23 `objN__nfc`-Bilder in
+`updateHeaderStatusIcons()` (gleiche "alle 23 auf einmal"-Systematik wie
+die bestehenden Drucker-/WLAN-/Spoolman-Icons). Build 0 Warnungen,
+105/105 native Tests grün. Kein Hardware-/Simulator-Test möglich in
+dieser Sitzung -- insbesondere das Timing von `nfc`-Sichtbarkeit relativ
+zu physischer Tag-Erkennung (abhängig davon, wie früh `NfcTask` ein
+`NfcTagRead`-Event sendet) ist unverifiziert.
+
+---
+
+**Feature (2026-08-30, Nutzerwunsch: "Zurücksetzen" in den
+Waagen-Einstellungen zu einer kritischen Aktion machen -- roter Button,
+Rückfrage):** `scale_settings_reset` löste den Kalibrierungs-Reset bisher
+direkt beim Tastendruck aus, ohne Bestätigung, im blauen
+`ButtonPrimary`-Stil (identisch zu den ungefährlichen Aktionen
+Tarieren/Kalibrieren). Style auf `ButtonDanger` geändert (`screens.c`
+und `ui-project/FilamentStation.eez-project` mitgepflegt, gleiches
+einfaches Ein-Feld-`useStyle`-Muster wie bei `tag_action_erase`, geringes
+Risiko). `ResetScaleCalibration` aus dem bisher gemeinsamen
+Switch-Case-Block mit `TareScale`/`StartScaleCalibration` herausgelöst
+(die beiden bleiben unverändert sofort ausgeführt) und zeigt jetzt zuerst
+einen Bestätigungsdialog (neuer `UiOverlayKind::ScaleResetConfirmation`,
+gleiches Muster wie `WifiResetConfirmation`/`RestartConfirmation`) --
+erst nach Bestätigen sendet der `Confirm`-Handler den eigentlichen
+`ScaleCommandType::ResetCalibration`. Build 0 Warnungen, 105/105 native
+Tests grün. Kein Hardware-/Simulator-Test möglich in dieser Sitzung.
+
+---
+
+**Bugfix, Fortsetzung (2026-08-30, Nutzerbericht: WLAN-Reconnect nach
+Energiesparmodus klappt weiterhin nicht):** der vorherige Fix (fester
+300-ms-Delay vor dem ersten `WiFi.reconnect()`-Versuch nach dem Aufwachen,
+siehe vorheriger Nachtrag) löste das Problem laut Nutzerrückmeldung
+nicht zuverlässig -- die Verdachtsursache (WiFi.mode(WIFI_STA) noch
+nicht wirklich bereit) war vermutlich richtig, aber eine geratene feste
+Wartezeit ist grundsätzlich ein Ratespiel statt eine echte Lösung.
+Ohne Hardware-Log diesmal zwei Maßnahmen kombiniert, statt erneut blind
+eine andere Zahl zu raten:
+
+1. **Robusterer Fix:** statt einer festen Wartezeit wird nach
+   `WiFi.mode(WIFI_STA)` jetzt auf das tatsächliche
+   `ARDUINO_EVENT_WIFI_STA_START`-Ereignis gewartet (neues
+   `WifiSignal::StationStarted`, `awaitingStaStart`/`staStartFallbackAt`
+   in `NetworkTask.cpp`) -- reagiert auf die wirkliche Hardware-
+   Bereitschaft statt auf eine geschätzte Dauer. Ein Fallback-Timeout
+   (`config::kWifiStaStartFallbackMs`, 2 s) verhindert ein permanentes
+   Hängenbleiben, falls das Ereignis auf dieser Hardware/Firmware-
+   Version doch einmal ausbleiben sollte. `config::kWifiPostWakeSettleMs`
+   (der alte, nicht mehr verwendete feste Delay) entfernt.
+2. **Deutlich bessere Diagnose für den Fall, dass auch das nicht
+   reicht:** `wifiEventCallback()` nutzt jetzt die volle
+   `WiFiEventFuncCb`-Signatur (vorher nur die Event-ID) und liest bei
+   `ARDUINO_EVENT_WIFI_STA_DISCONNECTED` den rohen `wifi_err_reason_t`-
+   Code aus (`lastWifiDisconnectReason`, u. a. 2=AUTH_EXPIRE,
+   201=NO_AP_FOUND, 202=AUTH_FAIL, 204=HANDSHAKE_TIMEOUT) -- das
+   bisherige "WiFi station disconnected"-Log verriet nie, WARUM die
+   Verbindung verloren ging. Der `reconnect()`-Aufruf selbst loggt jetzt
+   zusätzlich `WiFi.status()` unmittelbar davor und `WiFi.reconnect()`s
+   Rückgabewert.
+
+Build 0 Warnungen, 105/105 native Tests grün. **Weiterhin kein
+Hardware-Test möglich** -- falls der Fehler ein drittes Mal auftritt,
+sollte das erweiterte Logging (insbesondere `reason=` und
+`status_before=`/`reconnect_started=`) diesmal die tatsächliche Ursache
+zeigen, statt erneut geraten werden zu müssen.
+
+## Nachtrag 2026-08-30: CMP_SETTINGS_BUTTON und CMP_AMS_TRAY_OVERVIEW
+
+Zwei vom Nutzer im EEZ-Projekt bereits platzierte User-Widgets ans
+C++-Wiring angeschlossen; ohne diese Änderung wäre der nächste Build
+fehlgeschlagen, da die zugehörigen alten Felder (`home_settings`,
+`home_ams_1_1` usw.) durch die EEZ-Studio-Regenerierung bereits aus
+`screens.h` entfernt waren.
+
+**CMP_SETTINGS_BUTTON** ersetzt den bisherigen, pro Screen
+unterschiedlich benannten Zahnrad-Button (`home_settings`,
+`select_settings`, `staging_details_settings`, ... 22 Screens
+insgesamt, SCR_SETTINGS_HOME ausgenommen -- dort gibt es folgerichtig
+keinen "zu den Einstellungen"-Button). Da der neue Button reines
+Icon ohne Text-Kind ist (das Zahnrad-Bild liegt als Geschwister-Widget
+daneben, nicht als Button-Kind), entfällt `styleLabelButton()` dafür
+komplett (analog zu den Icon-Widgets von CMP_TOP_PRINTER_BAR) -- ein
+reines `bindClick(..., settingsClicked)` genügt, die 13 Screens, die
+vorher (inkonsistent) durch `styleLabelButton()` liefen, wurden aus den
+jeweiligen Style-Arrays entfernt.
+
+**CMP_AMS_TRAY_OVERVIEW** ersetzt die 16 einzelnen Slot-Farbcontainer
+(`home_ams_<AMS>_<Slot>`) durch vier Komponenten-Instanzen (`ams1`..
+`ams4`, je mit eigenem AMS-Klick-Button `amsN__ams` und vier
+Farbcontainern `amsN__tray1..tray4`). Da EEZ Studio bei eindeutig vom
+Nutzer benannten Wrapper-Objekten (hier `ams1`..`ams4`, nicht der
+generische `objN`-Zähler) den Bezeichner selbst als Präfix für die
+Kind-Widgetnamen verwendet, sind die neuen Felder direkt lesbar
+(`ams2__tray3` usw.) -- kein Nachschlagen über Erzeugungsreihenfolge
+nötig. Der bisherige `LV_OBJ_FLAG_OVERFLOW_VISIBLE`-Workaround für die
+(im alten Layout verschachtelten) Farbcontainer entfällt ersatzlos, da
+die vier Container in der neuen Komponente Geschwister sind, nicht mehr
+verschachtelt.
+
+Neu: jede Instanz besitzt zusätzlich vier `nozzleN`-Icons (Nutzerwunsch),
+sichtbar wenn das jeweilige Fach laut Drucker gerade aktiv druckt
+(`TrayUiEntry::isActiveNozzle`, exakt wie schon bei `CMP_TRAY_CARD`s
+`updateTrayButton()`). Die Icon-Variante richtet sich nach der
+Filamentfarbe, nach demselben Kontrastprinzip wie `CMP_TRAY_CARD`s
+bereits bestehendes eigenes Düsen-Icon: helles Filament -> "3D Printer
+Nozzle" (`img_3_d_printer_nozzle`, ohne "W"), dunkles Filament -> "3D
+Printer Nozzle W" (`img_3_d_printer_nozzle_w`). Ursprünglich (erste
+Fassung dieses Nachtrags) hatte ich das wörtlich nach der ersten,
+umgekehrten Nutzervorgabe umgesetzt; auf Hinweis des Nutzers am selben
+Tag auf diese Zuordnung korrigiert.
+
+Da sich durch die Neuplatzierung beider Widgets im EEZ-Projekt der
+globale, projektweite `objN`-Zähler für *alle* User-Widget-Instanzen
+verschoben hat, waren zusätzlich die bereits bestehenden
+CMP_TOP_PRINTER_BAR-Feldreferenzen (`objN__home_header_1`,
+`__printer_label`, `__spoolman`, `__wifi`, `__printer`, `__nfc` auf 23
+Screens) neu durchzuzählen und umzuschreiben (per Skript, gegen
+`screens.h`/`screens.c` positionsbasiert verifiziert) -- sonst hätte
+der Build allein deswegen schon nicht mehr funktioniert.
+
+Build 0 Warnungen, 105/105 native Tests grün. Reines UI-Wiring, keine
+native-testbare Logik betroffen. **Kein Hardware-/Simulator-Test in
+dieser Sitzung möglich** (kein LVGL-Simulator-Build verfügbar).
+
+## Nachtrag 2026-08-30 (2): Düsen-Icon-Variante korrigiert, verwaisten Tag endgültig löschbar gemacht
+
+Zwei vom Nutzer gemeldete Punkte zum vorigen Nachtrag bzw. zur
+bestehenden NFC-Tag-Entfernung:
+
+**1. Düsen-Icon-Variante (CMP_AMS_TRAY_OVERVIEW) korrigiert.** Die im
+vorigen Nachtrag wörtlich umgesetzte (aber vom eigentlich gewünschten
+Verhalten abweichende) Zuordnung war falsch herum. Richtig, und jetzt
+konsistent mit `CMP_TRAY_CARD`s bereits bestehendem eigenen
+Düsen-Icon: helles Filament -> "3D Printer Nozzle" (ohne "W"), dunkles
+Filament -> "3D Printer Nozzle W". `updateHomeContent()`s
+`isLightBackground(color) ? &img_3_d_printer_nozzle
+: &img_3_d_printer_nozzle_w` entsprechend getauscht.
+
+**2. "Tag-Zuordnung entfernen" bei verwaistem Tag.** Reproduzierter
+Fall: Spule #36 war Tag A zugeordnet; die Spule wird anschließend neu
+mit Tag B verknüpft (Spoolmans `extra.tag`-Feld zeigt jetzt auf Tag B).
+Tag A trägt weiterhin seine alten FilamentStation-NDEF-Daten ("Spule
+#36"). Die native Konsistenzprüfung beim Auflegen erkennt das korrekt
+("NDEF nennt Spule #36, in Spoolman fehlt die Zuordnung"), aber der
+Button "Zuordnung entfernen" scheiterte bisher mit "Keine Zuordnung
+gefunden" und liess Tag A unangetastet -- der Entfernen-Ablauf
+(`RemoveTagAssignment` in `AppTask.cpp`) fragt Spoolman per
+`FindSpoolByTag` nach einer *aktuellen* Zuordnung für diesen Tag; da
+Spoolman inzwischen Tag B statt Tag A führt, kam dort immer
+"NotFound" zurück und der gesamte Vorgang brach ab, unabhängig davon,
+ob der physische Tag noch lösbare Alt-Daten trägt.
+
+Kein Mock, wie zuerst beim vorherigen Bugreport zu diesem Button
+vermutet -- diesmal ein echter Lücken-Fall: die bestehende Logik prüft
+ausschließlich serverseitig, hat aber keinen Pfad für "keine
+Server-Zuordnung mehr, aber der physische Tag ist trotzdem noch ein
+löschbares FilamentStation-Tag". Fix in drei Stellen, alle in
+`AppTask.cpp`:
+
+- `SpoolmanTagLookup`-Handler der `LookingUp`-Stage: bei
+  `status != Found` wird jetzt zusätzlich geprüft, ob der aufliegende
+  Tag laut `nfc::removalEffect()`/`clearPayload` selbst löschbar ist
+  (native NTAG, Format `FilamentStation`, physisch beschreibbar). Wenn
+  ja, wird trotzdem der normale Bestätigungsdialog gezeigt
+  (`pendingTagRemoval.spoolId = 0` als Markierung "kein
+  Server-seitiges Mapping"), statt sofort mit einem Fehler
+  abzubrechen.
+- Bestätigungs-Handler: bei `spoolId == 0` wird weder das
+  Spoolman-Erreichbarkeits-Gate noch der `ClearSpoolTag`-Aufruf
+  ausgeführt (es gibt ja nichts Server-seitiges zu ändern) -- es geht
+  direkt in `continueRemovalAfterSpoolmanUpdate()`, das dank bereits
+  bestehender `clearPayload`-Logik ohnehin schon die physische
+  `EraseTag`-Löschung auslöst.
+- Statusmeldungen in `continueRemovalAfterSpoolmanUpdate()` und beim
+  `NfcTagErased`-Erfolg unterscheiden jetzt zwischen "Spoolman-Zuordnung
+  entfernt" (regulärer Fall) und "In Spoolman bestand keine Zuordnung
+  mehr, veraltete Daten trotzdem vom Tag entfernt" (verwaister Fall),
+  damit der Nutzer nicht fälschlich glaubt, es sei eine
+  Spoolman-Änderung passiert.
+
+Der reguläre Pfad (Tag ist noch einer Spule zugeordnet) ist
+unverändert. Build 0 Warnungen, 105/105 native Tests grün. **Kein
+Hardware-Test möglich** -- der Fall ist nur mit echtem
+Spoolman/NFC-Zusammenspiel reproduzierbar; falls das Verhalten nicht
+passt, bitte mit Log melden.
+
+## Nachtrag 2026-08-30 (3): SCR_STAGING_ACTIONS-Buttons, tag_action_info-Refresh, settings_back
+
+Vier Nutzerwünsche zu SCR_STAGING_ACTIONS, SCR_TAG_ACTION_SELECT und
+SCR_SETTINGS_HOME:
+
+**1. `staging_action_link_tag`/`staging_action_unlink_tag`: nur bei
+aufliegendem NFC-Tag aktiv.** Bisher hing die Aktivierung dieser
+Buttons in `applySpoolmanAppState()` an `currentTagCanAssign`/
+`currentTagCanRemove` -- geteilte Felder, die zuletzt vom jeweils
+*anderen* Tag-Screen (TagActionSelect/TagLegacy/TagUnknown) gesetzt
+wurden und daher veraltet sein konnten, wenn `applySpoolmanAppState()`
+z. B. durch ein Spoolman-Reconnect-Event erneut lief, während der
+Nutzer bereits auf StagingActions war und der Tag zwischenzeitlich
+entfernt wurde. Umgestellt auf `nfcTagPresent` -- ein dediziertes,
+immer aktuelles Feld, das unabhängig von Navigation bei jedem
+physischen Auflegen/Entfernen per `UpdateNfcPresence` gesetzt wird
+(bereits für das Header-NFC-Icon vorhanden). Damit dieser Zustand auch
+*live* reagiert, während der Nutzer auf StagingActions bleibt, ruft
+sowohl `UpdateNfcPresence` als auch `UpdateStaging` jetzt zusätzlich
+`applySpoolmanAppState()` auf.
+
+**2. `staging_action_clear`/`staging_action_advanced_weight`/
+`staging_action_configure`: nur bei zugeordnetem Staging-Filament
+aktiv.** Bisher nur an `online` (Spoolman erreichbar) gekoppelt --
+jetzt zusätzlich an `stagingState.spoolId != 0`. `staging_action_clear`
+hatte bisher überhaupt keine explizite Sperr-Logik (dauerhaft
+klickbar).
+
+**3. `tag_action_info` blieb nach einem abgebrochenen Zuordnungsvorgang
+veraltet.** Reproduzierter Fall (Nutzerantwort): Tag bleibt die ganze
+Zeit aufliegend; irgendwann wird SCR_TAG_ACTION_SELECT erneut gezeigt,
+aber `tag_action_info` zeigt noch den Text von vor dem letzten Vorgang.
+Ursache gefunden in `AppTask.cpp`s `Cancel`- und `Back`/`Close`-Handlern:
+wird auf TagReview/TagWrite abgebrochen bzw. zurückgegangen und
+`previousScreen` ist weder StagingActions noch TagLegacy, geht es zu
+TagActionSelect zurück -- aber per einer *leeren* `ShowScreen`
+(`command.text` bleibt `'\0'`). `UiBridge.cpp`s `ShowScreen`-Handler
+aktualisiert `tag_action_info` nur, wenn `command.text[0] != '\0'` ist
+(siehe Code-Kommentar dort), also blieb das Label unangetastet -- auch
+wenn sich der Tag-Zustand (z. B. durch ein zuvor erfolgtes Löschen der
+Zuordnung) inzwischen geändert hatte. Fix: beide Stellen rufen jetzt
+`showNativeTagAction()` mit frisch aus `currentTag`/`mappedNfcSpool()`
+berechnetem Text auf, statt einer leeren `ShowScreen`, wenn das Ziel
+TagActionSelect ist (StagingActions/TagLegacy-Ziel unverändert).
+
+**4. `settings_back` (SCR_SETTINGS_HOME) führt jetzt immer zu SCR_HOME.**
+Bisher (genau wie jeder andere Screen ohne eigene Sonderbehandlung im
+generischen `Back`/`Close`-Handler) zu `previousScreen`, also dem
+Screen, von dem aus "Einstellungen" geöffnet wurde (z. B.
+StagingDetails, TrayDetails) -- jetzt eine explizite Sonderregel wie
+bei den anderen Screens mit fest definiertem Rücksprungziel.
+
+Build 0 Warnungen, 105/105 native Tests grün. Reines UI-/Navigations-
+Wiring, keine native-testbare Logik betroffen. **Kein Hardware-Test
+möglich** -- besonders Punkt 3 (Navigationsreihenfolge) sollte am
+Gerät nachvollzogen werden.
+
+## Nachtrag 2026-08-30 (4): Wiegen-Buttons auf NFC-Ergebnis-Screen bei verwaistem Tag ausgeblendet
+
+Nutzerbericht mit Log (`Tag assignment removed mapping_removed=true
+payload_cleared=true verified=true`): nach dem in Nachtrag (2) gebauten
+Pfad "veraltete FilamentStation-Daten vom Tag entfernt" (verwaister
+Tag ohne Spoolman-Zuordnung) zeigte der Ergebnis-Screen weiterhin die
+Buttons `tag_result_quick_weight`/`tag_result_advanced_weight` an --
+irreführend, da dieser Vorgang keine Spule betrifft (die Buttons wirken
+ohnehin nur auf `stagingState`, unabhängig vom gerade bearbeiteten Tag).
+
+Da `ShowScreen`'s `value`-Feld für den TagResult-Screen bisher
+ungenutzt war, dient es jetzt als Flag: `AppTask.cpp`s
+`continueRemovalAfterSpoolmanUpdate()`-Erfolgspfad (`NfcTagErased`-
+Handler) setzt im verwaisten Fall `result.value |=
+UI_TAG_RESULT_NO_SPOOL_ACTIONS` (neu in `Commands.h`).
+`UiBridge.cpp`s `ShowScreen(TagResult)`-Handler blendet die beiden
+Buttons per `LV_OBJ_FLAG_HIDDEN` aus, wenn das Flag gesetzt ist, und
+wieder ein sonst -- alle anderen TagResult-Aufrufe (Zuordnen,
+reguläres Entfernen, Bambu-Tag-Mapping, ...) setzen `value` nicht und
+zeigen die Buttons daher weiterhin wie bisher.
+
+Build 0 Warnungen, 105/105 native Tests grün. **Kein Hardware-Test
+möglich.**
+
+## Nachtrag 2026-08-30 (5): CMP_TOP_PRINTER_BAR-Spoolman-Icon auf generische Verbindungs-Icons umgestellt
+
+Nutzerwunsch: das Spoolman-Statusbild im Widget CMP_TOP_PRINTER_BAR soll
+dieselben generischen Verbindungs-Icons verwenden wie das Drucker-Icon
+daneben, statt der bisherigen Spoolman-eigenen Bilder
+(`img_spoolman_connected_w`/`img_spoolman_disconneced`). In
+`UiBridge.cpp`s `updateHeaderStatusIcons()` -- dieselbe Funktion, die
+schon `printerIcons` mit `img_conneced_w`/`img_disconneced_w` befüllt
+-- die `spoolmanIcons`-Schleife auf dieselben zwei Bilder umgestellt.
+Der EEZ-seitige Default-Wert des Widgets (`img_spoolman_disconneced`
+bei Objekterzeugung in `screens.c`) bleibt unverändert -- wie bei
+printer/wifi wird er ohnehin sofort beim ersten
+`updateHeaderStatusIcons()`-Lauf überschrieben, keine sichtbare
+Auswirkung.
+
+Build 0 Warnungen, 105/105 native Tests grün. Reines Icon-Wiring,
+keine native-testbare Logik betroffen. **Kein Hardware-/Simulator-Test
+in dieser Sitzung möglich.**
+
+## Nachtrag 2026-08-30 (6): Diagnose-Log für activeTrayNow (Düsen-Icon zeigt fälschlich externe Spule aktiv)
+
+Nutzerbericht: Drucker druckt aus AMS-Fach 1, dessen Spule laut AMS
+bereits leer ist, aber noch Restfilament in der Zuleitung hat -- Home
+zeigt Tray 1 korrekt als "leer", aber das Düsen-Icon der externen Spule
+wird trotzdem als aktiv angezeigt.
+
+Der komplette Pfad wurde durchverfolgt: `PrinterState::activeTrayNow`
+kommt unverändert aus dem vom Drucker gemeldeten `print.ams.tray_now`
+(`BambuProtocol.cpp::bambuApplyReport()`, ohne jede eigene
+Heuristik/Fallback), AppTask kodiert `isActiveTray = activeTrayNow ==
+kActiveTrayNowExternal` fürs externe Fach 1:1 in `tray.value`
+(`AppTask.cpp::syncAmsToUi()`), und `UiBridge.cpp` dekodiert dasselbe
+Bit unverändert in `TrayUiEntry::isActiveNozzle` -- keine Stelle in
+diesem Pfad verändert oder interpretiert den Wert zusätzlich. Die
+Anzeige ist also exakt so korrekt/inkorrekt, wie der vom Drucker
+gemeldete `tray_now`-Wert es hergibt.
+
+**Kein Fix ohne Beleg:** ob der Drucker in diesem Fall selbst schon
+`254` (extern) meldet -- was laut `docs/bambu-protocol.md` ohnehin nur
+eine unverifizierte, community-basierte Annahme über die
+`tray_now`-Semantik ist -- oder ob unser Code den Wert falsch
+zusammenführt/veralten lässt, war anhand des vorliegenden (reinen
+Boot-)Logs nicht zu unterscheiden; `activeTrayNow`/`tray_now` wurde
+bisher nirgends geloggt (nur der volle Rohpayload auf Trace-Level,
+`FS_LOG_LEVEL=5`, das Default-Level ist 4/Debug). Statt zu raten:
+`BambuTask.cpp::handleReportPayload()` loggt jetzt bei jeder
+*Änderung* von `activeTrayNow` eine Zeile auf Info-Level (`"Active tray
+changed printer_id=%u previous=%u current=%u"`) -- sichtbar auch ohne
+Trace-Neubau. Tritt der Fall erneut auf, zeigt dieser Log, ob der
+Drucker tatsächlich `254` sendet (dann ist es Sache der
+Drucker-Firmware/Protokollsemantik, ggf. mit einer Grace-Period o. Ä.
+zu behandeln) oder ob `previous`/`current` etwas anderes zeigen als
+erwartet (dann liegt der Fehler in unserem Merge-Code).
+
+Build 0 Warnungen, 105/105 native Tests grün. **Kein Fix, nur
+Diagnose** -- bitte beim nächsten Auftreten den neuen Log-Eintrag
+teilen.

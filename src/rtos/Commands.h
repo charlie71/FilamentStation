@@ -20,6 +20,11 @@ constexpr std::int32_t UI_TAG_CAP_LINK = 1 << 1;    ///< Bit flag: the tag ident
 constexpr std::int32_t UI_TAG_CAP_UNLINK = 1 << 2;  ///< Bit flag: an existing link may be removed.
 constexpr std::int32_t UI_TAG_CAP_ERASE = 1 << 3;   ///< Bit flag: the tag's native payload may be erased.
 
+/// @brief ShowScreen(TagResult) value flag: no spool is involved in this
+///        result (e.g. a stale/orphaned tag's payload was erased), so the
+///        weigh-now action buttons don't apply and should stay hidden.
+constexpr std::int32_t UI_TAG_RESULT_NO_SPOOL_ACTIONS = 1 << 0;
+
 /// @brief Every LVGL screen the UI can navigate to. See docs/workflows.md,
 ///        section "Screens", for what each one shows.
 enum class UiScreenId : std::uint8_t {
@@ -60,6 +65,12 @@ enum class UiCommandType : std::uint8_t {
   UpdateProgress,
   HideProgress,
   UpdateHeader,
+  // CMP_TOP_PRINTER_BAR's "nfc" icon (TASKS.md Nachtrag 2026-08-30):
+  // value != 0 means a tag is physically present on the reader. Sent from
+  // every AppTask site that flips its own `tagPresent` bool, independent of
+  // tag-identity resolution/navigation -- shown on all 23 screens the
+  // component is instantiated on, not just the active tag-flow screen.
+  UpdateNfcPresence,
   UpdatePrinterList,
   UpdateAmsOverview,
   UpdateStaging,
@@ -118,6 +129,10 @@ enum class UiOverlayKind : std::uint8_t {
   // Firmware-Update (TASKS.md Phase 13.3).
   UpdateInstallConfirmation,
   UpdateDownload,
+  // Waagen-Einstellungen "Zurücksetzen" (TASKS.md Nachtrag 2026-08-30,
+  // Nutzerwunsch): kritische Aktion, verlangt Bestätigung wie
+  // WifiResetConfirmation/RestartConfirmation.
+  ScaleResetConfirmation,
 };
 
 /// @brief Every user-initiated action UiTask can send to AppTask via

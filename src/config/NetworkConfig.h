@@ -30,12 +30,16 @@ constexpr std::uint32_t kWifiReconnectIntervalMs = 15000;  ///< Interval between
 // Arduino-Verhalten: WiFi.mode(WIFI_STA) kehrt zurück, bevor die
 // STA-Schnittstelle (Funkkalibrierung) tatsächlich vollständig bereit
 // ist, sodass ein sofort im selben Tick folgender reconnect()-Aufruf
-// gelegentlich zu früh kommt. Kurze, einmalige Wartezeit direkt nach
-// WiFi.mode(WIFI_STA) im Aufwach-Pfad, bevor der erste reconnect()-Versuch
-// (weiterhin sofort danach, kein voller kWifiReconnectIntervalMs-Slot)
-// ausgelöst wird -- unverifiziert (kein Hardware-Test in dieser Sitzung
-// möglich), aber eine bekannte, in der ESP32-Community dokumentierte
-// Ursache für genau dieses Symptom.
-constexpr std::uint32_t kWifiPostWakeSettleMs = 300;  ///< One-time settle delay after WiFi.mode(WIFI_STA) on wake, before the first WiFi.reconnect() attempt.
+// gelegentlich zu früh kommt. Ein erster Fix (fester 300-ms-Delay vor dem
+// ersten Versuch) löste das Problem laut Nutzerrückmeldung nicht
+// zuverlässig -- ersetzt durch ein echtes, auf ARDUINO_EVENT_WIFI_STA_START
+// wartendes Verfahren (siehe NetworkTask.cpp's awaitingStaStart), das sich
+// an der tatsächlichen Hardware-Bereitschaft orientiert statt an einer
+// geratenen festen Zeit. Diese beiden Konstanten steuern nur noch dessen
+// Poll-Intervall bzw. Fallback-Timeout, falls das Ereignis auf dieser
+// Hardware/Firmware-Version doch einmal ausbleiben sollte -- weiterhin
+// unverifiziert (kein Hardware-Test in dieser Sitzung möglich).
+constexpr std::uint32_t kWifiStaStartPollIntervalMs = 50;  ///< How often NetworkTask polls while waiting for ARDUINO_EVENT_WIFI_STA_START after waking.
+constexpr std::uint32_t kWifiStaStartFallbackMs = 2000;    ///< Maximum time to wait for ARDUINO_EVENT_WIFI_STA_START before attempting WiFi.reconnect() anyway.
 
 }  // namespace filament_station::config

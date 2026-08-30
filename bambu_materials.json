@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "description": "Bambu filament/AMS mapping. Keep tray_info_idx values synchronized with current Bambu Studio profiles. Temperature values are AMS material metadata, not the actual print temperature. The file is distributed with a SHA-256 checksum and must be validated before activation. This catalog is not exhaustive -- new Bambu materials can be added at any time as additional objects in \"materials\", without a firmware rebuild.",
+  "materials": [
+    { "material": "ABS", "tray_info_idx": "GFB99", "tray_type": "ABS", "nozzle_temp_min": 240, "nozzle_temp_max": 280, "aliases": [] },
+    { "material": "ABS-GF", "tray_info_idx": "GFB50", "tray_type": "ABS-GF", "nozzle_temp_min": 240, "nozzle_temp_max": 280, "aliases": [] },
+    { "material": "ABS-S", "tray_info_idx": "GFS06", "tray_type": "ABS-S", "nozzle_temp_min": 240, "nozzle_temp_max": 270, "aliases": [] },
+
+    { "material": "ASA", "tray_info_idx": "GFB98", "tray_type": "ASA", "nozzle_temp_min": 240, "nozzle_temp_max": 280, "aliases": [] },
+    { "material": "ASA-AERO", "tray_info_idx": "GFB02", "tray_type": "ASA-AERO", "nozzle_temp_min": 240, "nozzle_temp_max": 280, "aliases": [] },
+    { "material": "ASA-CF", "tray_info_idx": "GFB51", "tray_type": "ASA-CF", "nozzle_temp_min": 240, "nozzle_temp_max": 280, "aliases": [] },
+
+    { "material": "BVOH", "tray_info_idx": "GFS97", "tray_type": "BVOH", "nozzle_temp_min": 190, "nozzle_temp_max": 240, "aliases": [] },
+    { "material": "EVA", "tray_info_idx": "GFR99", "tray_type": "EVA", "nozzle_temp_min": 190, "nozzle_temp_max": 240, "aliases": [] },
+    { "material": "HIPS", "tray_info_idx": "GFS98", "tray_type": "HIPS", "nozzle_temp_min": 220, "nozzle_temp_max": 270, "aliases": [] },
+
+    { "material": "PA", "tray_info_idx": "GFN99", "tray_type": "PA", "nozzle_temp_min": 260, "nozzle_temp_max": 300, "aliases": [] },
+    { "material": "PA-CF", "tray_info_idx": "GFN98", "tray_type": "PA-CF", "nozzle_temp_min": 260, "nozzle_temp_max": 300, "aliases": [] },
+    { "material": "PA-GF", "tray_info_idx": "GFN08", "tray_type": "PA-GF", "nozzle_temp_min": 260, "nozzle_temp_max": 300, "aliases": [] },
+    { "material": "PA-S", "tray_info_idx": "GFS01", "tray_type": "PA-S", "nozzle_temp_min": 260, "nozzle_temp_max": 300, "aliases": [] },
+    { "material": "PA6-CF", "tray_info_idx": "GFN05", "tray_type": "PA6-CF", "nozzle_temp_min": 260, "nozzle_temp_max": 300, "aliases": [] },
+    { "material": "PAHT-CF", "tray_info_idx": "GFN96", "tray_type": "PA-CF", "nozzle_temp_min": 280, "nozzle_temp_max": 300, "aliases": ["PAHT CF", "PAHTCF", "PAHT_CF"] },
+
+    { "material": "PC", "tray_info_idx": "GFC99", "tray_type": "PC", "nozzle_temp_min": 260, "nozzle_temp_max": 290, "aliases": [] },
+    { "material": "PC-CF", "tray_info_idx": "GFC98", "tray_type": "PC-CF", "nozzle_temp_min": 270, "nozzle_temp_max": 300, "aliases": ["PC CF", "PCCF", "PC_CF"] },
+
+    { "material": "PCTG", "tray_info_idx": "GFG97", "tray_type": "PCTG", "nozzle_temp_min": 220, "nozzle_temp_max": 260, "aliases": [] },
+    { "material": "PE", "tray_info_idx": "GFP99", "tray_type": "PE", "nozzle_temp_min": 190, "nozzle_temp_max": 240, "aliases": [] },
+    { "material": "PE-CF", "tray_info_idx": "GFP98", "tray_type": "PE-CF", "nozzle_temp_min": 190, "nozzle_temp_max": 240, "aliases": [] },
+    { "material": "PET-CF", "tray_info_idx": "GFT01", "tray_type": "PET-CF", "nozzle_temp_min": 220, "nozzle_temp_max": 260, "aliases": [] },
+
+    { "material": "PETG", "tray_info_idx": "GFG99", "tray_type": "PETG", "nozzle_temp_min": 220, "nozzle_temp_max": 260, "aliases": [] },
+    { "material": "PETG-CF", "tray_info_idx": "GFG98", "tray_type": "PETG-CF", "nozzle_temp_min": 220, "nozzle_temp_max": 260, "aliases": [] },
+
+    { "material": "PHA", "tray_info_idx": "GFR98", "tray_type": "PHA", "nozzle_temp_min": 190, "nozzle_temp_max": 240, "aliases": [] },
+
+    { "material": "PLA", "tray_info_idx": "GFL99", "tray_type": "PLA", "nozzle_temp_min": 190, "nozzle_temp_max": 240, "aliases": [] },
+    { "material": "PLA-AERO", "tray_info_idx": "GFA11", "tray_type": "PLA-AERO", "nozzle_temp_min": 190, "nozzle_temp_max": 240, "aliases": [] },
+    { "material": "PLA-CF", "tray_info_idx": "GFL98", "tray_type": "PLA-CF", "nozzle_temp_min": 190, "nozzle_temp_max": 240, "aliases": [] },
+    { "material": "PLA-S", "tray_info_idx": "GFS00", "tray_type": "PLA-S", "nozzle_temp_min": 190, "nozzle_temp_max": 240, "aliases": [] },
+
+    { "material": "PP", "tray_info_idx": "GFP97", "tray_type": "PP", "nozzle_temp_min": 220, "nozzle_temp_max": 250, "aliases": [] },
+    { "material": "PP-CF", "tray_info_idx": "GFP96", "tray_type": "PP-CF", "nozzle_temp_min": 220, "nozzle_temp_max": 250, "aliases": [] },
+    { "material": "PP-GF", "tray_info_idx": "GFP95", "tray_type": "PP-GF", "nozzle_temp_min": 220, "nozzle_temp_max": 250, "aliases": [] },
+
+    { "material": "PPA-CF", "tray_info_idx": "GFN97", "tray_type": "PPA-CF", "nozzle_temp_min": 280, "nozzle_temp_max": 320, "aliases": [] },
+    { "material": "PPA-GF", "tray_info_idx": "GFN96", "tray_type": "PPA-GF", "nozzle_temp_min": 280, "nozzle_temp_max": 320, "aliases": [] },
+
+    { "material": "PPS", "tray_info_idx": "GFT97", "tray_type": "PPS", "nozzle_temp_min": 300, "nozzle_temp_max": 340, "aliases": [] },
+    { "material": "PPS-CF", "tray_info_idx": "GFT98", "tray_type": "PPS-CF", "nozzle_temp_min": 300, "nozzle_temp_max": 340, "aliases": [] },
+
+    { "material": "PVA", "tray_info_idx": "GFS99", "tray_type": "PVA", "nozzle_temp_min": 190, "nozzle_temp_max": 240, "aliases": [] },
+    { "material": "BAMBU-PVA", "tray_info_idx": "GFS04", "tray_type": "PVA", "nozzle_temp_min": 220, "nozzle_temp_max": 250, "aliases": ["Bambu PVA"] },
+
+    { "material": "TPU", "tray_info_idx": "GFU99", "tray_type": "TPU", "nozzle_temp_min": 200, "nozzle_temp_max": 250, "aliases": [] },
+    { "material": "TPU-AMS", "tray_info_idx": "GFU98", "tray_type": "TPU-AMS", "nozzle_temp_min": 200, "nozzle_temp_max": 250, "aliases": [] },
+    { "material": "TPU 95A", "tray_info_idx": "GFL95", "tray_type": "TPU", "nozzle_temp_min": 220, "nozzle_temp_max": 240, "aliases": ["TPU95A", "TPU 95 A"] },
+
+    { "material": "Support For PLA", "tray_info_idx": "GFS02", "tray_type": "PLA-S", "nozzle_temp_min": 220, "nozzle_temp_max": 230, "aliases": ["Support for PLA", "Support PLA"] },
+    { "material": "Support For PLA/PETG", "tray_info_idx": "GFS05", "tray_type": "PLA-S", "nozzle_temp_min": 190, "nozzle_temp_max": 220, "aliases": ["Support for PLA/PETG", "Support PLA PETG"] },
+    { "material": "Support For ABS", "tray_info_idx": "GFS06", "tray_type": "ABS-S", "nozzle_temp_min": 240, "nozzle_temp_max": 270, "aliases": ["Support for ABS", "Support ABS"] },
+    { "material": "Support For PA/PET", "tray_info_idx": "GFS03", "tray_type": "PA-S", "nozzle_temp_min": 280, "nozzle_temp_max": 300, "aliases": ["Support for PA/PET", "Support PA PET"] },
+    { "material": "Support For PAHT", "tray_info_idx": "GFS07", "tray_type": "PA-S", "nozzle_temp_min": 280, "nozzle_temp_max": 300, "aliases": ["Support for PAHT", "Support PA HT"] },
+    { "material": "Support For PC", "tray_info_idx": "GFS08", "tray_type": "PC-S", "nozzle_temp_min": 270, "nozzle_temp_max": 300, "aliases": ["Support for PC", "Support PC"] },
+    { "material": "Support For PETG", "tray_info_idx": "GFS09", "tray_type": "PETG-S", "nozzle_temp_min": 220, "nozzle_temp_max": 260, "aliases": ["Support for PETG", "Support PETG"] },
+    { "material": "Support For PLA/ABS", "tray_info_idx": "GFS10", "tray_type": "PLA-S", "nozzle_temp_min": 220, "nozzle_temp_max": 240, "aliases": ["Support for PLA/ABS", "Support PLA ABS"] },
+    { "material": "Support For PLA-CF", "tray_info_idx": "GFS11", "tray_type": "PLA-S", "nozzle_temp_min": 220, "nozzle_temp_max": 240, "aliases": ["Support for PLA-CF", "Support PLA CF"] },
+    { "material": "Support For PET-CF", "tray_info_idx": "GFS12", "tray_type": "PET-S", "nozzle_temp_min": 240, "nozzle_temp_max": 270, "aliases": ["Support for PET-CF", "Support PET CF"] },
+    { "material": "Support For PA-CF", "tray_info_idx": "GFS13", "tray_type": "PA-S", "nozzle_temp_min": 280, "nozzle_temp_max": 300, "aliases": ["Support for PA-CF", "Support PA CF"] },
+    { "material": "Support For PA-GF", "tray_info_idx": "GFS14", "tray_type": "PA-S", "nozzle_temp_min": 280, "nozzle_temp_max": 300, "aliases": ["Support for PA-GF", "Support PA GF"] },
+    { "material": "Support For PC-CF", "tray_info_idx": "GFS15", "tray_type": "PC-S", "nozzle_temp_min": 270, "nozzle_temp_max": 300, "aliases": ["Support for PC-CF", "Support PC CF"] },
+    { "material": "Support For PVA", "tray_info_idx": "GFS16", "tray_type": "PVA-S", "nozzle_temp_min": 220, "nozzle_temp_max": 250, "aliases": ["Support for PVA", "Support PVA"] }
+  ]
+}
