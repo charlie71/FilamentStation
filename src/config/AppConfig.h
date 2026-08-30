@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file
  * @brief General application identity and startup/shutdown timing
  *        constants used across multiple tasks.
@@ -10,7 +10,7 @@
 namespace filament_station::config {
 
 constexpr char kApplicationName[] = "FilamentStation";  ///< Product name shown on the boot screen and in logs.
-constexpr char kApplicationVersion[] = "0.1.0-dev";      ///< Current firmware version; source of truth for OTA update comparisons (see services::SemVer).
+constexpr char kApplicationVersion[] = "0.2.0";      ///< Current firmware version; source of truth for OTA update comparisons (see services::SemVer).
 constexpr std::uint32_t kCommunicationTestRequestId = 1;  ///< Fixed requestId for the boot-time UI<->AppTask round-trip self-test.
 constexpr std::uint32_t kUsbCdcStartupDelayMs = 5000;    ///< Delay after Serial.begin() before startup diagnostics are logged, giving the host time to enumerate the native USB-CDC device.
 constexpr std::uint32_t kUsbCdcTransmitTimeoutMs = 200;  ///< Serial.setTxTimeoutMs() value; bounds how long a log write can block if the host isn't reading.
