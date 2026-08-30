@@ -135,7 +135,21 @@ if ($Publish) {
     }
 
     Write-Step "Pruefe, ob Tag $TagName bereits existiert"
+    # git rev-parse writes "fatal: ambiguous argument" to stderr and exits
+    # non-zero when the tag doesn't exist yet -- the expected case here. In
+    # Windows PowerShell 5.1, redirecting a native command's stderr (2>...)
+    # wraps each stderr line in a NativeCommandError; with
+    # $ErrorActionPreference = "Stop" (top of this script) that becomes a
+    # terminating exception instead of the harmless non-zero exit code this
+    # check actually relies on (Nutzerbericht 2026-08-29: script aborted
+    # here on every release, tag never existing yet being the normal case).
+    # Temporarily relaxed so the stderr line can't abort the script; the
+    # $LASTEXITCODE check below still correctly distinguishes "tag exists"
+    # from "tag missing" either way.
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     git rev-parse $TagName 2>$null | Out-Null
+    $ErrorActionPreference = $PreviousErrorActionPreference
     if ($LASTEXITCODE -eq 0) {
         Fail "Tag $TagName existiert bereits lokal. Anderen Versionsnamen waehlen oder Tag zuerst entfernen."
     }
@@ -172,7 +186,17 @@ if (-not $SkipTests) {
 # --- 4. Firmware-Build ------------------------------------------------
 
 Write-Step "Baue Firmware ($BuildEnv)"
+# Same NativeCommandError risk as the git-rev-parse check above -- pio run
+# routinely writes benign progress/toolchain lines to stderr even on a
+# fully successful build, and merging that into the pipeline (2>&1, needed
+# so $BuildOutputVar sees compiler warnings, which land on stderr) would
+# abort the script under $ErrorActionPreference = "Stop" the moment the
+# first such line appears. Temporarily relaxed for this call only; the
+# actual pass/fail signal below is $LASTEXITCODE, not any error record.
+$PreviousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 $BuildOutput = pio run -e $BuildEnv 2>&1 | Tee-Object -Variable BuildOutputVar
+$ErrorActionPreference = $PreviousErrorActionPreference
 if ($LASTEXITCODE -ne 0) {
     Fail "Firmware-Build fehlgeschlagen -- Release abgebrochen."
 }

@@ -219,6 +219,14 @@ struct WeightUpdateState {
 WeightUpdateState weightUpdate{};  ///< Active weight-update request state.
 bool pendingStagingSpoolSelection = false;  ///< Whether a staging-spool selection request is in flight.
 std::uint32_t pendingStagingSpoolRequestId = 0;  ///< Correlation id for the in-flight staging-spool load.
+// "ins Staging laden" auf TagActionSelect (TASKS.md Nachtrag 2026-08-30,
+// Nutzerwunsch): unlike the other pendingStagingSpoolRequestId callers
+// (automatic tag-scan auto-load, StagingActions' spool picker), this one
+// should navigate to StagingDetails once the load actually completes --
+// consumed/reset in sendStagingUpdate() (the single completion point all
+// three callers funnel through) and in the LoadSpool-itself-failed error
+// path, so it never leaks into an unrelated later staging load.
+bool navigateToStagingDetailsAfterLoad = false;  ///< Whether the in-flight staging-spool load should show StagingDetails on completion.
 // After a staging LoadSpool response arrives, a follow-up LoadFilament
 // fetch is needed for emptySpoolWeightGrams/K-Faktor (Spoolman *filament*
 // properties, see docs/bambu-protocol.md und Nutzerhinweis 2026-08-24) --
@@ -1767,6 +1775,24 @@ void sendStagingUpdate(rtos::RtosContext& ctx, std::uint32_t requestId,
                "Spule #%lu ins Staging geladen",
                static_cast<unsigned long>(spool.id));
   sendUiCommand(ctx, toast, "AppTask: staging toast overflow");
+  // "ins Staging laden" auf TagActionSelect (TASKS.md Nachtrag 2026-08-30,
+  // Nutzerwunsch) -- unlike this function's other callers (automatic
+  // tag-scan auto-load, StagingActions' spool picker, both of which stay
+  // on their own screen), that one button explicitly wants to land on
+  // StagingDetails once the load completes. spool.id is guaranteed nonzero
+  // here (a successful load), same precondition SelectStaging's own
+  // navigation relies on.
+  if (navigateToStagingDetailsAfterLoad) {
+    navigateToStagingDetailsAfterLoad = false;
+    rtos::UiCommand navigation{};
+    navigation.type = rtos::UiCommandType::ShowScreen;
+    navigation.screenId = rtos::UiScreenId::StagingDetails;
+    navigation.requestId = requestId;
+    previousScreen = currentScreen;
+    currentScreen = navigation.screenId;
+    sendUiCommand(ctx, navigation,
+                  "AppTask: staging load navigation overflow");
+  }
 }
 
 /// @brief Sends a Connect command for every enabled printer, so real
@@ -2633,6 +2659,7 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
         return;
       }
       pendingStagingSpoolRequestId = action.requestId;
+      navigateToStagingDetailsAfterLoad = true;
       sendOverlay(ctx, rtos::UiCommandType::ShowProgress,
                   rtos::UiOverlayKind::SpoolmanRequest, action.requestId,
                   "Spule laden", "Spoolman-Daten werden geladen.");
@@ -3441,13 +3468,15 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
                     "Bambu-Material-Zuordnung wird heruntergeladen...");
         return;
       }
-      command.type = rtos::UiCommandType::ShowToast;
-      command.value = 300 + static_cast<std::int32_t>(action.type);
-      const char* text = "Mock-Aktion vorgemerkt";
-      if (action.type == rtos::UiActionType::StartWifiPortal) text = "WLAN-Konfiguration vorgemerkt";
-      else if (action.type == rtos::UiActionType::ResetWifiCredentials) text = "WLAN-Zugangsdaten nicht zur\xC3\xBC" "ckgesetzt (Mock)";
-      std::snprintf(command.text, sizeof(command.text), "%s", text);
-      sendUiCommand(ctx, command, "AppTask: settings mock action queue overflow");
+      // Every UiActionType sharing this case label (StartWifiPortal,
+      // ResetWifiCredentials, PrepareRestart, CheckFirmwareUpdate,
+      // UpdateBambuMaterials) is handled by one of the `if` blocks above,
+      // each returning -- nothing reaches this point. A leftover mock-toast
+      // fallback ("WLAN-Zugangsdaten nicht zurückgesetzt (Mock)") used to
+      // sit here from before ResetWifiCredentials had a real
+      // implementation; removed (2026-08-30, Nutzerfrage: ob das noch Mock
+      // ist) since dead code claiming to be a mock was actively misleading
+      // about which of these actions are real (all five are).
       return;
     }
 
@@ -5971,6 +6000,10 @@ void appTask(void* parameter) {
       if (pendingStagingSpoolRequestId != 0 &&
           event->requestId == pendingStagingSpoolRequestId) {
         pendingStagingSpoolRequestId = 0;
+        // Load itself failed -- nothing to show, so the "ins Staging
+        // laden"-only navigation flag (see sendStagingUpdate()) must not
+        // leak into the next, unrelated staging load.
+        navigateToStagingDetailsAfterLoad = false;
         sendOverlay(ctx, rtos::UiCommandType::ShowDialog,
                     rtos::UiOverlayKind::Error, event->requestId,
                     "Spule konnte nicht geladen werden", event->text);

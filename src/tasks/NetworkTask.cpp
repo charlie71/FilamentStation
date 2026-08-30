@@ -400,10 +400,18 @@ void networkTask(void* parameter) {
           if (poweredDown) {
             poweredDown = false;
             WiFi.mode(WIFI_STA);
-            // 0 loest im naechsten Schleifendurchlauf sofort den bestehenden
+            // Nutzerbericht 2026-08-30: der allererste reconnect()-Versuch
+            // nach dem Aufwachen schlug vereinzelt fehl (klappte beim
+            // nächsten Aufwachen wieder) -- WiFi.mode(WIFI_STA) kehrt auf
+            // ESP32 zurück, bevor die STA-Schnittstelle tatsächlich
+            // vollständig bereit ist; siehe config::kWifiPostWakeSettleMs's
+            // Kommentar. Kurze, einmalige Wartezeit hier, kein eigener
+            // Sonderpfad für die eigentliche Reconnect-Logik nötig.
+            vTaskDelay(pdMS_TO_TICKS(config::kWifiPostWakeSettleMs));
+            // 0 löst im nächsten Schleifendurchlauf sofort den bestehenden
             // Reconnect-Versuch aus (siehe lastReconnectAttemptAt oben),
             // ohne eigenen Sonderpfad. Bambu-MQTT und Spoolman erkennen die
-            // Wiederverbindung selbststaendig ueber EVENT_WIFI_CONNECTED
+            // Wiederverbindung selbstständig über EVENT_WIFI_CONNECTED
             // (bestehende Recovery-Logik aus Phase 10.4/10.5).
             lastReconnectAttemptAt = 0;
             FS_LOGI(services::LogComponent::Net,

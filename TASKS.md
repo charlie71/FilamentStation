@@ -6121,3 +6121,122 @@ Spulen-ID fest; der Button ist genau dann aktiv, wenn diese ID `!= 0` ist
 online ist (`applySpoolmanAppState()`, gleiche `online`-Gate-Kategorie wie
 z. B. `staging_action_configure`). Build 0 Warnungen, 105/105 native
 Tests grün. Kein Hardware-/Simulator-Test möglich in dieser Sitzung.
+
+---
+
+**Bugfix (2026-08-30, Nutzerbericht: `scripts/release.ps1 -Version 0.2.0
+-Publish` bricht sofort mit einer `NativeCommandError` bei
+`git rev-parse $TagName` ab):** `$ErrorActionPreference = "Stop"` (Kopf
+des Skripts) plus eine `2>`-Stream-Umleitung eines nativen Befehls ist in
+Windows PowerShell 5.1 eine bekannte Falle -- jede stderr-Zeile wird dabei
+in einen `NativeCommandError` verpackt, der unter "Stop" zu einer
+abbrechenden Exception wird, **auch wenn** der native Befehl selbst
+erwartungsgemäß nur einen normalen, per `$LASTEXITCODE` bereits sauber
+abgefragten Fehlschlag meldet. Bei `git rev-parse v0.2.0` ist "Tag
+existiert noch nicht" (stderr: "fatal: ambiguous argument") sogar der
+**Normalfall** bei jedem Release, das Skript brach also bislang bei jedem
+`-Publish`-Lauf zuverlässig genau hier ab. Fix: `$ErrorActionPreference`
+unmittelbar um den nativen Aufruf herum auf `"Continue"` gesetzt und
+danach zurückgesetzt -- der eigentliche Erfolg/Fehlschlag wird weiterhin
+korrekt über `$LASTEXITCODE` entschieden, nur die PowerShell-eigene
+Terminierung durch die harmlose stderr-Zeile entfällt.
+
+Bei der Durchsicht des Skripts auf denselben Fehlerklasse hin einen
+**zweiten, latenten** Fall derselben Falle gefunden und vorsorglich
+mitbehoben, bevor er beim nächsten Release ebenfalls zugeschlagen hätte:
+`pio run -e $BuildEnv 2>&1 | Tee-Object -Variable BuildOutputVar` (Schritt
+4, Firmware-Build) -- PlatformIO/der Compiler schreiben regelmäßig auch
+bei einem vollständig erfolgreichen, warnungsfreien Build Zeilen auf
+stderr (u. a. die Compilerwarnungen selbst, die das Skript danach per
+`Select-String -Pattern 'warning:'` aus genau diesem Stream herausfiltert
+-- daher `2>&1` hier bewusst nicht entfernt, nur `$ErrorActionPreference`
+drumherum entschärft). Beide Fixes lokal reproduziert und verifiziert
+(`cmd /c "echo x 1>&2 & exit 0"` unter identischer `2>&1`+`Tee-Object`-
+Kombination: bricht ohne Fix zuverlässig ab, läuft mit Fix durch,
+`$LASTEXITCODE`/der aufgefangene Text bleiben dabei unveraendert korrekt).
+Kein weiterer `2>`/`2>&1`-Aufruf im Skript gefunden (grep-geprüft).
+
+---
+
+**Bugfix (2026-08-30, Nutzerbericht: nach "ins Staging laden" auf
+`SCR_TAG_ACTION_SELECT` sollte wieder der StagingDetails-Screen
+angezeigt werden):** `sendStagingUpdate()` navigierte bislang nie irgendwo
+hin -- passend für ihre anderen beiden Aufrufer (automatisches
+Staging-Laden nach einem Tag-Scan, Spulen-Picker auf StagingActions:
+beide sollen auf ihrem jeweiligen Screen bleiben), aber nicht für den
+neuen Button. Neuer, einmalig gesetzter Merker
+`navigateToStagingDetailsAfterLoad` (gesetzt in
+`LoadTagSpoolToStaging`s Handler, konsumiert/zurückgesetzt in
+`sendStagingUpdate()` -- dem gemeinsamen Abschlusspunkt aller drei
+Aufrufer, egal ob der K-Faktor sofort oder erst per Folge-Request
+vorliegt) löst danach `ShowScreen(StagingDetails)` aus. Im
+Fehlschlagfall (`LoadSpool` selbst schlägt fehl) wird der Merker
+ebenfalls zurückgesetzt, aber ohne zu navigieren, damit er nicht in eine
+spätere, unabhängige Staging-Anfrage durchsickert. Build 0 Warnungen,
+105/105 native Tests grün.
+
+**Untersucht, aber (noch) nicht behoben (2026-08-30, Nutzerbericht:
+"Tag-Zuordnung entfernen" auf `SCR_TAG_ACTION_SELECT` "hat mock
+Funktionalität"):** vollständige Codeprüfung der kompletten Kette --
+`tag_action_erase`s Bindung (`UiBridge.cpp`, sendet real
+`UiActionType::RemoveTagAssignment`), den vierstufigen
+`TagRemovalStage`-Zustandsautomaten in `AppTask.cpp` (LookingUp ->
+AwaitingConfirmation -> ClearingServerAssignment -> ClearingPayload,
+inkl. des generischen `Confirmation`-Overlays für "Tag-Zuordnung
+entfernen?"), `SpoolmanTask::executeTagClientCommand()`s
+`ClearSpoolTag`-Zweig (echter `services::SpoolmanClient::clearSpoolTag()`-
+HTTP-Aufruf) und `NfcTask::handleErase()` (schreibt real ein leeres NDEF-
+TLV, liest zur Verifikation zurück) -- ergab **keinen** Mock/Stub; alle
+Teile sind bereits durchgehend echt implementiert, derselbe Pfad wird
+bereits länger von `staging_action_unlink_tag` auf dem StagingActions-
+Screen produktiv genutzt (TASKS.md-Historie: mehrfach als abgeschlossen
+markiert). Ohne konkretere Reproduktion (z. B. Hardware-Log, oder was
+genau nach dem Antippen sichtbar ist) lassen sich weder ein Bug noch der
+vom Nutzer beschriebene "Mock"-Anteil lokalisieren -- Rückfrage gestellt,
+keine blinde Änderung vorgenommen. **Nutzerantwort:** Problem lässt sich
+nicht mehr reproduzieren -- deckt sich mit der Codeprüfung oben, keine
+Änderung vorgenommen.
+
+---
+
+**Untersucht (2026-08-30, Nutzerfrage: "WLAN zurücksetzen" -- funktioniert
+das oder ist das nur Mock?):** Codeprüfung der kompletten Kette ergab:
+funktioniert bereits echt. Button (`ResetWifiCredentials`) zeigt eine
+Bestätigung ("WLAN zurücksetzen?"), deren Confirm-Handler
+(`AppTask.cpp`) einen echten `NetworkCommandType::ClearCredentials`
+sendet, den `NetworkTask.cpp` mit einem echten `manager.resetSettings()`
+(WiFiManager) verarbeitet. Gefunden und bereinigt: ein **totes**
+Mock-Fallback ("WLAN-Zugangsdaten nicht zurückgesetzt (Mock)") am Ende
+desselben Switch-Case-Blocks, unerreichbar seit alle fünf dort
+gruppierten Aktionstypen (`StartWifiPortal`/`ResetWifiCredentials`/
+`PrepareRestart`/`CheckFirmwareUpdate`/`UpdateBambuMaterials`) je einen
+eigenen, immer per `return` verlassenen `if`-Zweig bekommen haben --
+vermutlich der Auslöser für die Nutzerfrage, da der String beim
+Codelesen/Grep sichtbar war, aber nie tatsächlich ausgeführt wird. Entfernt,
+um genau diese Verwechslung künftig zu vermeiden. Build 0 Warnungen,
+105/105 native Tests grün.
+
+**Bugfix (2026-08-30, Nutzerbericht: nach dem Aufwachen aus dem
+Energiesparmodus kann WLAN vereinzelt keine Verbindung aufbauen, beim
+nächsten Aufwachen funktioniert es wieder):** `PowerTask` schaltet WiFi
+beim Einschlafen komplett ab (`WiFi.mode(WIFI_OFF)`) und beim Aufwachen
+wieder ein (`WiFi.mode(WIFI_STA)`, `NetworkTask.cpp`s
+`PowerUp`-Behandlung) -- direkt im selben Schleifendurchlauf löste das
+bisher sofort den ersten `WiFi.reconnect()`-Versuch aus
+(`lastReconnectAttemptAt = 0`). Bekanntes ESP32-Arduino-Verhalten (nicht
+in dieser Sitzung gegen echte Hardware verifizierbar, aber ein häufig
+dokumentiertes Community-Problem): `WiFi.mode(WIFI_STA)` kehrt zurück,
+bevor die STA-Schnittstelle tatsächlich vollständig bereit ist -- ein
+sofort folgender `reconnect()`-Aufruf trifft die Schnittstelle
+gelegentlich zu früh und schlägt deshalb ergebnislos fehl, exakt das
+gemeldete "vereinzelt"-Muster (der übliche periodische Retry
+(`kWifiReconnectIntervalMs`, 15 s) käme erst wieder zum Zug, wenn das
+Gerät bis dahin wach bleibt -- meist schläft es vorher erneut ein, daher
+"funktioniert erst beim nächsten Aufwachen"). Fix: neue, kurze, einmalige
+Wartezeit (`config::kWifiPostWakeSettleMs`, 300 ms) direkt nach
+`WiFi.mode(WIFI_STA)` im Aufwach-Pfad, bevor der erste
+`reconnect()`-Versuch (weiterhin sofort danach, nicht der volle
+15-Sekunden-Slot) ausgelöst wird. Build 0 Warnungen, 105/105 native
+Tests grün. **Kein Hardware-Test möglich** -- sowohl die genaue Ursache
+als auch die gewählte Wartezeit sind unverifiziert und sollten anhand
+des nächsten Hardware-Logs bestätigt/nachjustiert werden.
