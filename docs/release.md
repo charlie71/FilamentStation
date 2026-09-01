@@ -133,6 +133,78 @@ sinnvolle Änderungstexte lassen sich nicht generisch generieren.
    `config/UpdateConfig.h`); siehe `docs/user-guide.md`, Abschnitt
    "Firmware", für den Nutzerablauf.
 
+## Web-Flash (ESP Web Tools)
+
+Zusätzlich zum GitHub-Release/OTA-Update (oben) kann eine noch leere/neue
+Platine auch direkt aus dem Browser geflasht werden -- ganz ohne
+PlatformIO/Arduino-IDE-Installation, per
+[ESP Web Tools](https://esphome.github.io/esp-web-tools/) und der
+Web-Serial-API (Chrome/Edge/Opera, Desktop). Die Seite dafür liegt unter
+`docs/index.html` und wird über **GitHub Pages** direkt aus dem
+`/docs`-Ordner dieses Repositories veröffentlicht (Repository-Einstellung
+`Settings → Pages → Source: Deploy from a branch → main → /docs`, einmalig
+vom Repository-Besitzer zu aktivieren).
+
+**Warum ein zusammengeführtes Image nötig ist:** `pio run` erzeugt nur
+`firmware.bin` -- das ist ausschließlich die Anwendungspartition (`app0`,
+Offset `0x10000`). Für einen einzigen Flash-Vorgang bei Offset `0x0`
+(das von ESP Web Tools erwartete, einfachste Manifest-Format) müssen
+zusätzlich Bootloader (`0x0`), Partitionstabelle (`0x8000`) und die
+`otadata`-Initialisierung `boot_app0.bin` (`0xe000`) mit hineingemerged
+werden -- Offsets aus `board_build.partitions = default_16MB.csv`
+(`platformio.ini`), siehe die dortige `boot_app0.bin`-Quelle im
+`framework-arduinoespressif32`-Paket. `scripts/release.ps1` erledigt das
+automatisch (Schritt 6, siehe oben) über dasselbe `esptool.py`, das
+PlatformIO selbst für den Build verwendet:
+
+```powershell
+esptool.py --chip esp32s3 merge_bin -o docs/firmware/firmware-merged.bin `
+    --flash_mode qio --flash_freq 80m --flash_size 16MB `
+    0x0     .pio/build/wt32-s3-wrover-n16r2/bootloader.bin `
+    0x8000  .pio/build/wt32-s3-wrover-n16r2/partitions.bin `
+    0xe000  <framework-arduinoespressif32>/tools/partitions/boot_app0.bin `
+    0x10000 firmware.bin
+```
+
+`--flash_mode`/`--flash_freq` entsprechen `board_build.flash_mode = qio`
+und dem Board-Default `f_flash = 80000000L` (`boards/esp32-s3-devkitc-1.json`
+der espressif32-Plattform) -- ESP Web Tools/`esptool.py merge_bin` haben
+keinen "keep bestehende Werte aus jedem Teilstück"-Modus, die Parameter
+müssen explizit stimmen, sonst bootet das gemergte Image nicht
+zuverlässig.
+
+**Artefakte** (alle unter `docs/`, von `scripts/release.ps1` bei jedem
+Release aktualisiert und mit dem Versions-Bump committet -- **nicht**
+als GitHub-Release-Anhang, sondern direkt im über Pages veröffentlichten
+Commit):
+
+* `docs/manifest.json` -- ESP-Web-Tools-Manifest, `version` wird bei
+  jedem Release automatisch aktualisiert.
+* `docs/firmware/firmware-merged.bin` (+ `.sha256`) -- das gemergte,
+  bei Offset `0x0` flashbare Image.
+* `docs/firmware/bambu_materials.json` (+ `.sha256`) -- Kopie des
+  Material-Mappings zum Herunterladen auf der Flash-Seite. **Wird nicht
+  mitgeflasht** -- ESP Web Tools schreibt ausschließlich in den internen
+  SPI-Flash-Speicher des ESP32, nicht auf die SD-Karte; die Datei muss
+  weiterhin manuell nach `/config/bambu_materials.json` auf die SD-Karte
+  kopiert werden (siehe `data/bambu-materials/README.md`), alternativ
+  über die geräteinterne Downloadfunktion nach dem ersten Boot.
+* `docs/index.html` -- die eigentliche Flash-Seite (statisch, kein
+  Build-Schritt, direkt bearbeitbar).
+* `docs/.nojekyll` -- deaktiviert GitHubs Standard-Jekyll-Verarbeitung
+  für den `/docs`-Ordner, damit `manifest.json`/`.bin`-Dateien
+  unverändert ausgeliefert werden (die übrigen `docs/*.md`-Dateien bleiben
+  davon unberührt -- sie werden ohnehin nicht über Pages verlinkt,
+  sondern über die normale GitHub-Repository-Ansicht gelesen).
+
+**Kein Ersatz für OTA-Updates:** die Web-Flash-Seite ist für
+Erstinstallation/Wiederherstellung gedacht (ESP Web Tools fragt dabei,
+ob der komplette Flash-Speicher gelöscht werden soll -- bei einem
+bereits eingerichteten Gerät i. d. R. **nicht** sinnvoll, da dabei auch
+WLAN-Zugangsdaten und Konfiguration verloren gehen). Für ein Update
+eines bereits laufenden Geräts bleibt Einstellungen → Firmware → "Nach
+Update suchen" (siehe oben) der richtige Weg.
+
 ## Reproduzierbarer Build
 
 `platformio.ini` pinnt sowohl die Plattform (`platform =

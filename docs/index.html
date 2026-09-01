@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FilamentStation &ndash; Firmware im Browser flashen</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f8;
+    --card-bg: #ffffff;
+    --text: #1b1b1f;
+    --muted: #5b5f6a;
+    --border: #e2e4e8;
+    --accent: #2563eb;
+    --accent-text: #ffffff;
+    --code-bg: #f0f1f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15161a;
+      --card-bg: #1e2025;
+      --text: #eceef2;
+      --muted: #9aa0ac;
+      --border: #2d3037;
+      --accent: #5b8def;
+      --accent-text: #0b1220;
+      --code-bg: #26282f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 4rem;
+  }
+  header { text-align: center; margin-bottom: 2.5rem; }
+  header h1 { margin: 0 0 0.4rem; font-size: 2rem; }
+  header p { margin: 0; color: var(--muted); }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem 1.75rem;
+    margin-bottom: 1.5rem;
+  }
+  .card h2 { margin-top: 0; font-size: 1.25rem; }
+  .card h2 .step { color: var(--accent); }
+  ol, ul { padding-left: 1.25rem; }
+  li { margin-bottom: 0.35rem; }
+  code {
+    background: var(--code-bg);
+    border-radius: 4px;
+    padding: 0.1rem 0.35rem;
+    font-size: 0.9em;
+  }
+  .btn-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; }
+  esp-web-install-button { --esp-tools-button-color: var(--accent); }
+  button.flash-activate {
+    appearance: none;
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    background: var(--accent);
+    color: var(--accent-text);
+    cursor: pointer;
+  }
+  button.flash-activate:hover { filter: brightness(1.08); }
+  a.download-btn {
+    display: inline-block;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.65rem 1.25rem;
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 600;
+  }
+  a.download-btn:hover { border-color: var(--accent); }
+  .fallback {
+    background: var(--code-bg);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .version { color: var(--muted); font-size: 0.9rem; }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-top: 2.5rem;
+  }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>FilamentStation</h1>
+    <p>Firmware direkt im Browser flashen &ndash; ohne Installation, per USB-Kabel.</p>
+  </header>
+
+  <div class="card">
+    <h2><span class="step">1.</span> Firmware flashen</h2>
+    <p>
+      Gerät per USB mit diesem Computer verbinden, dann auf
+      &bdquo;Installieren&ldquo; klicken. Funktioniert in Chrome, Edge und
+      Opera (Desktop) &ndash; diese Browser unterstützen die
+      <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API" target="_blank" rel="noopener">Web-Serial-API</a>,
+      die ESP Web Tools dafür benötigt. Firefox und Safari werden aktuell
+      nicht unterstützt.
+    </p>
+    <div class="btn-row">
+      <esp-web-install-button manifest="./manifest.json">
+        <button slot="activate" class="flash-activate">Firmware installieren</button>
+        <span slot="unsupported" class="fallback">
+          Dieser Browser unterstützt die Web-Serial-API nicht. Bitte mit
+          Chrome, Edge oder Opera (Desktop) erneut versuchen.
+        </span>
+        <span slot="not-allowed" class="fallback">
+          Diese Seite muss über HTTPS aufgerufen werden, damit geflasht
+          werden kann.
+        </span>
+      </esp-web-install-button>
+    </div>
+    <p class="version">Aktuelle Version: <code id="fw-version">wird geladen…</code></p>
+    <p>
+      Beim ersten Verbinden fragt der Browser, welcher serielle Port
+      verwendet werden soll &ndash; das WT32-S3-Board meldet sich normalerweise
+      als <code>USB Serial</code>/<code>CP210x</code>/<code>CH340</code>. Bei
+      der Installation fragt ESP Web Tools, ob der komplette Flash-Speicher
+      gelöscht werden soll: bei einer <strong>Erstinstallation</strong> auf
+      leerer Hardware empfohlen, bei einem <strong>Update</strong> eines
+      bereits eingerichteten Geräts <strong>nicht</strong> auswählen, damit
+      WLAN-Zugangsdaten und Konfiguration erhalten bleiben (dafür eignet sich
+      ohnehin meist eher die integrierte Update-Funktion unter
+      Einstellungen&nbsp;→&nbsp;Firmware, siehe
+      <a href="https://github.com/charlie71/FilamentStation/blob/main/docs/user-guide.md" target="_blank" rel="noopener">Benutzerhandbuch</a>).
+    </p>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">2.</span> Bambu-Material-Mapping auf die SD-Karte kopieren</h2>
+    <p>
+      Diese Datei enthält die Zuordnung von Spoolman-Materialien zu
+      Bambu-AMS-Profilen. Sie wird <strong>nicht</strong> mitgeflasht (sie
+      gehört auf die SD-Karte, nicht in den internen Flash-Speicher des
+      ESP32) &ndash; einmalig herunterladen und auf die SD-Karte kopieren:
+    </p>
+    <div class="btn-row">
+      <a class="download-btn" href="firmware/bambu_materials.json" download>bambu_materials.json herunterladen</a>
+    </div>
+    <p>
+      Auf der SD-Karte ablegen unter: <code>/config/bambu_materials.json</code>.
+      Fehlt die Datei, lehnt das Gerät jede Zuordnung eines AMS-Slots ab, bis
+      sie entweder so kopiert oder über
+      Einstellungen&nbsp;→&nbsp;Firmware&nbsp;→&nbsp;Material-Zuordnung
+      aktualisieren direkt vom Gerät heruntergeladen wurde. Details:
+      <a href="https://github.com/charlie71/FilamentStation/blob/main/data/bambu-materials/README.md" target="_blank" rel="noopener">data/bambu-materials/README.md</a>.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Mehr</h2>
+    <ul>
+      <li><a href="https://github.com/charlie71/FilamentStation" target="_blank" rel="noopener">Quellcode auf GitHub</a></li>
+      <li><a href="https://github.com/charlie71/FilamentStation/blob/main/docs/user-guide.md" target="_blank" rel="noopener">Benutzerhandbuch</a></li>
+      <li><a href="https://github.com/charlie71/FilamentStation/blob/main/docs/hardware.md" target="_blank" rel="noopener">Hardware &amp; Gehäuse (3D-Druck)</a></li>
+      <li><a href="https://github.com/charlie71/FilamentStation/blob/main/docs/release.md" target="_blank" rel="noopener">Release-Prozess</a></li>
+    </ul>
+  </div>
+
+  <footer>
+    <p>
+      FilamentStation ist Open Source (MIT-Lizenz).
+      Diese Seite nutzt <a href="https://esphome.github.io/esp-web-tools/" target="_blank" rel="noopener">ESP Web Tools</a>
+      und läuft vollständig lokal im Browser &ndash; es werden keine Daten an
+      einen Server außer GitHub Pages selbst (zum Laden dieser Seite und der
+      Firmware-Datei) übertragen.
+    </p>
+  </footer>
+</main>
+<script>
+  fetch("./manifest.json")
+    .then((response) => response.json())
+    .then((manifest) => {
+      document.getElementById("fw-version").textContent = manifest.version;
+    })
+    .catch(() => {
+      document.getElementById("fw-version").textContent = "unbekannt";
+    });
+</script>
+</body>
+</html>

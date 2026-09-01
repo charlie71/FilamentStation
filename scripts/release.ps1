@@ -20,14 +20,23 @@
          bambu_materials.json/bambu_materials.json.sha256 (TASKS.md
          Nachtrag 2026-08-28: the Bambu material-mapping table, downloaded
          at runtime the same way as the firmware).
-      6. Without -Publish: stop here and print the exact commands to
+      6. Merge bootloader.bin/partitions.bin/boot_app0.bin/firmware.bin
+         into one flashable-at-0x0 image (docs/firmware/firmware-merged.bin
+         + .sha256), copy bambu_materials.json alongside it, and bump the
+         version in docs/manifest.json -- the artifacts the ESP-Web-Tools
+         browser-flash page (docs/index.html, published via GitHub Pages)
+         serves (TASKS.md Nachtrag 2026-08-31, see docs/release.md,
+         "Web-Flash (ESP Web Tools)").
+      7. Without -Publish: stop here and print the exact commands to
          review/tag/publish by hand -- nothing is committed, tagged, or
          pushed automatically.
-         With -Publish: commit the version bump, create annotated tag
-         "v<Version>", push both, and create the GitHub release via
-         `gh release create` with firmware.bin/firmware.bin.sha256/
-         bambu_materials.json/bambu_materials.json.sha256 attached
-         (requires `gh auth login` beforehand).
+         With -Publish: commit the version bump plus the docs/ browser-flash
+         artifacts, create annotated tag "v<Version>", push both, and
+         create the GitHub release via `gh release create` with
+         firmware.bin/firmware.bin.sha256/bambu_materials.json/
+         bambu_materials.json.sha256 attached (requires `gh auth login`
+         beforehand) -- the docs/ artifacts are served by GitHub Pages
+         directly from the pushed commit, not attached to the release.
 
 .PARAMETER Version
     New version number, e.g. "0.2.0" or "0.2.0-rc1" (no leading "v" --
@@ -95,6 +104,29 @@ $BambuMaterialsSourcePath = Join-Path $RepoRoot "data\bambu-materials\bambu_mate
 $BambuMaterialsOutPath = Join-Path $RepoRoot "bambu_materials.json"
 $BambuMaterialsChecksumOutPath = Join-Path $RepoRoot "bambu_materials.json.sha256"
 $TagName = "v$Version"
+
+# ESP Web Tools browser-flash site (docs/, served via GitHub Pages -- see
+# docs/release.md "Web-Flash (ESP Web Tools)"). PlatformIO only produces the
+# application partition image (firmware.bin); a single flashable-at-0x0
+# image additionally needs the bootloader/partition-table/otadata-init
+# images merged in, via the same esptool.py PlatformIO itself already used
+# to build firmware.bin (bundled in its own packages dir, not necessarily
+# on PATH). $PLATFORMIO_CORE_DIR/$PLATFORMIO_PACKAGES_DIR are respected if
+# set (as PlatformIO itself does) so this works regardless of a
+# non-default PlatformIO installation layout.
+$BootloaderPath = Join-Path $RepoRoot ".pio\build\$BuildEnv\bootloader.bin"
+$PartitionsBinPath = Join-Path $RepoRoot ".pio\build\$BuildEnv\partitions.bin"
+$PioCoreDir = if ($env:PLATFORMIO_CORE_DIR) { $env:PLATFORMIO_CORE_DIR } else { Join-Path $env:USERPROFILE ".platformio" }
+$PioPackagesDir = if ($env:PLATFORMIO_PACKAGES_DIR) { $env:PLATFORMIO_PACKAGES_DIR } else { Join-Path $PioCoreDir "packages" }
+$PioPythonPath = Join-Path $PioCoreDir "penv\Scripts\python.exe"
+$EsptoolPyPath = Join-Path $PioPackagesDir "tool-esptoolpy\esptool.py"
+$BootApp0Path = Join-Path $PioPackagesDir "framework-arduinoespressif32\tools\partitions\boot_app0.bin"
+$WebFlashDir = Join-Path $RepoRoot "docs"
+$MergedFirmwareOutPath = Join-Path $WebFlashDir "firmware\firmware-merged.bin"
+$MergedFirmwareChecksumOutPath = Join-Path $WebFlashDir "firmware\firmware-merged.bin.sha256"
+$WebFlashBambuMaterialsOutPath = Join-Path $WebFlashDir "firmware\bambu_materials.json"
+$WebFlashBambuMaterialsChecksumOutPath = Join-Path $WebFlashDir "firmware\bambu_materials.json.sha256"
+$WebFlashManifestPath = Join-Path $WebFlashDir "manifest.json"
 
 # --- 1. Vorpruefungen -------------------------------------------------
 
@@ -231,6 +263,39 @@ Write-Host "SHA256: $BambuMaterialsHash"
 Write-Host "Material-Mapping: $BambuMaterialsOutPath"
 Write-Host "Pruefsumme: $BambuMaterialsChecksumOutPath"
 
+Write-Step "Erzeuge Merged-Firmware-Image fuer die Browser-Flash-Seite (ESP Web Tools)"
+foreach ($RequiredPath in @($PioPythonPath, $EsptoolPyPath, $BootApp0Path, $BootloaderPath, $PartitionsBinPath)) {
+    if (-not (Test-Path $RequiredPath)) {
+        Fail "Fuer das Merged-Image benoetigte Datei nicht gefunden: $RequiredPath"
+    }
+}
+New-Item -ItemType Directory -Force -Path (Split-Path $MergedFirmwareOutPath) | Out-Null
+# Offsets/Parameter passend zu board_build.partitions=default_16MB.csv und
+# board_build.flash_mode=qio in platformio.ini (siehe docs/release.md,
+# Abschnitt "Web-Flash (ESP Web Tools)", fuer die Herleitung): Bootloader
+# 0x0, Partitionstabelle 0x8000, otadata-Init (boot_app0) 0xe000,
+# Anwendung (app0) 0x10000.
+& $PioPythonPath $EsptoolPyPath --chip esp32s3 merge_bin -o $MergedFirmwareOutPath `
+    --flash_mode qio --flash_freq 80m --flash_size 16MB `
+    0x0 $BootloaderPath `
+    0x8000 $PartitionsBinPath `
+    0xe000 $BootApp0Path `
+    0x10000 $FirmwareOutPath
+if ($LASTEXITCODE -ne 0) { Fail "esptool.py merge_bin fehlgeschlagen." }
+$MergedFirmwareHash = (Get-FileHash -Path $MergedFirmwareOutPath -Algorithm SHA256).Hash.ToLower()
+Set-Content -Path $MergedFirmwareChecksumOutPath -Value $MergedFirmwareHash -NoNewline -Encoding ascii
+Copy-Item -Path $BambuMaterialsOutPath -Destination $WebFlashBambuMaterialsOutPath -Force
+Copy-Item -Path $BambuMaterialsChecksumOutPath -Destination $WebFlashBambuMaterialsChecksumOutPath -Force
+$ManifestContent = Get-Content -Path $WebFlashManifestPath -Raw
+$NewManifestContent = $ManifestContent -replace '"version":\s*"[^"]+"', "`"version`": `"$Version`""
+if ($NewManifestContent -eq $ManifestContent) {
+    Fail "Ersetzung der Version in docs/manifest.json hat nichts geaendert -- Format der Datei geaendert?"
+}
+Set-Content -Path $WebFlashManifestPath -Value $NewManifestContent -NoNewline -Encoding utf8
+Write-Host "SHA256: $MergedFirmwareHash"
+Write-Host "Merged-Firmware: $MergedFirmwareOutPath"
+Write-Host "Manifest-Version aktualisiert: $WebFlashManifestPath"
+
 # --- 6. Commit/Tag/Release (nur mit -Publish) -----------------------------
 
 if (-not $Publish) {
@@ -238,7 +303,7 @@ if (-not $Publish) {
     Write-Host "Version, Build und Pruefsumme sind lokal vorbereitet, aber NICHT committet/getaggt/veroeffentlicht."
     Write-Host ""
     Write-Host "Zum Veroeffentlichen manuell oder mit -Publish erneut ausfuehren:"
-    Write-Host "  git add `"$AppConfigPath`""
+    Write-Host "  git add `"$AppConfigPath`" `"$WebFlashManifestPath`" `"$MergedFirmwareOutPath`" `"$MergedFirmwareChecksumOutPath`" `"$WebFlashBambuMaterialsOutPath`" `"$WebFlashBambuMaterialsChecksumOutPath`""
     Write-Host "  git commit -m `"Release $Version`""
     Write-Host "  git tag -a $TagName -m `"Release $Version`""
     Write-Host "  git push origin HEAD --tags"
@@ -246,8 +311,8 @@ if (-not $Publish) {
     exit 0
 }
 
-Write-Step "Committe Versions-Bump"
-git add -- $AppConfigPath
+Write-Step "Committe Versions-Bump und Browser-Flash-Artefakte"
+git add -- $AppConfigPath $WebFlashManifestPath $MergedFirmwareOutPath $MergedFirmwareChecksumOutPath $WebFlashBambuMaterialsOutPath $WebFlashBambuMaterialsChecksumOutPath
 git commit -m "Release $Version"
 if ($LASTEXITCODE -ne 0) { Fail "git commit fehlgeschlagen." }
 

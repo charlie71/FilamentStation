@@ -6,6 +6,25 @@ und werden hier nur verlinkt, wenn sie für die Bedienung wichtig sind.
 
 ## Installation
 
+### Firmware flashen
+
+Bei einem neuen/leeren Gerät (oder zum Zurücksetzen auf eine bestimmte
+Version) lässt sich die Firmware direkt im Browser flashen -- ganz ohne
+Installation von PlatformIO, Arduino-IDE oder Treibern:
+
+**[Firmware im Browser flashen](https://charlie71.github.io/FilamentStation/)**
+(Chrome, Edge oder Opera am Desktop nötig, per USB-Kabel verbunden --
+siehe die Seite selbst für Details). Dieselbe Seite bietet auch
+`bambu_materials.json` zum Download an, das anschließend manuell auf die
+SD-Karte kopiert werden muss (siehe unten und `docs/hardware.md` für das
+3D-druckbare Gehäuse).
+
+Für ein bereits eingerichtetes Gerät ist stattdessen meist die
+geräteinterne Update-Funktion die bessere Wahl -- sie behält WLAN-
+Zugangsdaten und Konfiguration bei (Abschnitt "Firmware" weiter unten).
+
+### SD-Karte
+
 FilamentStation benötigt für den Betrieb eine eingesetzte SD-Karte. Beim
 ersten Start werden die benötigten Verzeichnisse und Konfigurationsdateien
 automatisch angelegt -- es ist keine manuelle Vorbereitung der Karte nötig

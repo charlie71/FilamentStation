@@ -35,7 +35,16 @@ Der vollständige, aktuelle Funktionsumfang steht in [`CHANGELOG.md`](CHANGELOG.
 
 ## Schnellstart
 
-Voraussetzung ist eine aktuelle PlatformIO-Installation.
+**Fertige Hardware, Firmware drauf?** →
+**[Firmware im Browser flashen](https://charlie71.github.io/FilamentStation/)**
+-- direkt über [ESP Web Tools](https://esphome.github.io/esp-web-tools/),
+keine Installation nötig (Chrome/Edge/Opera am Desktop, per USB
+verbunden). Dieselbe Seite bietet auch `bambu_materials.json` zum
+Download an. Ein 3D-druckbares Gehäuse steht in
+[`docs/hardware.md`](docs/hardware.md#gehäuse).
+
+**Von Quellcode bauen:** Voraussetzung ist eine aktuelle
+PlatformIO-Installation.
 
 ```text
 pio run -e wt32-s3-wrover-n16r2 -t upload

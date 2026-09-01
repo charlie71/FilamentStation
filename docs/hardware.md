@@ -60,6 +60,12 @@ Reserviert und deshalb nicht fuer eigene Erweiterungen verfuegbar: GPIO1/2/42
 Quelle je Zeile: siehe die jeweiligen Abschnitte oben (Controller-Modul,
 Display und Touch, HX711-Anschluss, PN532-Anschluss).
 
+## Gehäuse
+
+3D-druckbares Gehäuse ("Compact Spoolease Console Scale"):
+
+* [MakerWorld: Compact Spoolease Console Scale](https://makerworld.com/de/models/2545909-compact-spoolease-console-scale#profileId-2878470)
+
 ## SD-Karte
 
 Die SD-Karte ist ueber SPI angebunden:
