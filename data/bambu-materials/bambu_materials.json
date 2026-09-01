@@ -1,0 +1,1242 @@
+{
+  "schema_version": 2,
+  "description": "Bambu filament/AMS material mapping (schema v2, priority-ordered rules). Each rule matches Spoolman's material/name/manufacturer fields (AND across categories, OR within one category's values) and resolves to either a Bambu AMS profile (tray_info_idx/tray_type/nozzle_temp_min/nozzle_temp_max) or an explicit \"unsupported\" verdict with a reason -- never a guessed profile. When multiple rules match, the highest \"priority\" wins; two rules matching at the same highest priority is a configuration error (ambiguous), not resolved by array order. Temperature values are AMS material metadata, not the actual print temperature. The file is distributed with a SHA-256 checksum and must be validated before activation. This catalog is not exhaustive -- new rules can be added at any time as additional objects in \"rules\", without a firmware rebuild.",
+  "rules": [
+    {
+      "id": "generic-abs",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "ABS",
+          "ABS+",
+          "ABS-T"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFB99",
+        "tray_type": "ABS",
+        "nozzle_temp_min": 240,
+        "nozzle_temp_max": 280
+      }
+    },
+    {
+      "id": "generic-abs-gf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "ABS-GF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFB50",
+        "tray_type": "ABS-GF",
+        "nozzle_temp_min": 240,
+        "nozzle_temp_max": 280
+      }
+    },
+    {
+      "id": "generic-abs-s",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "ABS-S"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS06",
+        "tray_type": "ABS-S",
+        "nozzle_temp_min": 240,
+        "nozzle_temp_max": 270
+      }
+    },
+    {
+      "id": "generic-asa",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "ASA"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFB98",
+        "tray_type": "ASA",
+        "nozzle_temp_min": 240,
+        "nozzle_temp_max": 280
+      }
+    },
+    {
+      "id": "generic-asa-aero",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "ASA-AERO"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFB02",
+        "tray_type": "ASA-AERO",
+        "nozzle_temp_min": 240,
+        "nozzle_temp_max": 280
+      }
+    },
+    {
+      "id": "generic-asa-cf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "ASA-CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFB51",
+        "tray_type": "ASA-CF",
+        "nozzle_temp_min": 240,
+        "nozzle_temp_max": 280
+      }
+    },
+    {
+      "id": "generic-bvoh",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "BVOH"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS97",
+        "tray_type": "BVOH",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "generic-eva",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "EVA"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFR99",
+        "tray_type": "EVA",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "generic-hips",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "HIPS"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS98",
+        "tray_type": "HIPS",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 270
+      }
+    },
+    {
+      "id": "generic-pa",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PA",
+          "Nylon"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFN99",
+        "tray_type": "PA",
+        "nozzle_temp_min": 260,
+        "nozzle_temp_max": 300
+      }
+    },
+    {
+      "id": "generic-pa-cf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PA-CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFN98",
+        "tray_type": "PA-CF",
+        "nozzle_temp_min": 260,
+        "nozzle_temp_max": 300
+      }
+    },
+    {
+      "id": "generic-pa-gf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PA-GF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFN08",
+        "tray_type": "PA-GF",
+        "nozzle_temp_min": 260,
+        "nozzle_temp_max": 300
+      }
+    },
+    {
+      "id": "generic-pa-s",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PA-S"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS01",
+        "tray_type": "PA-S",
+        "nozzle_temp_min": 260,
+        "nozzle_temp_max": 300
+      }
+    },
+    {
+      "id": "generic-pa6-cf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PA6-CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFN05",
+        "tray_type": "PA6-CF",
+        "nozzle_temp_min": 260,
+        "nozzle_temp_max": 300
+      }
+    },
+    {
+      "id": "generic-paht-cf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PAHT-CF",
+          "PAHT CF",
+          "PAHTCF",
+          "PAHT_CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFN96",
+        "tray_type": "PA-CF",
+        "nozzle_temp_min": 280,
+        "nozzle_temp_max": 300
+      }
+    },
+    {
+      "id": "generic-pc",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PC",
+          "Polycarbonate (PC)"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFC99",
+        "tray_type": "PC",
+        "nozzle_temp_min": 260,
+        "nozzle_temp_max": 290
+      }
+    },
+    {
+      "id": "generic-pc-cf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PC-CF",
+          "PC CF",
+          "PCCF",
+          "PC_CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFC98",
+        "tray_type": "PC-CF",
+        "nozzle_temp_min": 270,
+        "nozzle_temp_max": 300
+      }
+    },
+    {
+      "id": "generic-pctg",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PCTG"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFG97",
+        "tray_type": "PCTG",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 260
+      }
+    },
+    {
+      "id": "generic-pe",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PE"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFP99",
+        "tray_type": "PE",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "generic-pe-cf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PE-CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFP98",
+        "tray_type": "PE-CF",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "generic-pet-cf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PET-CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFT01",
+        "tray_type": "PET-CF",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 260
+      }
+    },
+    {
+      "id": "generic-petg",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PETG"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFG99",
+        "tray_type": "PETG",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 260
+      }
+    },
+    {
+      "id": "generic-petg-cf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PETG-CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFG98",
+        "tray_type": "PETG-CF",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 260
+      }
+    },
+    {
+      "id": "generic-pha",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PHA"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFR98",
+        "tray_type": "PHA",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "generic-pla",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PLA",
+          "PLA+",
+          "PLA Basic"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFL99",
+        "tray_type": "PLA",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "generic-pla-aero",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PLA-AERO"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFA11",
+        "tray_type": "PLA-AERO",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "generic-pla-cf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PLA-CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFL98",
+        "tray_type": "PLA-CF",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "generic-pla-s",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PLA-S"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS00",
+        "tray_type": "PLA-S",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "generic-pp",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PP",
+          "Polypropylene (PP)"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFP97",
+        "tray_type": "PP",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 250
+      }
+    },
+    {
+      "id": "generic-pp-cf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PP-CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFP96",
+        "tray_type": "PP-CF",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 250
+      }
+    },
+    {
+      "id": "generic-pp-gf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PP-GF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFP95",
+        "tray_type": "PP-GF",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 250
+      }
+    },
+    {
+      "id": "generic-ppa-cf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PPA-CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFN97",
+        "tray_type": "PPA-CF",
+        "nozzle_temp_min": 280,
+        "nozzle_temp_max": 320
+      }
+    },
+    {
+      "id": "generic-ppa-gf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PPA-GF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFN96",
+        "tray_type": "PPA-GF",
+        "nozzle_temp_min": 280,
+        "nozzle_temp_max": 320
+      }
+    },
+    {
+      "id": "generic-pps",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PPS"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFT97",
+        "tray_type": "PPS",
+        "nozzle_temp_min": 300,
+        "nozzle_temp_max": 340
+      }
+    },
+    {
+      "id": "generic-pps-cf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PPS-CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFT98",
+        "tray_type": "PPS-CF",
+        "nozzle_temp_min": 300,
+        "nozzle_temp_max": 340
+      }
+    },
+    {
+      "id": "generic-pva",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PVA"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS99",
+        "tray_type": "PVA",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "bambu-pva",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Bambu PVA"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS04",
+        "tray_type": "PVA",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 250
+      }
+    },
+    {
+      "id": "generic-tpu",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "TPU",
+          "Flexible (TPU)"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFU99",
+        "tray_type": "TPU",
+        "nozzle_temp_min": 200,
+        "nozzle_temp_max": 250
+      }
+    },
+    {
+      "id": "generic-tpu-ams",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "TPU-AMS"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFU98",
+        "tray_type": "TPU-AMS",
+        "nozzle_temp_min": 200,
+        "nozzle_temp_max": 250
+      }
+    },
+    {
+      "id": "generic-tpu-95a",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "TPU 95A",
+          "TPU95A",
+          "TPU 95 A"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFL95",
+        "tray_type": "TPU",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "support-for-pla",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For PLA",
+          "Support for PLA",
+          "Support PLA"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS02",
+        "tray_type": "PLA-S",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 230
+      }
+    },
+    {
+      "id": "support-for-pla-petg",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For PLA/PETG",
+          "Support for PLA/PETG",
+          "Support PLA PETG"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS05",
+        "tray_type": "PLA-S",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 220
+      }
+    },
+    {
+      "id": "support-for-abs",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For ABS",
+          "Support for ABS",
+          "Support ABS"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS06",
+        "tray_type": "ABS-S",
+        "nozzle_temp_min": 240,
+        "nozzle_temp_max": 270
+      }
+    },
+    {
+      "id": "support-for-pa-pet",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For PA/PET",
+          "Support for PA/PET",
+          "Support PA PET"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS03",
+        "tray_type": "PA-S",
+        "nozzle_temp_min": 280,
+        "nozzle_temp_max": 300
+      }
+    },
+    {
+      "id": "support-for-paht",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For PAHT",
+          "Support for PAHT",
+          "Support PA HT"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS07",
+        "tray_type": "PA-S",
+        "nozzle_temp_min": 280,
+        "nozzle_temp_max": 300
+      }
+    },
+    {
+      "id": "support-for-pc",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For PC",
+          "Support for PC",
+          "Support PC"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS08",
+        "tray_type": "PC-S",
+        "nozzle_temp_min": 270,
+        "nozzle_temp_max": 300
+      }
+    },
+    {
+      "id": "support-for-petg",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For PETG",
+          "Support for PETG",
+          "Support PETG"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS09",
+        "tray_type": "PETG-S",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 260
+      }
+    },
+    {
+      "id": "support-for-pla-abs",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For PLA/ABS",
+          "Support for PLA/ABS",
+          "Support PLA ABS"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS10",
+        "tray_type": "PLA-S",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "support-for-pla-cf",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For PLA-CF",
+          "Support for PLA-CF",
+          "Support PLA CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS11",
+        "tray_type": "PLA-S",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "support-for-pet-cf",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For PET-CF",
+          "Support for PET-CF",
+          "Support PET CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS12",
+        "tray_type": "PET-S",
+        "nozzle_temp_min": 240,
+        "nozzle_temp_max": 270
+      }
+    },
+    {
+      "id": "support-for-pa-cf",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For PA-CF",
+          "Support for PA-CF",
+          "Support PA CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS13",
+        "tray_type": "PA-S",
+        "nozzle_temp_min": 280,
+        "nozzle_temp_max": 300
+      }
+    },
+    {
+      "id": "support-for-pa-gf",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For PA-GF",
+          "Support for PA-GF",
+          "Support PA GF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS14",
+        "tray_type": "PA-S",
+        "nozzle_temp_min": 280,
+        "nozzle_temp_max": 300
+      }
+    },
+    {
+      "id": "support-for-pc-cf",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For PC-CF",
+          "Support for PC-CF",
+          "Support PC CF"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS15",
+        "tray_type": "PC-S",
+        "nozzle_temp_min": 270,
+        "nozzle_temp_max": 300
+      }
+    },
+    {
+      "id": "support-for-pva",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "Support For PVA",
+          "Support for PVA",
+          "Support PVA"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFS16",
+        "tray_type": "PVA-S",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 250
+      }
+    },
+    {
+      "id": "generic-pla-high-speed",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "PLA",
+          "PLA+"
+        ],
+        "name_contains_any": [
+          "High Speed",
+          "High-Speed"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFL95",
+        "tray_type": "PLA",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "generic-pla-silk",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "PLA",
+          "PLA+"
+        ],
+        "name_contains_any": [
+          "Silk"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFL96",
+        "tray_type": "PLA",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "generic-petg-hf",
+      "priority": 100,
+      "match": {
+        "material_exact": [
+          "PETG"
+        ],
+        "name_contains_any": [
+          "PETG HF",
+          "High Flow"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFG96",
+        "tray_type": "PETG",
+        "nozzle_temp_min": 220,
+        "nozzle_temp_max": 270
+      }
+    },
+    {
+      "id": "bambu-pla-basic",
+      "priority": 200,
+      "match": {
+        "material_exact": [
+          "PLA",
+          "PLA Basic"
+        ],
+        "manufacturer_exact": [
+          "Bambu Lab"
+        ]
+      },
+      "result": {
+        "status": "mapped",
+        "tray_info_idx": "GFA00",
+        "tray_type": "PLA",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 240
+      }
+    },
+    {
+      "id": "unsupported-wood",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "Wood"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "Base polymer is unknown"
+      }
+    },
+    {
+      "id": "unsupported-carbon-fiber",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "Carbon Fiber"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "Base polymer is unknown"
+      }
+    },
+    {
+      "id": "unsupported-pc-abs",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PC/ABS"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this blend"
+      }
+    },
+    {
+      "id": "unsupported-pc-pbt",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PC/PBT"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this blend"
+      }
+    },
+    {
+      "id": "unsupported-pom",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "Acetal (POM)"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this material"
+      }
+    },
+    {
+      "id": "unsupported-pmma",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PMMA"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this material"
+      }
+    },
+    {
+      "id": "unsupported-fpe",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "Semi flexible (FPE)"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this material"
+      }
+    },
+    {
+      "id": "unsupported-pvdf",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PVDF"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this material"
+      }
+    },
+    {
+      "id": "unsupported-pei",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PEI (Ultem)"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this material"
+      }
+    },
+    {
+      "id": "unsupported-pekk",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PEKK"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this material"
+      }
+    },
+    {
+      "id": "unsupported-peek",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PEEK"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this material"
+      }
+    },
+    {
+      "id": "unsupported-ppsu",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PPSU"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this material"
+      }
+    },
+    {
+      "id": "unsupported-biofusion",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "BIOFUSION"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this material"
+      }
+    },
+    {
+      "id": "unsupported-greentec",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "GREENTEC"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this material"
+      }
+    },
+    {
+      "id": "unsupported-flax",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "FLAX"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "Base polymer is unknown"
+      }
+    },
+    {
+      "id": "unsupported-pearl",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PEARL"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "Base polymer is unknown"
+      }
+    },
+    {
+      "id": "unsupported-tpe-32d",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "Flexible (TPE 32D)"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this material"
+      }
+    },
+    {
+      "id": "unsupported-tpe-88a",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "Flexible (TPE 88A)"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this material"
+      }
+    },
+    {
+      "id": "unsupported-pvb",
+      "priority": 10,
+      "match": {
+        "material_exact": [
+          "PVB"
+        ]
+      },
+      "result": {
+        "status": "unsupported",
+        "reason": "No verified Bambu profile for this material"
+      }
+    }
+  ]
+}

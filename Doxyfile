@@ -1,0 +1,91 @@
+# Doxyfile for FilamentStation firmware documentation.
+#
+# Generates API documentation (with state-machine diagrams for the enums
+# that represent one) purely from /** ... */ Doxygen comments in src/.
+# Output is gitignored and built on demand -- see scripts/build-docs.ps1.
+#
+# Only settings that differ from Doxygen's defaults are listed; anything
+# not mentioned here uses the standard Doxygen 1.16 default.
+
+#---------------------------------------------------------------------------
+# Project
+#---------------------------------------------------------------------------
+PROJECT_NAME           = "FilamentStation"
+PROJECT_BRIEF          = "ESP32-S3 firmware for NFC/RFID filament spool identification, weighing, and Spoolman/Bambu Lab integration"
+OUTPUT_LANGUAGE        = English
+
+#---------------------------------------------------------------------------
+# Input
+#---------------------------------------------------------------------------
+INPUT                  = src
+RECURSIVE               = YES
+FILE_PATTERNS           = *.h *.cpp
+EXCLUDE                 = src/ui/generated
+EXCLUDE_PATTERNS        = */test/*
+EXCLUDE_SYMLINKS        = YES
+
+#---------------------------------------------------------------------------
+# Extraction
+#---------------------------------------------------------------------------
+# Only document what actually carries a /** */ comment -- combined with
+# WARN_IF_UNDOCUMENTED below, this is what surfaces documentation gaps as
+# build warnings instead of silently including undocumented members.
+EXTRACT_ALL             = NO
+EXTRACT_STATIC          = YES
+EXTRACT_PRIVATE         = YES
+EXTRACT_ANON_NSPACES    = YES
+
+#---------------------------------------------------------------------------
+# Warnings (progress/completeness signal, analogous to the firmware's own
+# 0-compiler-warnings rule)
+#---------------------------------------------------------------------------
+QUIET                   = YES
+WARNINGS                = YES
+WARN_IF_UNDOCUMENTED    = YES
+WARN_IF_DOC_ERROR       = YES
+WARN_NO_PARAMDOC        = YES
+WARN_LOGFILE            = doxygen-warnings.log
+
+#---------------------------------------------------------------------------
+# Preprocessing (IRAM_ATTR and similar attribute macros between a
+# function's return type and its name otherwise confuse the parser into
+# misreporting "return type is not documented")
+#---------------------------------------------------------------------------
+ENABLE_PREPROCESSING    = YES
+MACRO_EXPANSION         = YES
+EXPAND_ONLY_PREDEF      = YES
+PREDEFINED              = IRAM_ATTR=
+
+#---------------------------------------------------------------------------
+# Output
+#---------------------------------------------------------------------------
+OUTPUT_DIRECTORY        = doxygen-output
+GENERATE_HTML           = YES
+GENERATE_LATEX          = NO
+GENERATE_MAN            = NO
+GENERATE_RTF            = NO
+HTML_OUTPUT             = html
+
+#---------------------------------------------------------------------------
+# Diagrams (Graphviz -- state machines use hand-written @dot blocks,
+# these settings additionally let Doxygen auto-derive include/collaboration
+# graphs from the code itself)
+#---------------------------------------------------------------------------
+HAVE_DOT                = YES
+# Explicit path: a fresh winget install of Graphviz is not guaranteed to be
+# on PATH yet in an already-open shell.
+DOT_PATH                = C:/Program Files/Graphviz/bin
+DOT_IMAGE_FORMAT        = svg
+INTERACTIVE_SVG         = YES
+CLASS_GRAPH             = YES
+COLLABORATION_GRAPH     = NO
+INCLUDE_GRAPH           = NO
+INCLUDED_BY_GRAPH       = NO
+DOT_CLEANUP             = YES
+
+#---------------------------------------------------------------------------
+# Source browsing
+#---------------------------------------------------------------------------
+SOURCE_BROWSER          = YES
+INLINE_SOURCES          = NO
+GENERATE_TREEVIEW       = YES

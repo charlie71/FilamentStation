@@ -1,0 +1,15 @@
+.pio/
+.pio-core/
+.vscode/
+logs/
+src/config/Secrets.h
+*.ttf
+# Agent-tooling scratch space (cloned repos, node_modules, skill installs) --
+# not project source, must never be committed.
+.agents/tools/
+skills-lock.json
+.bak*
+# Generated Doxygen output -- built on demand via scripts/build-docs.ps1,
+# never committed (see docs/release.md).
+doxygen-output/
+doxygen-warnings.log
