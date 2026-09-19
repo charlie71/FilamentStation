@@ -7298,3 +7298,41 @@ Hardware-Test moeglich -- auf der Zielhardware verifizieren, dass der
 Reset nach einem echten Update jetzt tatsaechlich haelt (Diagnose-
 Bildschirm zeigt sofort "Keine Abstuerze aufgezeichnet", nicht erst nach
 einem weiteren Neustart).
+
+## Nachtrag 2026-09-19 (4): release.ps1 schlug am Firmware-Build fehl -- falsche pio-Installation
+
+Nutzerbericht: `./scripts/release.ps1 -Version 1.1.2 -Publish` brach bei
+"Baue Firmware (wt32-s3-wrover-n16r2)" ab. Alle vier nativen Testumgebungen
+liefen davor durch (mit derselben Warnung, aber folgenlos). Ursache
+identisch zu einem Problem, das in dieser Sitzung schon einmal direkt
+beim Bauen aufgetreten war: auf dieser Maschine existieren zwei
+PlatformIO-Core-Installationen nebeneinander ("Obsolete PIO Core v6.1.19
+is used (previous was 6.2.0)"). Ein blosses `pio` (per PATH aufgeloest)
+trifft auf die falsche/aeltere davon, deren Tool-Manager bei jedem Aufruf
+die fuer `espressif32` benoetigte `tool-scons`-Version gegen eine falsche
+austauscht ("Tool Manager: Removing tool-scons @ 4.41101.0... has been
+removed!"), bis der eigentliche Build mit `ModuleNotFoundError: No module
+named 'SCons.Tool.FortranCommon'` fehlschlaegt. Native Tests blieben
+davon unberuehrt (offenbar keine espressif32-spezifische
+Paketaufloesung noetig), nur der echte Firmware-Build fuer
+`wt32-s3-wrover-n16r2` war betroffen.
+
+`release.ps1` nutzte fuer `pio test`/`pio run` bisher ein blosses `pio`
+(PATH-abhaengig), obwohl das Skript fuer andere Zwecke (esptool.py,
+boot_app0.bin) bereits `$PLATFORMIO_CORE_DIR`/`$PLATFORMIO_PACKAGES_DIR`
+respektiert und damit die *richtige* Installation eindeutig auffinden
+kann. Fix: neue `$PioExePath = Join-Path $PioCoreDir
+"penv\Scripts\pio.exe"` (mit Existenzpruefung), beide Aufrufstellen
+(`pio test -e $Env` im Testlauf, `pio run -e $BuildEnv` beim
+Firmware-Build) auf `& $PioExePath ...` umgestellt statt sich auf die
+PATH-Reihenfolge zu verlassen.
+
+Nicht erneut vollstaendig End-to-End getestet (Arbeitsbaum waehrend
+dieser Sitzung nicht sauber, das Skript verlangt das) -- aber der exakt
+selbe Befehl (`& "C:\VSCode\platformio\core\penv\Scripts\pio.exe" run -e
+wt32-s3-wrover-n16r2`) wurde in dieser Sitzung bereits direkt erfolgreich
+ausgefuehrt (0 Warnungen), nachdem genau dasselbe Problem beim direkten
+Bauen auftrat -- hohe Zuversicht, dass der Fix greift. `release.ps1` per
+`[System.Management.Automation.Language.Parser]::ParseFile()` auf
+Syntaxfehler geprueft (keine gefunden). Beim naechsten echten
+`-Publish`-Lauf verifizieren, dass der Firmware-Build jetzt durchlaeuft.

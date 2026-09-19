@@ -141,6 +141,21 @@ $PartitionsBinPath = Join-Path $RepoRoot ".pio\build\$BuildEnv\partitions.bin"
 $PioCoreDir = if ($env:PLATFORMIO_CORE_DIR) { $env:PLATFORMIO_CORE_DIR } else { Join-Path $env:USERPROFILE ".platformio" }
 $PioPackagesDir = if ($env:PLATFORMIO_PACKAGES_DIR) { $env:PLATFORMIO_PACKAGES_DIR } else { Join-Path $PioCoreDir "packages" }
 $PioPythonPath = Join-Path $PioCoreDir "penv\Scripts\python.exe"
+# Nutzerbericht 2026-09-xx: ein bloses "pio" (per PATH aufgeloest) traf auf
+# dieser Maschine wiederholt eine ANDERE, aeltere PlatformIO-Core-Installation
+# (separat von der oben ueber PLATFORMIO_CORE_DIR referenzierten) --
+# "Obsolete PIO Core v6.1.19 is used (previous was 6.2.0)" gefolgt von einem
+# Tool-Manager-Kreislauf, der die fuer espressif32 benoetigte tool-scons-
+# Version wiederholt gegen eine falsche austauschte, bis der Firmware-Build
+# mit "ModuleNotFoundError: No module named 'SCons.Tool.FortranCommon'"
+# fehlschlug (native Tests liefen trotzdem durch, offenbar ohne dieselbe
+# espressif32-spezifische Paketaufloesung zu brauchen). Ab hier deshalb
+# ueberall der volle Pfad zur selben, per PLATFORMIO_CORE_DIR referenzierten
+# pio.exe statt eines von PATH abhaengigen bloszen "pio".
+$PioExePath = Join-Path $PioCoreDir "penv\Scripts\pio.exe"
+if (-not (Test-Path $PioExePath)) {
+    Fail "pio.exe nicht gefunden unter $PioExePath -- PLATFORMIO_CORE_DIR falsch gesetzt oder PlatformIO nicht dort installiert?"
+}
 $EsptoolPyPath = Join-Path $PioPackagesDir "tool-esptoolpy\esptool.py"
 $BootApp0Path = Join-Path $PioPackagesDir "framework-arduinoespressif32\tools\partitions\boot_app0.bin"
 $WebFlashDir = Join-Path $RepoRoot "docs"
@@ -228,7 +243,7 @@ Set-Content -Path $AppConfigPath -Value $NewContent -NoNewline -Encoding utf8
 if (-not $SkipTests) {
     foreach ($Env in $NativeTestEnvs) {
         Write-Step "Native Tests: $Env"
-        pio test -e $Env
+        & $PioExePath test -e $Env
         if ($LASTEXITCODE -ne 0) {
             Fail "Native Tests in Umgebung '$Env' fehlgeschlagen -- Release abgebrochen. Version-Bump in AppConfig.h ist noch nicht committet, per 'git checkout -- src/config/AppConfig.h' verwerfbar."
         }
@@ -249,7 +264,7 @@ Write-Step "Baue Firmware ($BuildEnv)"
 # actual pass/fail signal below is $LASTEXITCODE, not any error record.
 $PreviousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-$BuildOutput = pio run -e $BuildEnv 2>&1 | Tee-Object -Variable BuildOutputVar
+$BuildOutput = & $PioExePath run -e $BuildEnv 2>&1 | Tee-Object -Variable BuildOutputVar
 $ErrorActionPreference = $PreviousErrorActionPreference
 if ($LASTEXITCODE -ne 0) {
     Fail "Firmware-Build fehlgeschlagen -- Release abgebrochen."
