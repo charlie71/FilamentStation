@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/7",
+    "selectedUserPageObject": "[FilamentStation.eez-project]:/userPages/15",
     "selectedUserWidgetObject": "[FilamentStation.eez-project]:/userWidgets/1",
     "selectedStyleObject": "[FilamentStation.eez-project]:/lvglStyles/styles/4",
     "selectedThemeObject": "[FilamentStation.eez-project]:/themes/0",
@@ -216,16 +216,15 @@
                 {
                   "type": "tab",
                   "id": "#7ab8ebf1-f79d-4e3a-b972-ffd5c7735e63",
-                  "name": "SCR_TRAY_ACTIONS",
+                  "name": "SCR_SETTINGS_DIAGNOSTICS",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[FilamentStation.eez-project]:/userPages/7",
+                    "objectPath": "[FilamentStation.eez-project]:/userPages/15",
                     "permanent": false
                   },
                   "icon": "svg:page"
                 }
-              ],
-              "active": true
+              ]
             },
             {
               "type": "row",
@@ -245,7 +244,8 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ]
+                  ],
+                  "active": true
                 },
                 {
                   "type": "tabset",
@@ -1091,7 +1091,7 @@
           "x": -288.4692276832045,
           "y": -250.94936273269926
         },
-        "scale": 1.75
+        "scale": 0.67
       },
       "timeline": {
         "isEditorActive": false,
@@ -1865,7 +1865,8 @@
           "6": {},
           "7": {},
           "8": {},
-          "9": {
+          "9": {},
+          "11": {
             "$selected": true
           }
         }

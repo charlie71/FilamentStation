@@ -310,6 +310,20 @@ enum class StorageCommandType : std::uint8_t {
   // already checked while streaming.
   CommitBambuMaterialDownload,
   AbortBambuMaterialDownload,
+  // Coredump-Export (TASKS.md Nachtrag 2026-09-03, Nutzerwunsch): kopiert
+  // den rohen Coredump aus seiner Flash-Partition (gelesen von AppTask via
+  // spi_flash_read(), siehe AppTask.cpp) auf die SD-Karte, bevor die
+  // Partition geloescht wird -- sonst waere eine Detailanalyse nur per
+  // USB-Wettlauf im engen Zeitfenster vor dem naechsten Boot moeglich.
+  // command.path traegt das Ziel (z. B. "/diagnostics/coredump_3.bin",
+  // rotierend statt eines einzigen fest kodierten Pfads wie bei
+  // BambuMaterialDownload). Gleiches Begin/WriteChunk/Commit/Abort-Schema
+  // wie oben, aber ohne SHA-256-Pruefung/Aktivierungslogik -- eine Roh-
+  // Binaerkopie braucht keine Schema-Validierung.
+  BeginCoredumpExport,
+  WriteCoredumpChunk,
+  CommitCoredumpExport,
+  AbortCoredumpExport,
 };
 
 /// @brief Commands AppTask can send to tasks::networkTask().

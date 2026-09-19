@@ -6907,3 +6907,178 @@ ab, unabhängig davon, wie lange der weckende Finger aufliegen bleibt.
 Build 0 Warnungen, 115/115 native Tests grün (dieser Bereich hat keine
 natively-testbare Logik, reines Task-/LVGL-Wiring). Kein
 Hardware-/Simulator-Test in dieser Sitzung möglich.
+
+## Nachtrag 2026-09-03 (2): Coredump-Auswertung + Laufzeit-Anzeige auf SCR_SETTINGS_DIAGNOSTICS
+
+Nutzerbericht: wiederholte Abstürze bei längerem Betrieb, Wunsch nach
+Absturzprotokollierung. Prüfung ergab: der für dieses Board (esp32s3/
+qio_qspi) präkompilierte Arduino-Kern hat Coredump-to-Flash bereits aktiv
+(`CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=1`, ELF-Format), und die bereits
+verwendete `default_16MB.csv` reserviert dafür schon eine eigene 64-KiB-
+Partition -- es fehlte nur der Code, der einen Fund ausliest. Umgesetzt:
+**Variante B** (Firmware liest/verdichtet selbst, kein PC+Kabel-Tool
+nötig). Mit dem Nutzer abgestimmt: **kein** Kalenderdatum (diese Firmware
+hat keinerlei Zeitquelle, siehe der fest einprogrammierte
+`updatedAt`-Platzhalter `"1970-01-01T00:00:00Z"` in `JsonStorage.h`),
+stattdessen Anzahl der Coredumps plus Neustarts seit dem letzten. Weitere
+Einschränkung, die sich erst beim Lesen von `esp_core_dump_summary_t`
+(`esp_core_dump.h`/`esp_core_dump_summary_port.h`) zeigte: die Struktur
+trägt keinerlei Zeit-/Laufzeitfeld, nur Task-Name/PC/Exception-Ursache --
+"Laufzeit vor dem Absturz" wäre nur über eine zusätzliche periodische
+RTC-Speicher-Markierung rekonstruierbar und wurde bewusst nicht gebaut.
+
+* `src/main.cpp` -- vor `createServiceTasks()`:
+  `esp_core_dump_image_check()`/`esp_core_dump_get_summary()`, Fund landet
+  in `ctx.pendingCoredump` (neu, `src/rtos/RtosContext.h`, reines
+  Write-once-vor-jedem-Taskstart-Feld, kein Atomic nötig). **Kein**
+  `esp_core_dump_image_erase()` an dieser Stelle -- das Löschen passiert
+  erst nach erfolgreichem Persistieren (siehe unten), damit ein Fund bei
+  fehlender/fehlerhafter SD-Karte beim nächsten Boot erneut versucht wird.
+* `src/models/DiagnosticsRecord.h` (neu) -- `totalBootCount`/
+  `coredumpCount`/`bootCountAtLastCoredump`, eingebettet in `rtos::AppEvent`
+  (`Messages.h`). Die schon vorher reservierten, bis dahin inhaltsleeren
+  Bausteine `rtos::StorageDocumentType::Diagnostics` und das SD-Verzeichnis
+  `/diagnostics` (seit Phase 2.2) bekamen damit ihren ersten echten Zweck:
+  `JsonStorage.cpp`s No-Op-`createDefault()`/`validate()`-Zweige für
+  `Diagnostics` füllen jetzt die drei Felder; `StorageTask.cpp` bekam
+  `/diagnostics/coredump.json` in `kInitialDocuments` (garantiert gültige
+  Defaults ab dem ersten Boot) sowie einen Parse-Block in
+  `processLoadCommand()` nach dem Scale-Dokument-Muster.
+* `src/tasks/AppTask.cpp` -- `requestDiagnosticsDocument()`/
+  `persistDiagnosticsDocument()` (Muster: `requestScaleConfiguration()`/
+  `persistScaleConfiguration()`), eingehängt im `SdMounted`-Fan-out neben
+  den bestehenden `request*()`-Aufrufen. Boot-Roundtrip: Laden ->
+  `totalBootCount += 1`, bei `ctx.pendingCoredump.found` zusätzlich
+  `coredumpCount += 1` und `bootCountAtLastCoredump = totalBootCount` ->
+  Speichern -> nur bei Erfolg **und** vorhandenem Fund
+  `esp_core_dump_image_erase()`. `OpenDiagnostics`-Handler formatiert die
+  Kurzzusammenfassung ("N Abstürze, letzter vor M Neustarts" bzw. "Keine
+  Abstürze aufgezeichnet") in `command.text`, schon beim Boot geladen,
+  kein eigener Roundtrip beim Öffnen des Screens.
+* `src/ui/UiBridge.cpp` -- `diagnostics_settings_uptime` wie Heap/PSRAM
+  direkt aus `esp_timer_get_time()` berechnet (int64 Mikrosekunden statt
+  `millis()`, das nach ~49 Tagen überläuft -- bei "Abstürzen nach
+  längerem Betrieb" nicht auszuschließen), Format `hh:mm:ss` mit bewusst
+  unbegrenzten Stunden (kein 24h-Wrap). `diagnostics_settings_coredump_status`
+  übernimmt `command.text` aus dem `OpenDiagnostics`-Handler.
+* `src/ui/generated/screens.h`/`screens.c`, `ui-project/FilamentStation.eez-project` --
+  zwei neue Labels auf SCR_SETTINGS_DIAGNOSTICS zwischen PSRAM und Tasks
+  eingefügt (Reihenfolge: Heap, PSRAM, Laufzeit, Coredump-Status, Tasks),
+  bestehende Zeilen dafür auf das bereits im Arbeitsverzeichnis vorgefundene
+  kompaktere Layout (x=12, 25px Höhe, 28px Zeilenabstand) ausgerichtet.
+
+**Unerwarteter Fund währenddessen:** im Arbeitsverzeichnis lagen in
+`screens.c`/`screens.h`/`FilamentStation.eez-project` bereits zwei
+*unabhängig* benannte, aber inhaltlich unfertige Widgets namens
+`diagnostics_settings_uptime`/`diagnostics_settings_coredump_status`
+(Platzhaltertexte "Uptime"/"Verfügbare core dumps: 0", ohne jede
+C++-Anbindung, an anderer Position auf demselben Screen) -- nicht
+committet (per `git show HEAD` bestätigt), nicht von dieser Sitzung
+angelegt und ohne erkennbaren Autor. Nach Abgleich (keine Referenz in
+irgendeiner `.cpp`-Datei, reine Platzhalter ohne Logik) als verwaistes,
+nie fertiggestelltes Duplikat behandelt und entfernt, um den Namenskonflikt
+mit der jetzt vollständig verdrahteten Version aufzulösen. Erwähnt hier
+zur Transparenz, falls das eine eigene, andernorts begonnene Vorarbeit war.
+
+Build 0 Warnungen, 115/115 native Tests grün (dieser Bereich hat keine
+natively-testbare Logik). `ui-project/FilamentStation.eez-project` als
+valides JSON geprüft (Python `json.load`) -- EEZ Studio selbst ist in
+dieser Umgebung nicht installiert, keine Validierung gegen das echte Tool
+möglich. Kein Hardware-Test möglich (kein angeschlossenes Gerät, kein
+auslösbarer echter Crash in dieser Umgebung) -- auf der Zielhardware
+verifizieren: (1) dass ein absichtlich ausgelöster Crash tatsächlich einen
+Coredump erzeugt und dieser nach dem nächsten Boot als "1 Abstürze, letzter
+Neustart war ein Absturz" angezeigt wird, (2) dass die Partition danach
+zuverlässig geleert ist (kein doppeltes Zählen beim übernächsten Boot).
+
+## Nachtrag 2026-09-03 (3): Doku für Coredump-Auswertung ergänzt
+
+Nutzerwunsch: dokumentieren, wie `/diagnostics/coredump.json` (Nachtrag
+(2), oben) ausgewertet werden kann. Neuer Abschnitt "Absturzdiagnose"
+in `docs/storage.md` (Konvention dieser Datei: ASCII-Ersatzschreibweise
+ue/oe/ae statt echter Umlaute, wie im Rest der Datei) -- Schema-Beispiel
+der drei Zaehlerfelder, Erklaerung woher der eigentliche Coredump kommt
+(eigene Flash-Partition, nicht die SD-Karte, geloescht erst nach
+erfolgreichem Speichern dieser Datei) und zwei Analysewege ueber die reine
+Zaehler-Datei hinaus: (1) `esp_coredump info_corefile` gegen die noch
+nicht geloeschte Partition mit der exakt passenden `firmware.elf`
+(vollstaendiger Backtrace/Register/Stacks), (2) die einzelne beim Boot
+geloggte `FS_LOGE`-Zeile (Task-Name, Programmzaehler) zusammen mit
+`xtensa-esp32s3-elf-addr2line` -- funktioniert auch nach dem Loeschen der
+Partition, da nur die eine schon geloggte Adresse aufgeloest wird.
+
+Reine Doku-Aenderung, kein Code betroffen.
+
+**Nachfrage direkt danach:** ob der Coredump von der Flash-Partition auf
+die SD-Karte kopiert wird. Antwort: nein, zu keinem Zeitpunkt -- das war
+im ersten Text nur implizit erkennbar. Abschnitt "Woher der Coredump
+kommt" um einen expliziten Absatz ergaenzt: der rohe Coredump verlaesst
+die Flash-Partition nie, es gibt keinen Kopiermechanismus dorthin, und
+nach `esp_core_dump_image_erase()` sind die Rohdaten (Backtrace/Register/
+Stacks) unwiederbringlich weg -- nur die eine `FS_LOGE`-Zeile und die
+beiden Zaehler in `coredump.json` ueberleben.
+
+## Nachtrag 2026-09-03 (4): Coredump wird jetzt als Rohkopie auf die SD-Karte exportiert
+
+Nutzerkritik, zurecht: der reine USB-Wettlauf vor dem naechsten
+selbstausgeloesten Neustart (Nachtrag (2)/(3)) ist fuer ein
+unbeaufsichtigtes Geraet unpraktisch. Mit dem Nutzer abgestimmt (History
+mit fester Obergrenze statt nur der letzten Datei): der rohe Coredump
+wird jetzt vor dem Loeschen der Flash-Partition zusaetzlich auf die
+SD-Karte kopiert, rotierend ueber `kMaxCoredumpHistoryFiles = 10`
+Dateien.
+
+Vorab per WebFetch gegen den echten ESP-IDF-Quellcode
+(`espcoredump/src/core_dump_flash.c`) verifiziert statt angenommen:
+`esp_core_dump_image_get()` liefert `out_addr` als **absolute**
+Flash-Adresse (`partition->address`, direkt fuer `spi_flash_read()`
+verwendbar) und `out_size` als die im Coredump-Header vermerkte
+**tatsaechliche** Laenge (nicht die volle 64-KiB-Partitionsgroesse) --
+beides bestaetigt, bevor darauf aufgebaut wurde.
+
+* `src/rtos/Commands.h` -- vier neue `StorageCommandType`-Werte
+  (`BeginCoredumpExport`/`WriteCoredumpChunk`/`CommitCoredumpExport`/
+  `AbortCoredumpExport`), gleiches Haeppchen-Streaming-Schema wie die
+  bestehenden `*BambuMaterialDownload`-Befehle (`command.json`/
+  `jsonLength`), aber mit variablem `command.path` (rotierender
+  Dateiname) statt eines fest kodierten Pfads, und ohne dessen SHA-256-/
+  Aktivierungslogik -- eine Roh-Binaerkopie braucht keine
+  Schema-Validierung.
+* `src/tasks/StorageTask.cpp` -- neuer `isAllowedCoredumpExportPath()`
+  (schmaler als `isAllowedJsonPath()`: fester Prefix
+  `/diagnostics/coredump_`, Suffix `.bin`, keine `..`-Traversierung) und
+  vier neue Handler nach dem Muster von
+  `process*BambuMaterialDownload()` (Begin oeffnet `<pfad>.tmp`, Write
+  haengt an, Commit benennt nach erfolgreichem Flush auf den finalen Pfad
+  um, Abort verwirft). Die Kurzschreib-Retry-Schleife aus
+  `processWriteBambuMaterialChunk()` wurde dabei in eine gemeinsame
+  `writeAllWithRetry()`-Hilfsfunktion ausgelagert (Wiederverwendung
+  statt Duplizierung), beide Call-Sites unveraendert im Verhalten.
+* `src/tasks/AppTask.cpp` -- neue `exportPendingCoredumpToSd()`: liest
+  den Coredump in 768-Byte-Haeppchen (`spi_flash_read()`, passend zu
+  `rtos::kStorageJsonPayloadCapacity`) und schickt sie als
+  Begin/Chunk.../Commit-Sequenz an `StorageTask`, **bevor**
+  `persistDiagnosticsDocument()` in derselben FIFO-Queue folgt (siehe
+  docs/storage.md "Storage-Queue" -- StorageTask verarbeitet strikt in
+  Sendereihenfolge). Bewusst **kein** neuer Gate fuer das Loeschen der
+  Flash-Partition: der Export ist Best-Effort und beeinflusst weder das
+  Zaehlen des Absturzes noch das anschliessende
+  `esp_core_dump_image_erase()`, das weiterhin ausschliesslich an
+  `kDiagnosticsSaveRequestId`s Erfolg haengt -- ein fehlgeschlagener
+  Export blockiert also nicht die Freigabe der Flash-Partition fuer den
+  naechsten Absturz. Erfolg/Fehlschlag des Exports wird nur geloggt
+  (`kCoredumpExportRequestId`).
+* `docs/storage.md` -- Abschnitt "Woher der Coredump kommt" komplett
+  überarbeitet (der bisherige "wird nie kopiert"-Absatz aus Nachtrag (3)
+  ist damit überholt und ersetzt), neuer Analyseweg über die jetzt
+  gesicherte `coredump_<slot>.bin` ohne USB-Wettlauf, alter Live-USB-Weg
+  bleibt als Alternative dokumentiert.
+
+Build 0 Warnungen, 115/115 native Tests grün (dieser Bereich hat keine
+natively-testbare Logik). Kein Hardware-Test möglich (kein
+angeschlossenes Gerät, kein auslösbarer echter Crash in dieser Umgebung)
+-- auf der Zielhardware verifizieren: (1) dass `coredump_1.bin` nach
+einem absichtlich ausgelösten Crash tatsächlich auf der SD-Karte landet
+und mit `esp-coredump` auswertbar ist, (2) dass die Rotation nach mehr
+als zehn Abstürzen wie erwartet die älteste Slot-Datei überschreibt statt
+fehlzuschlagen.

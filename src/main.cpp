@@ -12,6 +12,7 @@
  */
 #include <Arduino.h>
 #include <esp_chip_info.h>
+#include <esp_core_dump.h>
 #include <esp_heap_caps.h>
 
 #include "config/AppConfig.h"
@@ -96,6 +97,34 @@ void setup() {
   FS_LOGI(services::LogComponent::Rtos,
           "PSRAM available total_bytes=%u free_bytes=%u", ESP.getPsramSize(),
           ESP.getFreePsram());
+
+  // Coredump-Auswertung (TASKS.md Nachtrag 2026-09-03, Nutzerwunsch): rein
+  // lesend, VOR createServiceTasks() -- ctx.pendingCoredump ist danach nur
+  // noch read-only fuer AppTask (siehe RtosContext.h). Geloescht wird die
+  // Coredump-Partition erst, nachdem AppTask sie erfolgreich in
+  // /diagnostics/coredump.json persistiert hat (siehe AppTask.cpp), damit
+  // ein Fund bei fehlender/fehlerhafter SD-Karte beim naechsten Boot erneut
+  // versucht wird statt verloren zu gehen.
+  if (esp_core_dump_image_check() == ESP_OK) {
+    esp_core_dump_summary_t summary{};
+    if (esp_core_dump_get_summary(&summary) == ESP_OK) {
+      ctx.pendingCoredump.found = true;
+      std::snprintf(ctx.pendingCoredump.taskName,
+                    sizeof(ctx.pendingCoredump.taskName), "%s",
+                    summary.exc_task);
+      ctx.pendingCoredump.pc = summary.exc_pc;
+      ctx.pendingCoredump.excCause = summary.ex_info.exc_cause;
+      FS_LOGE(services::LogComponent::Rtos,
+              "Coredump found in flash task=%s pc=0x%08lX exc_cause=%lu",
+              ctx.pendingCoredump.taskName,
+              static_cast<unsigned long>(ctx.pendingCoredump.pc),
+              static_cast<unsigned long>(ctx.pendingCoredump.excCause));
+    } else {
+      FS_LOGW(services::LogComponent::Rtos,
+              "Coredump present but summary read failed");
+    }
+  }
+
   if (!ctx.createServiceTasks()) { haltStartup("service task creation failed"); }
 
   FS_LOGI(services::LogComponent::Rtos, "Infrastructure started");

@@ -17,7 +17,9 @@
 #include <array>
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <esp_core_dump.h>
 #include <esp_ota_ops.h>
+#include <esp_spi_flash.h>
 #include "config/AppConfig.h"
 #include "config/BambuConfig.h"
 #include "config/NfcConfig.h"
@@ -186,6 +188,17 @@ constexpr std::uint32_t kObsoletePendingMeasurementsDeleteRequestId =
 constexpr std::uint32_t kObsoleteSpoolCacheDeleteRequestId = 0x43414301U;     ///< Fixed correlation id for deleting an obsolete spool-cache file.
 constexpr std::uint32_t kObsoleteFilamentCacheDeleteRequestId = 0x43414302U;  ///< Fixed correlation id for deleting an obsolete filament-cache file.
 constexpr std::uint32_t kObsoleteVendorCacheDeleteRequestId = 0x43414303U;    ///< Fixed correlation id for deleting an obsolete vendor-cache file.
+constexpr std::uint32_t kDiagnosticsLoadRequestId = 0x44494101U;  ///< Fixed correlation id for the crash-diagnostics storage load.
+constexpr std::uint32_t kDiagnosticsSaveRequestId = 0x44494102U;  ///< Fixed correlation id for the crash-diagnostics storage save.
+// Coredump-SD-Export (TASKS.md Nachtrag 2026-09-03 (4), Nutzerwunsch): der
+// rohe Coredump wird nie auf die SD-Karte kopiert bekam der Nutzer
+// zurecht als unpraktisch zurueckgemeldet -- ein Absturz, der das Geraet
+// automatisch neu startet, gibt kaum ein Zeitfenster fuer einen manuellen
+// USB-Zugriff vor dem naechsten, die Flash-Partition loeschenden Boot.
+// kMaxCoredumpHistoryFiles rotierende Dateien statt einer einzigen, damit
+// mehrere Abstuerze nacheinander nachvollziehbar bleiben (Nutzerwunsch).
+constexpr std::uint32_t kCoredumpExportRequestId = 0x44494103U;  ///< Fixed correlation id for the coredump-to-SD export.
+constexpr std::uint32_t kMaxCoredumpHistoryFiles = 10;  ///< Rotation cap for /diagnostics/coredump_<slot>.bin.
 std::uint32_t pendingSpoolmanSaveRequestId = 0;  ///< Correlation id for an in-flight Spoolman-configuration save.
 std::int32_t scaleCounts = 0;              ///< Most recent raw HX711 reading reported by ScaleTask.
 std::int32_t scaleOffsetCounts = 0;        ///< Current tare offset.
@@ -193,6 +206,14 @@ float scaleFactorCountsPerGram = 1.0F;     ///< Current calibration factor.
 bool scaleCalibrated = false;              ///< Whether the scale is currently calibrated.
 bool scaleStable = false;                  ///< Whether the current reading is stable.
 bool scaleError = true;                    ///< Whether the scale is currently reporting an error/unavailable state.
+// Coredump-Auswertung (TASKS.md Nachtrag 2026-09-03): geladen einmalig beim
+// Boot (requestDiagnosticsDocument()), danach nur noch in-memory fortgeführt
+// -- kein weiteres Load bis zum nächsten Neustart, siehe
+// docs/architecture.md "Nur ein Task besitzt seine eigenen persistierten Daten".
+std::uint32_t diagnosticsTotalBootCount = 0;           ///< Persisted total boot count, incremented once per boot.
+std::uint32_t diagnosticsCoredumpCount = 0;            ///< Persisted total coredump count.
+std::uint32_t diagnosticsBootCountAtLastCoredump = 0;  ///< #diagnosticsTotalBootCount's value at the last recorded coredump.
+bool diagnosticsReady = false;  ///< Whether the three fields above reflect the loaded+updated document yet (false until the boot roundtrip finishes).
 /// @brief State for the "quick" weigh-in-place-on-a-spool workflow.
 struct QuickWeightState {
   bool pending = false;                    ///< Whether a quick-weight measurement is currently being awaited.
@@ -1979,6 +2000,135 @@ bool requestScaleConfiguration(rtos::RtosContext& ctx) {
   return true;
 }
 
+/// @brief Requests loading /diagnostics/coredump.json from StorageTask.
+/// @param ctx Owning RTOS context.
+/// @return false if the storage command queue was full.
+bool requestDiagnosticsDocument(rtos::RtosContext& ctx) {
+  rtos::StorageCommand command{};
+  command.type = rtos::StorageCommandType::LoadJson;
+  command.requestId = kDiagnosticsLoadRequestId;
+  command.documentType = rtos::StorageDocumentType::Diagnostics;
+  std::snprintf(command.path, sizeof(command.path),
+                "/diagnostics/coredump.json");
+  if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
+      pdPASS) {
+    FS_LOGW(services::LogComponent::App,
+            "Command enqueue failed queue=storage op=load_diagnostics");
+    return false;
+  }
+  return true;
+}
+
+/// @brief Serializes and sends the updated crash-diagnostics counters to StorageTask.
+/// @param ctx Owning RTOS context.
+/// @return false on serialization failure or if the storage command queue was full.
+bool persistDiagnosticsDocument(rtos::RtosContext& ctx) {
+  rtos::StorageCommand command{};
+  command.type = rtos::StorageCommandType::SaveJson;
+  command.requestId = kDiagnosticsSaveRequestId;
+  command.documentType = rtos::StorageDocumentType::Diagnostics;
+  std::snprintf(command.path, sizeof(command.path),
+                "/diagnostics/coredump.json");
+  const int length = std::snprintf(
+      command.json, sizeof(command.json),
+      "{\"schemaVersion\":1,\"updatedAt\":\"1970-01-01T00:00:00Z\","
+      "\"documentType\":\"diagnostics\",\"totalBootCount\":%lu,"
+      "\"coredumpCount\":%lu,\"bootCountAtLastCoredump\":%lu}",
+      static_cast<unsigned long>(diagnosticsTotalBootCount),
+      static_cast<unsigned long>(diagnosticsCoredumpCount),
+      static_cast<unsigned long>(diagnosticsBootCountAtLastCoredump));
+  if (length <= 0 || static_cast<std::size_t>(length) >= sizeof(command.json)) {
+    FS_LOGE(services::LogComponent::App,
+            "Diagnostics document serialization failed");
+    return false;
+  }
+  command.jsonLength = static_cast<std::uint16_t>(length);
+  if (xQueueSend(ctx.storageCommandQueue, &command, pdMS_TO_TICKS(1000)) !=
+      pdPASS) {
+    FS_LOGW(services::LogComponent::App,
+            "Command enqueue failed queue=storage op=save_diagnostics");
+    return false;
+  }
+  return true;
+}
+
+/// @brief Fire-and-forget copy of the pending coredump from its flash
+///        partition to a rotating /diagnostics/coredump_<slot>.bin file.
+/// @param ctx Owning RTOS context.
+/// @note Only ever called with `ctx.pendingCoredump.found == true`. Does
+///       not wait for StorageTask's result -- Begin/chunk/Commit commands
+///       are enqueued back-to-back into the FIFO storageCommandQueue,
+///       ahead of the persistDiagnosticsDocument() save the caller sends
+///       right after (StorageTask processes commands strictly in order,
+///       see docs/storage.md "Storage-Queue"). Whether this export
+///       succeeds or fails does NOT gate the counters-save/flash-erase
+///       decision below (kDiagnosticsSaveRequestId's handler) -- it is a
+///       best-effort extra, not a correctness requirement; see the
+///       StorageWriteCompleted/StorageRequestError handling for
+///       kCoredumpExportRequestId, which only logs the outcome.
+void exportPendingCoredumpToSd(rtos::RtosContext& ctx) {
+  std::size_t flashAddress = 0;
+  std::size_t flashSize = 0;
+  if (esp_core_dump_image_get(&flashAddress, &flashSize) != ESP_OK ||
+      flashSize == 0) {
+    FS_LOGW(services::LogComponent::App,
+            "Coredump export skipped reason=image_get_failed");
+    return;
+  }
+
+  const std::uint32_t slot =
+      ((diagnosticsCoredumpCount - 1) % kMaxCoredumpHistoryFiles) + 1;
+  rtos::StorageCommand begin{};
+  begin.type = rtos::StorageCommandType::BeginCoredumpExport;
+  begin.requestId = kCoredumpExportRequestId;
+  std::snprintf(begin.path, sizeof(begin.path),
+                "/diagnostics/coredump_%lu.bin",
+                static_cast<unsigned long>(slot));
+  if (xQueueSend(ctx.storageCommandQueue, &begin, pdMS_TO_TICKS(1000)) !=
+      pdPASS) {
+    FS_LOGW(services::LogComponent::App,
+            "Command enqueue failed queue=storage op=begin_coredump_export");
+    return;
+  }
+
+  std::size_t offset = 0;
+  while (offset < flashSize) {
+    rtos::StorageCommand chunk{};
+    chunk.type = rtos::StorageCommandType::WriteCoredumpChunk;
+    chunk.requestId = kCoredumpExportRequestId;
+    const std::size_t chunkLength =
+        (flashSize - offset) < sizeof(chunk.json) ? (flashSize - offset)
+                                                   : sizeof(chunk.json);
+    if (spi_flash_read(flashAddress + offset, chunk.json, chunkLength) !=
+        ESP_OK) {
+      FS_LOGE(services::LogComponent::App,
+              "Coredump export read failed offset=%u",
+              static_cast<unsigned>(offset));
+      rtos::StorageCommand abortCommand{};
+      abortCommand.type = rtos::StorageCommandType::AbortCoredumpExport;
+      abortCommand.requestId = kCoredumpExportRequestId;
+      xQueueSend(ctx.storageCommandQueue, &abortCommand, pdMS_TO_TICKS(1000));
+      return;
+    }
+    chunk.jsonLength = static_cast<std::uint16_t>(chunkLength);
+    if (xQueueSend(ctx.storageCommandQueue, &chunk, pdMS_TO_TICKS(1000)) !=
+        pdPASS) {
+      FS_LOGW(services::LogComponent::App,
+              "Command enqueue failed queue=storage op=write_coredump_chunk");
+    }
+    offset += chunkLength;
+  }
+
+  rtos::StorageCommand commit{};
+  commit.type = rtos::StorageCommandType::CommitCoredumpExport;
+  commit.requestId = kCoredumpExportRequestId;
+  if (xQueueSend(ctx.storageCommandQueue, &commit, pdMS_TO_TICKS(1000)) !=
+      pdPASS) {
+    FS_LOGW(services::LogComponent::App,
+            "Command enqueue failed queue=storage op=commit_coredump_export");
+  }
+}
+
 /// @brief Sends a Spoolman UpdateWeight command.
 /// @param ctx Owning RTOS context.
 /// @param requestId Correlation id.
@@ -3416,6 +3566,35 @@ void handleUiAction(rtos::RtosContext& ctx, const rtos::UiAction& action) {
           break;
         default:
           break;
+      }
+      if (action.type == rtos::UiActionType::OpenDiagnostics) {
+        // command.text traegt die Coredump-Kurzzusammenfassung fuer
+        // diagnostics_settings_coredump_status (UiBridge.cpp's
+        // ShowScreen(SettingsDiagnostics)-Handler) -- die Daten liegen
+        // bereits seit dem Boot-Roundtrip (requestDiagnosticsDocument())
+        // im Speicher, kein eigener Roundtrip beim Oeffnen des Screens
+        // noetig. Kein Datum/Uhrzeit moeglich (keine Zeitquelle in dieser
+        // Firmware, siehe TASKS.md Nachtrag 2026-09-03) -- stattdessen
+        // Anzahl plus Neustarts seit dem letzten Coredump.
+        if (!diagnosticsReady || diagnosticsCoredumpCount == 0) {
+          std::snprintf(command.text, sizeof(command.text),
+                        "Keine Abst\xC3\xBCrze aufgezeichnet");
+        } else {
+          const std::uint32_t reboots =
+              diagnosticsTotalBootCount - diagnosticsBootCountAtLastCoredump;
+          if (reboots == 0) {
+            std::snprintf(
+                command.text, sizeof(command.text),
+                "%lu Abst\xC3\xBCrze, letzter Neustart war ein Absturz",
+                static_cast<unsigned long>(diagnosticsCoredumpCount));
+          } else {
+            std::snprintf(
+                command.text, sizeof(command.text),
+                "%lu Abst\xC3\xBCrze, letzter vor %lu Neustarts",
+                static_cast<unsigned long>(diagnosticsCoredumpCount),
+                static_cast<unsigned long>(reboots));
+          }
+        }
       }
       command.type = rtos::UiCommandType::ShowScreen;
       command.screenId = currentScreen;
@@ -6847,6 +7026,73 @@ void appTask(void* parameter) {
         scaleCommand.calibrated = event->scaleCalibrated;
         sendScaleCommand(ctx, scaleCommand);
         sendScaleUiState(ctx, event->requestId);
+      } else if (event->type == rtos::AppEventType::StorageReadCompleted &&
+                 event->requestId == kDiagnosticsLoadRequestId) {
+        diagnosticsTotalBootCount = event->diagnostics.totalBootCount + 1;
+        diagnosticsCoredumpCount = event->diagnostics.coredumpCount;
+        diagnosticsBootCountAtLastCoredump =
+            event->diagnostics.bootCountAtLastCoredump;
+        if (ctx.pendingCoredump.found) {
+          ++diagnosticsCoredumpCount;
+          diagnosticsBootCountAtLastCoredump = diagnosticsTotalBootCount;
+          exportPendingCoredumpToSd(ctx);
+        }
+        diagnosticsReady = true;
+        persistDiagnosticsDocument(ctx);
+      } else if (event->type == rtos::AppEventType::StorageRequestError &&
+                 event->requestId == kDiagnosticsLoadRequestId) {
+        // /diagnostics/coredump.json existiert dank kInitialDocuments
+        // (StorageTask.cpp) eigentlich immer schon mit gueltigen Defaults --
+        // dieser Zweig greift nur bei einer beschaedigten/nicht mehr
+        // gueltigen Datei. Wie bei der Tray-Spoolman-Cache (siehe deren
+        // StorageRequestError-Zweig oben): bei Null weiterzaehlen statt
+        // einen erkannten Coredump stillschweigend zu verlieren.
+        FS_LOGW(services::LogComponent::App,
+                "Diagnostics document load failed, starting from zero: %s",
+                event->text);
+        diagnosticsTotalBootCount = 1;
+        diagnosticsCoredumpCount = ctx.pendingCoredump.found ? 1 : 0;
+        diagnosticsBootCountAtLastCoredump =
+            ctx.pendingCoredump.found ? 1 : 0;
+        if (ctx.pendingCoredump.found) exportPendingCoredumpToSd(ctx);
+        diagnosticsReady = true;
+        persistDiagnosticsDocument(ctx);
+      } else if (event->type == rtos::AppEventType::StorageWriteCompleted &&
+                 event->requestId == kDiagnosticsSaveRequestId) {
+        if (ctx.pendingCoredump.found) {
+          const esp_err_t eraseResult = esp_core_dump_image_erase();
+          FS_LOGI(services::LogComponent::App,
+                  "Coredump recorded and erased task=%s pc=0x%08lX "
+                  "exc_cause=%lu erase_result=%d coredump_count=%lu",
+                  ctx.pendingCoredump.taskName,
+                  static_cast<unsigned long>(ctx.pendingCoredump.pc),
+                  static_cast<unsigned long>(ctx.pendingCoredump.excCause),
+                  static_cast<int>(eraseResult),
+                  static_cast<unsigned long>(diagnosticsCoredumpCount));
+        }
+      } else if (event->type == rtos::AppEventType::StorageRequestError &&
+                 event->requestId == kDiagnosticsSaveRequestId) {
+        // Coredump-Partition bleibt bewusst unangetastet -- ein erneuter
+        // Versuch, sie zu konsumieren, folgt beim naechsten Neustart (siehe
+        // main.cpp, kein esp_core_dump_image_erase() vor erfolgreichem
+        // Speichern).
+        FS_LOGW(services::LogComponent::App,
+                "Diagnostics document save failed: %s", event->text);
+      } else if (event->type == rtos::AppEventType::StorageWriteCompleted &&
+                 event->requestId == kCoredumpExportRequestId) {
+        // Rein informativ -- gate fuer Speichern/Loeschen der Flash-
+        // Partition bleibt ausschliesslich kDiagnosticsSaveRequestId oben
+        // (siehe exportPendingCoredumpToSd()s Dokkommentar): ein
+        // fehlgeschlagener Export verhindert weder das Zaehlen des
+        // Absturzes noch das Freigeben der Flash-Partition fuer den
+        // naechsten Crash.
+        FS_LOGI(services::LogComponent::App,
+                "Coredump export to SD succeeded bytes=%ld",
+                static_cast<long>(event->value));
+      } else if (event->type == rtos::AppEventType::StorageRequestError &&
+                 event->requestId == kCoredumpExportRequestId) {
+        FS_LOGW(services::LogComponent::App,
+                "Coredump export to SD failed: %s", event->text);
       }
       rtos::UiCommand status{};
       status.type = rtos::UiCommandType::ShowStatus;
@@ -6864,6 +7110,7 @@ void appTask(void* parameter) {
         requestBambuConfiguration(ctx);
         requestTraySpoolCache(ctx);
         requestScaleConfiguration(ctx);
+        requestDiagnosticsDocument(ctx);
         deleteObsoleteStorageFile(
             ctx, kObsoletePendingWeightDeleteRequestId,
             "/queue/pending-weight.json");

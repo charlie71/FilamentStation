@@ -202,6 +202,118 @@ Haeppchen (`StorageCommandType::BeginBambuMaterialDownload`/
 `.tmp.json` selbst per SHA-256 verifiziert, parst/validiert und erst dann
 atomar aktiviert. Details siehe `docs/bambu-protocol.md`.
 
+## Absturzdiagnose (`/diagnostics/coredump.json`, `/diagnostics/coredump_<slot>.bin`)
+
+Nutzerwunsch vom 2026-09-03: verdichtet einen von der ESP-IDF bereits
+automatisch in einer eigenen Flash-Partition abgelegten Coredump zu zwei
+Zaehlern, die auf dem Diagnose-Bildschirm angezeigt werden, und sichert
+zusaetzlich eine Rohkopie des Coredumps selbst auf der SD-Karte.
+
+```json
+{
+  "schemaVersion": 1,
+  "updatedAt": "1970-01-01T00:00:00Z",
+  "documentType": "diagnostics",
+  "totalBootCount": 42,
+  "coredumpCount": 3,
+  "bootCountAtLastCoredump": 39
+}
+```
+
+* `totalBootCount` -- bei jedem Boot +1.
+* `coredumpCount` -- nur erhoeht, wenn beim Boot tatsaechlich ein Coredump
+  in Flash gefunden wurde.
+* `bootCountAtLastCoredump` -- `totalBootCount`-Wert zum Zeitpunkt des
+  letzten gefundenen Coredumps; daraus ergibt sich "Neustarts seit dem
+  letzten Absturz" als `totalBootCount - bootCountAtLastCoredump`. Kein
+  echter Zeitstempel (`updatedAt` bleibt der uebliche Platzhalter) -- diese
+  Firmware hat keinerlei Uhrzeit-/Datumsquelle (weder NTP noch RTC).
+
+### Woher der Coredump kommt, und wie er auf die SD-Karte kommt
+
+`/diagnostics/coredump.json` ist nicht der Coredump selbst, sondern nur
+seine Kurzzusammenfassung. Der eigentliche Coredump liegt zunaechst in
+einer eigenen, von `default_16MB.csv` reservierten Flash-Partition (Typ
+`data`, Subtyp `coredump`, 64 KiB) -- vom Arduino-ESP32-Kern selbst
+geschrieben (`CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH` ist fuer dieses Board
+bereits aktiviert), sobald eine echte Exception/Panic auftritt.
+`main.cpp::setup()` prueft noch vor dem ersten Taskstart per
+`esp_core_dump_image_check()`/`esp_core_dump_get_summary()`, ob ein Fund
+vorliegt, und loggt Task-Name, Programmzaehler und die rohe
+Xtensa-Exception-Ursachennummer einmalig per `FS_LOGE`
+(Log-Komponente `Rtos`).
+
+**Nachtrag (4), direkt im Anschluss:** ein erster Entwurf dieser Funktion
+liess den rohen Coredump ausschliesslich in der Flash-Partition liegen
+und loeschte sie nach dem Speichern der Zaehler-Datei -- das gab dem
+Nutzer zurecht als unpraktisch zurueckgemeldet: ein Absturz, der das
+Geraet automatisch neu startet, laesst kaum ein Zeitfenster fuer einen
+manuellen USB-Zugriff vor dem naechsten, die Partition loeschenden Boot.
+`AppTask` kopiert den rohen Coredump deshalb jetzt zuerst auf die
+SD-Karte, sobald `ctx.pendingCoredump.found` gesetzt ist:
+`esp_core_dump_image_get()` liefert Flash-Adresse und tatsaechliche
+Groesse des validierten Coredumps (nicht die volle 64-KiB-
+Partitionsgroesse, sondern die im Coredump-eigenen Header vermerkte
+echte Laenge), `exportPendingCoredumpToSd()` liest ihn in
+768-Byte-Haeppchen per `spi_flash_read()` und streamt sie ueber die neuen
+`StorageCommandType::BeginCoredumpExport`/`WriteCoredumpChunk`/
+`CommitCoredumpExport`/`AbortCoredumpExport`-Befehle an `StorageTask`
+(gleiches Haeppchen-Streaming-Muster wie der Bambu-Material-Download,
+aber ohne dessen SHA-256-Pruefung/Aktivierungslogik -- eine reine
+Binaerkopie braucht keine Schema-Validierung). Ziel ist eine rotierende
+Datei `/diagnostics/coredump_<slot>.bin` mit `slot` = 1 bis 10
+(`((coredumpCount - 1) % 10) + 1`) -- bei mehr als zehn Abstuerzen wird
+die aelteste Slot-Datei einfach ueberschrieben, sodass die letzten zehn
+Abstuerze immer nachvollziehbar bleiben, ohne die SD-Karte unbegrenzt
+wachsen zu lassen.
+
+Erst **nachdem** `/diagnostics/coredump.json` erfolgreich gespeichert
+wurde, loescht `AppTask` die Flash-Partition
+(`esp_core_dump_image_erase()`) -- schlaegt das Speichern fehl (z. B.
+keine SD-Karte eingesetzt), bleibt der Coredump in der Partition
+erhalten und wird beim naechsten Boot erneut ausgewertet statt verloren
+zu gehen. Der SD-Export selbst ist bewusst **kein** Kriterium fuer diese
+Entscheidung: er ist ein Best-Effort-Zusatz, kein Korrektheits-
+Erfordernis. Schlaegt er fehl (siehe `StorageWriteCompleted`/
+`StorageRequestError` fuer `kCoredumpExportRequestId`, nur geloggt),
+wird der Absturz trotzdem korrekt gezaehlt und die Flash-Partition
+trotzdem fuer den naechsten Absturz freigegeben -- nur die zusaetzliche
+Rohkopie auf der SD-Karte fehlt dann fuer diesen einen Fall.
+
+### Detailanalyse
+
+Fuer eine grobe Einordnung genuegt oft schon die einzelne `FS_LOGE`-Zeile
+aus dem seriellen Log (Task-Name plus Programmzaehler) zusammen mit
+`xtensa-esp32s3-elf-addr2line -e firmware.elf <adresse>` (die Toolchain
+liegt als PlatformIO-Paket bereits lokal vor) -- loest die einzelne
+Adresse in Datei/Zeile auf.
+
+Fuer eine vollstaendige Analyse (Backtrace mit Datei/Zeile, Stacks aller
+Tasks, Register) die jetzt auf der SD-Karte gesicherte `coredump_<slot>.bin`
+verwenden -- kein USB-Zugriff zum Absturzzeitpunkt mehr noetig, die Datei
+kann jederzeit spaeter per SD-Kartenleser abgeholt werden:
+
+1. Am PC: `pip install esp-coredump` (separates Python-Paket, nicht Teil
+   dieses Projekts).
+2. `esp-coredump info_corefile --core coredump_3.bin --core-format raw
+   --prog firmware.elf` ausfuehren (Kurzform des Kernbefehls -- exakte
+   Flag-Namen ueber `esp-coredump --help` pruefen, in dieser Umgebung
+   nicht gegen ein reales Geraet verifiziert). `firmware.elf` muss
+   zwingend exakt die Version sein, die zum Absturzzeitpunkt lief
+   (`.pio/build/wt32-s3-wrover-n16r2/firmware.elf` des entsprechenden
+   Builds, oder das Release-Artefakt derselben Version) -- bei einer
+   abweichenden Version sind aufgeloeste Symbole/Zeilen falsch oder
+   fehlen ganz.
+3. Ergebnis ist ein vollstaendiger GDB-Backtrace mit Datei/Zeile, Register
+   und den Stacks aller zum Absturzzeitpunkt aktiven Tasks.
+
+Alternativ funktioniert weiterhin auch der direkte Live-Zugriff auf die
+Flash-Partition per USB (`esp-coredump info_corefile --port COM5
+--core-format elf firmware.elf`, ohne `--core`) -- nur eben nur, solange
+die Partition noch nicht durch den naechsten erfolgreichen Boot geloescht
+wurde. Fuer den ueblichen, unbeaufsichtigten Betrieb ist die gesicherte
+`.bin`-Datei auf der SD-Karte der praktikablere Weg.
+
 Die Unit-Tests fuer Standardwerte, Objektwurzel, Schema-Version, Zeitstempel und
 Serialisierung lassen sich fuer das ESP32-S3-Ziel kompilieren. Der Lauf vom
 2026-08-03 wurde wegen eines durch einen anderen Prozess belegten COM4-Ports

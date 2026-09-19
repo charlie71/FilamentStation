@@ -98,6 +98,23 @@ struct RtosContext {
   // zaehlt erst der naechste Fingerdruck wieder als normale Eingabe.
   std::atomic<bool> suppressNextTouch{false};  ///< True from just before Sleep-Entry until the touch that woke the device is released.
 
+  // Coredump-Auswertung (TASKS.md Nachtrag 2026-09-03, Nutzerwunsch): das
+  // fuer dieses Board vorkompilierte Arduino-ESP32 hat Coredump-to-Flash
+  // bereits aktiviert (CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=1), und
+  // default_16MB.csv reserviert dafuer schon eine eigene Partition --
+  // main.cpp::setup() prueft das noch vor dem ersten Taskstart per
+  // esp_core_dump_image_check()/esp_core_dump_get_summary() und legt einen
+  // eventuellen Fund hier ab. Kein Atomic noetig: dies wird ausschliesslich
+  // in setup() geschrieben, bevor irgendein Task existiert, der es lesen
+  // koennte (AppTask liest es danach nur noch, siehe requestDiagnosticsDocument()).
+  struct PendingCoredump {
+    bool found = false;        ///< Whether a valid coredump was present in flash at boot.
+    char taskName[16]{};       ///< Name of the task that crashed, from esp_core_dump_summary_t::exc_task.
+    std::uint32_t pc = 0;      ///< Program counter at the exception, from esp_core_dump_summary_t::exc_pc.
+    std::uint32_t excCause = 0;  ///< Raw Xtensa exception cause code, from esp_core_dump_summary_t::ex_info.exc_cause.
+  };
+  PendingCoredump pendingCoredump{};  ///< Set once by main.cpp::setup(), consumed by AppTask after /diagnostics/coredump.json loads.
+
   /// @brief Creates every queue, the queue set, and the event group.
   /// @return true if all objects were created successfully.
   bool createObjects();

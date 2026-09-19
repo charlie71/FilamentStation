@@ -12,6 +12,7 @@
 #include "models/TagReadResult.h"
 #include "models/AppState.h"
 #include "models/BambuPrinterConfig.h"
+#include "models/DiagnosticsRecord.h"
 #include "models/NetworkSettings.h"
 #include "models/PrinterState.h"
 #include "models/SpoolmanSettings.h"
@@ -68,6 +69,7 @@ struct AppEvent {
   models::PrinterState printerState{};  ///< Full printer runtime state snapshot, for Bambu* events.
   models::BambuConfigCollection bambuConfigs{};  ///< Loaded printer configuration collection.
   models::TraySpoolCache traySpoolCache{};       ///< Loaded printer/tray -> spool association cache.
+  models::DiagnosticsRecord diagnostics{};       ///< Loaded crash-diagnostics counters, for the corresponding StorageReadCompleted.
   models::SpoolmanSpool spool{};        ///< Loaded spool data, for Spoolman spool responses.
   // Response payload for SpoolmanCommandType::LoadFilament (bambu_temp_min/
   // bambu_temp_max/flow_dynamics_k_factor -- Spoolman *filament* properties, see

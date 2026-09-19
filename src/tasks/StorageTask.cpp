@@ -51,6 +51,7 @@ constexpr InitialDocument kInitialDocuments[] = {
     {"/config/scale.json", rtos::StorageDocumentType::Scale},
     {"/config/nfc.json", rtos::StorageDocumentType::Nfc},
     {"/mappings/printer-slots.json", rtos::StorageDocumentType::TraySpoolCache},
+    {"/diagnostics/coredump.json", rtos::StorageDocumentType::Diagnostics},
 };
 
 /// @brief Whether a path is one of the legacy NFC UID-mapping files.
@@ -135,6 +136,26 @@ bool isAllowedJsonPath(const char* path) {
     }
   }
   return false;
+}
+
+/// @brief Whether a path is an allowed coredump-export target
+///        ("/diagnostics/coredump_<slot>.bin", see
+///        StorageCommandType::BeginCoredumpExport). Deliberately narrower
+///        than isAllowedJsonPath(): a fixed prefix/suffix and a single
+///        directory, since this is a single-purpose raw-binary export, not
+///        a general file API.
+/// @param path Path to check.
+/// @return true if `path` matches the expected pattern.
+bool isAllowedCoredumpExportPath(const char* path) {
+  if (path == nullptr || std::strstr(path, "..") != nullptr) return false;
+  constexpr char kPrefix[] = "/diagnostics/coredump_";
+  constexpr char kSuffix[] = ".bin";
+  const std::size_t length = std::strlen(path);
+  const std::size_t prefixLength = sizeof(kPrefix) - 1U;
+  const std::size_t suffixLength = sizeof(kSuffix) - 1U;
+  return length > prefixLength + suffixLength &&
+         std::strncmp(path, kPrefix, prefixLength) == 0 &&
+         std::strcmp(path + length - suffixLength, kSuffix) == 0;
 }
 
 /// @brief Sends the appropriate success/error AppEvent for a JsonStorage result.
@@ -240,6 +261,25 @@ void processLoadCommand(rtos::RtosContext& ctx,
       FS_LOGW(services::LogComponent::Storage,
               "Event enqueue failed queue=app_event document=scale");
     }
+    return;
+  }
+  if (result.ok() &&
+      command.documentType == rtos::StorageDocumentType::Diagnostics) {
+    rtos::AppEvent event{};
+    event.type = rtos::AppEventType::StorageReadCompleted;
+    event.requestId = command.requestId;
+    event.value = static_cast<std::int32_t>(result.bytesProcessed);
+    event.diagnostics.totalBootCount =
+        document["totalBootCount"].as<std::uint32_t>();
+    event.diagnostics.coredumpCount =
+        document["coredumpCount"].as<std::uint32_t>();
+    event.diagnostics.bootCountAtLastCoredump =
+        document["bootCountAtLastCoredump"].as<std::uint32_t>();
+    std::snprintf(event.text, sizeof(event.text),
+                  "Diagnostics counters loaded");
+    if (xQueueSend(ctx.appEventQueue, &event, pdMS_TO_TICKS(1000)) != pdPASS)
+      FS_LOGW(services::LogComponent::Storage,
+              "Event enqueue failed queue=app_event document=diagnostics");
     return;
   }
   if (result.ok() &&
@@ -793,6 +833,51 @@ void processBeginBambuMaterialDownload(rtos::RtosContext& ctx,
           static_cast<unsigned>(ESP.getFreeHeap()));
 }
 
+/// @brief Writes `length` bytes to `file`, retrying short writes.
+/// @param file Already-open file to append to.
+/// @param data Bytes to write.
+/// @param length Number of bytes in `data`.
+/// @param logComponent Component to log stall/failure lines under.
+/// @return Number of bytes actually written -- less than `length` only if
+///         the write stalled at 0 bytes for kMaxWriteStallRetries
+///         consecutive attempts (a real, unrecoverable failure).
+/// @note File::write() can legitimately return fewer bytes than requested
+///       under a momentary SD-card busy condition (sector commit,
+///       wear-leveling) -- not a real failure. Retrying the remainder
+///       instead of treating any short write as fatal fixed intermittent
+///       "written=0"/"written=94" rejections seen on real hardware despite
+///       an otherwise healthy download (Nutzerbericht 2026-08-28,
+///       TASKS.md). Shared by processWriteBambuMaterialChunk() and
+///       processWriteCoredumpChunk() -- both stream an externally-chunked
+///       byte buffer to an already-open File the same way.
+std::size_t writeAllWithRetry(File& file, const char* data,
+                              std::size_t length,
+                              services::LogComponent logComponent) {
+  std::size_t offset = 0;
+  std::uint8_t stallRetries = 0;
+  while (offset < length) {
+    const std::size_t written = file.write(
+        reinterpret_cast<const std::uint8_t*>(data) + offset,
+        length - offset);
+    if (written == 0) {
+      ++stallRetries;
+      if (stallRetries > kMaxWriteStallRetries) {
+        FS_LOGE(logComponent, "Write stalled offset=%u expected=%u",
+                static_cast<unsigned>(offset), static_cast<unsigned>(length));
+        return offset;
+      }
+      FS_LOGD(logComponent, "Write stalled offset=%u retry=%u",
+              static_cast<unsigned>(offset),
+              static_cast<unsigned>(stallRetries));
+      vTaskDelay(pdMS_TO_TICKS(kWriteStallRetryDelayMs));
+      continue;
+    }
+    offset += written;
+    stallRetries = 0;
+  }
+  return offset;
+}
+
 /// @brief Handles StorageCommandType::WriteBambuMaterialChunk: appends
 ///        `command.json[0..jsonLength)` to the open download temp file.
 /// @param ctx Owning RTOS context.
@@ -824,48 +909,19 @@ void processWriteBambuMaterialChunk(rtos::RtosContext& ctx,
                                   "Heruntergeladene Datei ist zu gro\xC3\x9F");
     return;
   }
-  // File::write() can legitimately return fewer bytes than requested under
-  // a momentary SD-card busy condition (sector commit, wear-leveling) --
-  // not a real failure. Retrying the remainder instead of treating any
-  // short write as fatal fixed intermittent "written=0"/"written=94"
-  // rejections seen on real hardware despite an otherwise healthy download
-  // (Nutzerbericht 2026-08-28, TASKS.md). A write that stays stuck at 0
-  // bytes for kMaxWriteStallRetries consecutive attempts is still treated
-  // as a real failure.
-  std::size_t offset = 0;
-  std::uint8_t stallRetries = 0;
-  while (offset < command.jsonLength) {
-    const std::size_t written = bambuMaterialDownloadFile.write(
-        reinterpret_cast<const std::uint8_t*>(command.json) + offset,
-        command.jsonLength - offset);
-    if (written == 0) {
-      ++stallRetries;
-      if (stallRetries > kMaxWriteStallRetries) {
-        bambuMaterialDownloadBytesWritten += offset;
-        FS_LOGE(services::LogComponent::Bambu,
-                "[BAMBU] Material mapping download rejected "
-                "reason=write_failed offset=%u expected=%u",
-                static_cast<unsigned>(offset),
-                static_cast<unsigned>(command.jsonLength));
-        abortBambuMaterialDownloadFile();
-        sendBambuMaterialUpdateResult(ctx, command.requestId, false,
-                                      "Schreibfehler beim Herunterladen");
-        return;
-      }
-      FS_LOGD(services::LogComponent::Bambu,
-              "[BAMBU] Material mapping write stalled offset=%u retry=%u",
-              static_cast<unsigned>(offset),
-              static_cast<unsigned>(stallRetries));
-      vTaskDelay(pdMS_TO_TICKS(kWriteStallRetryDelayMs));
-      continue;
-    }
-    offset += written;
-    stallRetries = 0;
+  const std::size_t written = writeAllWithRetry(
+      bambuMaterialDownloadFile, command.json, command.jsonLength,
+      services::LogComponent::Bambu);
+  bambuMaterialDownloadBytesWritten += written;
+  if (written < command.jsonLength) {
+    abortBambuMaterialDownloadFile();
+    sendBambuMaterialUpdateResult(ctx, command.requestId, false,
+                                  "Schreibfehler beim Herunterladen");
+    return;
   }
-  bambuMaterialDownloadBytesWritten += offset;
   FS_LOGD(services::LogComponent::Bambu,
           "[BAMBU] Material mapping chunk written bytes=%u total=%u",
-          static_cast<unsigned>(offset),
+          static_cast<unsigned>(written),
           static_cast<unsigned>(bambuMaterialDownloadBytesWritten));
 }
 
@@ -1005,6 +1061,152 @@ void processCommitBambuMaterialDownload(rtos::RtosContext& ctx,
                                 "Material-Zuordnung aktualisiert");
 }
 
+// Shared state for the in-progress coredump export, mirroring the Bambu
+// material-mapping download's file-scope state above -- same "StorageTask
+// processes exactly one StorageCommand at a time" guarantee, so no locking
+// needed (TASKS.md Nachtrag 2026-09-03).
+File coredumpExportFile;                                     ///< Open handle to the in-progress export's temp file, or invalid if none is open.
+std::uint32_t coredumpExportRequestId = kDownloadRequestIdNone;  ///< requestId of the in-progress export, or #kDownloadRequestIdNone.
+std::size_t coredumpExportBytesWritten = 0;                   ///< Bytes written to #coredumpExportFile so far.
+char coredumpExportFinalPath[64]{};                           ///< Target path once committed, e.g. "/diagnostics/coredump_3.bin".
+char coredumpExportTempPath[64]{};                            ///< #coredumpExportFinalPath plus ".tmp", written to until commit.
+
+/// @brief Closes and discards any in-progress coredump-export temp file,
+///        resetting the guard state.
+void abortCoredumpExportFile() {
+  if (coredumpExportFile) coredumpExportFile.close();
+  if (coredumpExportTempPath[0] != '\0' && SD.exists(coredumpExportTempPath)) {
+    SD.remove(coredumpExportTempPath);
+  }
+  coredumpExportRequestId = kDownloadRequestIdNone;
+  coredumpExportBytesWritten = 0;
+}
+
+/// @brief Handles StorageCommandType::BeginCoredumpExport: opens a temp
+///        file for `command.path`, discarding any previous in-progress
+///        export.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process; `command.path` is the final target
+///        ("/diagnostics/coredump_<slot>.bin").
+void processBeginCoredumpExport(rtos::RtosContext& ctx,
+                                const rtos::StorageCommand& command) {
+  if (!isAllowedCoredumpExportPath(command.path)) {
+    sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                     "Invalid coredump export path", command.requestId);
+    return;
+  }
+  if (coredumpExportRequestId != kDownloadRequestIdNone) abortCoredumpExportFile();
+
+  std::snprintf(coredumpExportFinalPath, sizeof(coredumpExportFinalPath),
+               "%s", command.path);
+  std::snprintf(coredumpExportTempPath, sizeof(coredumpExportTempPath),
+               "%s.tmp", command.path);
+  if (SD.exists(coredumpExportTempPath)) SD.remove(coredumpExportTempPath);
+
+  coredumpExportFile = SD.open(coredumpExportTempPath, FILE_WRITE);
+  if (!coredumpExportFile) {
+    FS_LOGE(services::LogComponent::Storage,
+            "Coredump export failed temporary=\"%s\" reason=temporary_file_failed",
+            coredumpExportTempPath);
+    sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                     "Coredump temp file could not be created",
+                     command.requestId);
+    return;
+  }
+  coredumpExportRequestId = command.requestId;
+  coredumpExportBytesWritten = 0;
+  FS_LOGI(services::LogComponent::Storage,
+          "Coredump export started target=\"%s\"", coredumpExportFinalPath);
+}
+
+/// @brief Handles StorageCommandType::WriteCoredumpChunk: appends
+///        `command.json[0..jsonLength)` (raw coredump bytes, not JSON) to
+///        the open export temp file.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
+/// @note Silently ignored (DEBUG log only) if no export matching
+///       `command.requestId` is open -- same harmless race as
+///       processWriteBambuMaterialChunk(): AppTask fires every chunk in one
+///       tight loop without waiting for individual acks, so a mid-stream
+///       failure (already reported from here) leaves later chunks/the
+///       eventual Commit as no-ops.
+void processWriteCoredumpChunk(rtos::RtosContext& ctx,
+                               const rtos::StorageCommand& command) {
+  if (coredumpExportRequestId != command.requestId || !coredumpExportFile) {
+    FS_LOGD(services::LogComponent::Storage,
+            "Coredump export chunk ignored request_id=%lu reason=no_open_export",
+            static_cast<unsigned long>(command.requestId));
+    return;
+  }
+  if (command.jsonLength == 0) return;
+  const std::size_t written = writeAllWithRetry(
+      coredumpExportFile, command.json, command.jsonLength,
+      services::LogComponent::Storage);
+  coredumpExportBytesWritten += written;
+  if (written < command.jsonLength) {
+    abortCoredumpExportFile();
+    sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                     "Coredump export write failed", command.requestId);
+  }
+}
+
+/// @brief Handles StorageCommandType::AbortCoredumpExport: discards the
+///        in-progress temp file (used when AppTask hit an unrecoverable
+///        error mid-stream on its own end). No event is sent from here.
+/// @param command Command to process.
+void processAbortCoredumpExport(const rtos::StorageCommand& command) {
+  if (coredumpExportRequestId != command.requestId) return;
+  FS_LOGI(services::LogComponent::Storage,
+          "Coredump export aborted request_id=%lu",
+          static_cast<unsigned long>(command.requestId));
+  abortCoredumpExportFile();
+}
+
+/// @brief Handles StorageCommandType::CommitCoredumpExport: flushes/closes
+///        the temp file and, only on success, replaces any existing file
+///        at the final path with it. No SHA-256/schema validation -- a raw
+///        binary copy needs none.
+/// @param ctx Owning RTOS context.
+/// @param command Command to process.
+void processCommitCoredumpExport(rtos::RtosContext& ctx,
+                                 const rtos::StorageCommand& command) {
+  if (coredumpExportRequestId != command.requestId || !coredumpExportFile) {
+    FS_LOGD(services::LogComponent::Storage,
+            "Coredump export commit ignored request_id=%lu reason=no_open_export",
+            static_cast<unsigned long>(command.requestId));
+    return;
+  }
+  coredumpExportFile.flush();
+  const bool writeFailed = coredumpExportFile.getWriteError() != 0;
+  coredumpExportFile.close();
+  coredumpExportRequestId = kDownloadRequestIdNone;
+  if (writeFailed) {
+    SD.remove(coredumpExportTempPath);
+    FS_LOGE(services::LogComponent::Storage,
+            "Coredump export rejected reason=write_failed");
+    sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                     "Coredump export write failed", command.requestId);
+    return;
+  }
+  if (SD.exists(coredumpExportFinalPath)) SD.remove(coredumpExportFinalPath);
+  if (!SD.rename(coredumpExportTempPath, coredumpExportFinalPath)) {
+    SD.remove(coredumpExportTempPath);
+    FS_LOGE(services::LogComponent::Storage,
+            "Coredump export rejected reason=rename_failed target=\"%s\"",
+            coredumpExportFinalPath);
+    sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                     "Coredump export rename failed", command.requestId);
+    return;
+  }
+  FS_LOGI(services::LogComponent::Storage,
+          "Coredump export committed target=\"%s\" bytes=%u",
+          coredumpExportFinalPath,
+          static_cast<unsigned>(coredumpExportBytesWritten));
+  sendStorageEvent(ctx, rtos::AppEventType::StorageWriteCompleted,
+                   "Coredump exported", command.requestId,
+                   static_cast<std::int32_t>(coredumpExportBytesWritten));
+}
+
 /// @brief Validates the path and dispatches to processLoadCommand()/
 ///        processSaveCommand()/direct delete, based on `command.type`.
 /// @param ctx Owning RTOS context.
@@ -1015,7 +1217,12 @@ void processCommitBambuMaterialDownload(rtos::RtosContext& ctx,
 ///       config/BambuMaterialConfig.h), by design: trusting a caller-
 ///       supplied path for this fixed, security-relevant temp file would
 ///       reopen exactly the path-injection risk isAllowedJsonPath() exists
-///       to prevent for every other command.
+///       to prevent for every other command. The four Coredump*Export
+///       commands are dispatched next, for the opposite reason: they DO
+///       use a caller-supplied `command.path` (rotating slot filenames,
+///       not one fixed constant), so each of their own handlers validates
+///       it via isAllowedCoredumpExportPath() instead of the generic
+///       (`.json`-only) isAllowedJsonPath() below.
 void processStorageCommand(rtos::RtosContext& ctx,
                            const rtos::StorageCommand& command) {
   switch (command.type) {
@@ -1030,6 +1237,18 @@ void processStorageCommand(rtos::RtosContext& ctx,
       return;
     case rtos::StorageCommandType::AbortBambuMaterialDownload:
       processAbortBambuMaterialDownload(command);
+      return;
+    case rtos::StorageCommandType::BeginCoredumpExport:
+      processBeginCoredumpExport(ctx, command);
+      return;
+    case rtos::StorageCommandType::WriteCoredumpChunk:
+      processWriteCoredumpChunk(ctx, command);
+      return;
+    case rtos::StorageCommandType::CommitCoredumpExport:
+      processCommitCoredumpExport(ctx, command);
+      return;
+    case rtos::StorageCommandType::AbortCoredumpExport:
+      processAbortCoredumpExport(command);
       return;
     case rtos::StorageCommandType::LoadJson:
     case rtos::StorageCommandType::SaveJson:

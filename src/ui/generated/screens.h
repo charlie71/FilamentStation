@@ -413,6 +413,8 @@ typedef struct _objects_t {
     lv_obj_t *diagnostics_settings_title;
     lv_obj_t *diagnostics_settings_heap;
     lv_obj_t *diagnostics_settings_psram;
+    lv_obj_t *diagnostics_settings_uptime;
+    lv_obj_t *diagnostics_settings_coredump_status;
     lv_obj_t *diagnostics_settings_tasks;
     lv_obj_t *diagnostics_settings_refresh;
     lv_obj_t *diagnostics_settings_back;

@@ -10,6 +10,7 @@
 
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
 #include <lvgl.h>
 #include <soc/soc_memory_types.h>
 
@@ -3395,6 +3396,19 @@ void showScreen(rtos::UiScreenId screenId) {
                     static_cast<unsigned long>(ESP.getFreePsram()>>10),
                     static_cast<unsigned long>(ESP.getMinFreePsram())>>10);
       lv_label_set_text(objects.diagnostics_settings_psram, text);
+      // Laufzeit (TASKS.md Nachtrag 2026-09-03): wie Heap/PSRAM direkt hier
+      // berechnet, kein AppTask-Roundtrip noetig. esp_timer_get_time()
+      // (int64, Mikrosekunden) statt millis() (32-Bit, Ueberlauf nach
+      // ~49 Tagen) -- bei "Abstuerzen nach laengerem Betrieb" ist eine
+      // Laufzeit ueber 49 Tage nicht auszuschliessen. Stunden bewusst
+      // unbegrenzt (kein 24h-Wrap): "50:12:03" nach zwei Tagen ist so
+      // gewollt, keine Tagesuhr.
+      const std::int64_t uptimeSeconds = esp_timer_get_time() / 1000000LL;
+      std::snprintf(text, sizeof(text), "Laufzeit: %02lld:%02lld:%02lld",
+                    static_cast<long long>(uptimeSeconds / 3600),
+                    static_cast<long long>((uptimeSeconds / 60) % 60),
+                    static_cast<long long>(uptimeSeconds % 60));
+      lv_label_set_text(objects.diagnostics_settings_uptime, text);
       // Task/Queue/Event-Bit-Diagnose kommt nur ueber den echten AppTask-
       // Roundtrip (siehe UpdateSettings/RefreshDiagnostics-Handling unten);
       // ohne bisherigen Roundtrip diese Sitzung neutralen Hinweis statt der
@@ -3641,6 +3655,15 @@ void processUiCommand(const rtos::UiCommand& command) {
         currentTagCanRemove = false;
         setLabelButtonAvailable(objects.tag_unknown_select_spool,
                                 currentTagCanAssign);
+      } else if (command.screenId == rtos::UiScreenId::SettingsDiagnostics &&
+                 command.text[0] != '\0') {
+        // Coredump-Zusammenfassung (TASKS.md Nachtrag 2026-09-03): von
+        // AppTask::handleUiAction()s OpenDiagnostics-Zweig formatiert,
+        // schon beim Boot geladen -- kein eigener Roundtrip beim Oeffnen
+        // dieses Screens noetig, anders als die per Button ausgeloeste
+        // Task/Queue-Diagnose weiter unten.
+        lv_label_set_text(objects.diagnostics_settings_coredump_status,
+                          command.text);
       }
       if (command.screenId == rtos::UiScreenId::TrayDetails ||
           command.screenId == rtos::UiScreenId::TrayActions) {

@@ -617,6 +617,9 @@ JsonStorageError JsonStorage::createDefault(
       document["mappings"].to<JsonArray>();
       break;
     case rtos::StorageDocumentType::Diagnostics:
+      document["totalBootCount"] = 0;
+      document["coredumpCount"] = 0;
+      document["bootCountAtLastCoredump"] = 0;
       break;
     case rtos::StorageDocumentType::TraySpoolCache:
       document["entries"].to<JsonArray>();
@@ -732,7 +735,11 @@ JsonStorageError JsonStorage::validate(
     case rtos::StorageDocumentType::Bambu:
       return validateBambuPrinters(document);
     case rtos::StorageDocumentType::Diagnostics:
-      return JsonStorageError::Ok;
+      return document["totalBootCount"].is<std::uint32_t>() &&
+                     document["coredumpCount"].is<std::uint32_t>() &&
+                     document["bootCountAtLastCoredump"].is<std::uint32_t>()
+                 ? JsonStorageError::Ok
+                 : JsonStorageError::InvalidDocumentField;
     case rtos::StorageDocumentType::TraySpoolCache:
       return validateTraySpoolCacheEntries(document);
   }
