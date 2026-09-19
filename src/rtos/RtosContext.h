@@ -83,6 +83,21 @@ struct RtosContext {
   // one "done" signal per download, no payload.
   SemaphoreHandle_t bambuMaterialDownloadDone = nullptr;  ///< Given by StorageTask after Commit finishes; taken by UpdateTask before proceeding to the firmware download.
 
+  // Touch-Wake aus dem Light-Sleep (TASKS.md Nachtrag 2026-09-03,
+  // Nutzerwunsch): der Touch, der das Geraet per GPIO-Wake aus
+  // tasks::powerTask()s Sleep holt, ist derselbe physische Fingerdruck, den
+  // UiTask kurz danach ganz normal per readTouch() abfragt -- ohne
+  // Unterdrueckung wuerde LVGL diesen Druck als echten Klick auf das
+  // gerade sichtbare Widget an dieser Bildschirmposition werten. PowerTask
+  // setzt dieses Flag deshalb bereits vor dem ersten
+  // esp_light_sleep_start()-Aufruf (weit bevor der eigentliche Wake
+  // eintritt, race-frei), UiBridge.cpp's readTouch() meldet LVGL
+  // waehrend das Flag gesetzt ist unabhaengig vom tatsaechlichen
+  // Touch-Zustand IMMER "losgelassen" und loescht das Flag selbst erst,
+  // sobald der Finger nachweislich wieder abgehoben wurde -- danach
+  // zaehlt erst der naechste Fingerdruck wieder als normale Eingabe.
+  std::atomic<bool> suppressNextTouch{false};  ///< True from just before Sleep-Entry until the touch that woke the device is released.
+
   /// @brief Creates every queue, the queue set, and the event group.
   /// @return true if all objects were created successfully.
   bool createObjects();

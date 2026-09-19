@@ -6768,3 +6768,142 @@ evtl. Fehlerdialog) -- ohne das nur eine weitere Vermutung, kein
 begründeter Fix.
 
 Build 0 Warnungen, 115/115 native Tests grün.
+
+## Nachtrag 2026-09-01: Firmware-Flash direkt im Browser via ESP Web Tools (GitHub Pages)
+
+Nutzerwunsch: die Firmware soll sich direkt über die GitHub-Projektseite im
+Browser flashen lassen (inklusive `bambu_materials.json`), ohne PlatformIO
+oder Treiber zu installieren.
+
+Umgesetzt über [ESP Web Tools](https://esphome.github.io/esp-web-tools/)
+(Web-Serial-API, Chrome/Edge/Opera am Desktop), gehostet auf GitHub Pages
+(`main`-Branch, Verzeichnis `/docs`, vom Repo-Inhaber einmalig manuell unter
+Settings → Pages aktiviert -- diesen Schritt kann die Firmware/das Skript
+nicht selbst auslösen):
+
+* `docs/index.html`, `docs/manifest.json`, `docs/.nojekyll` -- neue,
+  eigenständige Flash-Seite (`.nojekyll`, damit `.json`/`.bin`-Dateien ohne
+  Jekyll-Verarbeitung ausgeliefert werden). `manifest.json` folgt dem von
+  ESP Web Tools erwarteten Schema (`chipFamily: "ESP32-S3"`, ein Part bei
+  Offset 0).
+* `docs/firmware/firmware-merged.bin` (+ `.sha256`) -- ein per
+  `esptool.py --chip esp32s3 merge_bin` aus Bootloader, Partitionstabelle,
+  `boot_app0.bin` und `firmware.bin` zusammengeführtes Einzel-Image (Offsets
+  `0x0`/`0x8000`/`0xe000`/`0x10000`, aus dem Projekt-eigenen
+  `default_16MB.csv` und `platformio.ini`). `merge_bin` kennt kein
+  "keep"-Flag für Flash-Modus/-Frequenz/-Größe (per Espressif-Doku
+  bestätigt) -- verwendet werden deshalb explizit `--flash_mode qio
+  --flash_freq 80m --flash_size 16MB`, abgeleitet aus
+  `board_build.flash_mode = qio` in `platformio.ini` und `f_flash:
+  "80000000L"` in der `esp32-s3-devkitc-1.json`-Boarddefinition.
+* `docs/firmware/bambu_materials.json` (+ `.sha256`) -- Kopie der
+  aktuellen Material-Zuordnungsdatei zum Download auf der Flash-Seite
+  (kann nicht mitgeflasht werden, da sie auf die SD-Karte gehört, nicht in
+  den internen Flash -- Hinweis dazu direkt auf der Seite).
+* `scripts/release.ps1` -- erzeugt bei jedem Release automatisch das
+  Merged-Image, aktualisiert die Version in `docs/manifest.json` und
+  kopiert `bambu_materials.json` nach `docs/firmware/`. Pfade zu
+  `esptool.py`/`boot_app0.bin` werden über `PLATFORMIO_CORE_DIR`/
+  `PLATFORMIO_PACKAGES_DIR` aufgelöst (auf dieser Maschine liegen Pakete
+  nicht wie sonst bei PlatformIO üblich unterhalb von Core, sondern über
+  eine eigene Env-Variable an einem Sibling-Pfad -- das Skript prüft beide
+  Variablen statt einen festen relativen Pfad anzunehmen). Die
+  GitHub-Release-Assets (`firmware.bin`, `bambu_materials.json`, jeweils
+  `.sha256`) bleiben unverändert die alleinige Quelle für die
+  geräteinterne OTA-Update-Funktion -- die `docs/`-Artefakte sind ein
+  zweiter, unabhängiger Verteilweg für den Erstflash.
+* `README.md`, `docs/release.md`, `docs/user-guide.md` -- Verweise auf die
+  Flash-Seite ergänzt (Schnellstart, Release-Prozess, Abschnitt
+  "Firmware flashen" in der Benutzeranleitung).
+
+Verifikation: `esptool.py merge_bin` zweimal real ausgeführt (isolierter
+Test mit Scratch-Pfaden sowie der tatsächliche Lauf, der die jetzt
+committeten Artefakte erzeugt hat), Ergebnis-Image per `esptool.py
+image_info` geprüft; `docs/manifest.json` als valides JSON geprüft;
+`scripts/release.ps1` per
+`[System.Management.Automation.Language.Parser]::ParseFile()` auf
+Syntaxfehler geprüft (keine gefunden). Kein Hardware-Flashtest über die
+Webseite selbst durchgeführt (kein zusätzliches Testgerät verfügbar).
+
+## Nachtrag 2026-09-01 (2): docs/index.html zu vollständiger Projekt-Landingpage ausgebaut
+
+Die Flash-Seite aus dem vorherigen Nachtrag war bewusst minimal (nur
+Flash-Button + Downloadlink). Nutzerwunsch: daraus eine echte Landingpage
+machen, die das Projekt erklärt, Voraussetzungen und Elektronikaufbau
+(BOM) beschreibt, auf das 3D-Druck-Gehäuse verweist und eine
+Kurz-Bedienungsanleitung mit Screenshot-Platzhaltern enthält.
+
+`docs/index.html` komplett neu strukturiert (CSS/Flash-Funktionalität aus
+dem vorherigen Nachtrag unverändert übernommen, nur um neue Abschnitte
+und Styles erweitert):
+
+* Sticky Anker-Navigation (Überblick/Voraussetzungen/Elektronik/
+  Gehäuse/Firmware flashen/Bedienungsanleitung).
+* "Was ist FilamentStation?" -- Projektbeschreibung/Einsatzzweck als
+  Fließtext plus Feature-Grid, inhaltlich aus `README.md` übernommen.
+* "Voraussetzungen" -- SW (Spoolman-Server, WLAN, Browser bzw.
+  PlatformIO, optional Bambu-Drucker mit Developer Mode) und HW
+  (WT32-SC01 Plus, HX711+Lastzelle, PN532, microSD, Gehäuse) getrennt
+  aufgelistet.
+* "Elektronik bauen" -- BOM-Tabelle und eine Verkabelungstabelle für die
+  beiden extern anzuschließenden Module (HX711 an EXT_IO1/EXT_IO2,
+  PN532 an EXT_IO3/EXT_IO4 im HSU-Modus, beide Modusschalter OFF) samt
+  Hinweis auf die Lastzellen-Verkabelung (E+/E-/A+/A-) -- Zahlenwerte 1:1
+  aus `docs/hardware.md` übernommen, das für Details/Quellen verlinkt
+  bleibt.
+* "Gehäuse" -- eigener Abschnitt mit dem bereits vorhandenen
+  MakerWorld-Link.
+* "Bedienungsanleitung" -- Kurzfassung aller Abschnitte aus
+  `docs/user-guide.md` (Ersteinrichtung, WLAN, Spoolman, Waage, NFC/Tag
+  zuordnen, Drucker inkl. Developer-Mode-Hinweis, AMS-Slots,
+  Firmware-Update), mit Verweis auf das vollständige Benutzerhandbuch für
+  Details.
+* Neun Screenshot-Platzhalter (gestrichelte Box mit Kamera-Symbol und
+  Bildunterschrift, was dort hinein soll) an den Stellen, an denen ein
+  Bild den Text am meisten ergänzt: Gesamtaufnahme des Geräts, Homescreen/
+  AMS-Übersicht, offener Elektronikaufbau, montiertes Gehäuse,
+  Flash-Vorgang im Browser, WLAN-Portal, Spoolman-Einstellungen,
+  Tag-Ergebnisbildschirm, Spulenauswahl-Dialog, Drucker-Einstellungen,
+  AMS-Tray-Detailansicht -- als `<img>`-Ersatz direkt austauschbar, sobald
+  echte Screenshots vorliegen.
+
+Keine Änderung an `scripts/release.ps1`, `manifest.json` oder den
+Firmware-Binärartefakten -- reine Inhaltsänderung an `docs/index.html`.
+Verifikation: HTML-Tags (`div`/`section`/`ul`/`ol`/`table`/`thead`/
+`tbody`/`tr`) per Skript auf Open/Close-Balance geprüft, alle
+ausgeglichen. Kein Rendering-Test im echten Browser durchgeführt (keine
+Live-GitHub-Pages-Vorschau in dieser Umgebung verfügbar) -- Layout/
+Responsivität nach dem Veröffentlichen auf
+`https://charlie71.github.io/FilamentStation/` prüfen.
+
+## Nachtrag 2026-09-03: Touch-Wake aus dem Sleep löst keinen versehentlichen Klick mehr aus
+
+Nutzerbericht: der Touch, der FilamentStation aus dem Sleep-Modus
+(Bildschirm aus) aufweckt, soll ausschließlich zum Aufwecken dienen und
+nicht als normale Bedieneingabe ausgewertet werden.
+
+Ursache des bisherigen Verhaltens: `tasks::powerTask()`s
+`sleepUntilTouchWake()` (`src/tasks/PowerTask.cpp`) wacht per GPIO-Wake
+auf exakt dem Finger auf, der das FT6336-Touch-Interrupt auslöst.
+`UiTask`/`UiBridge.cpp`s `readTouch()` fragt direkt danach denselben,
+noch aufliegenden Finger ganz normal per I2C ab -- LVGL wertete diesen
+Druck bisher wie jeden anderen und konnte, je nachdem welches Widget
+gerade unter der Fingerposition lag, sobald der Finger wieder abgehoben
+wurde, einen echten Klick auslösen.
+
+Fix: neues `std::atomic<bool> RtosContext::suppressNextTouch` (
+`src/rtos/RtosContext.h`), das `powerTask()` bereits **vor** dem ersten
+`esp_light_sleep_start()`-Aufruf auf `true` setzt (nicht erst nach einem
+erkannten Wake -- sonst Wettlauf mit `UiTask`, das durch den gemeinsamen
+Prozessortakt im selben Moment wieder anläuft). `UiBridge.cpp`s
+`readTouch()` meldet LVGL währenddessen unabhängig vom tatsächlichen
+Touch-Zustand immer "losgelassen" (kein `showTouchMarker()`, kein
+`touchWasPressed = true`) und löscht das Flag selbst erst, sobald der
+Finger nachweislich wieder abgehoben wurde -- danach zählt der nächste
+Druck wieder ganz normal als Eingabe. Kein Timing-/Timeout-Wert nötig:
+die Unterdrückung deckt exakt einen vollständigen Druck-/Loslass-Zyklus
+ab, unabhängig davon, wie lange der weckende Finger aufliegen bleibt.
+
+Build 0 Warnungen, 115/115 native Tests grün (dieser Bereich hat keine
+natively-testbare Logik, reines Task-/LVGL-Wiring). Kein
+Hardware-/Simulator-Test in dieser Sitzung möglich.

@@ -965,10 +965,28 @@ void flushDisplay(lv_display_t* display, const lv_area_t* area,
 
 /// @brief LVGL touch input-device read callback.
 /// @param data Out parameter receiving the current touch point/state.
+// Touch-Wake-Unterdrueckung (TASKS.md Nachtrag 2026-09-03, Nutzerwunsch):
+// solange rtosContext->suppressNextTouch gesetzt ist (von PowerTask schon
+// vor dem Sleep-Eintritt gesetzt, siehe RtosContext.h), ist der aktuell
+// gedrueckt gemeldete Finger derjenige, der das Geraet gerade erst per
+// GPIO-Wake geweckt hat -- LVGL bekommt ihn deshalb ungeachtet des echten
+// Zustands als "losgelassen" gemeldet, damit kein Klick auf das darunter
+// liegende Widget entsteht. Erst wenn der Finger nachweislich wieder
+// abgehoben wurde, wird das Flag geloescht; danach zaehlt der naechste
+// Druck wieder ganz normal.
 void readTouch(lv_indev_t*, lv_indev_data_t* data) {
   std::int32_t x = 0;
   std::int32_t y = 0;
-  if (drivers::readTouchCoordinates(x, y)) {
+  const bool pressed = drivers::readTouchCoordinates(x, y);
+  if (rtosContext->suppressNextTouch.load(std::memory_order_relaxed)) {
+    data->state = LV_INDEV_STATE_RELEASED;
+    touchWasPressed = false;
+    if (!pressed) {
+      rtosContext->suppressNextTouch.store(false, std::memory_order_relaxed);
+    }
+    return;
+  }
+  if (pressed) {
     data->state = LV_INDEV_STATE_PRESSED;
     data->point.x = x;
     data->point.y = y;

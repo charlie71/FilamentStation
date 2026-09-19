@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FilamentStation &ndash; Firmware im Browser flashen</title>
+<title>FilamentStation &ndash; Filamentverwaltung mit NFC, Waage und Bambu-Anbindung</title>
 <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
 <style>
   :root {
@@ -16,6 +16,8 @@
     --accent: #2563eb;
     --accent-text: #ffffff;
     --code-bg: #f0f1f4;
+    --ph-bg: #f0f2f6;
+    --ph-border: #b7bcc7;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -27,6 +29,8 @@
       --accent: #5b8def;
       --accent-text: #0b1220;
       --code-bg: #26282f;
+      --ph-bg: #24262c;
+      --ph-border: #43464f;
     }
   }
   * { box-sizing: border-box; }
@@ -38,13 +42,47 @@
     line-height: 1.55;
   }
   main {
-    max-width: 720px;
+    max-width: 880px;
     margin: 0 auto;
-    padding: 2.5rem 1.25rem 4rem;
+    padding: 1.5rem 1.25rem 4rem;
   }
-  header { text-align: center; margin-bottom: 2.5rem; }
-  header h1 { margin: 0 0 0.4rem; font-size: 2rem; }
-  header p { margin: 0; color: var(--muted); }
+  nav.toc {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 0.75rem 1.25rem;
+    margin-bottom: 1rem;
+  }
+  nav.toc ul {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    margin: 0 auto;
+    padding: 0;
+    max-width: 880px;
+    font-size: 0.9rem;
+  }
+  nav.toc a { color: var(--muted); text-decoration: none; }
+  nav.toc a:hover { color: var(--accent); }
+  header.hero { text-align: center; margin: 1.5rem 0 2.5rem; }
+  header.hero h1 { margin: 0 0 0.4rem; font-size: 2.25rem; }
+  header.hero p.tagline { margin: 0 auto; max-width: 46rem; color: var(--muted); font-size: 1.1rem; }
+  .hero-actions { display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap; margin: 1.5rem 0; }
+  .btn-primary, .btn-secondary {
+    display: inline-block;
+    border-radius: 8px;
+    padding: 0.7rem 1.4rem;
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 0.95rem;
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-text); }
+  .btn-secondary { border: 1px solid var(--border); color: var(--text); }
+  .btn-primary:hover, .btn-secondary:hover { filter: brightness(1.08); }
+  section { scroll-margin-top: 3.5rem; }
   .card {
     background: var(--card-bg);
     border: 1px solid var(--border);
@@ -52,10 +90,17 @@
     padding: 1.5rem 1.75rem;
     margin-bottom: 1.5rem;
   }
-  .card h2 { margin-top: 0; font-size: 1.25rem; }
+  .card h2 { margin-top: 0; font-size: 1.4rem; }
   .card h2 .step { color: var(--accent); }
+  .card h3 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
+  .card h3:first-of-type { margin-top: 0.5rem; }
+  .card > p:first-of-type { margin-top: 0; }
   ol, ul { padding-left: 1.25rem; }
   li { margin-bottom: 0.35rem; }
+  table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.92rem; }
+  .table-scroll { overflow-x: auto; }
+  th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
   code {
     background: var(--code-bg);
     border-radius: 4px;
@@ -94,6 +139,37 @@
     font-size: 0.95rem;
   }
   .version { color: var(--muted); font-size: 0.9rem; }
+  .screenshot-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    background: var(--ph-bg);
+    border: 2px dashed var(--ph-border);
+    border-radius: 10px;
+    padding: 1.5rem 1rem;
+    margin: 1rem 0;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+  .screenshot-placeholder.large { min-height: 220px; padding: 2.5rem 1rem; }
+  .screenshot-placeholder .icon { font-size: 1.6rem; }
+  .screenshot-placeholder .caption { max-width: 32rem; font-style: italic; }
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.9rem;
+    margin: 1rem 0;
+  }
+  .feature-grid .feature {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+  }
+  .feature-grid .feature h4 { margin: 0 0 0.3rem; font-size: 0.95rem; }
+  .feature-grid .feature p { margin: 0; color: var(--muted); font-size: 0.88rem; }
   footer {
     text-align: center;
     color: var(--muted);
@@ -104,13 +180,215 @@
 </style>
 </head>
 <body>
+<nav class="toc">
+  <ul>
+    <li><a href="#ueberblick">Überblick</a></li>
+    <li><a href="#voraussetzungen">Voraussetzungen</a></li>
+    <li><a href="#elektronik">Elektronik</a></li>
+    <li><a href="#gehaeuse">Gehäuse</a></li>
+    <li><a href="#flash">Firmware flashen</a></li>
+    <li><a href="#anleitung">Bedienungsanleitung</a></li>
+  </ul>
+</nav>
 <main>
-  <header>
+  <header class="hero">
     <h1>FilamentStation</h1>
-    <p>Firmware direkt im Browser flashen &ndash; ohne Installation, per USB-Kabel.</p>
+    <p class="tagline">
+      Eine eigenständige Filamentverwaltungsstation auf ESP32-S3-Basis:
+      Spule per NFC/RFID erkennen, wiegen, in
+      <a href="https://github.com/Donkie/Spoolman" target="_blank" rel="noopener">Spoolman</a>
+      zuordnen &ndash; und direkt in den passenden AMS-Slot eines Bambu-Lab-Druckers
+      übernehmen. Kein manuelles Eintragen mehr an drei verschiedenen Stellen.
+    </p>
+    <div class="hero-actions">
+      <a class="btn-primary" href="#flash">Firmware flashen</a>
+      <a class="btn-secondary" href="#anleitung">Bedienungsanleitung</a>
+    </div>
+    <div class="screenshot-placeholder large">
+      <span class="icon">📷</span>
+      <span class="caption">
+        Platzhalter &ndash; Gesamtaufnahme des fertig gebauten Geräts im Einsatz
+        (z.&nbsp;B. auf dem Drucktisch neben einer aufgelegten Filamentspule).
+      </span>
+    </div>
   </header>
 
-  <div class="card">
+  <section id="ueberblick" class="card">
+    <h2>Was ist FilamentStation?</h2>
+    <p>
+      Wer mehrere Filamentspulen und mehr als einen Bambu-Lab-Drucker mit AMS
+      im Einsatz hat, kennt den manuellen Weg: Spule identifizieren,
+      Restgewicht auf einer separaten Waage prüfen, den Eintrag in
+      Spoolman suchen oder anlegen, und die Zuordnung am Drucker-Touchscreen
+      erneut per Hand vornehmen. FilamentStation bündelt genau diese drei
+      Schritte in einem Gerät mit Touchscreen: Tag antippen, wiegen, fertig
+      &ndash; Spoolman-Eintrag und AMS-Slot werden direkt vom Gerät aus
+      aktualisiert.
+    </p>
+    <div class="feature-grid">
+      <div class="feature">
+        <h4>NFC/RFID-Erkennung</h4>
+        <p>Eigene FilamentStation-Tags plus Lesesupport für original
+        Bambu-Lab-RFID, OpenPrintTag, OpenTag3D und ein Legacy-Format.</p>
+      </div>
+      <div class="feature">
+        <h4>Spoolman-Integration</h4>
+        <p>Spulensuche, Zuordnung und Gewichtsaktualisierung direkt im
+        Spoolman-Extrafeld <code>tag</code> &ndash; keine eigene
+        Zuordnungsdatenbank.</p>
+      </div>
+      <div class="feature">
+        <h4>Waage</h4>
+        <p>Restgewicht messen, Tarieren und Kalibrieren mit bekanntem
+        Referenzgewicht &ndash; direkt am Gerät.</p>
+      </div>
+      <div class="feature">
+        <h4>Bambu-Mehrdruckerunterstützung</h4>
+        <p>Verbindung zu mehreren Druckern per lokalem LAN-MQTT, AMS-/Tray-
+        Übersicht und Slot-Zuordnung direkt vom Gerät aus.</p>
+      </div>
+      <div class="feature">
+        <h4>Firmware-Update über GitHub</h4>
+        <p>Versionscheck mit SHA-256-Verifikation, direkt am Gerät
+        auslösbar &ndash; oder anfangs bequem per Browser (siehe unten).</p>
+      </div>
+      <div class="feature">
+        <h4>Energiesparen</h4>
+        <p>Aktiv-/Gedimmt-/Sleep-Statemachine mit Touch-Wake für den
+        Dauerbetrieb neben dem Drucker.</p>
+      </div>
+    </div>
+    <p>
+      Der vollständige, aktuelle Funktionsumfang steht im
+      <a href="https://github.com/charlie71/FilamentStation/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>.
+    </p>
+    <div class="screenshot-placeholder">
+      <span class="icon">📷</span>
+      <span class="caption">
+        Platzhalter &ndash; Startbildschirm mit AMS-/Tray-Übersicht des aktiven
+        Druckers (Homescreen).
+      </span>
+    </div>
+  </section>
+
+  <section id="voraussetzungen" class="card">
+    <h2>Voraussetzungen</h2>
+    <h3>Software</h3>
+    <ul>
+      <li>Ein laufender <a href="https://github.com/Donkie/Spoolman" target="_blank" rel="noopener">Spoolman</a>-Server
+        im selben Netzwerk (Docker-Container, Synology, Raspberry Pi, &hellip;
+        &ndash; FilamentStation greift nur über dessen HTTP-API zu, es wird
+        keine eigene Spoolman-Instanz benötigt).</li>
+      <li>Ein WLAN-Netzwerk, das für Erstkonfiguration und Betrieb erreichbar
+        ist (2,4&nbsp;GHz, ESP32-S3-üblich).</li>
+      <li>Zum Flashen im Browser: Chrome, Edge oder Opera <strong>am
+        Desktop</strong> (Web-Serial-API, siehe Abschnitt
+        <a href="#flash">Firmware flashen</a>). Zum Bauen aus dem Quellcode
+        stattdessen <a href="https://platformio.org/" target="_blank" rel="noopener">PlatformIO</a>.</li>
+      <li><em>Optional, für die Drucker-Anbindung:</em> ein oder mehrere
+        Bambu-Lab-Drucker mit AMS im selben LAN, mit aktiviertem
+        <strong>Developer Mode</strong> (siehe
+        <a href="#anleitung-drucker">Bedienungsanleitung &ndash; Drucker</a>).</li>
+    </ul>
+    <h3>Hardware</h3>
+    <ul>
+      <li>WT32-SC01 Plus &ndash; ein ESP32-S3-Entwicklungsboard mit bereits
+        integriertem 480x320-Touchdisplay und microSD-Slot (kein separates
+        Display-/Touch-Modul nötig).</li>
+      <li>HX711-Wägezellenverstärker mit passender Lastzelle
+        (Wägebereich passend zur größten erwarteten Spule wählen).</li>
+      <li>Elechouse PN532 NFC/RFID-Modul V3 (HSU/UART-Betrieb).</li>
+      <li>microSD-Karte (für Konfiguration, Backups und
+        <code>bambu_materials.json</code>).</li>
+      <li>3D-druckbares Gehäuse, siehe <a href="#gehaeuse">Gehäuse</a>.</li>
+    </ul>
+    <p>
+      Details, Bezugsquellen und Datenblätter je Komponente stehen in der
+      vollständigen <a href="https://github.com/charlie71/FilamentStation/blob/main/docs/hardware.md" target="_blank" rel="noopener">Hardware-Dokumentation</a>.
+    </p>
+  </section>
+
+  <section id="elektronik" class="card">
+    <h2>Elektronik bauen</h2>
+    <p>
+      Das WT32-SC01 Plus bringt Display, Touch-Controller und SD-Kartenslot
+      bereits fertig verdrahtet mit &ndash; hier muss nichts zusätzlich
+      verkabelt werden. Zu bauen bleiben nur zwei externe Module, die über
+      die herausgeführten EXT-Anschlüsse des Boards angeschlossen werden:
+      die Waage (HX711 + Lastzelle) und der NFC-Leser (PN532).
+    </p>
+    <h3>Stückliste (BOM)</h3>
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Komponente</th><th>Typ/Modell</th><th>Anbindung</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Hauptplatine</td><td>WT32-SC01 Plus (WT32-S3-WROVER-N16R2, 16&nbsp;MB Flash, 2&nbsp;MB PSRAM)</td><td>&ndash;</td></tr>
+        <tr><td>Display</td><td>ST7796UI, 480x320, RGB565 (auf Hauptplatine integriert)</td><td>8-Bit MCU8080 parallel</td></tr>
+        <tr><td>Touch-Controller</td><td>FT6336U, kapazitiv, Single-Touch (integriert)</td><td>I2C</td></tr>
+        <tr><td>Speicherkarte</td><td>microSD (Standard-SPI-Modul, integriert)</td><td>SPI</td></tr>
+        <tr><td>Wägezelle/Verstärker</td><td>HX711-Wägezellenverstärker + Lastzelle</td><td>2&nbsp;GPIO (Takt/Daten)</td></tr>
+        <tr><td>NFC/RFID-Leser</td><td>Elechouse PN532 NFC RFID Module V3</td><td>UART/HSU, 115200&nbsp;Baud 8N1</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <h3>Verkabelung der externen Module</h3>
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Modul</th><th>Signal</th><th>Board-Anschluss</th><th>GPIO</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>HX711</td><td>SCK (Takt)</td><td>EXT_IO1</td><td>10</td></tr>
+        <tr><td>HX711</td><td>DOUT (Daten)</td><td>EXT_IO2</td><td>11</td></tr>
+        <tr><td>PN532</td><td>RX (Modul-Pin <code>SCL/RXD</code>)</td><td>EXT_IO3</td><td>12</td></tr>
+        <tr><td>PN532</td><td>TX (Modul-Pin <code>SDA/TXD</code>)</td><td>EXT_IO4</td><td>13</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>
+      Beim PN532-Modul stehen dieselben Headerpins vorn als I2C und hinten
+      als HSU beschriftet &ndash; für FilamentStation wird der HSU/UART-Betrieb
+      verwendet, dazu beide Modusschalter am Modul auf <strong>OFF</strong>
+      stellen (wird erst nach einem Neustart des Moduls wirksam). Die
+      Lastzelle wird nach dem üblichen 4-Draht-Schema (E+/E-/A+/A-) an den
+      HX711 angeschlossen.
+    </p>
+    <p>
+      Die vollständige GPIO-Gesamtübersicht, Konfliktprüfung und
+      Quellenangaben je Peripherie stehen in der
+      <a href="https://github.com/charlie71/FilamentStation/blob/main/docs/hardware.md" target="_blank" rel="noopener">Hardware-Dokumentation</a>.
+    </p>
+    <div class="screenshot-placeholder">
+      <span class="icon">📷</span>
+      <span class="caption">
+        Platzhalter &ndash; Foto des offenen Aufbaus: WT32-SC01 Plus mit
+        angeschlossenem HX711 und PN532 vor dem Einbau ins Gehäuse.
+      </span>
+    </div>
+  </section>
+
+  <section id="gehaeuse" class="card">
+    <h2>Gehäuse</h2>
+    <p>
+      Ein passendes, 3D-druckbares Gehäuse ("Compact Spoolease Console
+      Scale") steht auf MakerWorld zum Download bereit und ist auf die
+      Waagen-/Spulenform von FilamentStation abgestimmt:
+    </p>
+    <div class="btn-row">
+      <a class="download-btn" href="https://makerworld.com/de/models/2545909-compact-spoolease-console-scale#profileId-2878470" target="_blank" rel="noopener">Gehäuse auf MakerWorld ansehen</a>
+    </div>
+    <div class="screenshot-placeholder">
+      <span class="icon">📷</span>
+      <span class="caption">
+        Platzhalter &ndash; Foto des gedruckten und montierten Gehäuses mit
+        eingebauter Elektronik.
+      </span>
+    </div>
+  </section>
+
+  <section id="flash" class="card">
     <h2><span class="step">1.</span> Firmware flashen</h2>
     <p>
       Gerät per USB mit diesem Computer verbinden, dann auf
@@ -145,12 +423,17 @@
       WLAN-Zugangsdaten und Konfiguration erhalten bleiben (dafür eignet sich
       ohnehin meist eher die integrierte Update-Funktion unter
       Einstellungen&nbsp;→&nbsp;Firmware, siehe
-      <a href="https://github.com/charlie71/FilamentStation/blob/main/docs/user-guide.md" target="_blank" rel="noopener">Benutzerhandbuch</a>).
+      <a href="#anleitung-firmware">Bedienungsanleitung &ndash; Firmware</a>).
     </p>
-  </div>
+    <div class="screenshot-placeholder">
+      <span class="icon">📷</span>
+      <span class="caption">
+        Platzhalter &ndash; Screenshot des Browsers während des Flash-Vorgangs
+        (Portauswahl-Dialog bzw. Fortschrittsanzeige von ESP Web Tools).
+      </span>
+    </div>
 
-  <div class="card">
-    <h2><span class="step">2.</span> Bambu-Material-Mapping auf die SD-Karte kopieren</h2>
+    <h2 style="margin-top:2rem"><span class="step">2.</span> Bambu-Material-Mapping auf die SD-Karte kopieren</h2>
     <p>
       Diese Datei enthält die Zuordnung von Spoolman-Materialien zu
       Bambu-AMS-Profilen. Sie wird <strong>nicht</strong> mitgeflasht (sie
@@ -168,7 +451,147 @@
       aktualisieren direkt vom Gerät heruntergeladen wurde. Details:
       <a href="https://github.com/charlie71/FilamentStation/blob/main/data/bambu-materials/README.md" target="_blank" rel="noopener">data/bambu-materials/README.md</a>.
     </p>
-  </div>
+  </section>
+
+  <section id="anleitung" class="card">
+    <h2>Bedienungsanleitung</h2>
+    <p>
+      Kurzfassung der wichtigsten Schritte. Die vollständige, ausführliche
+      Anleitung steht im
+      <a href="https://github.com/charlie71/FilamentStation/blob/main/docs/user-guide.md" target="_blank" rel="noopener">Benutzerhandbuch</a>.
+    </p>
+
+    <h3>Ersteinrichtung</h3>
+    <p>
+      Nach dem ersten Einschalten mit eingesetzter SD-Karte legt das Gerät
+      automatisch alle benötigten Dateien an. Empfohlene Reihenfolge:
+    </p>
+    <ol>
+      <li>WLAN verbinden.</li>
+      <li>Spoolman-Server hinterlegen und testen.</li>
+      <li>Waage tarieren (und bei Bedarf kalibrieren).</li>
+      <li>Mindestens einen Drucker anlegen, falls Bambu-Drucker im Einsatz sind.</li>
+    </ol>
+
+    <h3>WLAN</h3>
+    <p>
+      Solange kein WLAN gespeichert ist, spannt das Gerät selbst ein Netzwerk
+      auf (SSID beginnt mit <code>FilamentStation-</code>, Passwort mit
+      <code>FS-</code>). Damit verbinden, öffnet die
+      Konfigurationsseite für das eigentliche Heim-WLAN. Später über
+      Einstellungen&nbsp;→&nbsp;WLAN erneut konfigurierbar oder löschbar.
+    </p>
+    <div class="screenshot-placeholder">
+      <span class="icon">📷</span>
+      <span class="caption">
+        Platzhalter &ndash; WLAN-Konfigurationsportal (Smartphone- oder
+        Laptop-Ansicht) bzw. Einstellungen&nbsp;→&nbsp;WLAN am Gerät.
+      </span>
+    </div>
+
+    <h3>Spoolman verbinden</h3>
+    <p>
+      Einstellungen&nbsp;→&nbsp;Spoolman: Serveradresse eintragen,
+      <strong>Testen</strong>, dann <strong>Speichern</strong>. Solange
+      Spoolman offline ist, bleiben alle Online-Funktionen (Tag zuordnen,
+      Spule suchen, wiegen, Slot konfigurieren) gesperrt.
+    </p>
+    <div class="screenshot-placeholder">
+      <span class="icon">📷</span>
+      <span class="caption">
+        Platzhalter &ndash; Einstellungen&nbsp;→&nbsp;Spoolman mit
+        eingetragener Serveradresse und Online-Status.
+      </span>
+    </div>
+
+    <h3>Waage</h3>
+    <p>
+      Einstellungen&nbsp;→&nbsp;Waage: <strong>Tarieren</strong> mit leerer
+      Waage, <strong>Kalibrieren</strong> mit einem bekannten
+      Referenzgewicht, <strong>Zurücksetzen</strong> verwirft die
+      Kalibrierung wieder.
+    </p>
+
+    <h3>NFC-Tag scannen und zuordnen</h3>
+    <p>
+      Tag an das Gerät halten &ndash; Technologie und Format werden
+      automatisch erkannt. Je nach Format erscheint die passende
+      Aktionsauswahl: eigene FilamentStation-Tags können zugeordnet werden,
+      Bambu-/OpenPrintTag-/OpenTag3D-Tags werden nur gelesen und bieten die
+      Übernahme der gelesenen Filamentdaten nach Spoolman an. Auf dem
+      Ergebnisbildschirm <strong>Tag zuordnen</strong> antippen und die
+      gewünschte Spule wählen (zuletzt verwendet oder Suche).
+    </p>
+    <div class="screenshot-placeholder">
+      <span class="icon">📷</span>
+      <span class="caption">
+        Platzhalter &ndash; Ergebnisbildschirm nach dem Scannen eines Tags,
+        inklusive Aktionsauswahl "Tag zuordnen".
+      </span>
+    </div>
+    <div class="screenshot-placeholder">
+      <span class="icon">📷</span>
+      <span class="caption">
+        Platzhalter &ndash; Spulenauswahl-Dialog (Suche/zuletzt verwendete
+        Spule) beim Zuordnen eines Tags.
+      </span>
+    </div>
+
+    <h3 id="anleitung-drucker">Drucker anlegen</h3>
+    <p>
+      Einstellungen&nbsp;→&nbsp;Drucker&nbsp;→&nbsp;<strong>+&nbsp;Neu</strong>:
+      Anzeigename, Host/IP-Adresse, Seriennummer und LAN-Access-Code
+      eintragen (stehen in den Netzwerkeinstellungen des Druckers selbst),
+      dann <strong>Testen</strong> vor dem Speichern.
+    </p>
+    <p>
+      <strong>Wichtig:</strong> Damit FilamentStation Slots tatsächlich
+      beschreiben kann, muss am Drucker selbst der
+      <strong>Developer&nbsp;Mode</strong> aktiviert sein
+      (Drucker-Touchscreen: WLAN-/LAN-Einstellungen → LAN&nbsp;Only/LAN&nbsp;Mode
+      → Developer&nbsp;Mode). Reines Lesen des Status funktioniert auch ohne.
+    </p>
+    <div class="screenshot-placeholder">
+      <span class="icon">📷</span>
+      <span class="caption">
+        Platzhalter &ndash; Einstellungen&nbsp;→&nbsp;Drucker mit einem
+        angelegten und als "Aktiv" markierten Drucker.
+      </span>
+    </div>
+
+    <h3>AMS-Slots zuordnen</h3>
+    <p>
+      Die Startseite zeigt für den aktiven Drucker alle AMS-Einheiten und
+      Trays. Ein Tray antippen öffnet die Detailansicht mit den
+      Slot-Aktionen: <strong>Slot konfigurieren</strong> (aktuell angelegte
+      Spule zuweisen), <strong>Erneut anwenden</strong>,
+      <strong>Zuordnung entfernen</strong>, <strong>Slot zurücksetzen</strong>
+      und <strong>Slot aktualisieren</strong>.
+    </p>
+    <div class="screenshot-placeholder">
+      <span class="icon">📷</span>
+      <span class="caption">
+        Platzhalter &ndash; AMS-Tray-Detailansicht mit Slot-Aktionen
+        (Slot konfigurieren, Zuordnung entfernen, &hellip;).
+      </span>
+    </div>
+
+    <h3 id="anleitung-firmware">Firmware-Updates am Gerät</h3>
+    <p>
+      Einstellungen&nbsp;→&nbsp;Firmware&nbsp;→&nbsp;<strong>Nach Update
+      suchen</strong>. Ist eine neuere Version verfügbar, startet
+      <strong>Bestätigen</strong> Download, Prüfsummenverifikation und
+      Installation mit Fortschrittsanzeige; erst nach dem anschließenden
+      Neustart läuft die neue Version.
+    </p>
+
+    <p>
+      Alle Details (Extra-Feld <code>tag</code>, Tag-Zuordnung entfernen,
+      Bambu-Import, Verhalten bei Spoolman-Offline, &hellip;) stehen im
+      vollständigen
+      <a href="https://github.com/charlie71/FilamentStation/blob/main/docs/user-guide.md" target="_blank" rel="noopener">Benutzerhandbuch</a>.
+    </p>
+  </section>
 
   <div class="card">
     <h2>Mehr</h2>

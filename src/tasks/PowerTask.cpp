@@ -199,6 +199,14 @@ void sleepUntilTouchWake(rtos::RtosContext& ctx) {
   gpio_wakeup_enable(touchPin, GPIO_INTR_LOW_LEVEL);
   esp_sleep_enable_gpio_wakeup();
 
+  // Vor dem ersten Sleep-Zyklus gesetzt, nicht erst nach einem erkannten
+  // Wake: readTouch() (UiBridge.cpp, laeuft in UiTask) kann noch im
+  // selben Sleep-Aufruf zum Zug kommen, sobald der Chip aufwacht --
+  // wuerde das Flag erst hier unten nach der Schleife gesetzt, waere das
+  // ein Wettlauf zwischen den beiden Tasks. So ist es garantiert schon
+  // sichtbar, bevor die Hardware ueberhaupt in den Sleep geht.
+  ctx.suppressNextTouch.store(true, std::memory_order_relaxed);
+
   for (;;) {
     esp_sleep_enable_timer_wakeup(
         static_cast<std::uint64_t>(config::kPowerSleepSafetyNetTimerMs) *
