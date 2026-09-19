@@ -115,6 +115,21 @@ struct RtosContext {
   };
   PendingCoredump pendingCoredump{};  ///< Set once by main.cpp::setup(), consumed by AppTask after /diagnostics/coredump.json loads.
 
+  // Firmware-Update-Erkennung fuer den Coredump-Zaehler-Reset (TASKS.md
+  // Nachtrag 2026-09-19 (3), Nutzerbericht: der erste Versuch setzte den
+  // Reset zu spaet an -- AppTask::showHomeWhenStartupReady() laeuft erst,
+  // nachdem Storage bereit ist, oft aber schon BEVOR die eigene, asynchrone
+  // /diagnostics/coredump.json-Ladeanfrage beantwortet wurde; deren
+  // Antwort-Handler ueberschrieb den frisch zurueckgesetzten Stand
+  // anschliessend wieder mit den alten, geladenen Zaehlern. main.cpp::
+  // setup() liest den OTA-Zustand deshalb rein lesend (kein
+  // esp_ota_mark_app_valid_cancel_rollback()-Aufruf -- der bleibt bewusst
+  // in showHomeWhenStartupReady(), siehe dortiger Kommentar) noch vor dem
+  // ersten Taskstart, race-frei wie ctx.pendingCoredump oben. Der
+  // Ladeantwort-Handler selbst kann dieses Flag dann direkt konsultieren,
+  // statt sich auf eine zeitliche Reihenfolge zu verlassen.
+  bool otaUpdatePendingVerify = false;  ///< Set once by main.cpp::setup() if the running partition is ESP_OTA_IMG_PENDING_VERIFY (first boot after an OTA update).
+
   /// @brief Creates every queue, the queue set, and the event group.
   /// @return true if all objects were created successfully.
   bool createObjects();

@@ -7246,3 +7246,55 @@ moeglich (kein angeschlossenes Geraet) -- auf der Zielhardware
 verifizieren, dass nach einem echten Firmware-Update (1) alle
 `coredump_*.bin`-Dateien auf der SD-Karte verschwunden sind und (2) der
 Diagnose-Bildschirm sofort wieder "Keine Abstuerze aufgezeichnet" zeigt.
+
+## Nachtrag 2026-09-19 (3): Coredump-Zaehler-Reset griff nicht -- Wettlaufsituation behoben
+
+Nutzerbericht: der in Nachtrag (2) gebaute Reset griff weder beim
+Firmware-Update noch beim darauffolgenden ersten Start -- der Zaehler
+blieb auf dem alten Stand. Ursache bei genauer Nachverfolgung des
+Boot-Ablaufs gefunden: `AppTask::showHomeWhenStartupReady()` (der bisherige
+Ausloeser fuer den Reset) laeuft, sobald Storage bereit ist -- das ist
+aber derselbe Moment, in dem `requestDiagnosticsDocument()` gerade erst
+sein `LoadJson` fuer `/diagnostics/coredump.json` abgeschickt hat. Die
+*Antwort* auf dieses Laden (die den alten Zaehlerstand einliest, um 1
+hochzaehlt und **unbedingt** erneut speichert) traf regelmaessig **nach**
+dem Reset ein und ueberschrieb den gerade erst auf 0 gesetzten Stand
+wieder mit dem alten, hochgezaehlten Wert -- der Reset wurde also durch
+die eigene, asynchrone Ladeanfrage im selben Boot rueckgaengig gemacht.
+
+Fix: die Update-Erkennung selbst racefrei vorgezogen, die eigentliche
+Reset-Entscheidung dorthin verlegt, wo sie nicht mehr ueberschrieben
+werden kann:
+
+* `src/rtos/RtosContext.h` -- neues `ctx.otaUpdatePendingVerify` (bool,
+  analog zu `ctx.pendingCoredump`: einmal geschrieben, danach nur noch
+  gelesen).
+* `src/main.cpp` -- liest den OTA-Zustand (`esp_ota_get_state_partition()`
+  == `ESP_OTA_IMG_PENDING_VERIFY`) jetzt schon rein lesend vor dem ersten
+  Taskstart, racefrei wie `ctx.pendingCoredump`. Die eigentliche
+  Bestaetigung (`esp_ota_mark_app_valid_cancel_rollback()`) bleibt bewusst
+  in `showHomeWhenStartupReady()` -- nur die Zustandspruefung wandert
+  frueher, nicht die Aktion selbst (die muss weiterhin an einem echten
+  "App laeuft nachweislich"-Zeitpunkt bleiben, siehe bestehender
+  Kommentar zu `verifyRollbackLater()`).
+* `src/tasks/AppTask.cpp` -- `resetDiagnosticsAfterFirmwareUpdate()` wird
+  nicht mehr aus `showHomeWhenStartupReady()` aufgerufen, sondern direkt
+  aus dem `kDiagnosticsLoadRequestId`-Antwort-Handler (beide Zweige,
+  `StorageReadCompleted` und `StorageRequestError`) -- dort, wo ohnehin
+  ueber die Zaehler entschieden und persistiert wird, per `if
+  (ctx.otaUpdatePendingVerify)` **statt** der normalen Lade-und-
+  Hochzaehl-Logik, nicht zusaetzlich dazu. Kein Wettlauf mehr moeglich,
+  da es nur noch eine einzige Stelle gibt, die die Zaehler nach dem Laden
+  festlegt. `resetDiagnosticsAfterFirmwareUpdate()` setzt
+  `totalBootCount` jetzt auf `1` statt `0` (dieser Boot selbst zaehlt
+  bereits) und behandelt den seltenen Grenzfall eines gleichzeitig
+  gefundenen Alt-Coredumps (wird noch exportiert, aber nicht mitgezaehlt).
+  `showHomeWhenStartupReady()`s eigener `esp_ota_get_state_partition()`-
+  Aufruf wurde durch einen einfachen Check von `ctx.otaUpdatePendingVerify`
+  ersetzt (keine doppelte Zustandsermittlung mehr noetig).
+
+Build 0 Warnungen, 115/115 native Tests gruen (unveraendert). Kein
+Hardware-Test moeglich -- auf der Zielhardware verifizieren, dass der
+Reset nach einem echten Update jetzt tatsaechlich haelt (Diagnose-
+Bildschirm zeigt sofort "Keine Abstuerze aufgezeichnet", nicht erst nach
+einem weiteren Neustart).

@@ -2138,16 +2138,23 @@ void exportPendingCoredumpToSd(rtos::RtosContext& ctx) {
 }
 
 /// @brief Deletes every rotating coredump-export file and resets the
-///        crash-diagnostics counters, called once after a firmware update
-///        has been confirmed successful.
+///        crash-diagnostics counters, called from the
+///        /diagnostics/coredump.json load-response handler (both the
+///        success and the file-corrupted branch) whenever
+///        `ctx.otaUpdatePendingVerify` is set -- i.e. instead of the usual
+///        load-and-increment logic, not in addition to it.
 /// @param ctx Owning RTOS context.
 /// @note Fire-and-forget for the deletes (mirrors deleteObsoleteStorageFile())
 ///       -- a missing file is not an error (StorageTask's DeleteCoredumpExport
-///       handler treats "does not exist" as success). The counters reset
-///       overwrites whatever this boot's own requestDiagnosticsDocument()
-///       roundtrip already computed/saved earlier in the same boot (see
-///       showHomeWhenStartupReady(), which calls this only once storage is
-///       already ready, i.e. strictly after that roundtrip).
+///       handler treats "does not exist" as success).
+/// @note TASKS.md Nachtrag 2026-09-19 (3): an earlier version called this
+///       from showHomeWhenStartupReady() instead, which runs as soon as
+///       storage is ready -- often *before* the asynchronous coredump.json
+///       load this same boot already triggered has even come back. That
+///       load's response handler then unconditionally re-persisted the old,
+///       just-loaded counters afterwards, silently undoing the reset. Now
+///       driven by the load response itself, so there is nothing left to
+///       race against.
 void resetDiagnosticsAfterFirmwareUpdate(rtos::RtosContext& ctx) {
   for (std::uint32_t slot = 1; slot <= kMaxCoredumpHistoryFiles; ++slot) {
     rtos::StorageCommand deleteCommand{};
@@ -2164,9 +2171,22 @@ void resetDiagnosticsAfterFirmwareUpdate(rtos::RtosContext& ctx) {
               static_cast<unsigned long>(slot));
     }
   }
-  diagnosticsTotalBootCount = 0;
+  if (ctx.pendingCoredump.found) {
+    // Sehr seltener Grenzfall: ein Coredump aus der ALTEN Firmware wird
+    // exakt in demselben Boot gefunden, der auch die Update-Bestaetigung
+    // ist. Trotzdem noch exportieren (koennte forensisch nuetzlich sein) --
+    // aber nicht mitzaehlen, die Zaehler werden unten ohnehin auf einen
+    // sauberen Neustart gesetzt. diagnosticsCoredumpCount kurzzeitig auf 1
+    // setzen, nur damit exportPendingCoredumpToSd()s Slot-Berechnung
+    // ((coredumpCount - 1) % kMaxCoredumpHistoryFiles) + 1 einen sinnvollen
+    // Slot (1) statt eines unsigned-Unterlaufs ergibt.
+    diagnosticsCoredumpCount = 1;
+    exportPendingCoredumpToSd(ctx);
+  }
+  diagnosticsTotalBootCount = 1;
   diagnosticsCoredumpCount = 0;
   diagnosticsBootCountAtLastCoredump = 0;
+  diagnosticsReady = true;
   persistDiagnosticsDocument(ctx);
   FS_LOGI(services::LogComponent::App,
           "Crash-diagnostics counters and coredump exports reset after "
@@ -2624,23 +2644,18 @@ void showHomeWhenStartupReady(rtos::RtosContext& ctx) {
     // echten "App laeuft nachweislich" Zeitpunkt (UI + Storage bereit, Home
     // wird gezeigt), die frisch per OTA geschriebene Partition als gueltig
     // bestaetigen -- siehe die ausfuehrliche Begruendung bei
-    // verifyRollbackLater() in main.cpp. Kein Effekt, falls diese Partition
-    // ganz normal (nicht per OTA) gestartet wurde -- der Zustand ist dann
-    // bereits ESP_OTA_IMG_VALID, nicht PENDING_VERIFY.
-    const esp_partition_t* runningPartition = esp_ota_get_running_partition();
-    esp_ota_img_states_t otaState;
-    if (runningPartition != nullptr &&
-        esp_ota_get_state_partition(runningPartition, &otaState) == ESP_OK &&
-        otaState == ESP_OTA_IMG_PENDING_VERIFY) {
+    // verifyRollbackLater() in main.cpp. ctx.otaUpdatePendingVerify wurde
+    // dort bereits racefrei vor dem ersten Taskstart ermittelt (TASKS.md
+    // Nachtrag 2026-09-19 (3): der Coredump-Zaehler-Reset zog von hier in
+    // den Ladeantwort-Handler von /diagnostics/coredump.json um, weil diese
+    // Funktion oft schon laeuft, BEVOR jene asynchrone Antwort eintrifft --
+    // kein erneuter esp_ota_get_state_partition()-Aufruf mehr noetig, ein
+    // simpler Flag-Check genuegt). Kein Effekt, falls diese Partition ganz
+    // normal (nicht per OTA) gestartet wurde.
+    if (ctx.otaUpdatePendingVerify) {
       esp_ota_mark_app_valid_cancel_rollback();
       FS_LOGI(services::LogComponent::App,
               "OTA rollback: partition confirmed valid after successful boot");
-      // Coredump-Aufraeumen (TASKS.md Nachtrag 2026-09-19, Nutzerwunsch):
-      // exakt dieselbe "das war wirklich ein Update-Boot"-Erkennung wie
-      // oben nutzen, statt einer eigenen -- PENDING_VERIFY ist bereits die
-      // vom ESP-IDF-OTA-Mechanismus selbst gepflegte, zuverlaessige
-      // Unterscheidung zu einem ganz gewoehnlichen Neustart.
-      resetDiagnosticsAfterFirmwareUpdate(ctx);
     }
 #endif
   }
@@ -7080,17 +7095,25 @@ void appTask(void* parameter) {
         sendScaleUiState(ctx, event->requestId);
       } else if (event->type == rtos::AppEventType::StorageReadCompleted &&
                  event->requestId == kDiagnosticsLoadRequestId) {
-        diagnosticsTotalBootCount = event->diagnostics.totalBootCount + 1;
-        diagnosticsCoredumpCount = event->diagnostics.coredumpCount;
-        diagnosticsBootCountAtLastCoredump =
-            event->diagnostics.bootCountAtLastCoredump;
-        if (ctx.pendingCoredump.found) {
-          ++diagnosticsCoredumpCount;
-          diagnosticsBootCountAtLastCoredump = diagnosticsTotalBootCount;
-          exportPendingCoredumpToSd(ctx);
+        if (ctx.otaUpdatePendingVerify) {
+          // Erster Boot nach einem Firmware-Update (main.cpp hat das schon
+          // vor dem ersten Taskstart racefrei festgestellt) -- die gerade
+          // geladenen (alten) Zaehler bewusst verwerfen statt weiterzuzaehlen,
+          // siehe resetDiagnosticsAfterFirmwareUpdate()s Dokkommentar.
+          resetDiagnosticsAfterFirmwareUpdate(ctx);
+        } else {
+          diagnosticsTotalBootCount = event->diagnostics.totalBootCount + 1;
+          diagnosticsCoredumpCount = event->diagnostics.coredumpCount;
+          diagnosticsBootCountAtLastCoredump =
+              event->diagnostics.bootCountAtLastCoredump;
+          if (ctx.pendingCoredump.found) {
+            ++diagnosticsCoredumpCount;
+            diagnosticsBootCountAtLastCoredump = diagnosticsTotalBootCount;
+            exportPendingCoredumpToSd(ctx);
+          }
+          diagnosticsReady = true;
+          persistDiagnosticsDocument(ctx);
         }
-        diagnosticsReady = true;
-        persistDiagnosticsDocument(ctx);
       } else if (event->type == rtos::AppEventType::StorageRequestError &&
                  event->requestId == kDiagnosticsLoadRequestId) {
         // /diagnostics/coredump.json existiert dank kInitialDocuments
@@ -7102,13 +7125,17 @@ void appTask(void* parameter) {
         FS_LOGW(services::LogComponent::App,
                 "Diagnostics document load failed, starting from zero: %s",
                 event->text);
-        diagnosticsTotalBootCount = 1;
-        diagnosticsCoredumpCount = ctx.pendingCoredump.found ? 1 : 0;
-        diagnosticsBootCountAtLastCoredump =
-            ctx.pendingCoredump.found ? 1 : 0;
-        if (ctx.pendingCoredump.found) exportPendingCoredumpToSd(ctx);
-        diagnosticsReady = true;
-        persistDiagnosticsDocument(ctx);
+        if (ctx.otaUpdatePendingVerify) {
+          resetDiagnosticsAfterFirmwareUpdate(ctx);
+        } else {
+          diagnosticsTotalBootCount = 1;
+          diagnosticsCoredumpCount = ctx.pendingCoredump.found ? 1 : 0;
+          diagnosticsBootCountAtLastCoredump =
+              ctx.pendingCoredump.found ? 1 : 0;
+          if (ctx.pendingCoredump.found) exportPendingCoredumpToSd(ctx);
+          diagnosticsReady = true;
+          persistDiagnosticsDocument(ctx);
+        }
       } else if (event->type == rtos::AppEventType::StorageWriteCompleted &&
                  event->requestId == kDiagnosticsSaveRequestId) {
         if (ctx.pendingCoredump.found) {

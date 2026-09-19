@@ -14,6 +14,7 @@
 #include <esp_chip_info.h>
 #include <esp_core_dump.h>
 #include <esp_heap_caps.h>
+#include <esp_ota_ops.h>
 
 #include "config/AppConfig.h"
 #include "config/BoardConfig.h"
@@ -124,6 +125,27 @@ void setup() {
               "Coredump present but summary read failed");
     }
   }
+
+  // Firmware-Update-Erkennung (TASKS.md Nachtrag 2026-09-19 (3)): rein
+  // lesend, race-frei vor jedem Taskstart (siehe RtosContext.h). Nur die
+  // Zustandspruefung wandert hierher -- die eigentliche Bestaetigung
+  // (esp_ota_mark_app_valid_cancel_rollback()) bleibt bewusst in
+  // AppTask::showHomeWhenStartupReady(), erst an einem echten "App laeuft
+  // nachweislich"-Zeitpunkt (siehe dortiger Kommentar sowie
+  // verifyRollbackLater() unten).
+#ifdef CONFIG_APP_ROLLBACK_ENABLE
+  {
+    const esp_partition_t* runningPartition = esp_ota_get_running_partition();
+    esp_ota_img_states_t otaState;
+    if (runningPartition != nullptr &&
+        esp_ota_get_state_partition(runningPartition, &otaState) == ESP_OK &&
+        otaState == ESP_OTA_IMG_PENDING_VERIFY) {
+      ctx.otaUpdatePendingVerify = true;
+      FS_LOGI(services::LogComponent::Rtos,
+              "First boot after firmware update detected (pending verify)");
+    }
+  }
+#endif
 
   if (!ctx.createServiceTasks()) { haltStartup("service task creation failed"); }
 
