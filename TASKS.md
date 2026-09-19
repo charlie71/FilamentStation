@@ -7082,3 +7082,167 @@ einem absichtlich ausgelösten Crash tatsächlich auf der SD-Karte landet
 und mit `esp-coredump` auswertbar ist, (2) dass die Rotation nach mehr
 als zehn Abstürzen wie erwartet die älteste Slot-Datei überschreibt statt
 fehlzuschlagen.
+
+## Nachtrag 2026-09-05: Web-Flash zeigte nach echtem 1.1.0-Release weiterhin 1.0.0
+
+Nutzerbericht: `scripts/release.ps1 -Version 1.1.0 -Publish` gebaut,
+`kApplicationVersion` korrekt auf 1.1.0 aktualisiert, über die Web-Flash-
+Seite geflasht -- Einstellungen → Gerät zeigte weiterhin 1.0.0, auch nach
+einem vollständigen Stromreset (schließt einen fehlenden Auto-Reset über
+DTR/RTS als Ursache aus, da ein Stromreset davon unabhängig ist).
+
+Serverseitig alles verifiziert und einwandfrei befunden, bevor am Client
+gesucht wurde: `origin/main` exakt auf dem lokalen Stand,
+`https://charlie71.github.io/FilamentStation/manifest.json` lieferte
+bereits `"version": "1.1.0"`, die von dort heruntergeladene
+`firmware-merged.bin` war SHA-256-identisch zur committeten 1.1.0-Datei
+und enthielt den String `1.1.0` dreimal, `1.0.0` kein einziges Mal.
+
+Ursache: `firmware/firmware-merged.bin` behält über jedes Release hinweg
+denselben Dateinamen -- ein länger offener, nie neu geladener Browser-Tab
+(oder ein aggressiver HTTP-Cache) kann dadurch weiterhin die alte
+Binärdatei erneut aufspielen, obwohl Server und Manifest bereits die neue
+Version tragen. Behoben:
+
+* `scripts/release.ps1` -- zweite Ersetzung direkt nach der bestehenden
+  Versions-Ersetzung in `docs/manifest.json`: der `path` des
+  Firmware-Teils bekommt zusätzlich `?v=<Version>` angehängt
+  (`firmware/firmware-merged.bin?v=1.1.0`), idempotent auch bei
+  wiederholten Releases (ersetzt eine bereits vorhandene `?v=...`-Query
+  statt sie zu duplizieren, per Test mit zwei aufeinanderfolgenden
+  simulierten Versionen isoliert verifiziert). Jede neue Version bekommt
+  dadurch eine fuer den Browser garantiert neue URL.
+* `docs/manifest.json` -- einmalig von Hand auf denselben Stand gebracht
+  (`?v=1.1.0`), damit der Fix sofort wirkt statt erst beim naechsten
+  Release.
+* `docs/index.html` -- neuer Hinweis direkt neben der Versionsanzeige:
+  Seite vor dem Flashen per Strg+Umschalt+R neu laden oder in einem neuen
+  Tab oeffnen, falls die angezeigte Version nicht der erwarteten
+  entspricht. Der Query-Parameter alleine loest naemlich nicht den Fall
+  eines bereits VOR dem Release geladenen, seither nie neu geladenen Tabs
+  -- der bezieht seinen manifest-Attributwert und jeden darauf folgenden
+  Fetch aus dem Zustand von damals, unabhaengig davon, was der Server
+  inzwischen ausliefert.
+* `docs/release.md` -- Abschnitt "Web-Flash" um die Cache-Busting-Doku
+  und den Nutzerbericht ergaenzt.
+
+Empfehlung an den Nutzer fuer den aktuellen Fall (unabhaengig vom Code-Fix,
+der erst nach Commit/Push wirkt): Tab schliessen, Seite in einem neuen
+oder privaten Fenster neu oeffnen, "Aktuelle Version" auf der Seite
+selbst pruefen, erst dann erneut flashen.
+
+`docs/manifest.json` als valides JSON geprueft (mit UTF-8-BOM-Toleranz --
+die Datei traegt bereits seit fruehreren Releases ein BOM durch
+`Set-Content -Encoding utf8` unter Windows PowerShell 5.1, unveraendert
+durch diesen Nachtrag und fuer JSON.parse()/fetch().json() im Browser
+unkritisch). `release.ps1` per
+`[System.Management.Automation.Language.Parser]::ParseFile()` auf
+Syntaxfehler geprueft (keine gefunden). Kein Code in `src/` betroffen,
+keine Firmware-Neubau noetig fuer diesen Nachtrag.
+
+## Nachtrag 2026-09-19: firmware.elf wird jetzt pro Release archiviert (Coredump-Analyse)
+
+Nutzerbericht: ein Coredump von Version 1.0.0 sollte analysiert werden.
+Da keine `firmware.elf` dieses Releases mehr vorlag, wurde versucht, sie
+aus dem Git-Tag `v1.0.0` nachzubauen (identische `platformio.ini`,
+identische gepinnte Plattform-/Bibliotheksversionen, sogar dieselbe
+Maschine/derselbe Package-Cache). Das Ergebnis war trotzdem **nicht**
+dieselbe Binaerdatei: 12&nbsp;% Groessenunterschied zum tatsaechlich
+veroeffentlichten `firmware.bin` (per `gh release download` verifiziert,
+Byte-Diff ab Offset 5), vermutlich durch nicht reproduzierbare
+Build-Metadaten (z.&nbsp;B. eingebettete Kompilierzeitstempel im
+ESP-IDF-App-Descriptor). Mit dieser falschen ELF war `esp-coredump`s
+Backtrace teils unsinnig (Spruenge zwischen unzusammenhaengenden
+Funktionen), GDB stuerzte bei einem der Threads sogar selbst mit einem
+internen Fehler ab -- ein `pio run` aus einem sauberen Checkout ist fuer
+Coredump-Zwecke **nicht** verlaesslich reproduzierbar. Fazit: die
+tatsaechlich gebaute ELF muss archiviert werden, ein Nachbau aus dem
+Quellcode ist keine verlaessliche Alternative.
+
+* `scripts/release.ps1` -- neuer Schritt direkt nach der bestehenden
+  `firmware.bin`/`firmware.bin.sha256`-Erzeugung: `firmware.elf` aus dem
+  Build-Ausgabeverzeichnis wird mit `Compress-Archive` nach
+  `firmware.elf.zip` gepackt (isoliert getestet: enthaelt exakt einen
+  Eintrag `firmware.elf`, keine ungewollte Ordnerstruktur; ~14 statt
+  ~38&nbsp;MB dank guter Komprimierbarkeit von ELF-Debug-Sektionen),
+  `firmware.elf.zip.sha256` danaben. Beides zur `gh release create`-
+  Anhangsliste (Real- und Dry-Run-Vorschau) sowie zur Fehlermeldung bei
+  fehlgeschlagenem `gh release create` hinzugefuegt. **Bewusst nicht**
+  zur `git add`-Liste des `-Publish`-Commits hinzugefuegt (genau wie
+  `firmware.bin`/`firmware.bin.sha256` selbst schon nicht dort stehen) --
+  beides sind reine Release-Anhaenge, nicht Teil des versionierten
+  Repository-Inhalts.
+* `.gitignore` -- `firmware.elf.zip`/`firmware.elf.zip.sha256` ergaenzt,
+  damit diese grossen Dateien nie versehentlich committet werden.
+* `docs/release.md` -- neuer Abschnitt "Coredump-Analyse:
+  firmware.elf-Archiv" mit der vollstaendigen Fehlanalyse (warum ein
+  Nachbau aus dem Quellcode nicht funktioniert hat) und dem Ablauf, ein
+  archiviertes ELF-Archiv fuer eine spaetere Analyse herunterzuladen und
+  zu verwenden; manueller Ablauf (Abschnitt "Release") um den ELF-Schritt
+  ergaenzt. Ausdruecklich vermerkt: fuer Releases vor diesem Nachtrag
+  (1.0.0, 1.1.0) existiert kein solches Archiv -- deren Coredumps lassen
+  sich nur noch anhand der ELF-unabhaengigen Rohregister einordnen
+  (abgestuerzter Task, `exccause`, `excvaddr`), nicht per vollstaendigem
+  symbolisierten Backtrace.
+
+`release.ps1` per
+`[System.Management.Automation.Language.Parser]::ParseFile()` auf
+Syntaxfehler geprueft (keine gefunden); die neue `Compress-Archive`-Logik
+isoliert gegen die aktuelle `firmware.elf` getestet (Zip-Struktur und
+Groesse wie erwartet). Kein vollstaendiger Skript-Dry-Run moeglich (der
+Arbeitsbaum ist waehrend dieser Sitzung nicht sauber, das Skript verlangt
+das fuer einen echten Lauf) -- beim naechsten echten Release-Aufruf
+verifizieren, dass `firmware.elf.zip`/`.sha256` tatsaechlich als
+Release-Anhaenge ankommen.
+
+## Nachtrag 2026-09-19 (2): Coredump-Historie wird nach einem Firmware-Update automatisch geleert
+
+Nutzerwunsch: am Ende des Firmware-Update-Prozesses alte
+Coredump-Dateien loeschen und den Coredump-Zaehler zuruecksetzen -- alte
+Coredumps beziehen sich auf die alte Firmware und lassen sich nach einem
+Update ohnehin nicht mehr sinnvoll auswerten (siehe Nachtrag 2026-09-19
+(1), gleicher Tag: genau das war das Problem beim Versuch, einen
+1.0.0-Coredump mit einer nachgebauten ELF zu analysieren).
+
+Als Ausloeser wiederverwendet statt neu gebaut: `AppTask.cpp`s
+`showHomeWhenStartupReady()` prueft fuer den bereits bestehenden
+OTA-Rollback-Schutz (TASKS.md Phase 13.6) bereits, ob die laufende
+Partition `ESP_OTA_IMG_PENDING_VERIFY` ist -- exakt und ausschliesslich
+dieser Zustand bedeutet "dies ist der erste Boot nach einem per
+`Update.begin()`/`Update.end()` geschriebenen Image". Die neue
+Aufraeumlogik haengt sich an dieselbe Bedingung, direkt neben
+`esp_ota_mark_app_valid_cancel_rollback()`.
+
+* `src/rtos/Commands.h` -- neuer `StorageCommandType::
+  DeleteCoredumpExport` (fuenfter Coredump*Export-Befehl), `command.path`
+  traegt die zu loeschende Slot-Datei, validiert ueber das bereits
+  bestehende `isAllowedCoredumpExportPath()`.
+* `src/tasks/StorageTask.cpp` -- `processDeleteCoredumpExport()`: loescht
+  die Datei falls vorhanden, kein Fehler falls nicht (Kein-Op).
+* `src/tasks/AppTask.cpp` -- neue `resetDiagnosticsAfterFirmwareUpdate()`:
+  schickt zehn `DeleteCoredumpExport`-Befehle (einer je moeglichem Slot
+  1..`kMaxCoredumpHistoryFiles`, fire-and-forget wie schon
+  `deleteObsoleteStorageFile()`), setzt `diagnosticsTotalBootCount`/
+  `diagnosticsCoredumpCount`/`diagnosticsBootCountAtLastCoredump` auf 0
+  und ruft `persistDiagnosticsDocument(ctx)` erneut auf -- ueberschreibt
+  damit bewusst den bereits fruehen im selben Boot per
+  `requestDiagnosticsDocument()`-Roundtrip gespeicherten (hochgezaehlten)
+  Stand, da `showHomeWhenStartupReady()` erst aufgerufen wird, nachdem
+  Storage bereits bereit ist und dieser Roundtrip laengst gelaufen ist.
+  Aufgerufen aus `showHomeWhenStartupReady()`s bestehendem
+  `ESP_OTA_IMG_PENDING_VERIFY`-Zweig, neue feste
+  `kCoredumpExportCleanupRequestId`-Konstante fuer die Lösch-Antworten,
+  in denselben bestehenden "Obsolete storage file"-Logzweig eingehaengt
+  wie die schon vorhandenen `kObsolete*DeleteRequestId`-Aufraeumfaelle.
+* `docs/storage.md` -- neuer Abschnitt "Aufraeumen nach einem
+  Firmware-Update" in "Absturzdiagnose".
+
+Ein ganz gewoehnlicher Neustart (kein Update) loest das nicht aus --
+`ESP_OTA_IMG_PENDING_VERIFY` wird ausschliesslich vom ESP-IDF-OTA-
+Mechanismus selbst gesetzt.
+
+Build 0 Warnungen, 115/115 native Tests gruen. Kein Hardware-Test
+moeglich (kein angeschlossenes Geraet) -- auf der Zielhardware
+verifizieren, dass nach einem echten Firmware-Update (1) alle
+`coredump_*.bin`-Dateien auf der SD-Karte verschwunden sind und (2) der
+Diagnose-Bildschirm sofort wieder "Keine Abstuerze aufgezeichnet" zeigt.

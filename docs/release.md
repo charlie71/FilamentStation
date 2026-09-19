@@ -95,7 +95,9 @@ in `TASKS.md` und würde hier nur dupliziert.
 **Automatisiert:** `scripts/release.ps1` deckt die Schritte 1 und 3-5 unten
 in einem Aufruf ab -- Versionsformat- und sauberer-Arbeitsbaum-Prüfung,
 Versions-Bump, alle vier nativen Testumgebungen, Build mit
-0-Warnungen-Prüfung, `firmware.bin`/`firmware.bin.sha256`. Ohne `-Publish`
+0-Warnungen-Prüfung, `firmware.bin`/`firmware.bin.sha256` sowie
+`firmware.elf.zip`/`firmware.elf.zip.sha256` (siehe Abschnitt
+"Coredump-Analyse: firmware.elf-Archiv" unten). Ohne `-Publish`
 ist es ein reiner Probelauf (nichts wird committet/getaggt/veröffentlicht);
 erst mit `-Publish` committet, taggt, pusht und veröffentlicht es das
 GitHub-Release wirklich:
@@ -121,17 +123,64 @@ sinnvolle Änderungstexte lassen sich nicht generisch generieren.
    (Get-FileHash .pio/build/wt32-s3-wrover-n16r2/firmware.bin -Algorithm SHA256).Hash.ToLower() |
      Out-File -Encoding ascii firmware.bin.sha256
    ```
-5. Git-Tag `vX.Y.Z` setzen und GitHub-Release mit genau diesen beiden
+   Dazu die passende `firmware.elf` archivieren (siehe Abschnitt
+   "Coredump-Analyse: firmware.elf-Archiv" unten):
+   ```text
+   Compress-Archive .pio/build/wt32-s3-wrover-n16r2/firmware.elf firmware.elf.zip
+   (Get-FileHash firmware.elf.zip -Algorithm SHA256).Hash.ToLower() |
+     Out-File -Encoding ascii firmware.elf.zip.sha256
+   ```
+5. Git-Tag `vX.Y.Z` setzen und GitHub-Release mit genau diesen vier
    Dateien veröffentlichen (Dateinamen exakt `firmware.bin`/
    `firmware.bin.sha256`, sonst findet der OTA-Mechanismus die Prüfsumme
    nicht, siehe `TASKS.md` Phase 13.3):
    ```text
-   gh release create vX.Y.Z firmware.bin firmware.bin.sha256
+   gh release create vX.Y.Z firmware.bin firmware.bin.sha256 firmware.elf.zip firmware.elf.zip.sha256
    ```
 6. Bestehende Geräte finden das neue Release automatisch über
    Einstellungen → Firmware → "Nach Update suchen" (GitHub-Releases-API,
    `config/UpdateConfig.h`); siehe `docs/user-guide.md`, Abschnitt
    "Firmware", für den Nutzerablauf.
+
+## Coredump-Analyse: firmware.elf-Archiv
+
+Nutzerbericht (2026-09-19): ein auf einem Gerät mit Firmware 1.0.0
+aufgetretener Coredump (siehe `docs/storage.md`, Abschnitt
+"Absturzdiagnose") sollte nachträglich analysiert werden. Da keine
+`firmware.elf` dieses Releases mehr vorlag, wurde versucht, sie aus dem
+Git-Tag `v1.0.0` nachzubauen (identische `platformio.ini`, identische
+gepinnte Plattform-/Bibliotheksversionen) -- das Ergebnis unterschied
+sich trotzdem um ca. 12&nbsp;% in der Dateigröße vom tatsächlich
+veröffentlichten `firmware.bin`, vermutlich durch nicht reproduzierbare
+Build-Metadaten (z.&nbsp;B. eingebettete Kompilierzeitstempel im
+ESP-IDF-App-Descriptor). Mit dieser falschen ELF war der von
+`esp-coredump` erzeugte Backtrace teils unsinnig (Sprünge zwischen
+unzusammenhängenden Funktionen) -- ein `pio run` aus einem sauberen
+Checkout ist für diesen Zweck **nicht** verlässlich reproduzierbar.
+
+Seit diesem Nachtrag archiviert `scripts/release.ps1` deshalb bei jedem
+Release zusätzlich die tatsächlich gebaute `firmware.elf` (komprimiert
+als `firmware.elf.zip`, ca. 14 statt ca. 38&nbsp;MB unkomprimiert -- ELF-
+Debug-Sektionen komprimieren sehr gut) als GitHub-Release-Anhang, **nicht**
+committet ins Repository (siehe `.gitignore` -- würde es unnötig
+aufblähen). Bei einem künftigen Coredump also zuerst prüfen, ob der
+GitHub-Release der betroffenen Version bereits ein solches Archiv
+enthält (`gh release view vX.Y.Z`), statt einen Nachbau aus dem Quellcode
+zu versuchen:
+
+```powershell
+gh release download vX.Y.Z --pattern "firmware.elf.zip*"
+Expand-Archive firmware.elf.zip -DestinationPath .
+esp-coredump --chip esp32s3 info_corefile firmware.elf --core coredump.bin --core-format raw
+```
+
+(`esp-coredump` per `pip install esp-coredump` installieren, benötigt
+außerdem `xtensa-esp32s3-elf-gdb` aus dem PlatformIO-Toolchain-Paket
+`toolchain-xtensa-esp32s3/bin/`.) Für Releases **vor** diesem Nachtrag
+(z.&nbsp;B. 1.0.0/1.1.0) existiert kein solches Archiv -- deren Coredumps
+lassen sich nur noch anhand der ELF-unabhängigen Rohregister aus dem
+Coredump selbst einordnen (abgestürzter Task, `exccause`, `excvaddr`),
+nicht per vollständigem symbolisiertem Backtrace.
 
 ## Web-Flash (ESP Web Tools)
 
@@ -179,7 +228,21 @@ als GitHub-Release-Anhang, sondern direkt im über Pages veröffentlichten
 Commit):
 
 * `docs/manifest.json` -- ESP-Web-Tools-Manifest, `version` wird bei
-  jedem Release automatisch aktualisiert.
+  jedem Release automatisch aktualisiert. Der Pfad des Firmware-Teils
+  trägt zusätzlich einen Versions-Query-Parameter
+  (`firmware/firmware-merged.bin?v=1.1.0`), ebenfalls automatisch bei
+  jedem Release aktualisiert -- reines Cache-Busting: der Dateiname
+  bleibt sonst über jedes Release hinweg identisch, ein Browser (oder
+  GitHub Pages' vorgeschalteter CDN-Cache) könnte die Binärdatei sonst
+  beliebig lange als vermeintlich unveränderliche Ressource behandeln.
+  Nutzerbericht (2026-09-05): nach einem echten 1.1.0-Release wurde über
+  die Weboberfläche weiterhin 1.0.0 geflasht -- Ursache war ein längere
+  Zeit offener, nie neu geladener Browser-Tab dieser Seite. Der
+  Query-Parameter verhindert eine Verwechslung mit einem alten
+  HTTP-Cache-Eintrag, behebt aber nicht den Fall eines bereits vor dem
+  Release geladenen Tabs -- dafür steht seitdem ein Hinweis direkt neben
+  der Versionsanzeige auf der Seite selbst (`docs/index.html`): Seite vor
+  dem Flashen einmal hart neu laden oder in einem neuen Tab öffnen.
 * `docs/firmware/firmware-merged.bin` (+ `.sha256`) -- das gemergte,
   bei Offset `0x0` flashbare Image.
 * `docs/firmware/bambu_materials.json` (+ `.sha256`) -- Kopie des

@@ -199,6 +199,14 @@ constexpr std::uint32_t kDiagnosticsSaveRequestId = 0x44494102U;  ///< Fixed cor
 // mehrere Abstuerze nacheinander nachvollziehbar bleiben (Nutzerwunsch).
 constexpr std::uint32_t kCoredumpExportRequestId = 0x44494103U;  ///< Fixed correlation id for the coredump-to-SD export.
 constexpr std::uint32_t kMaxCoredumpHistoryFiles = 10;  ///< Rotation cap for /diagnostics/coredump_<slot>.bin.
+// Aufraeumen nach einem Firmware-Update (TASKS.md Nachtrag 2026-09-19,
+// Nutzerwunsch): alle bisherigen coredump_<slot>.bin beziehen sich auf die
+// *alte* Firmware -- ihre Adressen sind gegen die neue firmware.elf ohnehin
+// nicht mehr aufloesbar. Ein fester, wiederverwendeter Request-Id fuer alle
+// bis zu kMaxCoredumpHistoryFiles Loeschversuche (Fire-and-forget-
+// Aufraeumen, gleiches Prinzip wie kObsolete*DeleteRequestId oben -- nur
+// Erfolg/Fehlschlag wird geloggt, kein State-Machine-Gate haengt daran).
+constexpr std::uint32_t kCoredumpExportCleanupRequestId = 0x44494104U;  ///< Fixed correlation id for post-update coredump-export cleanup deletes.
 std::uint32_t pendingSpoolmanSaveRequestId = 0;  ///< Correlation id for an in-flight Spoolman-configuration save.
 std::int32_t scaleCounts = 0;              ///< Most recent raw HX711 reading reported by ScaleTask.
 std::int32_t scaleOffsetCounts = 0;        ///< Current tare offset.
@@ -2129,6 +2137,42 @@ void exportPendingCoredumpToSd(rtos::RtosContext& ctx) {
   }
 }
 
+/// @brief Deletes every rotating coredump-export file and resets the
+///        crash-diagnostics counters, called once after a firmware update
+///        has been confirmed successful.
+/// @param ctx Owning RTOS context.
+/// @note Fire-and-forget for the deletes (mirrors deleteObsoleteStorageFile())
+///       -- a missing file is not an error (StorageTask's DeleteCoredumpExport
+///       handler treats "does not exist" as success). The counters reset
+///       overwrites whatever this boot's own requestDiagnosticsDocument()
+///       roundtrip already computed/saved earlier in the same boot (see
+///       showHomeWhenStartupReady(), which calls this only once storage is
+///       already ready, i.e. strictly after that roundtrip).
+void resetDiagnosticsAfterFirmwareUpdate(rtos::RtosContext& ctx) {
+  for (std::uint32_t slot = 1; slot <= kMaxCoredumpHistoryFiles; ++slot) {
+    rtos::StorageCommand deleteCommand{};
+    deleteCommand.type = rtos::StorageCommandType::DeleteCoredumpExport;
+    deleteCommand.requestId = kCoredumpExportCleanupRequestId;
+    std::snprintf(deleteCommand.path, sizeof(deleteCommand.path),
+                  "/diagnostics/coredump_%lu.bin",
+                  static_cast<unsigned long>(slot));
+    if (xQueueSend(ctx.storageCommandQueue, &deleteCommand,
+                   pdMS_TO_TICKS(1000)) != pdPASS) {
+      FS_LOGW(services::LogComponent::App,
+              "Command enqueue failed queue=storage op=delete_coredump_export "
+              "slot=%lu",
+              static_cast<unsigned long>(slot));
+    }
+  }
+  diagnosticsTotalBootCount = 0;
+  diagnosticsCoredumpCount = 0;
+  diagnosticsBootCountAtLastCoredump = 0;
+  persistDiagnosticsDocument(ctx);
+  FS_LOGI(services::LogComponent::App,
+          "Crash-diagnostics counters and coredump exports reset after "
+          "firmware update");
+}
+
 /// @brief Sends a Spoolman UpdateWeight command.
 /// @param ctx Owning RTOS context.
 /// @param requestId Correlation id.
@@ -2561,7 +2605,8 @@ void refreshBootProgress(rtos::RtosContext& ctx, std::uint32_t requestId) {
 }
 
 /// @brief Shows the Home screen once both UI and storage startup are ready,
-///        and (on OTA) confirms the running partition as valid.
+///        and (on OTA) confirms the running partition as valid and resets
+///        the crash-diagnostics counters/coredump exports.
 /// @param ctx Owning RTOS context.
 void showHomeWhenStartupReady(rtos::RtosContext& ctx) {
   if (startupNavigationSent || !uiStartupReady || !storageStartupReady) return;
@@ -2590,6 +2635,12 @@ void showHomeWhenStartupReady(rtos::RtosContext& ctx) {
       esp_ota_mark_app_valid_cancel_rollback();
       FS_LOGI(services::LogComponent::App,
               "OTA rollback: partition confirmed valid after successful boot");
+      // Coredump-Aufraeumen (TASKS.md Nachtrag 2026-09-19, Nutzerwunsch):
+      // exakt dieselbe "das war wirklich ein Update-Boot"-Erkennung wie
+      // oben nutzen, statt einer eigenen -- PENDING_VERIFY ist bereits die
+      // vom ESP-IDF-OTA-Mechanismus selbst gepflegte, zuverlaessige
+      // Unterscheidung zu einem ganz gewoehnlichen Neustart.
+      resetDiagnosticsAfterFirmwareUpdate(ctx);
     }
 #endif
   }
@@ -6839,7 +6890,8 @@ void appTask(void* parameter) {
               kObsoletePendingMeasurementsDeleteRequestId ||
           event->requestId == kObsoleteSpoolCacheDeleteRequestId ||
           event->requestId == kObsoleteFilamentCacheDeleteRequestId ||
-          event->requestId == kObsoleteVendorCacheDeleteRequestId) {
+          event->requestId == kObsoleteVendorCacheDeleteRequestId ||
+          event->requestId == kCoredumpExportCleanupRequestId) {
         if (event->type == rtos::AppEventType::StorageWriteCompleted)
           FS_LOGI(services::LogComponent::App,
                   "Obsolete storage file removed request_id=%lu",

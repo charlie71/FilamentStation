@@ -324,6 +324,15 @@ enum class StorageCommandType : std::uint8_t {
   WriteCoredumpChunk,
   CommitCoredumpExport,
   AbortCoredumpExport,
+  // Firmware-Update-Aufraeumen (TASKS.md Nachtrag 2026-09-19, Nutzerwunsch):
+  // die auf der SD-Karte gesicherten Coredump-Exports beziehen sich auf die
+  // *alte* Firmware -- nach einem erfolgreichen Update sind ihre Adressen
+  // gegen die neue firmware.elf ohnehin nicht mehr aufloesbar. command.path
+  // traegt den zu loeschenden Dateinamen (ein Slot von
+  // "/diagnostics/coredump_<slot>.bin"), ebenfalls ueber
+  // isAllowedCoredumpExportPath() geprueft. Kein-Op (kein Fehler), falls
+  // die Datei nicht existiert.
+  DeleteCoredumpExport,
 };
 
 /// @brief Commands AppTask can send to tasks::networkTask().

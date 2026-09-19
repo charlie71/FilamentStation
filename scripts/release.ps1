@@ -15,8 +15,15 @@
       4. Build the wt32-s3-wrover-n16r2 firmware and verify 0 warnings.
       5. Copy firmware.bin next to the repo root and generate
          firmware.bin.sha256 (lowercase hex, matching the OTA update
-         checker's expected format). Do the same for
-         data/bambu-materials/bambu_materials.json ->
+         checker's expected format). Also zip the matching firmware.elf
+         (firmware.elf.zip/.sha256, not committed to git -- see
+         .gitignore -- only attached to the GitHub release) so a coredump
+         from this exact release can be symbolized later without having
+         to reconstruct the binary from source (TASKS.md Nachtrag
+         2026-09-19: a from-source rebuild of an older tag produced a
+         firmware 12% different in size from the actually-released
+         binary, making its coredump backtrace unreliable). Do the same
+         for data/bambu-materials/bambu_materials.json ->
          bambu_materials.json/bambu_materials.json.sha256 (TASKS.md
          Nachtrag 2026-08-28: the Bambu material-mapping table, downloaded
          at runtime the same way as the firmware).
@@ -33,7 +40,8 @@
          With -Publish: commit the version bump plus the docs/ browser-flash
          artifacts, create annotated tag "v<Version>", push both, and
          create the GitHub release via `gh release create` with
-         firmware.bin/firmware.bin.sha256/bambu_materials.json/
+         firmware.bin/firmware.bin.sha256/firmware.elf.zip/
+         firmware.elf.zip.sha256/bambu_materials.json/
          bambu_materials.json.sha256 attached (requires `gh auth login`
          beforehand) -- the docs/ artifacts are served by GitHub Pages
          directly from the pushed commit, not attached to the release.
@@ -100,6 +108,20 @@ $NativeTestEnvs = @(
 $FirmwareSourcePath = Join-Path $RepoRoot ".pio\build\$BuildEnv\firmware.bin"
 $FirmwareOutPath = Join-Path $RepoRoot "firmware.bin"
 $ChecksumOutPath = Join-Path $RepoRoot "firmware.bin.sha256"
+# Coredump-Analyse (Nutzerbericht 2026-09-19): ein Coredump laesst sich nur
+# mit der *exakt* selben firmware.elf symbolisieren, die tatsaechlich auf
+# dem Geraet lief -- ein Nachbau aus dem Git-Tag ergab beim Testen ein
+# voellig anderes Binary (12% Groessenunterschied trotz identischer
+# platformio.ini), vermutlich durch nicht reproduzierbare Build-Metadaten.
+# Deshalb wird die ELF jetzt bei jedem Release mit archiviert, statt sich
+# auf einen spaeteren Nachbau zu verlassen. Nicht in git committet (siehe
+# .gitignore) -- nur als GitHub-Release-Anhang, ELF-Dateien sind mit
+# Debug-Infos um ein Vielfaches groesser als firmware.bin und wuerden das
+# Repository unnoetig aufblaehen; komprimiert (~14 statt ~38 MB), da ELF-
+# Debug-Sektionen sich sehr gut komprimieren lassen.
+$FirmwareElfSourcePath = Join-Path $RepoRoot ".pio\build\$BuildEnv\firmware.elf"
+$FirmwareElfZipOutPath = Join-Path $RepoRoot "firmware.elf.zip"
+$FirmwareElfZipChecksumOutPath = Join-Path $RepoRoot "firmware.elf.zip.sha256"
 $BambuMaterialsSourcePath = Join-Path $RepoRoot "data\bambu-materials\bambu_materials.json"
 $BambuMaterialsOutPath = Join-Path $RepoRoot "bambu_materials.json"
 $BambuMaterialsChecksumOutPath = Join-Path $RepoRoot "bambu_materials.json.sha256"
@@ -252,6 +274,18 @@ Write-Host "SHA256: $Hash"
 Write-Host "Firmware:  $FirmwareOutPath"
 Write-Host "Pruefsumme: $ChecksumOutPath"
 
+Write-Step "Erzeuge firmware.elf.zip / firmware.elf.zip.sha256 (fuer spaetere Coredump-Analyse)"
+if (-not (Test-Path $FirmwareElfSourcePath)) {
+    Fail "firmware.elf nicht gefunden unter $FirmwareElfSourcePath -- Build-Ausgabepfad geaendert?"
+}
+if (Test-Path $FirmwareElfZipOutPath) { Remove-Item -Path $FirmwareElfZipOutPath -Force }
+Compress-Archive -Path $FirmwareElfSourcePath -DestinationPath $FirmwareElfZipOutPath -CompressionLevel Optimal
+$FirmwareElfZipHash = (Get-FileHash -Path $FirmwareElfZipOutPath -Algorithm SHA256).Hash.ToLower()
+Set-Content -Path $FirmwareElfZipChecksumOutPath -Value $FirmwareElfZipHash -NoNewline -Encoding ascii
+Write-Host "SHA256: $FirmwareElfZipHash"
+Write-Host "ELF (komprimiert): $FirmwareElfZipOutPath"
+Write-Host "Pruefsumme: $FirmwareElfZipChecksumOutPath"
+
 Write-Step "Erzeuge bambu_materials.json / bambu_materials.json.sha256"
 if (-not (Test-Path $BambuMaterialsSourcePath)) {
     Fail "bambu_materials.json nicht gefunden unter $BambuMaterialsSourcePath"
@@ -286,10 +320,31 @@ $MergedFirmwareHash = (Get-FileHash -Path $MergedFirmwareOutPath -Algorithm SHA2
 Set-Content -Path $MergedFirmwareChecksumOutPath -Value $MergedFirmwareHash -NoNewline -Encoding ascii
 Copy-Item -Path $BambuMaterialsOutPath -Destination $WebFlashBambuMaterialsOutPath -Force
 Copy-Item -Path $BambuMaterialsChecksumOutPath -Destination $WebFlashBambuMaterialsChecksumOutPath -Force
+# Cache-Busting (Nutzerbericht 2026-09-05): "firmware/firmware-merged.bin"
+# behaelt ueber jedes Release hinweg denselben Dateinamen -- ein Browser
+# (oder ein zwischengeschalteter CDN-Cache von GitHub Pages) kann die
+# Binaerdatei deshalb beliebig lange als vermeintlich unveraenderliche
+# Ressource zwischenspeichern. Ein Nutzer flashte nach einem echten
+# 1.1.0-Release ueber die Weboberflaeche weiterhin 1.0.0 -- Ursache war
+# ein alter, laengere Zeit offener Browser-Tab bzw. ein zwischen-
+# gespeicherter Stand dieser Seite; das Geraet fuehrte dadurch schlicht
+# erneut die alte Binaerdatei aus. Der Versions-Query-Parameter macht die
+# URL bei jedem Release neu (der Browser kann sie also nicht mit einem
+# alten Cache-Eintrag verwechseln), behebt aber nicht den Fall eines
+# bereits vor dem Release geladenen, seither nie neu geladenen Tabs --
+# dafuer bleibt der Hinweis auf der Seite selbst (docs/index.html)
+# zustaendig.
 $ManifestContent = Get-Content -Path $WebFlashManifestPath -Raw
 $NewManifestContent = $ManifestContent -replace '"version":\s*"[^"]+"', "`"version`": `"$Version`""
 if ($NewManifestContent -eq $ManifestContent) {
     Fail "Ersetzung der Version in docs/manifest.json hat nichts geaendert -- Format der Datei geaendert?"
+}
+$ManifestContentBeforePathBust = $NewManifestContent
+$NewManifestContent = $NewManifestContent -replace `
+    '"path":\s*"firmware/firmware-merged\.bin(?:\?v=[^"]*)?"', `
+    "`"path`": `"firmware/firmware-merged.bin?v=$Version`""
+if ($NewManifestContent -eq $ManifestContentBeforePathBust) {
+    Fail "Cache-Busting-Ersetzung des Firmware-Pfads in docs/manifest.json hat nichts geaendert -- Format der Datei geaendert?"
 }
 Set-Content -Path $WebFlashManifestPath -Value $NewManifestContent -NoNewline -Encoding utf8
 Write-Host "SHA256: $MergedFirmwareHash"
@@ -307,7 +362,7 @@ if (-not $Publish) {
     Write-Host "  git commit -m `"Release $Version`""
     Write-Host "  git tag -a $TagName -m `"Release $Version`""
     Write-Host "  git push origin HEAD --tags"
-    Write-Host "  gh release create $TagName `"$FirmwareOutPath`" `"$ChecksumOutPath`" `"$BambuMaterialsOutPath`" `"$BambuMaterialsChecksumOutPath`""
+    Write-Host "  gh release create $TagName `"$FirmwareOutPath`" `"$ChecksumOutPath`" `"$FirmwareElfZipOutPath`" `"$FirmwareElfZipChecksumOutPath`" `"$BambuMaterialsOutPath`" `"$BambuMaterialsChecksumOutPath`""
     exit 0
 }
 
@@ -325,8 +380,8 @@ git push origin HEAD --tags
 if ($LASTEXITCODE -ne 0) { Fail "git push fehlgeschlagen -- Tag ist lokal bereits gesetzt, ggf. manuell nachziehen oder 'git tag -d $TagName' zum Zuruecksetzen." }
 
 Write-Step "Veroeffentliche GitHub-Release $TagName"
-gh release create $TagName $FirmwareOutPath $ChecksumOutPath $BambuMaterialsOutPath $BambuMaterialsChecksumOutPath --title $TagName --generate-notes
-if ($LASTEXITCODE -ne 0) { Fail "gh release create fehlgeschlagen -- Commit/Tag/Push sind bereits durch, Release kann manuell mit 'gh release create $TagName $FirmwareOutPath $ChecksumOutPath $BambuMaterialsOutPath $BambuMaterialsChecksumOutPath' nachgeholt werden." }
+gh release create $TagName $FirmwareOutPath $ChecksumOutPath $FirmwareElfZipOutPath $FirmwareElfZipChecksumOutPath $BambuMaterialsOutPath $BambuMaterialsChecksumOutPath --title $TagName --generate-notes
+if ($LASTEXITCODE -ne 0) { Fail "gh release create fehlgeschlagen -- Commit/Tag/Push sind bereits durch, Release kann manuell mit 'gh release create $TagName $FirmwareOutPath $ChecksumOutPath $FirmwareElfZipOutPath $FirmwareElfZipChecksumOutPath $BambuMaterialsOutPath $BambuMaterialsChecksumOutPath' nachgeholt werden." }
 
 Write-Step "Fertig"
 Write-Host "Release $TagName veroeffentlicht. Geraete finden es automatisch ueber Einstellungen -> Firmware -> Nach Update suchen." -ForegroundColor Green

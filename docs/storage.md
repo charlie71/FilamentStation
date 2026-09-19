@@ -280,6 +280,24 @@ wird der Absturz trotzdem korrekt gezaehlt und die Flash-Partition
 trotzdem fuer den naechsten Absturz freigegeben -- nur die zusaetzliche
 Rohkopie auf der SD-Karte fehlt dann fuer diesen einen Fall.
 
+### Aufraeumen nach einem Firmware-Update
+
+Nutzerwunsch (2026-09-19): nach einem erfolgreichen Firmware-Update sind
+alle bisherigen `coredump_<slot>.bin`-Dateien wertlos -- ihre Adressen
+lassen sich nur gegen die *alte* `firmware.elf` aufloesen, nicht mehr
+gegen die neu installierte. `AppTask::showHomeWhenStartupReady()` loescht
+deshalb alle zehn moeglichen Slot-Dateien (`StorageCommandType::
+DeleteCoredumpExport`, kein Fehler falls eine Datei nicht existiert) und
+setzt `totalBootCount`/`coredumpCount`/`bootCountAtLastCoredump` in
+`/diagnostics/coredump.json` auf `0` zurueck, sobald genau dieselbe
+Bedingung erfuellt ist, die bereits den OTA-Rollback-Schutz bestaetigt:
+die laufende Partition steht auf `ESP_OTA_IMG_PENDING_VERIFY` (vom
+ESP-IDF-OTA-Mechanismus selbst gesetzt, ausschliesslich beim ersten Boot
+nach einem per `Update.begin()`/`Update.end()` geschriebenen Image) --
+dieselbe, bereits etablierte Erkennung wird wiederverwendet statt einer
+eigenen. Ein ganz gewoehnlicher Neustart (kein Update) loest das also
+nicht aus; die Zaehler wachsen normal weiter.
+
 ### Detailanalyse
 
 Fuer eine grobe Einordnung genuegt oft schon die einzelne `FS_LOGE`-Zeile

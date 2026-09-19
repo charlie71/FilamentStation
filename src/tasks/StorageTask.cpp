@@ -1207,6 +1207,29 @@ void processCommitCoredumpExport(rtos::RtosContext& ctx,
                    static_cast<std::int32_t>(coredumpExportBytesWritten));
 }
 
+/// @brief Handles StorageCommandType::DeleteCoredumpExport: removes one
+///        rotating coredump-export file, if present (e.g. after a
+///        successful firmware update -- old coredumps' addresses no
+///        longer resolve against the new firmware.elf, see AppTask.cpp's
+///        showHomeWhenStartupReady()).
+/// @param ctx Owning RTOS context.
+/// @param command Command to process; `command.path` is the file to remove.
+void processDeleteCoredumpExport(rtos::RtosContext& ctx,
+                                 const rtos::StorageCommand& command) {
+  if (!isAllowedCoredumpExportPath(command.path)) {
+    sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                     "Invalid coredump export path", command.requestId);
+    return;
+  }
+  if (!SD.exists(command.path) || SD.remove(command.path)) {
+    sendStorageEvent(ctx, rtos::AppEventType::StorageWriteCompleted,
+                     "Coredump export deleted", command.requestId);
+  } else {
+    sendStorageEvent(ctx, rtos::AppEventType::StorageRequestError,
+                     "Coredump export delete failed", command.requestId);
+  }
+}
+
 /// @brief Validates the path and dispatches to processLoadCommand()/
 ///        processSaveCommand()/direct delete, based on `command.type`.
 /// @param ctx Owning RTOS context.
@@ -1217,7 +1240,7 @@ void processCommitCoredumpExport(rtos::RtosContext& ctx,
 ///       config/BambuMaterialConfig.h), by design: trusting a caller-
 ///       supplied path for this fixed, security-relevant temp file would
 ///       reopen exactly the path-injection risk isAllowedJsonPath() exists
-///       to prevent for every other command. The four Coredump*Export
+///       to prevent for every other command. The five Coredump*Export
 ///       commands are dispatched next, for the opposite reason: they DO
 ///       use a caller-supplied `command.path` (rotating slot filenames,
 ///       not one fixed constant), so each of their own handlers validates
@@ -1249,6 +1272,9 @@ void processStorageCommand(rtos::RtosContext& ctx,
       return;
     case rtos::StorageCommandType::AbortCoredumpExport:
       processAbortCoredumpExport(command);
+      return;
+    case rtos::StorageCommandType::DeleteCoredumpExport:
+      processDeleteCoredumpExport(ctx, command);
       return;
     case rtos::StorageCommandType::LoadJson:
     case rtos::StorageCommandType::SaveJson:

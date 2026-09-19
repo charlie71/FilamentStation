@@ -3162,7 +3162,7 @@ void create_screen_scr_settings_diagnostics() {
             lv_obj_set_size(obj, 464, 25);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICK_FOCUSABLE|LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
             add_style_label_standart(obj);
-            lv_label_set_text_static(obj, "Abst\xC3\xBCrze: wird zur Laufzeit geladen");
+            lv_label_set_text_static(obj, "Abstürze: wird zur Laufzeit geladen");
         }
         {
             // diagnostics_settings_tasks
@@ -3239,7 +3239,7 @@ void create_screen_scr_settings_diagnostics() {
             lv_obj_set_style_pad_bottom(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_bg_opa(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-            create_user_widget_cmp_top_printer_bar(obj, 377);
+            create_user_widget_cmp_top_printer_bar(obj, 379);
         }
         {
             lv_obj_t *obj = lv_obj_create(parent_obj);
@@ -3252,16 +3252,16 @@ void create_screen_scr_settings_diagnostics() {
             lv_obj_set_style_pad_bottom(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_bg_opa(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-            create_user_widget_cmp_settings_button(obj, 384);
+            create_user_widget_cmp_settings_button(obj, 386);
         }
     }
-
+    
     tick_screen_scr_settings_diagnostics();
 }
 
 void tick_screen_scr_settings_diagnostics() {
-    tick_user_widget_cmp_top_printer_bar(377);
-    tick_user_widget_cmp_settings_button(384);
+    tick_user_widget_cmp_top_printer_bar(379);
+    tick_user_widget_cmp_settings_button(386);
 }
 
 void create_screen_scr_settings_firmware() {
